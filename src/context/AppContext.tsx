@@ -11,16 +11,6 @@ import { JobProvider, useJobs } from './JobContext';
 import { CompanyProvider, useCompany, defaultCompany } from './CompanyContext';
 
 // ============================================================================
-// Re-export hooks for convenience
-// ============================================================================
-
-export { useCustomers } from './CustomerContext';
-export { useInvoices } from './InvoiceContext';
-export { useQuotes } from './QuoteContext';
-export { useJobs } from './JobContext';
-export { useCompany } from './CompanyContext';
-
-// ============================================================================
 // Loading Context
 // ============================================================================
 

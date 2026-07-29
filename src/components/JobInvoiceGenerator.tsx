@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import logger from '../utils/logger';
 import { X, FileText, Calendar, Users, Check, AlertTriangle } from 'lucide-react';
-import { JobEntry, Customer, InvoiceAttachment } from '../types';
+import { JobEntry, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';

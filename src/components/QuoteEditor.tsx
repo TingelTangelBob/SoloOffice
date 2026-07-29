@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Plus, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Euro, FileText, Eye } from 'lucide-react';
+import { Save, X, Plus, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Euro, FileText } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -26,10 +26,10 @@ import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
 import { Quote, QuoteItem, QuoteAttachment } from '../types';
 import { AttachmentManager } from './AttachmentManager';
-import { calculateInvoiceWithDiscounts, updateItemWithDiscount, formatDiscountDisplay, validateDiscount } from '../utils/discountUtils';
+import { calculateInvoiceWithDiscounts, validateDiscount } from '../utils/discountUtils';
 import { DocumentPreview, PreviewDocument } from './DocumentPreview';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
-import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { formatCustomerNumber } from '../utils/customerUtils';
 import { generateUUID } from '../utils/uuid';
 
 // Sortable Item Component for Drag & Drop

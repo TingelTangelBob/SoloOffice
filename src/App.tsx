@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AppProvider, useLoading } from './context/AppContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -11,7 +11,6 @@ import { JobManagement } from './components/JobManagement';
 import { Calendar } from './components/Calendar';
 import { ReportingManagement } from './components/ReportingManagement';
 import { ReminderManagement } from './components/ReminderManagement';
-import { DynamicColors } from './components/DynamicColors';
 import { useCompany } from './context/CompanyContext';
 import { useQuotes } from './context/QuoteContext';
 
@@ -148,12 +147,9 @@ function App() {
     };
 
     return (
-      <>
-        <DynamicColors />
-        <Layout currentPage={currentPageState.page} onPageChange={(page) => handlePageChange(page)}>
-          {renderPage()}
-        </Layout>
-      </>
+      <Layout currentPage={currentPageState.page} onPageChange={(page) => handlePageChange(page)}>
+        {renderPage()}
+      </Layout>
     );
   };
 

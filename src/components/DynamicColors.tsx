@@ -1,4 +1,3 @@
-import React from 'react';
 import { useCompany } from '../context/CompanyContext';
 
 export function DynamicColors() {

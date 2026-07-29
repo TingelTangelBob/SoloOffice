@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Download, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { Invoice } from '../types';
 import { formatFileSize, getFileIcon } from '../utils/fileUtils';

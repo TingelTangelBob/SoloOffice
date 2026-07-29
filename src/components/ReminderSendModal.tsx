@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Download, Mail, Eye, CheckSquare } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Download, Mail, Eye } from 'lucide-react';
 import { Invoice, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';

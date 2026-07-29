@@ -1,2 +1,7 @@
 .env
 .env.*
+.DS_Store
+*.backup
+node_modules
+dist
+*.tsbuildinfo

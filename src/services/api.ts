@@ -59,7 +59,7 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Network error' }));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
       }
 
       return response.json();
@@ -455,7 +455,17 @@ class ApiService {
   // Email Management API
   // --------------------------------------------------------------------------
 
-  async getEmailHistory(params: { page?: number; limit?: number; filter?: string; search?: string } = {}) {
+  async getEmailHistory<T = unknown>(params: { page?: number; limit?: number; filter?: string; search?: string } = {}): Promise<{
+    success: boolean;
+    emails: T[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalRecords: number;
+      hasMore: boolean;
+    };
+    message?: string;
+  }> {
     const queryParams = new URLSearchParams();
     if (params.page) queryParams.append('page', params.page.toString());
     if (params.limit) queryParams.append('limit', params.limit.toString());
@@ -465,26 +475,29 @@ class ApiService {
     return this.request(`/email-management/history?${queryParams}`);
   }
 
-  async getEmailDetails(id: string) {
+  async getEmailDetails<T = unknown>(id: string): Promise<{ success: boolean; email: T; message?: string }> {
     return this.request(`/email-management/history/${id}`);
   }
 
-  async getEmailStatistics() {
+  async getEmailStatistics<T = unknown>(): Promise<{ success: boolean; statistics: T; message?: string }> {
     return this.request('/email-management/statistics');
   }
 
-  async getSmtpSettings() {
+  async getSmtpSettings<T = unknown>(): Promise<{ success: boolean; settings: T; message?: string }> {
     return this.request('/email-management/smtp-settings');
   }
 
-  async saveSmtpSettings(settings: Record<string, unknown>) {
+  async saveSmtpSettings(settings: Record<string, unknown>): Promise<{ success: boolean; message?: string }> {
     return this.request('/email-management/smtp-settings', {
       method: 'POST',
       body: JSON.stringify(settings),
     });
   }
 
-  async testSmtpConnection(useDatabaseSettings = true, settings: Record<string, unknown> | null = null) {
+  async testSmtpConnection(
+    useDatabaseSettings = true,
+    settings: Record<string, unknown> | null = null
+  ): Promise<{ success: boolean; message: string }> {
     return this.request('/email-management/test-smtp', {
       method: 'POST',
       body: JSON.stringify({
@@ -494,7 +507,7 @@ class ApiService {
     });
   }
 
-  async sendTestEmail(recipient: string, subject?: string, message?: string) {
+  async sendTestEmail(recipient: string, subject?: string, message?: string): Promise<{ success: boolean; message: string }> {
     return this.request('/email-management/send-test-email', {
       method: 'POST',
       body: JSON.stringify({

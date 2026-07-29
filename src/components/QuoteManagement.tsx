@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, Mail, X, CheckCircle } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';

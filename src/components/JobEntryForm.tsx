@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { X, Plus, Trash2, Save, Clock, User, Calendar, DollarSign, Edit, PenTool } from 'lucide-react';
+import { X, Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit, PenTool } from 'lucide-react';
 import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, JobSignature } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
@@ -9,7 +9,7 @@ import { AttachmentManager } from './AttachmentManager';
 import { DocumentPreview, PreviewDocument } from './DocumentPreview';
 import { SignaturePad } from './SignaturePad';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
-import { createDefaultTimeEntry, calculateTotalHours } from '../utils/jobUtils';
+import { createDefaultTimeEntry } from '../utils/jobUtils';
 import { generateUUID } from '../utils/uuid';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
 

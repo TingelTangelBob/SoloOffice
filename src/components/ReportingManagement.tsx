@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import { 
   BarChart3, 
   Download, 
-  Calendar, 
   FileText, 
   TrendingUp, 
-  PieChart, 
   Users,
   DollarSign,
   RefreshCw,
@@ -20,7 +18,6 @@ import {
   InvoiceJournalResponse, 
   ReportingStatistics,
   InvoiceJournalEntry,
-  MonthlyRevenueStats,
   CustomerStats 
 } from '../types';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Send, Clock, Euro, AlertCircle, Check, X, Download, Mail, Eye } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';

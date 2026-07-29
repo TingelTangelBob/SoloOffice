@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import {
   Mail,
   Send,
-  MessageCircle,
   Settings,
   TestTube,
   RefreshCw,
   Search,
-  Filter,
   Calendar,
   User,
   FileText,
@@ -137,8 +135,12 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const loadEmails = async (page = currentPage) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/email-management/history?page=${page}&limit=20&filter=${statusFilter}&search=${encodeURIComponent(searchTerm)}`);
-      const data = await response.json();
+      const data = await apiService.getEmailHistory<EmailHistoryItem>({
+        page,
+        limit: 20,
+        filter: statusFilter,
+        search: searchTerm
+      });
       
       if (data.success) {
         setEmails(data.emails);
@@ -159,8 +161,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const loadStatistics = async () => {
     setIsLoadingStats(true);
     try {
-      const response = await fetch('/api/email-management/statistics');
-      const data = await response.json();
+      const data = await apiService.getEmailStatistics<EmailStatistics>();
       
       if (data.success) {
         setStatistics(data.statistics);
@@ -177,8 +178,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
   const loadSmtpSettings = async () => {
     try {
-      const response = await fetch('/api/email-management/smtp-settings');
-      const data = await response.json();
+      const data = await apiService.getSmtpSettings<SmtpSettings>();
       
       if (data.success) {
         setSmtpSettings(data.settings);
@@ -195,18 +195,10 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const saveSmtpSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const response = await fetch('/api/email-management/smtp-settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...smtpSettings,
-          test_email: testEmailRecipient
-        }),
+      const data = await apiService.saveSmtpSettings({
+        ...smtpSettings,
+        test_email: testEmailRecipient
       });
-
-      const data = await response.json();
       
       if (data.success) {
         setMessage({ type: 'success', text: 'SMTP-Einstellungen erfolgreich gespeichert' });
@@ -224,17 +216,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const testSmtpConnection = async () => {
     setIsTestingConnection(true);
     try {
-      const response = await fetch('/api/email-management/test-smtp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          use_database_settings: true
-        }),
-      });
-
-      const data = await response.json();
+      const data = await apiService.testSmtpConnection();
       
       if (data.success) {
         setMessage({ type: 'success', text: data.message });
@@ -257,19 +239,11 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
     setIsSendingTest(true);
     try {
-      const response = await fetch('/api/email-management/send-test-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recipient_email: testEmailRecipient,
-          custom_subject: testEmailSubject || undefined,
-          custom_message: testEmailMessage || undefined
-        }),
-      });
-
-      const data = await response.json();
+      const data = await apiService.sendTestEmail(
+        testEmailRecipient,
+        testEmailSubject || undefined,
+        testEmailMessage || undefined
+      );
       
       if (data.success) {
         setMessage({ 

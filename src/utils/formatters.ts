@@ -8,13 +8,6 @@ export function formatCurrency(amount: number, locale: string = 'de-DE'): string
   }).format(amount);
 }
 
-export function formatNumber(amount: number, locale: string = 'de-DE'): string {
-  return new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
-
 function getCurrencyForLocale(locale: string): string {
   switch (locale) {
     case 'de-DE':

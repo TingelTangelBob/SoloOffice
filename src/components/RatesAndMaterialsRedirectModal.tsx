@@ -1,4 +1,3 @@
-import React from 'react';
 import { X, User, Settings, DollarSign, Package } from 'lucide-react';
 
 interface RatesAndMaterialsRedirectModalProps {

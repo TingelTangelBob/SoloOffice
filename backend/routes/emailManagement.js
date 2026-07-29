@@ -1,4 +1,7 @@
 import express from 'express';
+import * as os from 'node:os';
+import net from 'node:net';
+import { lookup } from 'node:dns/promises';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { testEmailConnection } from '../services/emailService.js';
@@ -442,9 +445,9 @@ router.post('/debug-config', async (req, res) => {
         environment: envConfig,
         database: dbConfig,
         containerInfo: {
-          hostname: require('os').hostname(),
-          platform: require('os').platform(),
-          networkInterfaces: require('os').networkInterfaces()
+          hostname: os.hostname(),
+          platform: os.platform(),
+          networkInterfaces: os.networkInterfaces()
         }
       }
     });
@@ -657,9 +660,6 @@ router.post('/test-network', async (req, res) => {
       });
     }
 
-    const net = require('net');
-    const dns = require('dns').promises;
-    
     const results = {
       dns: null,
       tcp: null,
@@ -669,7 +669,7 @@ router.post('/test-network', async (req, res) => {
     try {
       // DNS Lookup Test
       const dnsStart = Date.now();
-      const addresses = await dns.lookup(host);
+      const addresses = await lookup(host);
       results.dns = {
         success: true,
         address: addresses.address,

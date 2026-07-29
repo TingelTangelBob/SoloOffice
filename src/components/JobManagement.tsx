@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import logger from '../utils/logger';
 import { 
   Plus, 
@@ -9,9 +9,7 @@ import {
   Calendar, 
   FileText, 
   Search,
-  ChevronDown,
   Filter,
-  TrendingUp,
   Timer,
   CheckCircle,
   AlertTriangle,
