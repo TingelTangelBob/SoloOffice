@@ -25,6 +25,7 @@ import { useCompany } from '../context/CompanyContext';
 import { JobEntry, Customer } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { JobInvoiceGenerator } from './JobInvoiceGenerator';
+import { PageHeader } from './PageHeader';
 import { ConfirmationModal } from './ConfirmationModal';
 import { SignaturePad } from './SignaturePad';
 import { DocumentPreview, createJobAttachmentPreviewDocuments, PreviewDocument } from './DocumentPreview';
@@ -508,10 +509,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center">
-          <Briefcase className="h-6 w-6 lg:h-8 lg:w-8 text-primary-custom mr-2 lg:mr-3" />
-          <h1 className="text-xl lg:text-3xl font-bold text-gray-900">Auftragsmanagement</h1>
-        </div>
+        <PageHeader icon={Briefcase} title="Auftragsmanagement">
         
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           {selectedJobIds.length > 0 && (
@@ -612,6 +610,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
             Neuer Auftrag
           </button>
         </div>
+        </PageHeader>
       </div>
 
       {/* Statistics Cards */}
@@ -934,7 +933,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
 
             {/* Desktop Table View */}
             <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[980px]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-2 py-3 text-left w-12">

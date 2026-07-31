@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { PageHeader } from './PageHeader';
 
 export function CustomerManagement() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, refreshCustomers } = useCustomers();
@@ -577,10 +578,7 @@ export function CustomerManagement() {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Kunden</h2>
-          <p className="text-gray-600 mt-1">Verwalten Sie Ihre Kundendaten</p>
-        </div>
+        <PageHeader icon={Users} title="Kunden" subtitle="Verwalten Sie Ihre Kundendaten">
         <button
           onClick={() => handleOpenModal()}
           className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
@@ -589,6 +587,7 @@ export function CustomerManagement() {
           <span className="hidden sm:inline">Neuer Kunde</span>
           <span className="sm:hidden">Neu</span>
         </button>
+        </PageHeader>
       </div>
 
       {/* Search */}
@@ -608,8 +607,8 @@ export function CustomerManagement() {
       {/* Customer List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {/* Desktop Table View */}
-        <div className="hidden lg:block overflow-x-auto scrollbar-hide">
-          <table className="w-full min-w-[600px]">
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full min-w-[680px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

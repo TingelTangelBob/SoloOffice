@@ -1,11 +1,11 @@
 services:
   database:
     image: postgres:15-alpine
-    container_name: ${COMPOSE_PROJECT_NAME:-belego}-db
+    container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-belego}
-      POSTGRES_USER: ${POSTGRES_USER:-belego}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-belego123}
+      POSTGRES_DB: ${POSTGRES_DB:-solooffice}
+      POSTGRES_USER: ${POSTGRES_USER:-solooffice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solooffice123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -14,7 +14,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-belego} -d ${POSTGRES_DB:-belego}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-solooffice} -d ${POSTGRES_DB:-solooffice}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-belego}-backend
+    container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-backend
     env_file:
       - .env.backend.${INSTANCE_NAME:-default}
     environment:
@@ -54,7 +54,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-belego}-frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-frontend
     environment:
       - NODE_ENV=production
       - VITE_API_URL=http://localhost:${BACKEND_PORT:-3001}/api
@@ -68,9 +68,9 @@ services:
     
 volumes:
   postgres_data:
-    name: ${COMPOSE_PROJECT_NAME:-belego}_postgres_data
+    name: ${COMPOSE_PROJECT_NAME:-solooffice}_postgres_data
 
 networks:
   app-network:
-    name: ${COMPOSE_PROJECT_NAME:-belego}_network
+    name: ${COMPOSE_PROJECT_NAME:-solooffice}_network
     driver: bridge

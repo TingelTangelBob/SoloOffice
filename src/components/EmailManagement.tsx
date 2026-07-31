@@ -749,7 +749,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         type="text"
                         value={smtpSettings.email_from_name}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, email_from_name: e.target.value }))}
-                        placeholder="Belego"
+                        placeholder="SoloOffice"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
                       />
                     </div>
@@ -841,7 +841,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       type="text"
                       value={testEmailSubject}
                       onChange={(e) => setTestEmailSubject(e.target.value)}
-                      placeholder="Test-E-Mail von Belego"
+                        placeholder="Test-E-Mail von SoloOffice"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
                     />
                   </div>

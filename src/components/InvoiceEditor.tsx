@@ -218,41 +218,43 @@ function SortableInvoiceItem({
         </div>
         
         {/* Actions - 1 column */}
-        <div className="col-span-1 flex items-center justify-center space-x-1">
+        <div className="col-span-2 flex items-center gap-1">
+          <div className="flex items-center gap-1">
           <button
             type="button"
             {...attributes}
             {...listeners}
-            className="text-gray-400 hover:text-gray-600 p-1 cursor-grab active:cursor-grabbing"
+            className="min-h-0 h-9 w-9 p-0 inline-flex items-center justify-center text-gray-500 bg-gray-50 border border-gray-200 rounded hover:text-gray-800 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
             title="Ziehen zum Verschieben"
           >
-            <GripVertical className="h-3 w-3" />
+            <GripVertical className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => onMoveUp(item.id)}
             disabled={isFirst}
-            className="text-gray-400 hover:text-gray-600 p-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="min-h-0 h-9 w-9 p-0 inline-flex items-center justify-center text-gray-600 bg-white border border-gray-300 rounded hover:text-gray-900 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Nach oben"
           >
-            <ChevronUp className="h-3 w-3" />
+            <ChevronUp className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => onMoveDown(item.id)}
             disabled={isLast}
-            className="text-gray-400 hover:text-gray-600 p-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="min-h-0 h-9 w-9 p-0 inline-flex items-center justify-center text-gray-600 bg-white border border-gray-300 rounded hover:text-gray-900 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Nach unten"
           >
-            <ChevronDown className="h-3 w-3" />
+            <ChevronDown className="h-4 w-4" />
           </button>
+          </div>
           <button
             type="button"
             onClick={() => onRemove(item.id)}
-            className="text-red-600 hover:text-red-900 p-1"
+            className="min-h-0 h-9 w-9 ml-auto p-0 inline-flex items-center justify-center text-red-600 bg-red-50 border border-red-100 rounded hover:text-red-800 hover:bg-red-100"
             title="Löschen"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -411,7 +413,7 @@ function SortableInvoiceItem({
               type="button"
               {...attributes}
               {...listeners}
-              className="text-gray-400 hover:text-gray-600 p-2 cursor-grab active:cursor-grabbing"
+              className="min-h-0 p-2 text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:text-gray-900 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
               title="Ziehen zum Verschieben"
             >
               <GripVertical className="h-4 w-4" />
@@ -420,7 +422,7 @@ function SortableInvoiceItem({
               type="button"
               onClick={() => onMoveUp(item.id)}
               disabled={isFirst}
-              className="text-gray-400 hover:text-gray-600 p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="min-h-0 p-2 text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:text-gray-900 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Nach oben verschieben"
             >
               <ChevronUp className="h-4 w-4" />
@@ -429,7 +431,7 @@ function SortableInvoiceItem({
               type="button"
               onClick={() => onMoveDown(item.id)}
               disabled={isLast}
-              className="text-gray-400 hover:text-gray-600 p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="min-h-0 p-2 text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:text-gray-900 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Nach unten verschieben"
             >
               <ChevronDown className="h-4 w-4" />
@@ -438,7 +440,7 @@ function SortableInvoiceItem({
           <button
             type="button"
             onClick={() => onRemove(item.id)}
-            className="text-red-600 hover:text-red-900 p-2"
+            className="min-h-0 p-2 text-red-600 bg-red-50 border border-red-100 rounded-lg hover:text-red-800 hover:bg-red-100"
             title="Löschen"
           >
             <Trash2 className="h-4 w-4" />
@@ -1087,11 +1089,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             <h3 className="text-lg font-semibold text-gray-900">Positionen</h3>
             
             {/* Mobile-first layout for controls */}
-            <div className="flex flex-col gap-3">
-              {/* Template selection row */}
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                <label className="text-sm text-gray-600 sm:whitespace-nowrap">Aus Vorlage:</label>
-                <div className="flex gap-2 flex-1">
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+              {/* Template selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Aus Vorlage</label>
+                <div className="flex gap-2">
                   <select
                     onChange={(e) => {
                       if (e.target.value) {
@@ -1100,7 +1102,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                         e.target.value = ''; // Reset dropdown
                       }
                     }}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="min-w-0 flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     defaultValue=""
                   >
                     <option value="">Vorlage wählen...</option>
@@ -1144,7 +1146,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       isOpen: true,
                       type: 'materials'
                     })}
-                    className="p-2 text-blue-600 hover:text-blue-800 border border-gray-300 rounded-lg hover:bg-blue-50 transition-colors flex-shrink-0"
+                    className="min-h-0 p-2.5 text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:text-blue-800 hover:bg-blue-100 transition-colors flex-shrink-0"
                     title="Stundensätze und Materialien verwalten"
                   >
                     <Edit className="h-4 w-4" />
@@ -1156,7 +1158,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               <button
                 type="button"
                 onClick={addItem}
-                className="btn-primary px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition-colors w-full sm:w-auto sm:self-start"
+                className="btn-primary min-h-0 px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-colors w-full md:w-auto whitespace-nowrap"
               >
                 <Plus className="h-4 w-4" />
                 <span>Manuell hinzufügen</span>

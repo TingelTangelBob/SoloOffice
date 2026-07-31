@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Mail, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Mail, Eye, Receipt } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -14,6 +14,7 @@ import { generateInvoicePDF, downloadBlob } from '../utils/pdfGenerator';
 import { apiService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
+import { PageHeader } from './PageHeader';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -804,10 +805,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Rechnungen</h2>
-          <p className="text-gray-600 mt-1">Verwalten Sie Ihre Rechnungen</p>
-        </div>
+        <PageHeader icon={Receipt} title="Rechnungen" subtitle="Verwalten Sie Ihre Rechnungen">
         <button
           onClick={() => handleOpenEditor()}
           className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
@@ -816,6 +814,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
           <span className="hidden sm:inline">Neue Rechnung</span>
           <span className="sm:hidden">Neu</span>
         </button>
+        </PageHeader>
       </div>
 
       {/* Bulk Operations Bar */}
@@ -913,9 +912,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
       {/* Invoice List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {/* Desktop/Tablet Table View */}
-        <div className="hidden md:block overflow-x-auto scrollbar-hide">
-          <div className="min-w-full overflow-hidden">
-            <table className="w-full min-w-[900px]">
+        <div className="hidden md:block overflow-x-auto">
+          <div className="min-w-full">
+            <table className="w-full min-w-[980px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">

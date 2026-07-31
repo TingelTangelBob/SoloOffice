@@ -1,7 +1,7 @@
 {
-  "name": "belego-backend",
+  "name": "solooffice-backend",
   "version": "1.0.0",
-  "description": "Backend for Belego",
+  "description": "Backend for SoloOffice",
   "main": "server.js",
   "type": "module",
   "license": "AGPL-3.0",

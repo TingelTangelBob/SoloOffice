@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { Clock, CheckCircle, Send, Check } from 'lucide-react';
+import { Clock, CheckCircle, Send, Check, Home } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -11,6 +11,7 @@ import { EmailSendModal } from './EmailSendModal';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { apiService } from '../services/api';
 import { Invoice } from '../types';
+import { PageHeader } from './PageHeader';
 
 interface DashboardProps {
   onNavigate: (page: string, filter?: string, searchTerm?: string) => void;
@@ -271,10 +272,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <div>
-        <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Dashboard</h2>
-        <p className="text-gray-600 mt-1">Übersicht über Ihre Rechnungen und Kunden</p>
-      </div>
+      <PageHeader icon={Home} title="Dashboard" subtitle="Übersicht über Ihre Rechnungen und Kunden" />
 
       {/* Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

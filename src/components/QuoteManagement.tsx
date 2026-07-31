@@ -12,6 +12,7 @@ import { formatCurrency } from '../utils/formatters';
 import { generateQuotePDF, downloadBlob } from '../utils/pdfGenerator';
 import { DocumentPreview, PreviewDocument, createQuoteAttachmentPreviewDocuments } from './DocumentPreview';
 import { processAttachments, AttachmentFile } from '../utils/fileUtils';
+import { PageHeader } from './PageHeader';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -587,10 +588,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Angebote</h2>
-          <p className="text-gray-600 mt-1">Verwalten Sie Ihre Angebote</p>
-        </div>
+        <PageHeader icon={FileCheck} title="Angebote" subtitle="Verwalten Sie Ihre Angebote">
         <button
           onClick={() => handleOpenEditor()}
           className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
@@ -599,6 +597,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           <span className="hidden sm:inline">Neues Angebot</span>
           <span className="sm:hidden">Neu</span>
         </button>
+        </PageHeader>
       </div>
 
       {/* Filters */}
@@ -698,9 +697,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       {/* Quote List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {/* Desktop/Tablet Table View */}
-        <div className="hidden md:block overflow-x-auto scrollbar-hide">
-          <div className="min-w-full overflow-hidden">
-            <table className="w-full min-w-[900px]">
+        <div className="hidden md:block overflow-x-auto">
+          <div className="min-w-full">
+            <table className="w-full min-w-[980px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">

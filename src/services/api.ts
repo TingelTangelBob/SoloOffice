@@ -1,5 +1,6 @@
 import { Customer, Invoice, Quote, Company, JobEntry, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility } from '../types';
 import logger from '../utils/logger';
+import { demoRequest, isDemoMode } from './demoApi';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -42,6 +43,10 @@ class ApiService {
   // --------------------------------------------------------------------------
 
   private async request<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+    if (isDemoMode) {
+      return demoRequest<T>(endpoint, options);
+    }
+
     const url = `${this.baseUrl}${endpoint}`;
     const method = options.method || 'GET';
     const { skipErrorLogging, ...fetchOptions } = options;

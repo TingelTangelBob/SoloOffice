@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SoloOffice Devserver",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "SoloOffice im VS-Code-Browser",
+      "type": "editor-browser",
+      "request": "launch",
+      "url": "http://localhost:5173"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "SoloOffice Demo starten",
+      "configurations": [
+        "SoloOffice Devserver",
+        "SoloOffice im VS-Code-Browser"
+      ],
+      "stopAll": true
+    }
+  ]
+}

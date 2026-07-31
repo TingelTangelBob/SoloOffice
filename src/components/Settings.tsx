@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2 } from 'lucide-react';
+import { Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { ColorPicker } from './ColorPicker';
 import { BackupManagement } from './BackupManagement';
@@ -8,6 +8,8 @@ import { EmailManagement } from './EmailManagement';
 import { apiService } from '../services/api';
 import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
 import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate } from '../types';
+import { PageHeader } from './PageHeader';
+import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 
 export function Settings() {
   const { company, updateCompany } = useCompany();
@@ -212,12 +214,48 @@ export function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 lg:p-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="mb-4 lg:mb-6">
-        <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Einstellungen</h1>
-        <p className="text-sm lg:text-base text-gray-600 mt-1">Verwalten Sie Ihre Firmendaten und Anwendungseinstellungen</p>
+      <div>
+        <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle="Verwalten Sie Ihre Firmendaten und Anwendungseinstellungen" />
       </div>
+
+      {isDemoMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 lg:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-blue-600" />
+                <h3 className="font-semibold text-blue-900">Lokaler Demo-Modus</h3>
+              </div>
+              <p className="text-sm text-blue-800 mt-1">
+                Testdaten und Änderungen werden nur in diesem Browser gespeichert.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { seedDemoData(); window.location.reload(); }}
+                className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-100"
+              >
+                Testdaten neu laden
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Alle lokalen Demo-Daten wirklich löschen?')) {
+                    resetDemoData();
+                    window.location.reload();
+                  }
+                }}
+                className="px-3 py-2 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50"
+              >
+                Demo-Daten löschen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Module Settings */}

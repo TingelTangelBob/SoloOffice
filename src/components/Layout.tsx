@@ -47,7 +47,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 relative z-30">
-          <div className="px-4 lg:px-6 py-4">
+          <div className="px-4 lg:px-6 py-2 lg:py-2.5">
             <div className="flex items-center justify-between">
               <button 
                 onClick={() => handlePageChange('dashboard')}
@@ -62,7 +62,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 ) : (
                   <Building2 className="h-6 w-6 lg:h-8 lg:w-8 text-primary-custom mr-2 lg:mr-3" />
                 )}
-                <h1 className="text-lg lg:text-2xl font-bold text-gray-900">Belego</h1>
+                <h1 className="text-lg lg:text-2xl font-bold text-gray-900">SoloOffice</h1>
               </button>
               
               {/* Mobile menu button */}
@@ -92,9 +92,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
 
           {/* Sidebar */}
           <nav className={`
-            fixed lg:static inset-y-0 left-0 z-20
-            w-64 bg-white shadow-sm transform transition-transform duration-300 ease-in-out
-            lg:transform-none lg:shadow-none lg:min-h-screen
+            fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-20
+            w-64 flex-shrink-0 bg-white shadow-sm transform transition-transform duration-300 ease-in-out
+            lg:transform-none lg:shadow-none lg:h-screen lg:self-start
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}>
             <div className="p-4 pt-20 lg:pt-4">
@@ -122,7 +122,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           </nav>
 
           {/* Main Content */}
-          <main className="flex-1 p-3 sm:p-4 lg:p-6 lg:ml-0 min-h-screen safe-area-bottom">
+          <main className="flex-1 min-w-0 p-3 sm:p-4 lg:p-6 lg:ml-0 min-h-screen safe-area-bottom">
             {children}
           </main>
         </div>

@@ -19,6 +19,7 @@ import { useCompany } from '../context/CompanyContext';
 import { JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { ConfirmationModal } from './ConfirmationModal';
+import { PageHeader } from './PageHeader';
 import { calculateTotalHours } from '../utils/jobUtils';
 
 interface CalendarProps {
@@ -504,10 +505,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center">
-          <CalendarIcon className="h-6 w-6 lg:h-8 lg:w-8 text-primary-custom mr-2 lg:mr-3" />
-          <h1 className="text-xl lg:text-3xl font-bold text-gray-900">Kalender</h1>
-        </div>
+        <PageHeader icon={CalendarIcon} title="Kalender">
         
         {/* Search Bar */}
         <div className="relative w-full sm:w-auto search-container">
@@ -603,51 +601,52 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             </div>
           )}
         </div>
+        </PageHeader>
       </div>
 
       {/* Calendar Controls */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 lg:p-4">
         {/* Desktop Controls - Month view */}
-        <div className="hidden md:flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4">
+        <div className="hidden md:flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-2">
             <button
               onClick={goToPreviousMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
               title="Vorheriger Monat"
             >
-              <ChevronLeft className="h-5 w-5 text-gray-600" />
+              <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
             
-            <h2 className="text-lg lg:text-xl font-semibold text-gray-900 capitalize">
+            <h2 className="text-base lg:text-lg font-semibold text-gray-900 capitalize">
               {monthYear}
             </h2>
             
             <button
               onClick={goToNextMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
               title="Nächster Monat"
             >
-              <ChevronRight className="h-5 w-5 text-gray-600" />
+              <ChevronRight className="h-4 w-4 text-gray-600" />
             </button>
           </div>
           
           <button
             onClick={goToToday}
-            className="bg-primary-custom text-white px-3 lg:px-4 py-2 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm lg:text-base"
+            className="min-h-0 bg-primary-custom text-white px-3 py-1.5 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm"
           >
             Heute
           </button>
         </div>
 
         {/* Mobile Controls - Week view */}
-        <div className="md:hidden flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4">
+        <div className="md:hidden flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-2">
             <button
               onClick={goToPreviousWeek}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
               title="Vorherige Woche"
             >
-              <ChevronLeft className="h-5 w-5 text-gray-600" />
+              <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
             
             <h2 className="text-sm font-semibold text-gray-900">
@@ -656,16 +655,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             
             <button
               onClick={goToNextWeek}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
               title="Nächste Woche"
             >
-              <ChevronRight className="h-5 w-5 text-gray-600" />
+              <ChevronRight className="h-4 w-4 text-gray-600" />
             </button>
           </div>
           
           <button
             onClick={goToToday}
-            className="bg-primary-custom text-white px-3 py-2 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm"
+            className="min-h-0 bg-primary-custom text-white px-2.5 py-1 rounded-lg hover:bg-primary-custom/90 transition-colors text-xs"
           >
             Heute
           </button>

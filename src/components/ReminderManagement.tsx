@@ -11,6 +11,7 @@ import { generateReminderPDF } from '../utils/pdfGenerator';
 import { ReminderSendModal } from './ReminderSendModal';
 import { blobToBase64 } from '../utils/blobUtils';
 import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { PageHeader } from './PageHeader';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
@@ -316,15 +317,11 @@ export function ReminderManagement() {
       {/* Header */}
       <div className="mb-4 lg:mb-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl lg:text-2xl font-bold text-gray-900 flex items-center">
-              <Bell className="h-6 w-6 mr-2 text-primary-custom" />
-              Mahnwesen
-            </h1>
-            <p className="text-sm lg:text-base text-gray-600 mt-1">
-              Verwalten Sie Zahlungserinnerungen und Mahnungen
-            </p>
-          </div>
+          <PageHeader
+            icon={Bell}
+            title="Mahnwesen"
+            subtitle="Verwalten Sie Zahlungserinnerungen und Mahnungen"
+          />
         </div>
       </div>
 
@@ -495,7 +492,7 @@ function EligibleRemindersTab({
 
       {/* Reminders Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="w-full min-w-[900px] divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

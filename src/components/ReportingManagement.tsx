@@ -12,6 +12,7 @@ import {
   X,
   AlertCircle
 } from 'lucide-react';
+import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
 import { apiService } from '../services/api';
 import { 
@@ -203,16 +204,14 @@ export function ReportingManagement() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 lg:p-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="mb-4 lg:mb-6">
-        <h1 className="text-xl lg:text-2xl font-bold text-gray-900 flex items-center">
-          <BarChart3 className="h-6 w-6 lg:h-7 lg:w-7 text-primary-custom mr-2" />
-          Reporting & Auswertungen
-        </h1>
-        <p className="text-sm lg:text-base text-gray-600 mt-1">
-          Rechnungsjournale, Statistiken und Auswertungen
-        </p>
+      <div>
+        <PageHeader
+          icon={BarChart3}
+          title="Reporting & Auswertungen"
+          subtitle="Rechnungsjournale, Statistiken und Auswertungen"
+        />
       </div>
 
       {/* Error Message */}
@@ -481,7 +480,7 @@ export function ReportingManagement() {
               </div>
             ) : journalData?.invoices.length ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-3 px-2 font-medium text-gray-700">Rechnung</th>

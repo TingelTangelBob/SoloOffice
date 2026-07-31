@@ -172,8 +172,8 @@ async function insertDefaultData(client) {
   const companyExists = await client.query('SELECT COUNT(*) FROM company WHERE id = 1');
   if (parseInt(companyExists.rows[0].count) === 0) {
     // Load default logo and icon from assets directory
-    const logo = await loadImageAsBase64('./assets/Belego.png');
-    const icon = await loadImageAsBase64('./assets/Belego_Icon.png');
+    const logo = await loadImageAsBase64('./assets/SoloOffice.png');
+    const icon = await loadImageAsBase64('./assets/SoloOffice_Icon.png');
 
     await client.query(`
       INSERT INTO company (
@@ -221,7 +221,7 @@ trotz mehrfacher Zahlungserinnerungen ist der ausstehende Betrag noch immer nich
 Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens jedoch innerhalb von 3 Tagen, zu begleichen. Andernfalls werden wir ohne weitere Ankündigung rechtliche Schritte einleiten.`
     ]);
 
-    logger.info('Default company data created with Belego logo and icon');
+    logger.info('Default company data created with SoloOffice logo and icon');
   }
 
   // Insert default hourly rates if not exists
