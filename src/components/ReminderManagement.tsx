@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Send, Clock, AlertCircle, Download, Eye } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye, MoreVertical } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -291,7 +291,7 @@ export function ReminderManagement() {
     : null;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 lg:p-6">
+    <div className="space-y-8">
       {/* Reminder Send Modal */}
       {reminderModal.isOpen && reminderModal.invoice && customer && (
         <ReminderSendModal
@@ -315,14 +315,12 @@ export function ReminderManagement() {
       />
 
       {/* Header */}
-      <div className="mb-4 lg:mb-6">
-        <div className="flex items-center justify-between">
-          <PageHeader
-            icon={Bell}
-            title="Mahnwesen"
-            subtitle="Verwalten Sie Zahlungserinnerungen und Mahnungen"
-          />
-        </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader
+          icon={Bell}
+          title="Mahnungen"
+          subtitle="Verwalten Sie Ihre Zahlungserinnerungen und Mahnungen"
+        />
       </div>
 
       {/* Configuration Warning */}
@@ -491,43 +489,43 @@ function EligibleRemindersTab({
       )}
 
       {/* Reminders Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] divide-y divide-gray-200">
+      <div className="w-full max-w-full overflow-x-auto">
+        <table className="w-full min-w-[820px] divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Auswahl
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Rechnungsnr.
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Kunde
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Fälligkeitsdatum
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Tage überfällig
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Betrag
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Nächste Mahnung
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Aktionen
+              <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-20 2xl:px-3">
+                <span className="sr-only">Aktionen</span>
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {reminders.map((reminder) => (
               <tr key={reminder.invoiceId} className={!reminder.isEligible ? 'bg-gray-50' : ''}>
-                <td className="px-4 py-4 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   {reminder.isEligible && (
                     <input
                       type="checkbox"
@@ -537,25 +535,25 @@ function EligibleRemindersTab({
                     />
                   )}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                   {reminder.invoiceNumber}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
                   {reminder.customerName}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
                   {new Date(reminder.dueDate).toLocaleDateString('de-DE')}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
                   {reminder.daysSinceDue} Tage
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                   {formatCurrency(reminder.total)}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   {getStatusBadgeForReminder(reminder.currentStatus)}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     reminder.nextStage === 1 ? 'bg-yellow-100 text-yellow-800' :
                     reminder.nextStage === 2 ? 'bg-orange-100 text-orange-800' :
@@ -569,18 +567,34 @@ function EligibleRemindersTab({
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm">
+                <td className="w-14 px-2 py-3 whitespace-nowrap text-sm 2xl:w-20 2xl:px-3">
+                  <details className="relative 2xl:hidden">
+                    <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
+                      <MoreVertical className="h-4 w-4" />
+                    </summary>
+                    <div className="absolute right-0 top-9 z-20 min-w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
+                        disabled={!reminder.isEligible}
+                        className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                      >
+                        Mahnung senden
+                      </button>
+                    </div>
+                  </details>
                   <button
+                    type="button"
                     onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
                     disabled={!reminder.isEligible}
-                    className={`px-3 py-1 rounded-lg transition-colors flex items-center ${
+                    title="Mahnung senden"
+                    className={`hidden 2xl:inline-flex action-icon-button ${
                       reminder.isEligible
-                        ? 'bg-primary-custom text-white hover:bg-primary-dark'
+                        ? 'action-icon-blue'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    <Send className="h-4 w-4 mr-1" />
-                    Mahnen
+                    <Send className="h-4 w-4" />
                   </button>
                 </td>
               </tr>
@@ -693,16 +707,18 @@ function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, onDownloadRe
                   {allStages.map((stage) => (
                     <div key={stage} className="flex items-center space-x-1">
                       <button
+                        type="button"
                         onClick={() => onPreviewReminder(invoice, stage)}
-                        className="flex items-center px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        className="action-icon-button action-icon-blue"
                         title={`${stage}. Mahnung anzeigen`}
                       >
                         <Eye className="h-4 w-4 mr-1" />
                         {stage}. Mahnung
                       </button>
                       <button
+                        type="button"
                         onClick={() => onDownloadReminder(invoice, stage)}
-                        className="flex items-center px-2 py-1.5 text-sm bg-primary-custom text-white rounded-lg hover:bg-primary-dark transition-colors"
+                        className="action-icon-button action-icon-green"
                         title={`${stage}. Mahnung herunterladen`}
                       >
                         <Download className="h-4 w-4" />
@@ -841,16 +857,18 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
                 {[1, 2, 3].map((stage) => (
                   <div key={stage} className="flex items-center space-x-1">
                     <button
+                      type="button"
                       onClick={() => onPreviewReminder(invoice, stage as 1 | 2 | 3)}
-                      className="flex items-center px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="action-icon-button action-icon-blue"
                       title={`${stage}. Mahnung anzeigen`}
                     >
                       <Eye className="h-4 w-4 mr-1" />
                       {stage}. Mahnung
                     </button>
                     <button
+                      type="button"
                       onClick={() => onDownloadReminder(invoice, stage as 1 | 2 | 3)}
-                      className="flex items-center px-2 py-1.5 text-sm bg-primary-custom text-white rounded-lg hover:bg-primary-dark transition-colors"
+                      className="action-icon-button action-icon-green"
                       title={`${stage}. Mahnung herunterladen`}
                     >
                       <Download className="h-4 w-4" />

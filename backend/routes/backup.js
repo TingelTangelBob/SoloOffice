@@ -72,6 +72,7 @@ router.post('/create', async (req, res) => {
       'quote_items',  // QUOTES MODULE
       'quote_attachments',  // QUOTES MODULE
       'job_entries',  // Fixed: was 'jobs' but table is 'job_entries'
+      'calendar_events',
       'job_attachments',
       'job_time_entries',
       'company',  // Fixed: was 'company_settings' but table is 'company'
@@ -275,7 +276,7 @@ router.post('/restore', async (req, res) => {
       'customer_specific_hourly_rates', 'customer_specific_materials',
       'job_time_entries', 'job_attachments',
       'quote_attachments', 'quote_items', 'quotes',  // QUOTES MODULE - delete in reverse order
-      'invoice_attachments', 'invoice_items', 'job_entries', 'invoices', 
+      'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
       'hourly_rates', 'material_templates', 'customers', 'company',
       'yearly_invoice_start_numbers', 'smtp_settings'
     ];
@@ -301,6 +302,7 @@ router.post('/restore', async (req, res) => {
       'customer_hourly_rates',  // references customers(id) and hourly_rates(id)
       'customer_specific_hourly_rates',  // references customers(id)
       'customer_specific_materials',  // references customers(id)
+      'calendar_events',
       'invoices',          // references customers(id)
       'invoice_items',     // references invoices(id)
       'invoice_attachments', // references invoices(id)
@@ -606,6 +608,7 @@ router.post('/create-zip', async (req, res) => {
       'quote_items',  // QUOTES MODULE
       'quote_attachments',  // QUOTES MODULE
       'job_entries',  // Fixed: removed duplicate 'jobs' entry
+      'calendar_events',
       'job_attachments',
       'job_time_entries',
       'company',  // Fixed: removed 'company_settings' which doesn't exist
@@ -810,7 +813,7 @@ router.post('/restore-zip', async (req, res) => {
         'customer_specific_hourly_rates', 'customer_specific_materials',
         'job_time_entries', 'job_attachments',
         'quote_attachments', 'quote_items', 'quotes',  // QUOTES MODULE - delete in reverse order
-        'invoice_attachments', 'invoice_items', 'job_entries', 'invoices', 
+        'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
         'hourly_rates', 'material_templates', 'customers', 'company',
         'yearly_invoice_start_numbers', 'smtp_settings'
       ];
@@ -844,6 +847,7 @@ router.post('/restore-zip', async (req, res) => {
         'customer_hourly_rates',  // references customers(id) and hourly_rates(id)
         'customer_specific_hourly_rates',  // references customers(id)
         'customer_specific_materials',  // references customers(id)
+        'calendar_events',
         'invoices',          // references customers(id)
         'invoice_items',     // references invoices(id)
         'invoice_attachments', // references invoices(id)

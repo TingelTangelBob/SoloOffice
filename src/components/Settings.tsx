@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import { Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon } from 'lucide-react';
-import { useCompany } from '../context/CompanyContext';
+import { defaultCompany, useCompany } from '../context/CompanyContext';
 import { ColorPicker } from './ColorPicker';
 import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';
@@ -10,6 +10,26 @@ import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
 import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate } from '../types';
 import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
+
+type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
+
+const reminderTemplates = {
+  stage1: [
+    { id: 'friendly', label: 'Freundliche Erinnerung', text: 'Wir möchten Sie freundlich daran erinnern, dass die Zahlung der unten aufgeführten Rechnung noch aussteht. Bitte begleichen Sie den offenen Betrag innerhalb der nächsten Tage.' },
+    { id: 'short', label: 'Kurz und sachlich', text: 'Für die unten aufgeführte Rechnung konnten wir bisher keinen Zahlungseingang feststellen. Bitte prüfen Sie den Vorgang und überweisen Sie den offenen Betrag zeitnah.' },
+    { id: 'service', label: 'Serviceorientiert', text: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen. Falls Sie bereits gezahlt haben, betrachten Sie diese Nachricht bitte als gegenstandslos.' },
+  ],
+  stage2: [
+    { id: 'clear', label: 'Deutliche Zahlungsaufforderung', text: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.' },
+    { id: 'deadline', label: 'Mit Zahlungsfrist', text: 'Der offene Rechnungsbetrag ist weiterhin nicht bei uns eingegangen. Wir bitten Sie, die Zahlung innerhalb von sieben Tagen nach Erhalt dieser Mahnung vorzunehmen.' },
+    { id: 'formal', label: 'Formell und sachlich', text: 'Hiermit mahnen wir die noch ausstehende Zahlung der unten aufgeführten Rechnung an. Bitte überweisen Sie den offenen Betrag unverzüglich unter Angabe der Rechnungsnummer.' },
+  ],
+  stage3: [
+    { id: 'final', label: 'Letzte Mahnung', text: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend bei uns eingehen, behalten wir uns weitere Schritte zur Durchsetzung unserer Forderung vor.' },
+    { id: 'legal', label: 'Vor rechtlichen Schritten', text: 'Der offene Rechnungsbetrag ist trotz unserer bisherigen Mahnungen weiterhin nicht ausgeglichen. Bitte zahlen Sie innerhalb von sieben Tagen, um weitere Maßnahmen und zusätzliche Kosten zu vermeiden.' },
+    { id: 'firm', label: 'Kurz und bestimmt', text: 'Wir fordern Sie letztmalig auf, den offenen Rechnungsbetrag unverzüglich zu begleichen. Nach fruchtlosem Ablauf der Zahlungsfrist werden wir die Forderung ohne weitere Ankündigung weiterverfolgen.' },
+  ],
+} as const;
 
 export function Settings() {
   const { company, updateCompany } = useCompany();
@@ -30,6 +50,28 @@ export function Settings() {
   const [hourlyRates, setHourlyRates] = useState<HourlyRate[]>([]);
   const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
   const [isAddingRate, setIsAddingRate] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('app');
+
+  const handleResetToDefaults = () => {
+    if (!window.confirm('Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.')) {
+      return;
+    }
+
+    setFormData({
+      ...defaultCompany,
+      quotesEnabled: true,
+      discountsEnabled: true,
+      remindersEnabled: true,
+      reminderDaysAfterDue: 7,
+      reminderDaysBetween: 7,
+      reminderFeeStage1: 0,
+      reminderFeeStage2: 0,
+      reminderFeeStage3: 0,
+      reminderTextStage1: reminderTemplates.stage1[0].text,
+      reminderTextStage2: reminderTemplates.stage2[0].text,
+      reminderTextStage3: reminderTemplates.stage3[0].text,
+    });
+  };
 
   useEffect(() => {
     setFormData(company);
@@ -257,7 +299,34 @@ export function Settings() {
         </div>
       )}
 
+      <div className="sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+          {[
+            { id: 'app' as const, label: 'App-Einstellungen' },
+            { id: 'general' as const, label: 'Allgemein' },
+            { id: 'invoices' as const, label: 'Rechnungen' },
+            { id: 'appearance' as const, label: 'Darstellung' },
+            { id: 'system' as const, label: 'E-Mail & Backup' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-primary-custom text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-8">
+        {activeTab === 'app' && (
+          <div className="space-y-8">
         {/* Module Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -501,6 +570,19 @@ export function Settings() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       1. Mahnung (freundlich)
                     </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const template = reminderTemplates.stage1.find(item => item.id === e.target.value);
+                        if (template) setFormData(prev => ({ ...prev, reminderTextStage1: template.text }));
+                      }}
+                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
+                    >
+                      <option value="">Vorlage auswählen...</option>
+                      {reminderTemplates.stage1.map(template => (
+                        <option key={template.id} value={template.id}>{template.label}</option>
+                      ))}
+                    </select>
                     <textarea
                       value={formData.reminderTextStage1 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage1: e.target.value }))}
@@ -514,6 +596,19 @@ export function Settings() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       2. Mahnung (bestimmt)
                     </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const template = reminderTemplates.stage2.find(item => item.id === e.target.value);
+                        if (template) setFormData(prev => ({ ...prev, reminderTextStage2: template.text }));
+                      }}
+                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
+                    >
+                      <option value="">Vorlage auswählen...</option>
+                      {reminderTemplates.stage2.map(template => (
+                        <option key={template.id} value={template.id}>{template.label}</option>
+                      ))}
+                    </select>
                     <textarea
                       value={formData.reminderTextStage2 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage2: e.target.value }))}
@@ -527,6 +622,19 @@ export function Settings() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       3. Mahnung (letzte Mahnung)
                     </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const template = reminderTemplates.stage3.find(item => item.id === e.target.value);
+                        if (template) setFormData(prev => ({ ...prev, reminderTextStage3: template.text }));
+                      }}
+                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
+                    >
+                      <option value="">Vorlage auswählen...</option>
+                      {reminderTemplates.stage3.map(template => (
+                        <option key={template.id} value={template.id}>{template.label}</option>
+                      ))}
+                    </select>
                     <textarea
                       value={formData.reminderTextStage3 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage3: e.target.value }))}
@@ -540,7 +648,11 @@ export function Settings() {
             </div>
           </div>
         )}
+        </div>
+      )}
 
+        {activeTab === 'general' && (
+          <div className="space-y-8">
         {/* Logo Upload */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -973,6 +1085,11 @@ export function Settings() {
           </div>
         </div>
 
+          </div>
+        )}
+
+        {activeTab === 'invoices' && (
+          <div className="space-y-8">
         {/* Invoice Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -1258,6 +1375,11 @@ export function Settings() {
           </div>
         </div>
 
+          </div>
+        )}
+
+        {activeTab === 'appearance' && (
+          <div className="space-y-8">
         {/* Color Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -1359,6 +1481,11 @@ export function Settings() {
           </div>
         </div>
 
+          </div>
+        )}
+
+        {activeTab === 'system' && (
+          <div className="space-y-8">
         {/* E-Mail-Verwaltung */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -1432,8 +1559,18 @@ export function Settings() {
           </div>
         </div>
 
+          </div>
+        )}
+
         {/* Save Button */}
-        <div className="flex justify-end">
+        <div className="sticky bottom-0 z-10 -mx-3 flex justify-end gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+          <button
+            type="button"
+            onClick={handleResetToDefaults}
+            className="px-4 lg:px-6 py-2 rounded-xl border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-300"
+          >
+            Standardeinstellungen
+          </button>
           <button
             type="submit"
             disabled={isSaving}

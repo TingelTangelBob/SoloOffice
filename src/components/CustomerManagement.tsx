@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users, MoreHorizontal } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
@@ -52,6 +52,7 @@ export function CustomerManagement() {
     taxId: '',
     phone: '',
   });
+  const initialFormSnapshot = useRef('');
 
   const filteredCustomers = customers.filter(customer => {
     const customerName = customer.name || '';
@@ -82,6 +83,23 @@ export function CustomerManagement() {
       setAdditionalEmails(customer.additionalEmails || []);
       setCustomerHourlyRates(customer.hourlyRates || []);
       setCustomerMaterials(customer.materials || []);
+      initialFormSnapshot.current = JSON.stringify({
+        formData: {
+          customerNumber: customer.customerNumber,
+          name: customer.name,
+          email: customer.email,
+          address: customer.address,
+          addressSupplement: customer.addressSupplement || '',
+          city: customer.city,
+          postalCode: customer.postalCode,
+          country: customer.country,
+          taxId: customer.taxId || '',
+          phone: customer.phone || '',
+        },
+        additionalEmails: customer.additionalEmails || [],
+        customerHourlyRates: customer.hourlyRates || [],
+        customerMaterials: customer.materials || [],
+      });
     } else {
       setEditingCustomer(null);
       // Generate next customer number for display
@@ -105,6 +123,23 @@ export function CustomerManagement() {
       setAdditionalEmails([]);
       setCustomerHourlyRates([]);
       setCustomerMaterials([]);
+      initialFormSnapshot.current = JSON.stringify({
+        formData: {
+          customerNumber,
+          name: '',
+          email: '',
+          address: '',
+          addressSupplement: '',
+          city: '',
+          postalCode: '',
+          country: 'Deutschland',
+          taxId: '',
+          phone: '',
+        },
+        additionalEmails: [],
+        customerHourlyRates: [],
+        customerMaterials: [],
+      });
     }
     setNewEmailData({ email: '', label: '' });
     setIsAddingEmail(false);
@@ -134,6 +169,13 @@ export function CustomerManagement() {
     setIsModalOpen(true);
   };
 
+  const hasFormChanges = JSON.stringify({
+    formData,
+    additionalEmails,
+    customerHourlyRates,
+    customerMaterials,
+  }) !== initialFormSnapshot.current;
+
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingCustomer(null);
@@ -143,6 +185,13 @@ export function CustomerManagement() {
     setIsMaterialModalOpen(false);
     setEditingMaterial(null);
     setIsCreateMaterialModalOpen(false);
+  };
+
+  const requestCloseModal = () => {
+    if (hasFormChanges && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+      return;
+    }
+    handleCloseModal();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -607,7 +656,7 @@ export function CustomerManagement() {
       {/* Customer List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {/* Desktop Table View */}
-        <div className="hidden lg:block overflow-x-auto">
+        <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
           <table className="w-full min-w-[680px]">
             <thead className="bg-gray-50">
               <tr>
@@ -620,8 +669,8 @@ export function CustomerManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Adresse
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Aktionen
+                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-24 2xl:px-6">
+                  <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
@@ -636,41 +685,51 @@ export function CustomerManagement() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-2 text-sm text-gray-900">
-                      <Mail className="h-4 w-4 text-gray-400" />
+                    <div className="text-sm text-gray-900">
                       <span>{customer.email}</span>
                     </div>
                     {customer.phone && (
-                      <div className="flex items-center space-x-2 text-sm text-gray-500">
-                        <Phone className="h-4 w-4 text-gray-400" />
+                      <div className="text-sm text-gray-500">
                         <span>{customer.phone}</span>
                       </div>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-2 text-sm text-gray-900">
-                      <MapPin className="h-4 w-4 text-gray-400" />
+                    <div className="text-sm text-gray-900">
                       <div>
                         <div>{customer.address}</div>
                         <div className="text-gray-500">{customer.postalCode} {customer.city}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
+                  <td className="relative w-14 px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-24 2xl:px-6">
+                    <div className="hidden 2xl:flex space-x-2">
                       <button
+                        type="button"
                         onClick={() => handleOpenModal(customer)}
-                        className="text-primary-custom hover:text-primary-custom/80"
+                        className="action-icon-button action-icon-indigo"
+                        title="Bearbeiten"
                       >
                         <Edit className="h-4 w-4" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDelete(customer.id)}
-                        className="text-red-600 hover:text-red-900"
+                        className="action-icon-button action-icon-red"
+                        title="Löschen"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    <details className="relative hidden lg:block 2xl:hidden">
+                      <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </summary>
+                      <div className="absolute right-0 z-20 mt-2 w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                        <button type="button" onClick={() => handleOpenModal(customer)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Bearbeiten</button>
+                        <button type="button" onClick={() => handleDelete(customer.id)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">LÃ¶schen</button>
+                      </div>
+                    </details>
                   </td>
                 </tr>
               ))}
@@ -690,20 +749,29 @@ export function CustomerManagement() {
                     <p className="text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
                   )}
                 </div>
-                <div className="flex space-x-2 ml-2">
+                <details className="relative ml-2">
+                  <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
                   <button
+                    type="button"
                     onClick={() => handleOpenModal(customer)}
-                    className="text-primary-custom hover:text-primary-custom/80 p-1"
+                    className="action-icon-button action-icon-indigo"
+                    title="Bearbeiten"
                   >
                     <Edit className="h-4 w-4" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(customer.id)}
-                    className="text-red-600 hover:text-red-900 p-1"
+                    className="action-icon-button action-icon-red"
+                    title="Löschen"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </div>
+                  </div>
+                </details>
               </div>
               
               <div className="space-y-1">
@@ -738,12 +806,18 @@ export function CustomerManagement() {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div
+          className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center z-[1000] p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) requestCloseModal();
+          }}
+        >
+          <div className="bg-white rounded-xl w-full max-w-md h-[90vh] max-h-[90vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+            <h3 className="flex-shrink-0 px-4 pt-4 lg:px-6 text-lg font-semibold text-gray-900 mb-4">
               {editingCustomer ? 'Kunde bearbeiten' : 'Neuer Kunde'}
             </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-4 lg:px-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Kundennummer
@@ -1097,7 +1171,10 @@ export function CustomerManagement() {
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              </div>
+
+              <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 lg:px-6">
+                <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   type="submit"
                   className="flex-1 btn-primary py-2 px-4 rounded-xl transition-all duration-300 hover:scale-105"
@@ -1106,11 +1183,12 @@ export function CustomerManagement() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCloseModal}
+                  onClick={requestCloseModal}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-xl hover:bg-gray-400 transition-all duration-300"
                 >
                   Abbrechen
                 </button>
+                </div>
               </div>
             </form>
           </div>

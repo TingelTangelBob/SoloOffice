@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import logger from '../utils/logger';
 import { 
   Plus, 
@@ -16,8 +16,7 @@ import {
   Briefcase,
   Download,
   Eye,
-  PenTool,
-  Mail
+  MoreVertical
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -27,7 +26,6 @@ import { JobEntryForm } from './JobEntryForm';
 import { JobInvoiceGenerator } from './JobInvoiceGenerator';
 import { PageHeader } from './PageHeader';
 import { ConfirmationModal } from './ConfirmationModal';
-import { SignaturePad } from './SignaturePad';
 import { DocumentPreview, createJobAttachmentPreviewDocuments, PreviewDocument } from './DocumentPreview';
 import { generateJobPDF, downloadBlob } from '../utils/pdfGenerator';
 import { calculateTotalHours } from '../utils/jobUtils';
@@ -38,18 +36,20 @@ interface JobManagementProps {
 
 export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   const { customers, addCustomer, refreshCustomers } = useCustomers();
-  const { jobEntries, addJobEntry, updateJobEntry, deleteJobEntry, refreshJobEntries, addJobSignature } = useJobs();
+  const { jobEntries, addJobEntry, updateJobEntry, deleteJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
 
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
   const [showInvoiceGenerator, setShowInvoiceGenerator] = useState(false);
+  const [invoiceCreationNotice, setInvoiceCreationNotice] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('not-invoiced');
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [openActionMenuJobId, setOpenActionMenuJobId] = useState<string | null>(null);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -76,9 +76,19 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     onConfirm: () => {},
   });
 
-  // Signature Pad state
-  const [showSignaturePad, setShowSignaturePad] = useState(false);
-  const [signingJob, setSigningJob] = useState<JobEntry | null>(null);
+  useEffect(() => {
+    if (!openActionMenuJobId) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('[data-job-actions-menu]')) {
+        setOpenActionMenuJobId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openActionMenuJobId]);
 
   // Document Preview state
   const [documentPreview, setDocumentPreview] = useState<{
@@ -93,15 +103,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
 
   // Get locale from company settings
   const locale = company?.locale || 'de-DE';
-
-  // Helper function to format currency
-  const formatCurrencyValue = (amount: number) => {
-    const currency = company?.currency || 'EUR';
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currency
-    }).format(amount);
-  };
 
   // Filter and search jobs
   const filteredJobs = useMemo(() => {
@@ -281,8 +282,19 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     }
   };
 
+  const getStatusDotColor = (status: JobEntry['status']) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-400';
+      case 'in-progress': return 'bg-yellow-500';
+      case 'completed': return 'bg-green-500';
+      case 'invoiced': return 'bg-blue-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
   const handleJobSelection = (jobId: string, checked: boolean) => {
     // Allow selection of all jobs, not just completed ones
+    setInvoiceCreationNotice(false);
     if (checked) {
       setSelectedJobIds(prev => [...prev, jobId]);
     } else {
@@ -297,15 +309,17 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     });
     
     if (completedSelectedJobs.length === 0) {
-      alert('Keine abgeschlossenen Aufträge ausgewählt. Nur abgeschlossene Aufträge können abgerechnet werden.');
+      setInvoiceCreationNotice(true);
       return;
     }
-    
+
+    setInvoiceCreationNotice(false);
     setShowInvoiceGenerator(true);
   };
 
   // Bulk operations functions
   const handleSelectAllJobs = (checked: boolean) => {
+    setInvoiceCreationNotice(false);
     if (checked) {
       // Select ALL jobs, not just completed ones
       setSelectedJobIds(filteredJobs.map(job => job.id));
@@ -393,10 +407,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     });
   };
 
-  // Get only completed jobs for selection
-  const completedJobIds = filteredJobs.filter(job => job.status === 'completed').map(job => job.id);
-  const selectedCompletedJobs = selectedJobIds.filter(jobId => completedJobIds.includes(jobId));
-
   const handleExportJobPDF = async (job: JobEntry) => {
     try {
       const customer = customers.find(c => c.id === job.customerId);
@@ -437,38 +447,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     });
   };
 
-  const handleSignature = (job: JobEntry) => {
-    // Check if job is already completed or invoiced
-    if (job.status === 'completed' || job.status === 'invoiced') {
-      alert('Dieser Auftrag ist bereits abgeschlossen oder abgerechnet.');
-      return;
-    }
-    
-    setSigningJob(job);
-    setShowSignaturePad(true);
-  };
-
-  const handleSignatureSave = async (signatureData: string, customerName: string) => {
-    if (!signingJob) {
-      alert('Fehler: Kein Auftrag zum Signieren gefunden.');
-      return;
-    }
-    
-    try {
-      await addJobSignature(signingJob.id, signatureData, customerName);
-      setShowSignaturePad(false);
-      setSigningJob(null);
-    } catch (error) {
-      logger.error('JobManagement: Error adding signature:', error);
-      alert('Fehler beim Speichern der Unterschrift. Bitte versuchen Sie es erneut.');
-    }
-  };
-
-  const handleSignatureClose = () => {
-    setShowSignaturePad(false);
-    setSigningJob(null);
-  };
-
   if (showForm) {
     return (
       <JobEntryForm
@@ -506,9 +484,9 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 xl:space-y-4 2xl:space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
         <PageHeader icon={Briefcase} title="Auftragsmanagement">
         
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -556,10 +534,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                   {/* Bulk Invoice Generation */}
                   <button
                     onClick={handleBulkInvoiceGeneration}
-                    disabled={isBulkOperation || selectedJobIds.filter(jobId => {
-                      const job = jobEntries.find((j: JobEntry) => j.id === jobId);
-                      return job && job.status === 'completed';
-                    }).length === 0}
+                    disabled={isBulkOperation}
                     className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors flex items-center text-sm disabled:bg-gray-400"
                   >
                     <FileText className="h-4 w-4 mr-1" />
@@ -586,9 +561,19 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                     Löschen
                   </button>
 
+                  {invoiceCreationNotice && (
+                    <div className="basis-full flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900" role="alert">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
+                      <span>Nur abgeschlossene Aufträge können für die Rechnungserstellung ausgewählt werden.</span>
+                    </div>
+                  )}
+
                   {/* Clear Selection */}
                   <button
-                    onClick={() => setSelectedJobIds([])}
+                    onClick={() => {
+                      setSelectedJobIds([]);
+                      setInvoiceCreationNotice(false);
+                    }}
                     className="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors text-sm"
                   >
                     Auswahl aufheben
@@ -596,9 +581,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                 </div>
               </div>
               
-              <p className="text-xs text-blue-600 mt-2">
-                <strong>Hinweis:</strong> Alle Aufträge können ausgewählt werden, aber nur abgeschlossene Aufträge können abgerechnet werden.
-              </p>
             </div>
           )}
           
@@ -679,8 +661,8 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 lg:p-6 rounded-xl shadow-sm border border-gray-100">
-        <div className="flex flex-col lg:flex-row gap-4">
+      <div className="bg-white p-4 lg:p-6 xl:p-3 2xl:p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex flex-col lg:flex-row gap-4 xl:gap-2 2xl:gap-4">
           {/* Search */}
           <div className="flex-1">
             <div className="relative">
@@ -690,18 +672,18 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                 placeholder="Auftrag suchen..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
+                className="w-full pl-10 pr-4 py-2 xl:py-1.5 2xl:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
               />
             </div>
           </div>
 
           {/* Filters Row */}
-          <div className="flex flex-col sm:flex-row gap-2 lg:gap-4">
+          <div className="flex flex-col sm:flex-row gap-2 lg:gap-4 xl:gap-2 2xl:gap-4">
             {/* Status Filter */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
+              className="px-3 py-2 xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
             >
               <option value="all">Alle Status</option>
               <option value="not-invoiced">Alle außer abgerechnet</option>
@@ -715,7 +697,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
             <select
               value={customerFilter}
               onChange={(e) => setCustomerFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
+              className="px-3 py-2 xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
             >
               <option value="all">Alle Kunden</option>
               {customers.map(customer => (
@@ -729,7 +711,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
+              className="px-3 py-2 xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
             >
               <option value="all">Alle Zeiträume</option>
               <option value="today">Heute</option>
@@ -742,23 +724,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
 
       {/* Jobs List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        {/* Info box wenn es nicht-abgeschlossene Aufträge gibt (ohne bereits abgerechnete) */}
-        {filteredJobs.some((job: JobEntry) => job.status !== 'completed' && job.status !== 'invoiced') && filteredJobs.length > 0 && (
-          <div className="bg-yellow-50 border-b border-yellow-200 p-4">
-            <div className="flex items-start space-x-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <h4 className="text-sm font-medium text-yellow-900">Hinweis zur Rechnungserstellung</h4>
-                <p className="text-sm text-yellow-800 mt-1">
-                  Sie haben {filteredJobs.filter((job: JobEntry) => job.status !== 'completed' && job.status !== 'invoiced').length} Auftrag(e), 
-                  die noch nicht als "Abgeschlossen" markiert sind. Nur abgeschlossene Aufträge können für die 
-                  Rechnungserstellung ausgewählt werden.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-        
         {filteredJobs.length === 0 ? (
           <div className="p-8 lg:p-12 text-center">
             <Briefcase className="h-12 w-12 lg:h-16 lg:w-16 text-gray-400 mx-auto mb-4" />
@@ -793,7 +758,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         ) : (
           <>
             {/* Mobile View */}
-            <div className="block lg:hidden">
+            <div className="block xl:hidden">
               <div className="p-4 border-b bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">                        <input
@@ -829,55 +794,60 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-sm font-medium text-gray-900 truncate flex items-center">
+                        <div className="flex flex-col gap-2 mb-2 sm:flex-row sm:items-start sm:justify-between">
+                          <h3 className="min-w-0 text-sm font-medium text-gray-900 truncate flex items-center">
                             {job.priority && (
                               <AlertTriangle className={`h-4 w-4 mr-1 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
                             )}
                             {job.title}
                           </h3>
-                          <div className="flex items-center space-x-1 ml-2">
+                          <div className="relative shrink-0" data-job-actions-menu>
                             <button
-                              onClick={() => handleExportJobPDF(job)}
-                              className="text-blue-600 hover:text-blue-900 p-1"
-                              title="PDF exportieren"
+                              type="button"
+                              onClick={() => setOpenActionMenuJobId((current) => current === job.id ? null : job.id)}
+                              className="action-icon-button bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              aria-label={`Aktionen für ${job.title}`}
+                              aria-expanded={openActionMenuJobId === job.id}
+                              title="Aktionen"
                             >
-                              <Download className="h-4 w-4" />
+                              <MoreVertical className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => handlePreview(job)}
-                              className="text-green-600 hover:text-green-900 p-1"
-                              title="Dokumente anzeigen"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            {!job.signature && job.status !== 'completed' && job.status !== 'invoiced' && (
-                              <button
-                                onClick={() => handleSignature(job)}
-                                className="text-purple-600 hover:text-purple-900 p-1"
-                                title="Unterschrift hinzufügen"
-                              >
-                                <PenTool className="h-4 w-4" />
-                              </button>
+                            {openActionMenuJobId === job.id && (
+                              <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenActionMenuJobId(null); handleExportJobPDF(job); }}
+                                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  <Download className="h-4 w-4 text-blue-600" /> PDF exportieren
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenActionMenuJobId(null); handlePreview(job); }}
+                                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  <Eye className="h-4 w-4 text-green-600" /> Dokumente anzeigen
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenActionMenuJobId(null); handleEdit(job); }}
+                                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  <Edit className="h-4 w-4 text-indigo-600" /> Bearbeiten
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenActionMenuJobId(null); handleDelete(job); }}
+                                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" /> Löschen
+                                </button>
+                              </div>
                             )}
-                            <button
-                              onClick={() => handleEdit(job)}
-                              className="p-1 text-indigo-600 hover:text-indigo-900"
-                              title={job.status === 'invoiced' ? 'Bearbeiten (GoBD-Warnung wird angezeigt)' : 'Bearbeiten'}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(job)}
-                              className="p-1 text-red-600 hover:text-red-900"
-                              title={job.status === 'invoiced' ? 'Löschen (GoBD-Warnung wird angezeigt)' : 'Löschen'}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
                           </div>
                         </div>
                         
-                        <p className="text-sm text-gray-500 mb-3 line-clamp-2">
+                        <p className="mb-3 block min-w-0 truncate whitespace-nowrap text-sm text-gray-500">
                           {job.description}
                         </p>
                         
@@ -885,11 +855,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                           <div className="flex items-center">
                             <span className="text-gray-500 mr-2">Nr:</span>
                             <span className="text-gray-900 font-medium">{job.jobNumber}</span>
-                          </div>
-                          
-                          <div className="flex items-center">
-                            <span className="text-gray-500 mr-2">Ext:</span>
-                            <span className="text-gray-900">{job.externalJobNumber || '-'}</span>
                           </div>
                           
                           <div className="flex items-center">
@@ -932,11 +897,11 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full min-w-[980px]">
+            <div className="hidden xl:block w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[900px]">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-2 py-3 text-left w-12">
+                    <th className="px-2 py-3 xl:py-2 2xl:py-3 text-left w-12">
                       <div className="flex items-center">
                         <input
                           type="checkbox"
@@ -950,147 +915,137 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                         />
                       </div>
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                      Nr.
-                    </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                      Ext.
-                    </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Auftrag
-                    </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                      Kunde
-                    </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                       Datum
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                      Nr.
+                    </th>
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Auftrag
+                    </th>
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                      Kunde
+                    </th>
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                       Status
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
                       Std.
                     </th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                      Aktionen
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-14 2xl:w-44">
+                      <span className="sr-only">Aktionen</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredJobs.map((job) => (
                     <tr key={job.id} className="hover:bg-gray-50">
-                      <td className="px-2 py-4 w-12">
+                      <td className="px-2 py-4 xl:py-2 2xl:py-4 w-12">
                         <div className="flex items-center">
                           <input
                             type="checkbox"
                             checked={selectedJobIds.includes(job.id)}
-                            onChange={(e) => handleJobSelection(job.id, e.target.checked)}
-                            className="custom-checkbox cursor-pointer"
-                            title="Auftrag auswählen"
-                          />
-                          {job.status !== 'completed' && job.status !== 'invoiced' && (
-                            <span className="ml-1 text-xs text-gray-400" title="Auftrag noch nicht abgeschlossen">
-                              ⚠️
-                            </span>
-                          )}
+                          onChange={(e) => handleJobSelection(job.id, e.target.checked)}
+                          className="custom-checkbox cursor-pointer"
+                          title="Auftrag auswählen"
+                        />
                         </div>
                       </td>
-                      <td className="px-3 py-4 w-24">
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-24">
+                        <span className="text-sm text-gray-900 whitespace-nowrap">{new Date(job.date).toLocaleDateString(locale)}</span>
+                      </td>
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4">
                         <div className="text-sm font-medium text-gray-900 truncate">
                           {job.jobNumber}
                         </div>
                       </td>
-                      <td className="px-3 py-4 w-20">
-                        <div className="text-sm text-gray-600 truncate">
-                          {job.externalJobNumber || '-'}
-                        </div>
-                      </td>
-                      <td className="px-3 py-4">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 flex items-center">
-                            {job.priority && (
-                              <AlertTriangle className={`h-4 w-4 mr-2 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
-                            )}
-                            <span className="truncate">{job.title}</span>
+                      <td className="min-w-0 px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4">
+                        <div className="min-w-0 max-w-full">
+                          <div className="min-w-0 truncate whitespace-nowrap text-sm font-medium text-gray-900">
+                            {job.title}
                           </div>
-                          <div className="text-sm text-gray-500 truncate max-w-xs">
+                          <div className="block max-w-full min-w-0 truncate whitespace-nowrap text-xs text-gray-500">
                             {job.description}
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-4 w-32">
-                        <div className="flex items-center">
-                          <User className="h-4 w-4 text-gray-400 mr-2 flex-shrink-0" />
-                          <span className="text-sm text-gray-900 truncate">{job.customerName}</span>
-                        </div>
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-32">
+                        <span className="text-sm text-gray-900 truncate block">{job.customerName}</span>
                       </td>
-                      <td className="px-3 py-4 w-24">
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 text-gray-400 mr-2 flex-shrink-0" />
-                          <span className="text-sm text-gray-900 whitespace-nowrap">{new Date(job.date).toLocaleDateString(locale)}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-4 w-28">
-                        <select
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-28">
+                        <label className="relative inline-flex items-center gap-2" title={getStatusText(job.status)}>
+                          <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                          <span className="sr-only">{getStatusText(job.status)}</span>
+                          <select
                           value={job.status}
                           onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
                           disabled={job.status === 'invoiced'}
-                          className={`text-xs font-semibold rounded-full px-2 py-1 border-0 ${getStatusColor(job.status)} focus:ring-2 focus:ring-primary-custom ${
-                            job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : ''
-                          }`}
-                          title={job.status === 'invoiced' ? 'Status von abgerechneten Aufträgen kann nicht geändert werden' : ''}
+                          aria-label={`Status: ${getStatusText(job.status)}`}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
                         >
                           <option value="draft">Entwurf</option>
                           <option value="in-progress">In Bearbeitung</option>
                           <option value="completed">Abgeschlossen</option>
                           <option value="invoiced">Abgerechnet</option>
-                        </select>
+                          </select>
+                        </label>
                       </td>
-                      <td className="px-3 py-4 w-20">
-                        <div className="flex items-center">
-                          <Clock className="h-4 w-4 text-gray-400 mr-2 flex-shrink-0" />
-                          <span className="text-sm text-gray-900">{calculateTotalHours(job).toFixed(1)}h</span>
-                        </div>
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-20">
+                        <span className="text-sm text-gray-900">{calculateTotalHours(job).toFixed(1)}h</span>
                       </td>
-                      <td className="px-3 py-4 text-right w-24">
+                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 text-right w-14 2xl:w-44">
                         <div className="flex justify-end space-x-1">
+                          <div className="relative 2xl:hidden" data-job-actions-menu>
+                            <button
+                              type="button"
+                              onClick={() => setOpenActionMenuJobId((current) => current === job.id ? null : job.id)}
+                              className="action-icon-button min-h-0 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              aria-label={`Aktionen für ${job.title}`}
+                              aria-expanded={openActionMenuJobId === job.id}
+                              title="Aktionen"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {openActionMenuJobId === job.id && (
+                              <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-1 text-left shadow-lg">
+                                <button type="button" onClick={() => { setOpenActionMenuJobId(null); handleExportJobPDF(job); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Download className="h-4 w-4 text-blue-600" /> PDF exportieren</button>
+                                <button type="button" onClick={() => { setOpenActionMenuJobId(null); handlePreview(job); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Eye className="h-4 w-4 text-green-600" /> Dokumente anzeigen</button>
+                                <button type="button" onClick={() => { setOpenActionMenuJobId(null); handleEdit(job); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"><Edit className="h-4 w-4 text-indigo-600" /> Bearbeiten</button>
+                                <button type="button" onClick={() => { setOpenActionMenuJobId(null); handleDelete(job); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Löschen</button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="hidden 2xl:flex justify-end space-x-1">
                           <button
                             onClick={() => handleExportJobPDF(job)}
-                            className="text-blue-600 hover:text-blue-900 p-1"
+                            className="action-icon-button action-icon-blue"
                             title="PDF exportieren"
                           >
                             <Download className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handlePreview(job)}
-                            className="text-green-600 hover:text-green-900 p-1"
+                            className="action-icon-button action-icon-green"
                             title="Dokumente anzeigen"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          {!job.signature && job.status !== 'completed' && job.status !== 'invoiced' && (
-                            <button
-                              onClick={() => handleSignature(job)}
-                              className="text-purple-600 hover:text-purple-900 p-1"
-                              title="Unterschrift hinzufügen"
-                            >
-                              <PenTool className="h-4 w-4" />
-                            </button>
-                          )}
                           <button
                             onClick={() => handleEdit(job)}
-                            className="p-1 text-indigo-600 hover:text-indigo-900"
+                            className="action-icon-button action-icon-indigo"
                             title={job.status === 'invoiced' ? 'Bearbeiten (GoBD-Warnung wird angezeigt)' : 'Bearbeiten'}
                           >
                             <Edit className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(job)}
-                            className="p-1 text-red-600 hover:text-red-900"
+                            className="action-icon-button action-icon-red"
                             title={job.status === 'invoiced' ? 'Löschen (GoBD-Warnung wird angezeigt)' : 'Löschen'}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1255,22 +1210,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         </div>
       )}
       
-      {/* Signature Pad Modal */}
-      <SignaturePad
-        isOpen={showSignaturePad}
-        onClose={handleSignatureClose}
-        onSave={handleSignatureSave}
-        title="Kundenunterschrift"
-        initialCustomerName={signingJob?.customerName || ''}
-      />
-
-      {/* Document Preview Modal */}
-      <DocumentPreview
-        isOpen={documentPreview.isOpen}
-        onClose={handleClosePreview}
-        documents={documentPreview.documents}
-        initialIndex={documentPreview.initialIndex}
-      />
     </div>
   );
 }

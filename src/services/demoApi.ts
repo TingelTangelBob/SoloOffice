@@ -9,6 +9,8 @@ interface DemoState {
   jobs: DemoRecord[];
   materialTemplates: DemoRecord[];
   hourlyRates: DemoRecord[];
+  yearlyInvoiceStartNumbers: DemoRecord[];
+  calendarEvents: DemoRecord[];
   company: DemoRecord;
 }
 
@@ -56,7 +58,9 @@ function createInitialState(): DemoState {
   const jobs: DemoRecord[] = [0, 1, 2].map((index) => ({
     id: generateUUID(), jobNumber: `AU-2026-${String(index + 1).padStart(3, '0')}`, customerId: customer(index).id,
     customerName: customer(index).name, customerAddress: customer(index).address, title: ['Website-Relaunch', 'Elektroinstallation', 'Wartungsvertrag'][index],
-    description: 'Beispielauftrag für den lokalen Frontend-Test', date: isoDate(index - 1), hoursWorked: 2 + index, hourlyRate: 75,
+    description: 'Beispielauftrag für den lokalen Frontend-Test', date: isoDate(index - 1),
+    startTime: ['08:00', '10:30', '14:00'][index], endTime: ['10:00', '13:30', '18:00'][index],
+    hoursWorked: 2 + index, hourlyRate: 75,
     status: index === 0 ? 'draft' : index === 1 ? 'in-progress' : 'completed', priority: index === 2 ? 'high' : 'medium',
     timeEntries: [], materials: [], createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 2),
   }));
@@ -64,6 +68,8 @@ function createInitialState(): DemoState {
   return {
     customers, invoices, jobs, quotes: [], materialTemplates: [],
     hourlyRates: [{ id: generateUUID(), name: 'Standard', description: 'Lokaler Demo-Stundensatz', rate: 75, isDefault: true, createdAt: isoDate() }],
+    yearlyInvoiceStartNumbers: [],
+    calendarEvents: [],
     company: {
       id: 'demo-company', name: 'Demo-Firma', address: 'Beispielstraße 1', city: 'Berlin', postalCode: '10115', country: 'Deutschland',
       email: 'demo@example.com', primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
@@ -81,7 +87,12 @@ function readState(): DemoState {
     return initial;
   }
   try {
-    return JSON.parse(saved) as DemoState;
+    const parsed = JSON.parse(saved) as Partial<DemoState>;
+    return {
+      ...parsed,
+      yearlyInvoiceStartNumbers: parsed.yearlyInvoiceStartNumbers || [],
+      calendarEvents: parsed.calendarEvents || [],
+    } as DemoState;
   } catch {
     const initial = createInitialState();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -110,6 +121,57 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const id = parts[1];
   const data = payload(options);
 
+  if (resource === 'reporting') {
+    if (path.includes('invoice-journal')) {
+      const invoices = state.invoices.map((invoice) => ({
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        customerName: invoice.customerName,
+        customerNumber: state.customers.find((customer) => customer.id === invoice.customerId)?.customerNumber,
+        issueDate: invoice.issueDate,
+        dueDate: invoice.dueDate,
+        subtotal: invoice.subtotal,
+        taxAmount: invoice.taxAmount,
+        total: invoice.total,
+        status: invoice.status,
+        paidAmount: invoice.status === 'paid' ? invoice.total : 0,
+        overdueAmount: invoice.status === 'overdue' ? invoice.total : 0,
+        outstandingAmount: ['draft', 'sent'].includes(String(invoice.status)) ? invoice.total : 0,
+        createdAt: invoice.createdAt,
+      }));
+
+      return {
+        invoices,
+        summary: {
+          totalInvoices: invoices.length,
+          totalAmount: invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+          paidAmount: invoices.reduce((sum, invoice) => sum + Number(invoice.paidAmount || 0), 0),
+          overdueAmount: invoices.reduce((sum, invoice) => sum + Number(invoice.overdueAmount || 0), 0),
+          outstandingAmount: invoices.reduce((sum, invoice) => sum + Number(invoice.outstandingAmount || 0), 0),
+          subtotalSum: invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
+          taxSum: invoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
+        },
+        dateRange: { startDate: null, endDate: null },
+      } as T;
+    }
+
+    return {
+      year: new Date().getFullYear(),
+      monthlyRevenue: [],
+      topCustomers: [],
+      statusDistribution: [],
+      yearOverview: {
+        totalInvoices: state.invoices.length,
+        totalSubtotal: state.invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
+        totalTax: state.invoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
+        totalAmount: state.invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        paidAmount: state.invoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        overdueAmount: state.invoices.filter((invoice) => invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        avgInvoiceAmount: state.invoices.length ? state.invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) / state.invoices.length : 0,
+      },
+    } as T;
+  }
+
   if (resource === 'company') {
     if (method === 'PUT') state.company = { ...state.company, ...data };
     saveState(state);
@@ -119,10 +181,11 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const resourceMap: Record<string, keyof DemoState> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
+    'yearly-invoice-start-numbers': 'yearlyInvoiceStartNumbers',
+    'calendar-events': 'calendarEvents',
   };
   const key = resourceMap[resource];
   if (!key) {
-    if (path.startsWith('/reporting/')) return (path.includes('statistics') ? { yearOverview: { totalInvoices: state.invoices.length } } : { entries: [] }) as T;
     if (path.startsWith('/reminders/')) return (path.includes('history') ? state.invoices : []) as unknown as T;
     return {} as T;
   }

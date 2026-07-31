@@ -11,20 +11,48 @@ import {
   Hash,
   ExternalLink,
   Search,
-  X
+  X,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
-import { JobEntry } from '../types';
+import { CalendarEvent, JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { ConfirmationModal } from './ConfirmationModal';
 import { PageHeader } from './PageHeader';
 import { calculateTotalHours } from '../utils/jobUtils';
+import { apiService } from '../services/api';
 
 interface CalendarProps {
   onNavigate?: (page: string) => void;
 }
+
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toDateKey = (date: Date) => toDateInputValue(date);
+
+const CALENDAR_START_HOUR = 0;
+const CALENDAR_END_HOUR = 24;
+const CALENDAR_HOUR_HEIGHT = 56;
+
+const parseTimeToMinutes = (time?: string, fallback = 8 * 60) => {
+  if (!time) return fallback;
+  const [hours, minutes] = time.split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return fallback;
+  return Math.max(0, Math.min(24 * 60, hours * 60 + minutes));
+};
+
+const formatMinutesToTime = (minutes: number) => {
+  const normalizedMinutes = Math.max(0, Math.min(24 * 60, Math.round(minutes)));
+  return `${String(Math.floor(normalizedMinutes / 60)).padStart(2, '0')}:${String(normalizedMinutes % 60).padStart(2, '0')}`;
+};
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { customers, addCustomer, refreshCustomers } = useCustomers();
@@ -41,6 +69,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'workweek' | 'month'>('month');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [showVacationForm, setShowVacationForm] = useState(false);
+  const [vacationForm, setVacationForm] = useState({
+    title: 'Urlaub',
+    startDate: toDateInputValue(new Date()),
+    endDate: toDateInputValue(new Date()),
+    notes: '',
+  });
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -80,6 +118,18 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
   // Get locale from company settings
   const locale = company?.locale || 'de-DE';
+
+  useEffect(() => {
+    const loadCalendarEvents = async () => {
+      try {
+        setCalendarEvents(await apiService.getCalendarEvents());
+      } catch (error) {
+        logger.error('Error loading calendar events:', error);
+      }
+    };
+
+    loadCalendarEvents();
+  }, []);
 
   // Search functionality
   const searchResults = useMemo(() => {
@@ -134,16 +184,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   // Function to jump to job date and highlight it
   const jumpToJob = (job: JobEntry) => {
     const jobDate = new Date(job.date);
+    setSelectedDate(jobDate);
     
     // Update current date for month view
     setCurrentDate(new Date(jobDate.getFullYear(), jobDate.getMonth(), 1));
     
     // Update week start for mobile view
-    const dayOfWeek = jobDate.getDay();
-    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const monday = new Date(jobDate);
-    monday.setDate(jobDate.getDate() - mondayOffset);
-    setCurrentWeekStart(monday);
+    setCurrentWeekStart(getWeekStart(jobDate));
     
     // Expand the date if it has many jobs
     const dateKey = jobDate.toDateString();
@@ -162,18 +209,25 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
   // Calendar navigation
   const goToPreviousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    const nextDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    setCurrentDate(nextDate);
+    setSelectedDate(nextDate);
+    setCurrentWeekStart(getWeekStart(nextDate));
     setExpandedDates(new Set()); // Reset expanded dates when changing month
   };
 
   const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    const nextDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+    setCurrentDate(nextDate);
+    setSelectedDate(nextDate);
+    setCurrentWeekStart(getWeekStart(nextDate));
     setExpandedDates(new Set()); // Reset expanded dates when changing month
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
     const today = new Date();
+    setSelectedDate(today);
+    setCurrentDate(today);
     const dayOfWeek = today.getDay();
     const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     const monday = new Date(today);
@@ -181,21 +235,102 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     setCurrentWeekStart(monday);
   };
 
+  const getWeekStart = (date: Date) => {
+    const dayOfWeek = date.getDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - mondayOffset);
+    return monday;
+  };
+
+  const selectCalendarDate = (date: Date) => {
+    const nextDate = new Date(date);
+    setSelectedDate(nextDate);
+    setCurrentDate(nextDate);
+    setCurrentWeekStart(getWeekStart(nextDate));
+  };
+
+  const changeViewMode = (mode: 'day' | 'week' | 'workweek' | 'month') => {
+    setViewMode(mode);
+    if (mode === 'day') {
+      setCurrentDate(new Date(selectedDate));
+    } else if (mode === 'week' || mode === 'workweek') {
+      setCurrentWeekStart(getWeekStart(selectedDate));
+      setCurrentDate(new Date(selectedDate));
+    } else {
+      setCurrentDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    }
+  };
+
+  const navigatePrevious = () => {
+    if (viewMode === 'month') {
+      goToPreviousMonth();
+      return;
+    }
+    if (viewMode === 'week' || viewMode === 'workweek') {
+      goToPreviousWeek();
+      return;
+    }
+    const previousDay = new Date(currentDate);
+    previousDay.setDate(previousDay.getDate() - 1);
+    selectCalendarDate(previousDay);
+  };
+
+  const navigateNext = () => {
+    if (viewMode === 'month') {
+      goToNextMonth();
+      return;
+    }
+    if (viewMode === 'week' || viewMode === 'workweek') {
+      goToNextWeek();
+      return;
+    }
+    const nextDay = new Date(currentDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    selectCalendarDate(nextDay);
+  };
+
+  const selectMonth = (month: number) => {
+    const nextDate = new Date(currentDate.getFullYear(), month, 1);
+    setSelectedDate(nextDate);
+    setCurrentDate(nextDate);
+    setCurrentWeekStart(getWeekStart(nextDate));
+    setExpandedDates(new Set());
+  };
+
+  const selectYear = (year: number) => {
+    const nextDate = new Date(selectedDate);
+    nextDate.setFullYear(year);
+    selectCalendarDate(nextDate);
+  };
+
+  const getCalendarWeek = (date: Date) => {
+    const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNumber = target.getUTCDay() || 7;
+    target.setUTCDate(target.getUTCDate() + 4 - dayNumber);
+    const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+    return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  };
+
   // Week navigation for mobile
   const goToPreviousWeek = () => {
     const prevWeek = new Date(currentWeekStart);
     prevWeek.setDate(prevWeek.getDate() - 7);
     setCurrentWeekStart(prevWeek);
+    setSelectedDate(prevWeek);
+    setCurrentDate(prevWeek);
   };
 
   const goToNextWeek = () => {
     const nextWeek = new Date(currentWeekStart);
     nextWeek.setDate(nextWeek.getDate() + 7);
     setCurrentWeekStart(nextWeek);
+    setSelectedDate(nextWeek);
+    setCurrentDate(nextWeek);
   };
 
   // Get calendar data
-  const { calendarDays, monthYear } = useMemo(() => {
+  const { calendarDays } = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     
@@ -222,16 +357,11 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       current.setDate(current.getDate() + 1);
     }
     
-    const monthYear = firstDay.toLocaleDateString(locale, { 
-      month: 'long', 
-      year: 'numeric' 
-    });
-    
-    return { calendarDays: days, monthYear };
-  }, [currentDate, locale]);
+    return { calendarDays: days };
+  }, [currentDate]);
 
   // Get week data for mobile view
-  const { weekDays: currentWeekDays, weekRange } = useMemo(() => {
+  const { weekDays: currentWeekDays, weekRange, workWeekRange } = useMemo(() => {
     const weekDays = [];
     const current = new Date(currentWeekStart);
     
@@ -242,11 +372,49 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     
     const startDate = weekDays[0];
     const endDate = weekDays[6];
+    const workWeekEndDate = weekDays[4];
     
     const weekRange = `${startDate.getDate()}.${String(startDate.getMonth() + 1).padStart(2, '0')}.${startDate.getFullYear()} - ${endDate.getDate()}.${String(endDate.getMonth() + 1).padStart(2, '0')}.${endDate.getFullYear()}`;
+    const workWeekRange = `${startDate.getDate()}.${String(startDate.getMonth() + 1).padStart(2, '0')}.${startDate.getFullYear()} - ${workWeekEndDate.getDate()}.${String(workWeekEndDate.getMonth() + 1).padStart(2, '0')}.${workWeekEndDate.getFullYear()}`;
     
-    return { weekDays, weekRange };
+    return { weekDays, weekRange, workWeekRange };
   }, [currentWeekStart]);
+
+  const timeGridDays = viewMode === 'day'
+    ? [new Date(selectedDate)]
+    : viewMode === 'workweek'
+      ? currentWeekDays.slice(0, 5)
+      : currentWeekDays;
+
+  const timeGridHours = Array.from(
+    { length: CALENDAR_END_HOUR - CALENDAR_START_HOUR },
+    (_, index) => CALENDAR_START_HOUR + index,
+  );
+
+  const getJobTimeRange = (job: JobEntry) => {
+    const timeEntryWithTime = job.timeEntries?.find((entry) => entry.startTime || entry.endTime);
+    const startTime = job.startTime || timeEntryWithTime?.startTime;
+    const endTime = job.endTime || timeEntryWithTime?.endTime;
+    const start = parseTimeToMinutes(startTime);
+    const duration = Math.max(60, calculateTotalHours(job) * 60);
+    const end = endTime ? parseTimeToMinutes(endTime, start + duration) : start + duration;
+
+    return {
+      start,
+      end: Math.max(start + 30, end),
+    };
+  };
+
+  const getJobTimeLabel = (job: JobEntry) => {
+    const timeEntryWithTime = job.timeEntries?.find((entry) => entry.startTime || entry.endTime);
+    const startTime = job.startTime || timeEntryWithTime?.startTime;
+    const endTime = job.endTime || timeEntryWithTime?.endTime;
+
+    if (!startTime && !endTime) return null;
+
+    const { start, end } = getJobTimeRange(job);
+    return `${startTime || formatMinutesToTime(start)}–${endTime || formatMinutesToTime(end)}`;
+  };
 
   // Get jobs for a specific date
   const getJobsForDate = (date: Date) => {
@@ -269,15 +437,61 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     });
   };
 
+  const getEventsForDate = (date: Date) => {
+    const dateKey = toDateKey(date);
+    return calendarEvents.filter((event) => event.startDate <= dateKey && event.endDate >= dateKey);
+  };
+
+  const handleVacationSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!vacationForm.title.trim() || vacationForm.endDate < vacationForm.startDate) {
+      return;
+    }
+
+    try {
+      const createdEvent = await apiService.createCalendarEvent({
+        eventType: 'vacation',
+        title: vacationForm.title.trim(),
+        startDate: vacationForm.startDate,
+        endDate: vacationForm.endDate,
+        notes: vacationForm.notes.trim() || undefined,
+        allDay: true,
+      });
+      setCalendarEvents((previous) => [...previous, createdEvent]);
+      setShowVacationForm(false);
+      setVacationForm({
+        title: 'Urlaub',
+        startDate: vacationForm.startDate,
+        endDate: vacationForm.endDate,
+        notes: '',
+      });
+    } catch (error) {
+      logger.error('Error creating vacation event:', error);
+    }
+  };
+
+  const handleDeleteCalendarEvent = async (event: CalendarEvent) => {
+    if (!window.confirm(`„${event.title}“ wirklich aus dem Kalender entfernen?`)) return;
+
+    try {
+      await apiService.deleteCalendarEvent(event.id);
+      setCalendarEvents((previous) => previous.filter((item) => item.id !== event.id));
+    } catch (error) {
+      logger.error('Error deleting calendar event:', error);
+    }
+  };
+
   // Check if date is today
   const isToday = (date: Date) => {
     const today = new Date();
     return date.toDateString() === today.toDateString();
   };
 
+  const isSelectedDate = (date: Date) => date.toDateString() === selectedDate.toDateString();
+
   // Check if date is in current month
   const isCurrentMonth = (date: Date) => {
-    return date.getMonth() === currentDate.getMonth();
+    return date.getMonth() === currentDate.getMonth() && date.getFullYear() === currentDate.getFullYear();
   };
 
   // Toggle expanded state for a specific date
@@ -499,15 +713,34 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     }
   };
 
-  const weekDays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const weekDays = [
+    { short: 'Mo', long: 'Montag' },
+    { short: 'Di', long: 'Dienstag' },
+    { short: 'Mi', long: 'Mittwoch' },
+    { short: 'Do', long: 'Donnerstag' },
+    { short: 'Fr', long: 'Freitag' },
+    { short: 'Sa', long: 'Samstag' },
+    { short: 'So', long: 'Sonntag' },
+  ];
 
   return (
-    <div className="space-y-4 lg:space-y-6">
+    <div className="space-y-3 lg:space-y-0">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="p-1 lg:p-2">
         <PageHeader icon={CalendarIcon} title="Kalender">
         
-        {/* Search Bar */}
+        {/* Search and year selection */}
+        <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+        <select
+          value={selectedDate.getFullYear()}
+          onChange={(event) => selectYear(Number(event.target.value))}
+          className="h-10 w-28 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+          aria-label="Jahr auswählen"
+        >
+          {Array.from({ length: 11 }, (_, index) => new Date().getFullYear() - 5 + index).map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
         <div className="relative w-full sm:w-auto search-container">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -520,7 +753,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 setShowSearchResults(e.target.value.trim().length > 0);
               }}
               onFocus={() => setShowSearchResults(searchQuery.trim().length > 0)}
-              className="pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent w-full sm:w-64"
+              className="h-10 pl-10 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent w-full sm:w-64 text-sm"
             />
             {searchQuery && (
               <button
@@ -601,85 +834,109 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             </div>
           )}
         </div>
+        </div>
         </PageHeader>
       </div>
 
       {/* Calendar Controls */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 lg:p-4">
-        {/* Desktop Controls - Month view */}
-        <div className="hidden md:flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-2">
+      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid grid-cols-[40px_minmax(150px,1fr)_40px] items-center gap-2 lg:min-w-[300px]">
             <button
-              onClick={goToPreviousMonth}
-              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Vorheriger Monat"
+              type="button"
+              onClick={navigatePrevious}
+              className="min-h-0 h-10 w-10 border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              title="Vorheriger Zeitraum"
             >
               <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
-            
-            <h2 className="text-base lg:text-lg font-semibold text-gray-900 capitalize">
-              {monthYear}
-            </h2>
-            
-            <button
-              onClick={goToNextMonth}
-              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Nächster Monat"
-            >
-              <ChevronRight className="h-4 w-4 text-gray-600" />
-            </button>
-          </div>
-          
-          <button
-            onClick={goToToday}
-            className="min-h-0 bg-primary-custom text-white px-3 py-1.5 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm"
-          >
-            Heute
-          </button>
-        </div>
 
-        {/* Mobile Controls - Week view */}
-        <div className="md:hidden flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-2">
+            {viewMode === 'month' ? (
+              <select
+                value={currentDate.getMonth()}
+                onChange={(event) => selectMonth(Number(event.target.value))}
+                className="min-w-0 w-full appearance-none border-0 bg-transparent px-1 py-1 text-center text-lg lg:text-xl font-semibold text-gray-900 capitalize focus:ring-2 focus:ring-primary-custom rounded-lg"
+                aria-label="Monat auswählen"
+              >
+                {Array.from({ length: 12 }, (_, month) => (
+                  <option key={month} value={month}>
+                    {new Date(currentDate.getFullYear(), month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <h2 className="min-w-[180px] text-base lg:text-lg font-semibold text-gray-900 capitalize">
+                {viewMode === 'week' || viewMode === 'workweek'
+                  ? `KW ${getCalendarWeek(selectedDate)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
+                  : selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </h2>
+            )}
+
             <button
-              onClick={goToPreviousWeek}
-              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Vorherige Woche"
-            >
-              <ChevronLeft className="h-4 w-4 text-gray-600" />
-            </button>
-            
-            <h2 className="text-sm font-semibold text-gray-900">
-              {weekRange}
-            </h2>
-            
-            <button
-              onClick={goToNextWeek}
-              className="min-h-0 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Nächste Woche"
+              type="button"
+              onClick={navigateNext}
+              className="min-h-0 h-10 w-10 border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              title="Nächster Zeitraum"
             >
               <ChevronRight className="h-4 w-4 text-gray-600" />
             </button>
+
           </div>
-          
-          <button
-            onClick={goToToday}
-            className="min-h-0 bg-primary-custom text-white px-2.5 py-1 rounded-lg hover:bg-primary-custom/90 transition-colors text-xs"
-          >
-            Heute
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5" role="group" aria-label="Kalenderansicht">
+              {([
+                ['day', 'Tag'],
+                ['week', 'Kalenderwoche'],
+                ['workweek', 'Arbeitswoche'],
+                ['month', 'Monat'],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => changeViewMode(mode)}
+                  className={`min-h-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
+                >
+                  <span className="xl:hidden">{mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : label}</span>
+                  <span className="hidden xl:inline">{label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={goToToday}
+              className="min-h-0 h-10 bg-primary-custom text-white px-4 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm"
+            >
+              Heute
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowVacationForm(true)}
+              className="min-h-0 h-10 inline-flex items-center gap-1.5 border border-primary-custom text-primary-custom px-4 rounded-lg hover:bg-primary-custom/10 transition-colors text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Urlaub eintragen
+            </button>
+          </div>
         </div>
 
         {/* Desktop Calendar Grid */}
-        <div className="hidden md:block">
-          <div className="grid grid-cols-7 gap-1 lg:gap-2">
+        {viewMode === 'month' && <div className="mt-3 overflow-x-auto">
+          <div
+            className="grid h-[calc(100vh-270px)] w-full min-w-0 grid-cols-[76px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-w-[760px] sm:grid-cols-[76px_repeat(7,minmax(100px,1fr))]"
+            style={{ gridTemplateRows: `56px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
+          >
             {/* Week day headers */}
+            <div className="border-b border-r border-slate-200 bg-slate-50 p-3 text-center text-sm font-semibold text-slate-600 sm:text-base">
+              KW
+            </div>
             {weekDays.map((day) => (
               <div
-                key={day}
-                className="p-2 text-center text-xs lg:text-sm font-medium text-gray-500 uppercase"
+                key={day.short}
+                className="border-b border-r border-slate-200 bg-slate-50 p-3 text-center text-sm font-semibold text-slate-600 sm:text-base"
               >
-                {day}
+                <span className="sm:hidden">{day.short}</span>
+                <span className="hidden sm:inline">{day.long}</span>
               </div>
             ))}
             
@@ -691,15 +948,24 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               const isDragOver = dragOverDate && date.toDateString() === dragOverDate.toDateString();
               
               return (
+                <React.Fragment key={date.toISOString()}>
+                  {index % 7 === 0 && (
+                    <div className="flex h-full min-h-0 flex-col items-center justify-start border-b border-r border-slate-200 bg-white p-3 text-sm font-semibold text-primary-custom sm:text-base">
+                      <span>KW</span>
+                      <span>{getCalendarWeek(date)}</span>
+                    </div>
+                  )}
                 <div
-                  key={index}
+                  onClick={() => selectCalendarDate(date)}
+                  onDoubleClick={() => handleDateDoubleClick(date)}
                   onDragOver={(e) => handleDragOver(e, date)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, date)}
                   className={`
-                    min-h-[80px] lg:min-h-[120px] border border-gray-200 
-                    ${isDayToday ? 'bg-primary-custom/10 border-primary-custom' : 'bg-white hover:bg-gray-50'}
-                    ${!isInCurrentMonth ? 'bg-gray-50 text-gray-400' : ''}
+                    h-full min-h-0 overflow-hidden border-b border-r border-slate-200
+                    ${isSelectedDate(date) ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'}
+                    ${!isInCurrentMonth ? 'bg-slate-50 text-slate-400' : ''}
+                    ${isSelectedDate(date) ? 'z-10 bg-blue-50' : ''}
                     ${isDragOver ? 'bg-blue-100 border-blue-400 border-2 shadow-md' : ''}
                     transition-all duration-200 relative flex flex-col
                   `}
@@ -707,30 +973,55 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   {/* Date header - clickable area for creating new jobs */}
                   <div 
                     className={`
-                      p-1 lg:p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50
-                      ${isDayToday ? 'bg-primary-custom/5' : ''}
-                      transition-colors duration-200
+                      px-3 py-1.5
                     `}
-                    onDoubleClick={() => handleDateDoubleClick(date)}
                     title="Doppelklick zum Erstellen eines neuen Auftrags"
                   >
-                    <div className={`
-                      text-sm lg:text-base font-medium
-                      ${isDayToday ? 'text-primary-custom font-bold' : ''}
-                      ${!isInCurrentMonth ? 'text-gray-400' : 'text-gray-900'}
-                    `}>
+                    <div className="flex items-start">
+                      <span className={`
+                        inline-flex h-7 min-w-7 items-center justify-center rounded-full text-base font-medium
+                        ${isDayToday ? 'border border-primary-custom font-semibold text-primary-custom' : isSelectedDate(date) ? 'font-semibold text-primary-custom' : ''}
+                        ${!isInCurrentMonth ? 'text-gray-400' : 'text-gray-900'}
+                      `}>
                       {date.getDate()}
+                      </span>
                     </div>
                   </div>
                   
                   {/* Jobs area */}
-                  <div className="flex-1 p-1 lg:p-2 space-y-1">
+                  <div className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-transparent p-2">
                     {(() => {
                       const isExpanded = isDateExpanded(date);
-                      const jobsToShow = isExpanded ? dayJobs : dayJobs.slice(0, 3);
+                      const dayEvents = getEventsForDate(date);
+                      const totalEntries = dayJobs.length + dayEvents.length;
+                      const compactEntries = totalEntries > 1 && !isExpanded;
+                      const jobsToShow = isExpanded ? dayJobs : dayJobs.slice(0, Math.max(0, 2 - dayEvents.length));
                       
                       return (
                         <>
+                          {dayEvents.map((calendarEvent) => (
+                            <div
+                              key={calendarEvent.id}
+                              className="flex items-center justify-between gap-1 rounded border border-purple-200 bg-purple-100 px-1.5 py-1 text-xs text-purple-800"
+                              title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
+                            >
+                              <div className="flex min-w-0 items-center gap-1">
+                                <CalendarIcon className="h-3 w-3 shrink-0" />
+                                <span className="truncate font-medium">{calendarEvent.title}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteCalendarEvent(calendarEvent);
+                                }}
+                                className="shrink-0 rounded p-0.5 text-purple-700 hover:bg-purple-200"
+                                title="Urlaub entfernen"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
                           {jobsToShow.map((job, jobIndex) => {
                             const customer = customers.find(c => c.id === job.customerId);
                             const totalHours = calculateTotalHours(job);
@@ -760,14 +1051,17 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   draggable={job.status !== 'invoiced'}
                                   onDragStart={(e) => handleDragStart(e, job)}
                                   onDragEnd={handleDragEnd}
-                                  onDoubleClick={() => handleJobDoubleClick(job)}
+                                  onDoubleClick={(event) => {
+                                    event.stopPropagation();
+                                    handleJobDoubleClick(job);
+                                  }}
                                   onDragOver={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                   }}
                                   onDrop={(e) => handleJobDrop(e, date, job.id)}
                                   className={`
-                                    text-xs p-1 lg:p-2 rounded border cursor-move
+                                    text-xs p-1 rounded border cursor-move
                                     ${getStatusColor(job.status)}
                                     ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : 'hover:shadow-sm'}
                                     ${draggedJob && draggedJob.id !== job.id && 
@@ -791,17 +1085,17 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                         <FileText className="h-3 w-3 ml-1 flex-shrink-0 text-gray-400" title="Anhänge vorhanden" />
                                       )}
                                     </div>
-                                    <div className="flex items-center mt-1 text-xs opacity-75">
+                                    <div className={`${compactEntries ? 'hidden' : 'flex'} items-center mt-1 text-xs opacity-75`}>
                                       <User className="h-3 w-3 mr-1 flex-shrink-0" />
                                       <span className="truncate">{customer?.name || job.customerName}</span>
                                     </div>
-                                    {job.jobNumber && (
+                                    {job.jobNumber && !compactEntries && (
                                       <div className="flex items-center mt-1 text-xs opacity-75">
                                         <Hash className="h-3 w-3 mr-1 flex-shrink-0" />
                                         <span className="truncate">{job.jobNumber}</span>
                                       </div>
                                     )}
-                                    {job.externalJobNumber && (
+                                    {job.externalJobNumber && !compactEntries && (
                                       <div className="flex items-center mt-1 text-xs opacity-75">
                                         <ExternalLink className="h-3 w-3 mr-1 flex-shrink-0" />
                                         <span className="truncate">{job.externalJobNumber}</span>
@@ -819,7 +1113,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           })}
                           
                           {/* Show toggle button if more jobs exist */}
-                          {dayJobs.length > 3 && (
+                          {totalEntries > dayEvents.length + jobsToShow.length && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -830,7 +1124,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             >
                               {isExpanded ? 
                                 `Weniger anzeigen` : 
-                                `+${dayJobs.length - 3} weitere`
+                                `+${totalEntries - dayEvents.length - jobsToShow.length} weitere`
                               }
                             </button>
                           )}
@@ -838,16 +1132,156 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       );
                     })()}
                   </div>
+                  {isSelectedDate(date) && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-30 rounded-lg border-2"
+                      style={{ borderColor: 'var(--primary-color)' }}
+                    />
+                  )}
                 </div>
+                </React.Fragment>
               );
             })}
           </div>
         </div>
+        }
+
+        {/* Desktop time grid for day, calendar week and work week */}
+        {(viewMode === 'day' || viewMode === 'week' || viewMode === 'workweek') && (
+          <div className="mt-3 hidden overflow-x-auto rounded-lg border border-gray-300 lg:block">
+            <div className="min-w-[900px]">
+              <div
+                className="grid"
+                style={{ gridTemplateColumns: '64px minmax(0, 1fr)' }}
+              >
+                <div className="border-b border-r border-gray-300 bg-gray-100 p-2 text-center text-xs font-semibold uppercase text-gray-600">
+                  Zeit
+                </div>
+                <div
+                  className="grid"
+                  style={{ gridTemplateColumns: `repeat(${timeGridDays.length}, minmax(0, 1fr))` }}
+                >
+                  {timeGridDays.map((date) => (
+                    <div
+                      key={date.toISOString()}
+                      onClick={() => selectCalendarDate(date)}
+                      onDoubleClick={() => handleDateDoubleClick(date)}
+                      className={`cursor-pointer border-b border-r border-gray-300 p-2 ${
+                        isToday(date) ? 'bg-primary-custom/15 text-primary-custom' : 'bg-gray-100 text-gray-700'
+                      } ${isSelectedDate(date) ? 'ring-2 ring-inset ring-primary-custom' : ''}`}
+                    >
+                      <div className="text-sm font-semibold">
+                        {date.toLocaleDateString(locale, { weekday: 'long' })}
+                      </div>
+                      <div className="mt-1 text-sm font-medium">
+                        {date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-gray-50">
+                  {timeGridHours.map((hour) => (
+                    <div
+                      key={hour}
+                      className="border-b border-r border-gray-200 px-2 pt-1 text-right text-[11px] font-medium text-gray-500"
+                      style={{ height: `${CALENDAR_HOUR_HEIGHT}px` }}
+                    >
+                      {String(hour).padStart(2, '0')}:00
+                    </div>
+                  ))}
+                </div>
+                <div
+                  className="grid"
+                  style={{ gridTemplateColumns: `repeat(${timeGridDays.length}, minmax(0, 1fr))` }}
+                >
+                  {timeGridDays.map((date) => {
+                    const dayJobs = getJobsForDate(date);
+                    const dayEvents = getEventsForDate(date);
+                    const dayStartMinutes = CALENDAR_START_HOUR * 60;
+                    const dayEndMinutes = CALENDAR_END_HOUR * 60;
+
+                    return (
+                      <div
+                        key={date.toISOString()}
+                        onDragOver={(event) => handleDragOver(event, date)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(event) => handleDrop(event, date)}
+                        className={`relative border-b border-r border-gray-300 ${
+                          isToday(date) ? 'bg-primary-custom/5' : 'bg-white'
+                        } ${isSelectedDate(date) ? 'bg-blue-50/30' : ''} ${
+                          dragOverDate && date.toDateString() === dragOverDate.toDateString()
+                            ? 'bg-blue-100'
+                            : ''
+                        }`}
+                        style={{
+                          height: `${timeGridHours.length * CALENDAR_HOUR_HEIGHT}px`,
+                          backgroundImage: 'repeating-linear-gradient(to bottom, transparent 0, transparent 55px, #e5e7eb 55px, #e5e7eb 56px)',
+                        }}
+                      >
+                        {dayEvents.map((calendarEvent, eventIndex) => (
+                          <div
+                            key={calendarEvent.id}
+                            className="absolute left-1 right-1 z-10 flex h-7 items-center gap-1 overflow-hidden rounded border border-purple-200 bg-purple-100 px-1.5 text-xs text-purple-800"
+                            style={{ top: `${4 + eventIndex * 30}px` }}
+                            title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
+                          >
+                            <CalendarIcon className="h-3 w-3 shrink-0" />
+                            <span className="truncate font-medium">{calendarEvent.title}</span>
+                          </div>
+                        ))}
+                        {dayJobs.map((job) => {
+                          const customer = customers.find((item) => item.id === job.customerId);
+                          const { start, end } = getJobTimeRange(job);
+                          const jobTimeLabel = getJobTimeLabel(job) || `${formatMinutesToTime(start)}–${formatMinutesToTime(end)}`;
+                          const visibleStart = Math.max(dayStartMinutes, start);
+                          const visibleEnd = Math.min(dayEndMinutes, end);
+
+                          if (visibleEnd <= visibleStart) return null;
+
+                          return (
+                            <div
+                              key={job.id}
+                              draggable={job.status !== 'invoiced'}
+                              onDragStart={(event) => handleDragStart(event, job)}
+                              onDragEnd={handleDragEnd}
+                              onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                handleJobDoubleClick(job);
+                              }}
+                              className={`absolute left-1 right-1 z-20 cursor-pointer overflow-hidden rounded border p-1.5 text-xs shadow-sm ${getStatusColor(job.status)} ${
+                                highlightedJobId === job.id ? 'ring-2 ring-red-500' : ''
+                              }`}
+                              style={{
+                                top: `${((visibleStart - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
+                                height: `${Math.max(32, ((visibleEnd - visibleStart) / 60) * CALENDAR_HOUR_HEIGHT)}px`,
+                              }}
+                              title={`${job.title} · ${customer?.name || job.customerName} · ${jobTimeLabel}`}
+                            >
+                              <div className="truncate font-semibold">{job.title}</div>
+                              <div className="truncate opacity-80">{customer?.name || job.customerName}</div>
+                              <div className="mt-0.5 flex items-center gap-1 opacity-80">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{jobTimeLabel}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Mobile Week View */}
-        <div className="md:hidden space-y-3">
-          {currentWeekDays.map((date, index) => {
+        {viewMode !== 'month' && <div className="mt-3 space-y-3 lg:hidden">
+          {(viewMode === 'day' ? [selectedDate] : viewMode === 'workweek' ? currentWeekDays.slice(0, 5) : currentWeekDays).map((date, index) => {
             const dayJobs = getJobsForDate(date);
+            const dayEvents = getEventsForDate(date);
             const isDayToday = isToday(date);
             const isDragOver = dragOverDate && date.toDateString() === dragOverDate.toDateString();
             const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
@@ -859,8 +1293,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, date)}
                 className={`
-                  border border-gray-200 rounded-lg overflow-hidden
+                  border border-gray-300 rounded-lg overflow-hidden
                   ${isDayToday ? 'border-primary-custom bg-primary-custom/5' : 'bg-white'}
+                  ${isSelectedDate(date) ? 'ring-2 ring-inset ring-primary-custom' : ''}
                   ${isDragOver ? 'bg-blue-100 border-blue-400 border-2 shadow-md' : ''}
                   transition-all duration-200
                 `}
@@ -868,11 +1303,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 {/* Date header */}
                 <div 
                   className={`
-                    p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50
-                    ${isDayToday ? 'bg-primary-custom/10' : 'bg-gray-50'}
+                    p-3 border-b border-gray-300 cursor-pointer hover:bg-gray-100
+                    ${isDayToday ? 'bg-primary-custom/20' : isSelectedDate(date) ? 'bg-primary-custom/10' : 'bg-gray-100'}
                     transition-colors duration-200
                   `}
                   onDoubleClick={() => handleDateDoubleClick(date)}
+                  onClick={() => selectCalendarDate(date)}
                   title="Doppelklick zum Erstellen eines neuen Auftrags"
                 >
                   <div className="flex items-center justify-between">
@@ -882,9 +1318,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     `}>
                       {dayName}, {date.getDate()}.{String(date.getMonth() + 1).padStart(2, '0')}.
                     </div>
-                    {dayJobs.length > 0 && (
+                    {dayJobs.length + dayEvents.length > 0 && (
                       <div className="text-xs text-gray-500">
-                        {dayJobs.length} Auftrag{dayJobs.length > 1 ? 'e' : ''}
+                        {dayJobs.length + dayEvents.length} Eintrag{dayJobs.length + dayEvents.length > 1 ? 'e' : ''}
                       </div>
                     )}
                   </div>
@@ -892,7 +1328,26 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 
                 {/* Jobs list */}
                 <div className="p-3 space-y-2">
-                  {dayJobs.length === 0 ? (
+                  {dayEvents.map((calendarEvent) => (
+                    <div
+                      key={calendarEvent.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-purple-200 bg-purple-100 p-2 text-sm text-purple-800"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CalendarIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate font-medium">{calendarEvent.title}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCalendarEvent(calendarEvent)}
+                        className="shrink-0 rounded p-1 text-purple-700 hover:bg-purple-200"
+                        title="Urlaub entfernen"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {dayJobs.length === 0 && dayEvents.length === 0 ? (
                     <div className="text-center py-4 text-gray-400 text-sm">
                       Keine Aufträge
                     </div>
@@ -900,6 +1355,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     dayJobs.map((job, jobIndex) => {
                       const customer = customers.find(c => c.id === job.customerId);
                       const totalHours = calculateTotalHours(job);
+                      const jobTimeLabel = getJobTimeLabel(job);
                       
                       return (
                         <React.Fragment key={job.id}>
@@ -975,7 +1431,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               )}
                               <div className="flex items-center text-sm text-gray-600">
                                 <Clock className="h-4 w-4 mr-2 flex-shrink-0" />
-                                <span>{totalHours.toFixed(1)}h</span>
+                                <span>{jobTimeLabel ? `${jobTimeLabel} · ` : ''}{totalHours.toFixed(1)}h</span>
                               </div>
                             </div>
                           </div>
@@ -989,11 +1445,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             );
           })}
         </div>
+        }
 
         {/* Legend */}
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h4 className="text-sm font-medium text-gray-900 mb-3">Legende</h4>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
             <div className="flex items-center">
               <div className="w-3 h-3 rounded bg-gray-100 border border-gray-200 mr-2"></div>
               <span className="text-gray-600">Entwurf</span>
@@ -1010,6 +1467,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               <div className="w-3 h-3 rounded bg-blue-100 border border-blue-200 mr-2"></div>
               <span className="text-gray-600">Abgerechnet</span>
             </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded bg-purple-100 border border-purple-200 mr-2"></div>
+              <span className="text-gray-600">Urlaub</span>
+            </div>
           </div>
           <div className="mt-3 text-xs text-gray-500">
             <p>• Ziehen Sie Aufträge per Drag & Drop, um das Datum zu ändern</p>
@@ -1020,6 +1481,79 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           </div>
         </div>
       </div>
+
+      {/* Vacation entry modal */}
+      {showVacationForm && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4" onClick={(event) => event.target === event.currentTarget && setShowVacationForm(false)}>
+          <form
+            onSubmit={handleVacationSubmit}
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Urlaub eintragen</h3>
+                <p className="mt-1 text-sm text-gray-500">Der Zeitraum wird im Kalender als Abwesenheit angezeigt.</p>
+              </div>
+              <button type="button" onClick={() => setShowVacationForm(false)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Schließen">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Bezeichnung</label>
+                <input
+                  type="text"
+                  required
+                  value={vacationForm.title}
+                  onChange={(event) => setVacationForm((previous) => ({ ...previous, title: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                  placeholder="z. B. Sommerurlaub"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Von</label>
+                  <input
+                    type="date"
+                    required
+                    value={vacationForm.startDate}
+                    onChange={(event) => setVacationForm((previous) => ({ ...previous, startDate: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Bis</label>
+                  <input
+                    type="date"
+                    required
+                    min={vacationForm.startDate}
+                    value={vacationForm.endDate}
+                    onChange={(event) => setVacationForm((previous) => ({ ...previous, endDate: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Notiz (optional)</label>
+                <textarea
+                  value={vacationForm.notes}
+                  onChange={(event) => setVacationForm((previous) => ({ ...previous, notes: event.target.value }))}
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                  placeholder="Weitere Informationen"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowVacationForm(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Abbrechen</button>
+              <button type="submit" className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm text-white hover:bg-primary-custom/90"><Plus className="h-4 w-4" />Eintragen</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Job Form Modal */}
       {showJobForm && (

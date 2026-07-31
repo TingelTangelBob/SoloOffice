@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { Clock, CheckCircle, Send, Check, Home } from 'lucide-react';
+import { Clock, CheckCircle, Send, Check, Home, MoreVertical } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -332,27 +332,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
         
         {/* Desktop Table View */}
-        <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full">
+        <div className="hidden lg:block w-full max-w-full overflow-x-auto">
+          <table className="w-full min-w-[700px]">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Rechnungsnummer
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Kunde
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Betrag
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Datum
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Aktionen
+                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-44 2xl:px-3">
+                  <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
@@ -364,48 +364,67 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
                   title={`Zur Rechnung ${invoice.invoiceNumber}`}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-primary-custom hover:text-primary-custom/80">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-primary-custom hover:text-primary-custom/80">
                     {invoice.invoiceNumber}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                     {invoice.customerName}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(invoice.total, locale)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                     {new Date(invoice.issueDate).toLocaleDateString('de-DE')}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div 
-                      className="flex space-x-2" 
+                  <td className="w-14 px-2 py-3 whitespace-nowrap 2xl:w-44 2xl:px-3">
+                    <div
+                      className="flex items-center gap-1"
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
+                      <details className="relative 2xl:hidden">
+                        <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
+                          <MoreVertical className="h-4 w-4" />
+                        </summary>
+                        <div className="absolute right-0 top-9 z-20 min-w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                          {invoice.status === 'draft' && (
+                            <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => handleSendEmail(invoice)}>
+                              Versenden
+                            </button>
+                          )}
+                          {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                            <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
+                              Als bezahlt markieren
+                            </button>
+                          )}
+                        </div>
+                      </details>
+                      <div className="hidden 2xl:flex space-x-1">
                       {invoice.status === 'draft' && (
                         <button
-                          className="bg-primary-custom/10 hover:bg-primary-custom/20 text-primary-custom hover:text-primary-custom px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-blue"
                           title="Per E-Mail versenden"
                           onClick={() => handleSendEmail(invoice)}
                         >
-                          <Send className="h-3 w-3 mr-1" />
-                          <span>Versenden</span>
+                          <Send className="h-4 w-4" />
                         </button>
                       )}
                       {(invoice.status === 'sent' || invoice.status === 'overdue') && (
                         <button
-                          className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-green"
                           title="Als bezahlt markieren"
                           onClick={() => updateInvoice(invoice.id, { status: 'paid' })}
                         >
-                          <Check className="h-3 w-3 mr-1" />
-                          <span>Bezahlt</span>
+                          <Check className="h-4 w-4" />
                         </button>
                       )}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -419,47 +438,45 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           {recentInvoices.map((invoice) => (
             <div 
               key={invoice.id} 
-              className="p-4 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
+              className="p-3 sm:p-4 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
               onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
             >
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h4 className="text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
-                  <p className="text-sm text-gray-900">{invoice.customerName}</p>
+                  <p className="text-sm text-gray-900 truncate">{invoice.customerName}</p>
                   <p className="text-sm font-medium text-gray-900">{formatCurrency(invoice.total, locale)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
                     {getStatusLabel(invoice.status)}
                   </span>
                   <p className="text-xs text-gray-500">
                     {new Date(invoice.issueDate).toLocaleDateString('de-DE')}
                   </p>
+                  <div
+                    className="mt-1"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    <details className="relative">
+                      <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
+                        <MoreVertical className="h-4 w-4" />
+                      </summary>
+                      <div className="absolute right-0 top-9 z-20 min-w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                        {invoice.status === 'draft' && (
+                          <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => handleSendEmail(invoice)}>
+                            Versenden
+                          </button>
+                        )}
+                        {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                          <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
+                            Als bezahlt markieren
+                          </button>
+                        )}
+                      </div>
+                    </details>
+                  </div>
                 </div>
-              </div>
-              
-              <div 
-                className="flex space-x-2 mt-2" 
-                onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              >
-                {invoice.status === 'draft' && (
-                  <button
-                    className="bg-primary-custom/10 hover:bg-primary-custom/20 text-primary-custom px-2 py-1 rounded-md transition-colors text-xs font-medium flex items-center"
-                    onClick={() => handleSendEmail(invoice)}
-                  >
-                    <Send className="h-3 w-3 mr-1" />
-                    Versenden
-                  </button>
-                )}
-                {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                  <button
-                    className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded-md transition-colors text-xs font-medium flex items-center"
-                    onClick={() => updateInvoice(invoice.id, { status: 'paid' })}
-                  >
-                    <Check className="h-3 w-3 mr-1" />
-                    Bezahlt
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -492,10 +509,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <tbody className="bg-white divide-y divide-gray-200">
               {monthlyRevenueSorted.map(([month, revenue]) => (
                 <tr key={month}>
-                  <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-4 lg:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
                     {month}
                   </td>
-                  <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-4 lg:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(revenue, locale)}
                   </td>
                 </tr>

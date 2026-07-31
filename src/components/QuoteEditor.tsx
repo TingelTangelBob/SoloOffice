@@ -453,6 +453,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const [globalDiscountType, setGlobalDiscountType] = useState<'percentage' | 'fixed' | ''>('');
   const [globalDiscountValue, setGlobalDiscountValue] = useState<string>('');
   const [attachments, setAttachments] = useState<QuoteAttachment[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
@@ -521,7 +522,15 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setQuoteNumber('');
       setItems([createEmptyItem(1)]);
     }
+    setIsDirty(false);
   }, [quote, customers]);
+
+  const requestClose = () => {
+    if (isDirty && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+      return;
+    }
+    onClose();
+  };
 
 
   const handleCustomerSelect = (customer: any) => {
@@ -826,15 +835,20 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const hasNoTemplates = materialTemplates.length === 0 && hourlyRateTemplates.length === 0;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl my-8">
+    <div
+      className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center p-4 z-[1000] overflow-y-auto"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
+    >
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl my-8 max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <h2 className="text-2xl font-bold text-gray-900">
             {quote ? 'Angebot bearbeiten' : 'Neues Angebot'}
           </h2>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-white rounded-full"
             title="Schließen"
           >
@@ -842,7 +856,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[calc(100vh-12rem)] overflow-y-auto">
+        <form onSubmit={handleSubmit} onChange={() => setIsDirty(true)} className="p-6 space-y-6 flex-1 min-h-0 overflow-y-auto">
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -1246,10 +1260,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 pt-6 border-t border-gray-200">
+          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 flex gap-3 border-t border-gray-200 bg-white/95 p-6 backdrop-blur">
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
             >
               Abbrechen

@@ -1,4 +1,4 @@
-import { Customer, Invoice, Quote, Company, JobEntry, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility } from '../types';
+import { Customer, Invoice, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -381,6 +381,25 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ signatureData, customerName }),
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Calendar API
+  // --------------------------------------------------------------------------
+
+  async getCalendarEvents(): Promise<CalendarEvent[]> {
+    return this.request<CalendarEvent[]>('/calendar-events');
+  }
+
+  async createCalendarEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): Promise<CalendarEvent> {
+    return this.request<CalendarEvent>('/calendar-events', {
+      method: 'POST',
+      body: JSON.stringify(event),
+    });
+  }
+
+  async deleteCalendarEvent(id: string): Promise<void> {
+    await this.request(`/calendar-events/${id}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import yearlyInvoiceStartNumbersRouter from './routes/yearlyInvoiceStartNumbers.
 import backupRouter from './routes/backup.js';
 import reportingRouter from './routes/reporting.js';
 import remindersRouter from './routes/reminders.js';
+import calendarEventsRouter from './routes/calendarEvents.js';
 
 dotenv.config();
 
@@ -67,6 +68,7 @@ app.use('/api/yearly-invoice-start-numbers', yearlyInvoiceStartNumbersRouter);
 app.use('/api/backup', backupRouter);
 app.use('/api/reporting', reportingRouter);
 app.use('/api/reminders', remindersRouter);
+app.use('/api/calendar-events', calendarEventsRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

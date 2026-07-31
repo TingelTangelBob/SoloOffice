@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, Mail, X, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, Mail, X, CheckCircle, MoreHorizontal } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -317,18 +317,6 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'accepted': return 'bg-green-100 text-green-800';
-      case 'billed': return 'bg-blue-100 text-blue-800';
-      case 'sent': return 'bg-primary-custom/10 text-primary-custom';
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'rejected': return 'bg-red-100 text-red-800';
-      case 'expired': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'accepted': return 'Akzeptiert';
@@ -338,6 +326,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       case 'rejected': return 'Abgelehnt';
       case 'expired': return 'Abgelaufen';
       default: return status;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'accepted': return 'bg-green-100 text-green-800';
+      case 'billed': return 'bg-blue-100 text-blue-800';
+      case 'sent': return 'bg-primary-custom/10 text-primary-custom';
+      case 'draft': return 'bg-gray-100 text-gray-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'expired': return 'bg-orange-100 text-orange-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -697,9 +697,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       {/* Quote List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         {/* Desktop/Tablet Table View */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
           <div className="min-w-full">
-            <table className="w-full min-w-[980px]">
+            <table className="w-full min-w-[920px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">
@@ -732,8 +732,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                   Status
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48">
-                  Aktionen
+                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
+                  <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
@@ -765,99 +765,107 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     {formatCurrency(quote.total, locale)}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap">
-                    <div className="flex flex-col space-y-1">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
-                        {getStatusLabel(quote.status)}
-                      </span>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
+                      {getStatusLabel(quote.status)}
+                    </span>
+                  </td>
+                  <td className="relative w-14 px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-56 2xl:px-3">
+                    <div className="hidden 2xl:flex flex-wrap gap-1">
                       {quote.status === 'draft' && (
                         <button
-                          className="bg-primary-light-custom hover:bg-primary-medium-custom text-primary-custom hover:text-primary-custom px-2 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-blue"
                           title="Per E-Mail versenden"
                           onClick={() => handleSendEmail(quote)}
                         >
-                          <Send className="h-3 w-3 mr-1" />
-                          <span className="hidden xl:inline">Versenden</span>
+                          <Send className="h-4 w-4" />
                         </button>
                       )}
                       {quote.status === 'sent' && (
                         <>
                           <button
-                            className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 px-2 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                            type="button"
+                            className="action-icon-button action-icon-green"
                             title="Als akzeptiert markieren"
                             onClick={() => handleStatusChange(quote.id, 'accepted')}
                           >
-                            <Check className="h-3 w-3 mr-1" />
-                            <span className="hidden xl:inline">Akzeptiert</span>
+                            <Check className="h-4 w-4" />
                           </button>
                           <button
-                            className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 px-2 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                            type="button"
+                            className="action-icon-button action-icon-red"
                             title="Als abgelehnt markieren"
                             onClick={() => handleStatusChange(quote.id, 'rejected')}
                           >
-                            <span className="hidden xl:inline">Abgelehnt</span>
+                            <X className="h-4 w-4" />
                           </button>
                         </>
                       )}
                       {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
                         <button
-                          className="bg-blue-100 hover:bg-blue-200 text-blue-700 hover:text-blue-800 px-2 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-blue"
                           title="In Rechnung umwandeln"
                           onClick={() => handleConvertToInvoice(quote)}
                         >
-                          <FileCheck className="h-3 w-3 mr-1" />
-                          <span className="hidden xl:inline">Rechnung</span>
+                          <FileCheck className="h-4 w-4" />
                         </button>
                       )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex flex-wrap gap-1">
                       <button
+                        type="button"
                         onClick={() => handleOpenEditor(quote)}
-                        className="bg-primary-light-custom hover:bg-primary-medium-custom text-primary-custom hover:text-primary-custom p-1.5 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-indigo"
                         title="Bearbeiten"
                       >
                         <Edit className="h-3.5 w-3.5" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => handlePreview(quote)}
-                        className="bg-blue-100 hover:bg-blue-200 text-blue-700 hover:text-blue-800 p-1.5 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-blue"
                         title="Vorschau anzeigen"
                       >
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                       <button 
+                        type="button"
                         onClick={() => handleDownloadPDF(quote)}
                         disabled={isExporting === quote.id}
-                        className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 p-1.5 rounded-md transition-colors duration-200 shadow-sm" 
+                        className="action-icon-button action-icon-green"
                         title="Herunterladen"
                       >
                         {isExporting === quote.id ? (
                           <div className="animate-spin h-3.5 w-3.5 border-2 border-green-600 border-t-transparent rounded-full"></div>
                         ) : (
-                          <Download className="h-3.5 w-3.5" />
+                          <Download className="h-4 w-4" />
                         )}
                       </button>
                       <button
-                        onClick={() => handleSendEmail(quote)}
-                        disabled={isSendingEmail === quote.id}
-                        className="bg-purple-100 hover:bg-purple-200 text-purple-700 hover:text-purple-800 p-1.5 rounded-md transition-colors duration-200 shadow-sm"
-                        title="Per E-Mail versenden"
-                      >
-                        {isSendingEmail === quote.id ? (
-                          <div className="animate-spin h-3.5 w-3.5 border-2 border-purple-600 border-t-transparent rounded-full"></div>
-                        ) : (
-                          <Mail className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                      <button
+                        type="button"
                         onClick={() => handleDelete(quote)}
-                        className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 p-1.5 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-red"
                         title="Löschen"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                    <details className="relative hidden lg:block 2xl:hidden">
+                      <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </summary>
+                      <div className="absolute right-0 z-20 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                        {quote.status === 'draft' && <button type="button" onClick={() => handleSendEmail(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Per E-Mail versenden</button>}
+                        {quote.status === 'sent' && <>
+                          <button type="button" onClick={() => handleStatusChange(quote.id, 'accepted')} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Als akzeptiert markieren</button>
+                          <button type="button" onClick={() => handleStatusChange(quote.id, 'rejected')} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Als abgelehnt markieren</button>
+                        </>}
+                        {quote.status === 'accepted' && !quote.convertedToInvoiceId && <button type="button" onClick={() => handleConvertToInvoice(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">In Rechnung umwandeln</button>}
+                        <button type="button" onClick={() => handleOpenEditor(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Bearbeiten</button>
+                        <button type="button" onClick={() => handlePreview(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Vorschau anzeigen</button>
+                        <button type="button" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Herunterladen</button>
+                        <button type="button" onClick={() => handleDelete(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">LÃ¶schen</button>
+                      </div>
+                    </details>
                   </td>
                 </tr>
               ))}
@@ -867,7 +875,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         </div>
 
         {/* Mobile Card View */}
-        <div className="md:hidden">
+        <div className="lg:hidden">
           <div className="p-4 border-b bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
@@ -919,98 +927,99 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 mt-3">
+                  <details className="relative mt-3">
+                    <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </summary>
+                    <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                  <div className="flex flex-wrap gap-2">
                     {/* Status-based action buttons */}
                     {quote.status === 'draft' && (
                       <button
-                        className="bg-primary-light-custom hover:bg-primary-medium-custom text-primary-custom hover:text-primary-custom px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                        type="button"
+                        className="action-icon-button action-icon-blue"
+                        title="Per E-Mail versenden"
                         onClick={() => handleSendEmail(quote)}
                       >
-                        <Send className="h-3 w-3 mr-1" />
-                        <span>Versenden</span>
+                        <Send className="h-4 w-4" />
                       </button>
                     )}
                     {quote.status === 'sent' && (
                       <>
                         <button
-                          className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-green"
+                          title="Als akzeptiert markieren"
                           onClick={() => handleStatusChange(quote.id, 'accepted')}
                         >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          <span>Angenommen</span>
+                          <CheckCircle className="h-4 w-4" />
                         </button>
                         <button
-                          className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                          type="button"
+                          className="action-icon-button action-icon-red"
+                          title="Als abgelehnt markieren"
                           onClick={() => handleStatusChange(quote.id, 'rejected')}
                         >
-                          <X className="h-3 w-3 mr-1" />
-                          <span>Abgelehnt</span>
+                          <X className="h-4 w-4" />
                         </button>
                       </>
                     )}
                     {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
                       <button
+                        type="button"
                         onClick={() => handleConvertToInvoice(quote)}
-                        className="bg-blue-100 hover:bg-blue-200 text-blue-700 hover:text-blue-800 px-3 py-1 rounded-md transition-colors duration-200 shadow-sm flex items-center text-xs font-medium"
+                        className="action-icon-button action-icon-blue"
+                        title="In Rechnung umwandeln"
                       >
-                        <FileCheck className="h-3 w-3 mr-1" />
-                        <span>Rechnung erstellen</span>
+                        <FileCheck className="h-4 w-4" />
                       </button>
                     )}
                     
                     {/* Icon action buttons */}
                     <div className="flex space-x-1">
                       <button
+                        type="button"
                         onClick={() => handleOpenEditor(quote)}
-                        className="bg-primary-light-custom hover:bg-primary-medium-custom text-primary-custom hover:text-primary-custom p-2 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-indigo"
                         title="Bearbeiten"
                       >
                         <Edit className="h-3 w-3" />
                       </button>
                       
                       <button
+                        type="button"
                         onClick={() => handlePreview(quote)}
-                        className="bg-blue-100 hover:bg-blue-200 text-blue-700 hover:text-blue-800 p-2 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-blue"
                         title="Vorschau anzeigen"
                       >
                         <Eye className="h-3 w-3" />
                       </button>
                       
                       <button 
+                        type="button"
                         onClick={() => handleDownloadPDF(quote)}
                         disabled={isExporting === quote.id}
-                        className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 p-2 rounded-md transition-colors duration-200 shadow-sm" 
+                        className="action-icon-button action-icon-green"
                         title="Herunterladen"
                       >
                         {isExporting === quote.id ? (
                           <div className="animate-spin h-3 w-3 border-2 border-green-600 border-t-transparent rounded-full"></div>
                         ) : (
-                          <Download className="h-3 w-3" />
+                          <Download className="h-4 w-4" />
                         )}
                       </button>
-                      
                       <button
-                        onClick={() => handleSendEmail(quote)}
-                        disabled={isSendingEmail === quote.id}
-                        className="bg-purple-100 hover:bg-purple-200 text-purple-700 hover:text-purple-800 p-2 rounded-md transition-colors duration-200 shadow-sm"
-                        title="Per E-Mail versenden"
-                      >
-                        {isSendingEmail === quote.id ? (
-                          <div className="animate-spin h-3 w-3 border-2 border-purple-600 border-t-transparent rounded-full"></div>
-                        ) : (
-                          <Mail className="h-3 w-3" />
-                        )}
-                      </button>
-                      
-                      <button
+                        type="button"
                         onClick={() => handleDelete(quote)}
-                        className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 p-2 rounded-md transition-colors duration-200 shadow-sm"
+                        className="action-icon-button action-icon-red"
                         title="Löschen"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>

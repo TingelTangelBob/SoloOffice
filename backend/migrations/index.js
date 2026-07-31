@@ -10,6 +10,7 @@ import * as migration001 from './001_initial_schema.js';
 import * as migration002 from './002_customer_emails.js';
 import * as migration003 from './003_email_management.js';
 import * as migration004 from './004_customer_specific_rates.js';
+import * as migration005 from './005_calendar_events.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -17,6 +18,7 @@ const migrations = [
   migration002,
   migration003,
   migration004,
+  migration005,
 ];
 
 /**

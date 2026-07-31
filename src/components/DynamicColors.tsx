@@ -126,6 +126,11 @@ export function DynamicColors() {
           background-color: var(--secondary-color) !important;
           color: var(--secondary-text-color) !important;
         }
+
+        /* Toggle track colors */
+        label:has(> input[type="checkbox"]:checked) > div {
+          background-color: var(--primary-color) !important;
+        }
         
         /* Border colors */
         .border-primary-custom {

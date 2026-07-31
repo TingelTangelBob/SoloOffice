@@ -216,6 +216,18 @@ export interface JobEntry extends Timestamps {
   location?: string;
 }
 
+export type CalendarEventType = 'vacation';
+
+export interface CalendarEvent extends Timestamps {
+  id: UUID;
+  eventType: CalendarEventType;
+  title: string;
+  startDate: string;
+  endDate: string;
+  notes?: string;
+  allDay?: boolean;
+}
+
 export interface JobInvoiceGeneration {
   type: 'single' | 'daily' | 'weekly' | 'monthly';
   jobIds: UUID[];

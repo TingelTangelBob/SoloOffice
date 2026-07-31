@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { X, Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit, PenTool } from 'lucide-react';
-import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, JobSignature } from '../types';
+import { X, Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit } from 'lucide-react';
+import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
 import { AttachmentManager } from './AttachmentManager';
 import { DocumentPreview, PreviewDocument } from './DocumentPreview';
-import { SignaturePad } from './SignaturePad';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
 import { createDefaultTimeEntry } from '../utils/jobUtils';
-import { generateUUID } from '../utils/uuid';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
 
 interface JobEntryFormProps {
@@ -60,9 +58,6 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   
 
   
-  // Signature Pad state
-  const [showSignaturePad, setShowSignaturePad] = useState(false);
-  
   const [formData, setFormData] = useState<Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>>({
     jobNumber: '', // Will be auto-generated
     externalJobNumber: '',
@@ -82,8 +77,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     status: 'draft', // Standard-Status ist "Entwurf"
     notes: '',
     attachments: [],
-    signature: undefined
   });
+  const [isDirty, setIsDirty] = useState(false);
   
   // Document Preview state
   const [documentPreview, setDocumentPreview] = useState<{
@@ -117,7 +112,6 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
         status: job.status,
         notes: job.notes || '',
         attachments: job.attachments || [],
-        signature: job.signature || undefined
       });
     } else {
       // Für neue Aufträge: keine Standard-Zeiteinträge, Nutzer muss explizit hinzufügen
@@ -142,7 +136,6 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
         status: 'draft', // Standard-Status ist "Entwurf"
         notes: '',
         attachments: [],
-        signature: undefined
       };
       
       if (defaultRate) {
@@ -152,6 +145,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       
       setFormData(initialFormData);
     }
+    setIsDirty(false);
   }, [job, company.hourlyRates, defaultDate]);
 
   // Filter customers based on search term
@@ -437,37 +431,6 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     });
   };
 
-  const handleSignature = () => {
-    // Check if customer is selected
-    if (!formData.customerId) {
-      alert('Bitte wählen Sie zuerst einen Kunden aus.');
-      return;
-    }
-    setShowSignaturePad(true);
-  };
-
-  const handleSignatureSave = (signatureData: string, customerName: string) => {
-    const signature: JobSignature = {
-      id: generateUUID(),
-      customerName: customerName.trim(),
-      signatureData,
-      signedAt: new Date(),
-      ipAddress: undefined // Will be set by backend
-    };
-    
-    setFormData(prev => ({
-      ...prev,
-      signature,
-      status: 'completed' // Automatically set to completed when signed
-    }));
-    
-    setShowSignaturePad(false);
-  };
-
-  const handleSignatureClose = () => {
-    setShowSignaturePad(false);
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -507,22 +470,34 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     return new Date(date).toISOString().split('T')[0];
   };
 
+  const requestClose = () => {
+    if (isDirty && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+      return;
+    }
+    onCancel();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 md:p-4 z-50">
+    <div
+      className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center p-2 md:p-4 z-[1000]"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
+    >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[95vh] md:max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
           <h3 className="text-base md:text-lg font-semibold text-gray-900">
             {job ? 'Auftrag bearbeiten' : 'Neuer Auftrag'}
           </h3>
           <button
-            onClick={onCancel}
+            onClick={requestClose}
             className="text-gray-400 hover:text-gray-600 p-1"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+        <form onSubmit={handleSubmit} onChange={() => setIsDirty(true)} className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-3 md:p-4">
             <div className="space-y-4 md:space-y-6">
               {/* Basic Information */}
@@ -678,6 +653,31 @@ Musterstraße 123
                   onChange={(e) => setFormData(prev => ({ ...prev, date: new Date(e.target.value) }))}
                   required
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Beginn
+                </label>
+                <input
+                  type="time"
+                  value={formData.startTime || ''}
+                  onChange={(event) => handleTimeChange('startTime', event.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ende
+                </label>
+                <input
+                  type="time"
+                  value={formData.endTime || ''}
+                  onChange={(event) => handleTimeChange('endTime', event.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                 />
               </div>
             </div>
@@ -1148,52 +1148,6 @@ Musterstraße 123
                 />
               </div>
 
-              {/* Signature Section */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Kundenunterschrift
-                </label>
-                {formData.signature ? (
-                  <div className="border border-gray-300 rounded-lg p-3 bg-green-50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-green-800">
-                        Unterschrift vorhanden
-                      </span>
-                      <span className="text-xs text-green-600">
-                        {new Date(formData.signature.signedAt).toLocaleString('de-DE')}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-700 mb-2">
-                      Kunde: <strong>{formData.signature.customerName}</strong>
-                    </div>
-                    <img 
-                      src={formData.signature.signatureData} 
-                      alt="Kundenunterschrift" 
-                      className="max-h-20 border border-gray-200 rounded bg-white"
-                    />
-                  </div>
-                ) : (
-                  <div className="border border-gray-300 rounded-lg p-3 bg-gray-50">
-                    <p className="text-sm text-gray-600 mb-3">
-                      Noch keine Unterschrift vorhanden. Nach dem Hinzufügen einer Unterschrift wird der Auftrag automatisch als "Abgeschlossen" markiert.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleSignature}
-                      disabled={!formData.customerId}
-                      className="inline-flex items-center px-3 py-2 border border-purple-300 rounded-lg text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <PenTool className="h-4 w-4 mr-2" />
-                      Unterschrift hinzufügen
-                    </button>
-                    {!formData.customerId && (
-                      <p className="text-xs text-red-600 mt-1">
-                        Bitte wählen Sie zuerst einen Kunden aus.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
@@ -1202,7 +1156,7 @@ Musterstraße 123
             <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={requestClose}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Abbrechen
@@ -1389,15 +1343,6 @@ Musterstraße 123
           </div>
         </div>
       )}
-
-      {/* Signature Pad Modal */}
-      <SignaturePad
-        isOpen={showSignaturePad}
-        onClose={handleSignatureClose}
-        onSave={handleSignatureSave}
-        title="Kundenunterschrift"
-        initialCustomerName={formData.customerName}
-      />
 
       {/* Document Preview Modal */}
       <DocumentPreview
