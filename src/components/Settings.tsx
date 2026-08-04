@@ -339,9 +339,14 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     try {
       const companySettings = { ...formData };
       delete companySettings.receiptLabel;
+      const terminologyProfileChanged = company.terminologyProfile !== formData.terminologyProfile;
       delete companySettings.invoiceTemplates;
       delete companySettings.documentTemplates;
       await updateCompany(companySettings);
+      if (isDemoMode && terminologyProfileChanged) {
+        window.location.reload();
+        return;
+      }
       setFeedback({ type: 'success', text: 'Einstellungen wurden gespeichert.' });
     } catch (error) {
       logger.error('Error saving settings:', { error: error instanceof Error ? error.message : String(error) });
@@ -414,7 +419,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => { seedDemoData(); window.location.reload(); }}
+                onClick={() => { seedDemoData(formData.terminologyProfile); window.location.reload(); }}
                 className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-100"
               >
                 Testdaten neu laden
@@ -436,7 +441,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 pl-14 backdrop-blur sm:-mx-4 sm:px-4 sm:pl-4 lg:-mx-6 lg:px-6 lg:pl-6`}>
+      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 !pl-14 backdrop-blur sm:-mx-4 sm:px-4 sm:!pl-4 lg:-mx-6 lg:px-6 lg:!pl-6`}>
         <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
           {[
             { id: 'app' as const, label: 'App-Einstellungen' },

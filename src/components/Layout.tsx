@@ -30,7 +30,7 @@ interface NavItem {
 }
 
 const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
-const taxSubPageIds = ['tax-overview', 'euer', 'fixed-assets'];
+const taxSubPageIds = ['euer', 'fixed-assets'];
 
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
@@ -86,7 +86,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     label: 'Steuern',
     icon: Calculator,
     children: [
-      { id: 'tax-overview', label: 'Übersicht' },
       { id: 'euer', label: 'EÜR' },
       { id: 'fixed-assets', label: 'Anlagenverzeichnis' },
     ],

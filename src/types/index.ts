@@ -700,6 +700,8 @@ export interface Receipt extends Timestamps {
   ocrConfidence?: number;
   ocrError?: string;
   extractedData: ReceiptExtractedData;
+  /** Original values produced by the latest OCR run, before manual corrections. */
+  ocrExtractedData?: ReceiptExtractedData;
   linkedEuerEntryId?: UUID | null;
   /** Only present when a receipt detail is requested. */
   content?: string;

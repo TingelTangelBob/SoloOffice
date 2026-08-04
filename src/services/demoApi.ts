@@ -1,4 +1,5 @@
 import { generateUUID } from '../utils/uuid';
+import type { TerminologyProfile } from '../types';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 
@@ -17,11 +18,199 @@ interface DemoState {
   fixedAssets: DemoRecord[];
   receipts: DemoRecord[];
   company: DemoRecord;
+  seedProfile?: TerminologyProfile;
+  seedVersion?: number;
 }
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
 
 export const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+
+const DEMO_SEED_VERSION = 2;
+
+interface DemoProfileFixture {
+  primaryColor: string;
+  secondaryColor: string;
+  names: string[];
+  workTitles: string[];
+  workDescription: string;
+}
+
+const demoProfileFixtures: Record<TerminologyProfile, DemoProfileFixture> = {
+  customers: {
+    primaryColor: '#2563eb', secondaryColor: '#64748b',
+    names: ['Musterkunde GmbH', 'Kolkman & Partner', 'Beispiel Handwerk', 'Nordlicht Design', 'Hanseatische Beratung', 'Berg & Tal Immobilien', 'Studio Morgenrot', 'Klarwerk Solutions'],
+    workTitles: ['Website-Relaunch', 'Elektroinstallation', 'Wartungsvertrag', 'Marketingkonzept', 'Fotoproduktion', 'Support-Paket', 'Umzugsplanung', 'Jahresbetreuung'],
+    workDescription: 'Beispielauftrag für den lokalen Frontend-Test',
+  },
+  mandants: {
+    primaryColor: '#7c3aed', secondaryColor: '#6d5bbd',
+    names: ['Kanzlei Müller', 'Praxisgemeinschaft Weber', 'Steuerberatung Schneider', 'Notariat Albrecht', 'Hansen Architektur', 'Meyer & Kollegen', 'Linden Apotheke', 'Büro am Markt'],
+    workTitles: ['Jahresabschluss 2025', 'Steuererklärung', 'Gründungsberatung', 'Lohnbuchhaltung', 'Betriebsprüfung', 'Vertragsprüfung', 'Finanzplanung', 'Laufende Beratung'],
+    workDescription: 'Beispielmandat für den lokalen Frontend-Test',
+  },
+  patients: {
+    primaryColor: '#0f9f9a', secondaryColor: '#4b7f7b',
+    names: ['Anna Müller', 'Jonas Weber', 'Sofia Schneider', 'Paul Hoffmann', 'Mia Fischer', 'Emil Wagner', 'Lina Becker', 'Noah Krause'],
+    workTitles: ['Erstuntersuchung', 'Kontrolltermin', 'Therapieplanung', 'Behandlung', 'Nachsorge', 'Diagnostik', 'Beratungsgespräch', 'Folgetermin'],
+    workDescription: 'Beispielbehandlung für den lokalen Frontend-Test',
+  },
+  students: {
+    primaryColor: '#f97316', secondaryColor: '#b45309',
+    names: ['Lena Schneider', 'Maximilian Weber', 'Schulträger Berlin', 'Förderverein Nord', 'Noah Hoffmann', 'Mia Fischer', 'Bildungswerk Mitte', 'Kurszentrum West'],
+    workTitles: ['Deutsch-Kurs B2', 'Mathematik-Nachhilfe', 'Prüfungsvorbereitung', 'Ferienkurs', 'Integrationskurs', 'Lernbegleitung', 'Elternberatung', 'Abschlussprüfung'],
+    workDescription: 'Beispielkurs für den lokalen Frontend-Test',
+  },
+  clients: {
+    primaryColor: '#db3764', secondaryColor: '#9f365c',
+    names: ['Sarah König', 'Beratungsstelle Neustart', 'Daniel Richter', 'Familienhilfe West', 'Aylin Yilmaz', 'Projekt Zukunft', 'Thomas Neumann', 'Anlaufstelle Mitte'],
+    workTitles: ['Erstberatung', 'Sozialberatung', 'Coaching', 'Fallbesprechung', 'Orientierungsgespräch', 'Begleitung', 'Gruppenangebot', 'Abschlussgespräch'],
+    workDescription: 'Beispielberatung für den lokalen Frontend-Test',
+  },
+};
+
+function demoSlug(value: string): string {
+  return value.toLocaleLowerCase('de-DE')
+    .replace(/[äöü]/g, character => ({ ä: 'ae', ö: 'oe', ü: 'ue' })[character] || character)
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.|\.$/g, '');
+}
+
+function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoState {
+  const fixture = demoProfileFixtures[profile] || demoProfileFixtures.customers;
+  const cities = ['Berlin', 'Hamburg', 'München', 'Köln', 'Leipzig', 'Bremen', 'Dresden', 'Freiburg'];
+  const streets = ['Hauptstraße', 'Marktplatz', 'Werkstraße', 'Gartenweg', 'Bahnhofstraße', 'Rosenweg', 'Lindenallee', 'Am Stadtpark'];
+
+  const customers: DemoRecord[] = fixture.names.map((name, index) => ({
+    id: generateUUID(),
+    customerNumber: String(1001 + index),
+    name,
+    email: `${demoSlug(name)}@demo.solooffice.de`,
+    address: `${streets[index % streets.length]} ${12 + index}`,
+    city: cities[index % cities.length],
+    postalCode: String(10115 + index * 137).slice(0, 5),
+    country: 'Deutschland',
+    phone: `+49 ${30 + index} ${123456 + index * 11111}`,
+    createdAt: isoDate(-(35 - index * 3)),
+  }));
+
+  const customerAt = (index: number) => customers[index % customers.length];
+  const makeItem = (description: string, unitPrice: number, quantity: number, order: number): DemoRecord => ({
+    id: generateUUID(), description, quantity, unitPrice, taxRate: 19, total: quantity * unitPrice, order,
+  });
+
+  const invoices: DemoRecord[] = Array.from({ length: 10 }, (_, index) => {
+    const customer = customerAt(index);
+    const items = [
+      makeItem(fixture.workTitles[index % fixture.workTitles.length], 240 + index * 45, (index % 3) + 1, 0),
+      ...(index % 2 === 0 ? [makeItem('Zusatzleistung und Dokumentation', 85 + index * 10, 1, 1)] : []),
+    ];
+    const totals = calculateItems(items);
+    return {
+      id: generateUUID(), invoiceNumber: `RE-2026-${String(index + 1).padStart(3, '0')}`,
+      customerId: customer.id, customerName: customer.name,
+      issueDate: isoDate(-(index * 4 + 1)), dueDate: isoDate(14 - index * 3),
+      items, ...totals,
+      status: (['draft', 'sent', 'paid', 'overdue'][index % 4]), notes: fixture.workDescription,
+      createdAt: isoDate(-(index * 4 + 1)),
+    };
+  });
+
+  const quotes: DemoRecord[] = Array.from({ length: 6 }, (_, index) => {
+    const customer = customerAt(index + 2);
+    const items = [makeItem(fixture.workTitles[(index + 2) % fixture.workTitles.length], 680 + index * 95, (index % 2) + 1, 0)];
+    const totals = calculateItems(items);
+    return {
+      id: generateUUID(), quoteNumber: `AN-2026-${String(index + 1).padStart(3, '0')}`,
+      customerId: customer.id, customerName: customer.name, issueDate: isoDate(-(index * 6 + 2)), validUntil: isoDate(20 - index * 2),
+      items, ...totals, status: (['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'][index]),
+      notes: fixture.workDescription, createdAt: isoDate(-(index * 6 + 2)),
+    };
+  });
+
+  const jobs: DemoRecord[] = Array.from({ length: 8 }, (_, index) => {
+    const customer = customerAt(index + 1);
+    return {
+      id: generateUUID(), jobNumber: `AU-2026-${String(index + 1).padStart(3, '0')}`,
+      customerId: customer.id, customerName: customer.name, customerAddress: customer.address,
+      title: fixture.workTitles[index % fixture.workTitles.length], description: fixture.workDescription,
+      date: isoDate(index - 3), startTime: ['08:00', '09:30', '10:30', '13:00'][index % 4], endTime: ['10:00', '11:30', '12:30', '15:00'][index % 4],
+      hoursWorked: 2 + (index % 4), hourlyRate: 65 + (index % 3) * 15,
+      status: (['draft', 'in-progress', 'completed', 'completed'][index % 4]), priority: index % 4 === 0 ? 'high' : 'medium',
+      timeEntries: [], materials: [], createdAt: isoDate(-(index * 3 + 1)), updatedAt: isoDate(-(index * 2)),
+    };
+  });
+
+  const hourlyRates: DemoRecord[] = [
+    { name: 'Standard', description: fixture.workTitles[0], rate: 75 },
+    { name: 'Beratung', description: fixture.workTitles[1], rate: 95 },
+    { name: 'Premium', description: fixture.workTitles[2], rate: 125 },
+    { name: 'Assistenz', description: fixture.workTitles[3], rate: 55 },
+    { name: 'Vor-Ort-Termin', description: 'Termin mit persönlicher Betreuung', rate: 110 },
+  ].map((rate, index) => ({ ...rate, id: generateUUID(), isDefault: index === 0, createdAt: isoDate(-index) }));
+
+  const materialTemplates: DemoRecord[] = [
+    ['Dokumentation', 24], ['Arbeitsmaterial', 38], ['Fahrtkosten', 45], ['Unterlagenmappe', 12], ['Lizenz', 79], ['Zusatzpaket', 149],
+  ].map(([name, unitPrice], index) => ({
+    id: generateUUID(), name, description: `${name} für ${fixture.workTitles[index % fixture.workTitles.length]}`,
+    unit: index % 2 === 0 ? 'Pauschale' : 'Stück', unitPrice, taxRate: 19, isDefault: index === 0, createdAt: isoDate(-index),
+  }));
+
+  state.customers = customers;
+  state.invoices = invoices;
+  state.quotes = quotes;
+  state.jobs = jobs;
+  state.hourlyRates = hourlyRates;
+  state.materialTemplates = materialTemplates;
+  state.recurringInvoices = [0, 1, 2].map((index) => {
+    const customer = customerAt(index + 3);
+    const items = [makeItem(fixture.workTitles[(index + 4) % fixture.workTitles.length], 390 + index * 110, 1, 0)];
+    return {
+      id: generateUUID(), name: `${fixture.workTitles[index]} – laufend`, customerId: customer.id, customerName: customer.name,
+      items, frequency: ['monthly', 'quarterly', 'annual'][index], intervalValue: 1, intervalUnit: 'month',
+      startDate: dateOnly(isoDate(-30)), nextRunDate: dateOnly(isoDate(10 + index * 7)), dueDays: 30,
+      status: index === 2 ? 'paused' : 'active', runs: [], notes: fixture.workDescription, createdAt: isoDate(-30), updatedAt: isoDate(),
+    };
+  });
+  state.calendarEvents = Array.from({ length: 10 }, (_, index) => {
+    const customer = customerAt(index + 1);
+    const start = isoDate(index - 2);
+    return {
+      id: generateUUID(), title: fixture.workTitles[index % fixture.workTitles.length], description: fixture.workDescription,
+      customerId: customer.id, customerName: customer.name, start, end: isoDate(index - 2), allDay: false,
+      type: index % 2 === 0 ? 'appointment' : 'task', createdAt: isoDate(-index),
+    };
+  });
+  state.yearlyInvoiceStartNumbers = [
+    { id: '2026', year: 2026, start_number: 1, created_at: isoDate(-20), updated_at: isoDate() },
+    { id: '2027', year: 2027, start_number: 100, created_at: isoDate(-5), updated_at: isoDate() },
+  ];
+  state.euerEntries = Array.from({ length: 8 }, (_, index) => ({
+    id: generateUUID(), entryDate: dateOnly(isoDate(-index * 5)), description: `${fixture.workTitles[index % fixture.workTitles.length]} – Einnahme`,
+    amount: 280 + index * 75, taxRate: 19, notes: fixture.workDescription, sourceType: index % 2 === 0 ? 'invoice' : 'manual', status: 'active', createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 5),
+  }));
+  state.euerEntryHistory = [];
+  state.fixedAssets = [
+    ['Notebook', 'Büroausstattung', 1299], ['Arbeitsplatz', 'Büroausstattung', 850], ['Kamera', 'Arbeitsmittel', 1740], ['Fahrzeug', 'Mobilität', 18500], ['Softwarelizenz', 'Software', 690],
+  ].map(([name, category, acquisitionCost], index) => ({
+    id: generateUUID(), name, category, acquisitionDate: dateOnly(isoDate(-(index + 1) * 40)), acquisitionCost,
+    usefulLifeYears: index === 3 ? 6 : 3, status: 'active', notes: fixture.workDescription, createdAt: isoDate(-(index + 1) * 40), updatedAt: isoDate(),
+  }));
+  state.receipts = Array.from({ length: 5 }, (_, index) => ({
+    id: generateUUID(), vendorName: ['Bürobedarf Schmidt', 'Stadtwerke', 'Cloud Services', 'Fachverlag', 'Reisebüro'][index],
+    receiptNumber: `BE-2026-${String(index + 1).padStart(3, '0')}`, receiptDate: dateOnly(isoDate(-index * 8)), grossAmount: 49 + index * 57,
+    taxAmount: (49 + index * 57) * 0.19 / 1.19, ocrStatus: 'completed', ocrText: 'Lokaler Demo-Beleg', extractedData: {}, ocrExtractedData: {}, linkedEuerEntryId: null,
+    createdAt: isoDate(-index * 8), updatedAt: isoDate(-index * 8),
+  }));
+  state.company = {
+    ...state.company, terminologyProfile: profile, terminologyColorSource: 'profile',
+    primaryColor: fixture.primaryColor, secondaryColor: fixture.secondaryColor,
+  };
+  state.seedProfile = profile;
+  state.seedVersion = DEMO_SEED_VERSION;
+  return state;
+}
 
 const isoDate = (daysFromToday = 0) => {
   const date = new Date();
@@ -29,7 +218,7 @@ const isoDate = (daysFromToday = 0) => {
   return date.toISOString();
 };
 
-function createInitialState(): DemoState {
+function createInitialState(profile: TerminologyProfile = 'customers'): DemoState {
   const customers: DemoRecord[] = [
     {
       id: generateUUID(), customerNumber: '1001', name: 'Musterkunde GmbH', email: 'kontakt@musterkunde.de',
@@ -71,7 +260,7 @@ function createInitialState(): DemoState {
     timeEntries: [], materials: [], createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 2),
   }));
 
-  return {
+  const state: DemoState = {
     customers, invoices, recurringInvoices: [], jobs, quotes: [], materialTemplates: [],
     hourlyRates: [{ id: generateUUID(), name: 'Standard', description: 'Lokaler Demo-Stundensatz', rate: 75, isDefault: true, createdAt: isoDate() }],
     yearlyInvoiceStartNumbers: [],
@@ -88,6 +277,7 @@ function createInitialState(): DemoState {
       invoiceTemplates: [], createdAt: isoDate(),
     },
   };
+  return enrichDemoState(state, profile);
 }
 
 function readState(): DemoState {
@@ -99,6 +289,15 @@ function readState(): DemoState {
   }
   try {
     const parsed = JSON.parse(saved) as Partial<DemoState>;
+    const storedProfile = typeof parsed.company?.terminologyProfile === 'string' && parsed.company.terminologyProfile in demoProfileFixtures
+      ? parsed.company.terminologyProfile as TerminologyProfile
+      : 'customers';
+    if (parsed.seedVersion !== DEMO_SEED_VERSION) {
+      const upgraded = createInitialState(storedProfile);
+      upgraded.company = { ...upgraded.company, ...(parsed.company || {}), terminologyProfile: storedProfile };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(upgraded));
+      return upgraded;
+    }
     return {
       ...parsed,
       yearlyInvoiceStartNumbers: parsed.yearlyInvoiceStartNumbers || [],
@@ -107,7 +306,7 @@ function readState(): DemoState {
       euerEntries: parsed.euerEntries || [],
       euerEntryHistory: parsed.euerEntryHistory || [],
       fixedAssets: parsed.fixedAssets || [],
-      receipts: parsed.receipts || [],
+      receipts: (parsed.receipts || []).map(receipt => ({ ...receipt, ocrExtractedData: receipt.ocrExtractedData || receipt.extractedData || {} })),
     } as DemoState;
   } catch {
     const initial = createInitialState();
@@ -258,7 +457,20 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   }
 
   if (resource === 'company') {
-    if (method === 'PUT') state.company = { ...state.company, ...data };
+    if (method === 'PUT') {
+      const requestedProfile = typeof data.terminologyProfile === 'string' && data.terminologyProfile in demoProfileFixtures
+        ? data.terminologyProfile as TerminologyProfile
+        : String(state.company.terminologyProfile || 'customers') as TerminologyProfile;
+      const currentProfile = String(state.company.terminologyProfile || 'customers');
+      if (requestedProfile !== currentProfile) {
+        const previousCompany = { ...state.company };
+        const seeded = createInitialState(requestedProfile);
+        Object.assign(state, seeded);
+        state.company = { ...seeded.company, ...previousCompany, ...data, terminologyProfile: requestedProfile };
+      } else {
+        state.company = { ...state.company, ...data };
+      }
+    }
     saveState(state);
     return state.company as unknown as T;
   }
@@ -322,7 +534,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'PUT') {
         if (entries[index].status === 'voided') throw new Error('Eine stornierte Buchung kann nicht bearbeitet werden.');
         const oldData = { ...entries[index] };
-        const updated = { ...entries[index], ...data, id, updatedAt: isoDate() };
+        const updated: DemoRecord = { ...entries[index], ...data, id, updatedAt: isoDate() };
         updated.entryDate = dateOnly(updated.entryDate);
         updated.status = 'active';
         entries[index] = updated;
@@ -355,6 +567,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         ocrConfidence: 0,
         ocrError: undefined,
         extractedData: receipts[index].extractedData || {},
+        ocrExtractedData: receipts[index].extractedData || {},
         updatedAt: isoDate(),
       };
       saveState(state);
@@ -380,6 +593,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         ocrText: 'Demo-Modus: Das lokale OCR wird im Backend-Container ausgeführt.',
         ocrConfidence: 0,
         extractedData: {},
+        ocrExtractedData: {},
         linkedEuerEntryId: null,
         createdAt: isoDate(),
         updatedAt: isoDate(),
@@ -433,7 +647,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (index < 0) throw new Error('Anlage nicht gefunden.');
       if (method === 'GET') return assets[index] as unknown as T;
       if (method === 'PUT') {
-        const updated = { ...assets[index], ...data, id, updatedAt: isoDate() };
+        const updated: DemoRecord = { ...assets[index], ...data, id, updatedAt: isoDate() };
         if (updated.acquisitionDate) updated.acquisitionDate = dateOnly(updated.acquisitionDate);
         if (updated.disposalDate) updated.disposalDate = dateOnly(updated.disposalDate);
         assets[index] = updated;
@@ -643,7 +857,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -722,6 +936,6 @@ export function resetDemoData() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-export function seedDemoData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(createInitialState()));
+export function seedDemoData(profile: TerminologyProfile = 'customers') {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(createInitialState(profile)));
 }

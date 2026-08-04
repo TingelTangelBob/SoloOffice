@@ -26,6 +26,10 @@ function inputValue(value: string | number | undefined) {
   return value === undefined ? '' : String(value);
 }
 
+function comparableValue(value: unknown) {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
 function normalizeOptionalNumber(value: string, locale: string, numberFormat?: 'european' | 'american') {
   if (!value.trim()) return undefined;
   const parsed = parseLocalizedNumber(value, locale, numberFormat);
@@ -39,6 +43,7 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [reviewData, setReviewData] = useState<ReceiptExtractedData>({});
+  const [originalReviewData, setOriginalReviewData] = useState<ReceiptExtractedData>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -60,6 +65,20 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
   }, [receiptLabel]);
 
   useEffect(() => { void loadReceipts(); }, [loadReceipts]);
+
+  useEffect(() => {
+    if (!selectedReceipt) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedReceipt(null);
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [selectedReceipt]);
 
   const updateReceiptInState = (updated: Receipt) => {
     setReceipts(current => current.map(receipt => receipt.id === updated.id ? updated : receipt));
@@ -111,6 +130,7 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     try {
       const detail = receipt.content ? receipt : await apiService.getReceipt(receipt.id);
       setSelectedReceipt(detail);
+      setOriginalReviewData({ ...(detail.ocrExtractedData || detail.extractedData || {}) });
       setReviewData({ ...detail.extractedData });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Der Beleg konnte nicht geöffnet werden.');
@@ -121,26 +141,36 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     setReviewData(current => ({ ...current, [field]: value }));
   };
 
+  const isReviewFieldChanged = (field: EditableReceiptField) => comparableValue(reviewData[field]) !== comparableValue(originalReviewData[field]);
+  const fieldClassName = (field: EditableReceiptField) => `mt-1.5 min-h-10 w-full rounded-md border bg-white px-3 py-2 text-sm font-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${isReviewFieldChanged(field) ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'}`;
+
+  const normalizeReviewData = (): ReceiptExtractedData => ({
+    vendorName: reviewData.vendorName?.trim() || undefined,
+    documentDate: reviewData.documentDate?.trim() || undefined,
+    documentNumber: reviewData.documentNumber?.trim() || undefined,
+    netAmount: normalizeOptionalNumber(inputValue(reviewData.netAmount), locale, company.numberFormat),
+    taxAmount: normalizeOptionalNumber(inputValue(reviewData.taxAmount), locale, company.numberFormat),
+    grossAmount: normalizeOptionalNumber(inputValue(reviewData.grossAmount), locale, company.numberFormat),
+    taxRate: normalizeOptionalNumber(inputValue(reviewData.taxRate), locale, company.numberFormat),
+    currency: reviewData.currency?.trim().toUpperCase() || undefined,
+    suggestedCategory: reviewData.suggestedCategory,
+  });
+
+  const persistReview = async () => {
+    if (!selectedReceipt) return null;
+    const updated = await apiService.updateReceipt(selectedReceipt.id, { extractedData: normalizeReviewData() });
+    updateReceiptInState(updated);
+    setReviewData({ ...updated.extractedData });
+    return updated;
+  };
+
   const saveReview = async () => {
     if (!selectedReceipt) return;
     setSavingReview(true);
     setError('');
     try {
-      const normalized: ReceiptExtractedData = {
-        vendorName: reviewData.vendorName?.trim() || undefined,
-        documentDate: reviewData.documentDate?.trim() || undefined,
-        documentNumber: reviewData.documentNumber?.trim() || undefined,
-        netAmount: normalizeOptionalNumber(inputValue(reviewData.netAmount), locale, company.numberFormat),
-        taxAmount: normalizeOptionalNumber(inputValue(reviewData.taxAmount), locale, company.numberFormat),
-        grossAmount: normalizeOptionalNumber(inputValue(reviewData.grossAmount), locale, company.numberFormat),
-        taxRate: normalizeOptionalNumber(inputValue(reviewData.taxRate), locale, company.numberFormat),
-        currency: reviewData.currency?.trim().toUpperCase() || undefined,
-        suggestedCategory: reviewData.suggestedCategory,
-      };
-      const updated = await apiService.updateReceipt(selectedReceipt.id, { extractedData: normalized });
-      updateReceiptInState(updated);
-      setReviewData({ ...updated.extractedData });
-      setNotice('Die erkannten Felder wurden gespeichert.');
+      await persistReview();
+      setNotice('Die Prüfung wurde als Entwurf gespeichert.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Die Belegprüfung konnte nicht gespeichert werden.');
     } finally {
@@ -154,7 +184,10 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     try {
       const updated = await apiService.retryReceiptOcr(receipt.id);
       updateReceiptInState(updated);
-      if (selectedReceipt?.id === updated.id) setReviewData({ ...updated.extractedData });
+      if (selectedReceipt?.id === updated.id) {
+        setOriginalReviewData({ ...(updated.ocrExtractedData || updated.extractedData || {}) });
+        setReviewData({ ...updated.extractedData });
+      }
       setNotice('Die lokale OCR wurde erneut ausgeführt. Bitte das Ergebnis prüfen.');
     } catch (ocrError) {
       setError(ocrError instanceof Error ? ocrError.message : 'Die OCR konnte nicht erneut ausgeführt werden.');
@@ -163,21 +196,23 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     }
   };
 
-  const createEuerEntry = async () => {
-    if (!selectedReceipt) return;
-    const amount = reviewData.grossAmount ?? reviewData.netAmount;
+  const createEuerEntry = async (receiptOverride?: Receipt, dataOverride?: ReceiptExtractedData) => {
+    const receipt = receiptOverride || selectedReceipt;
+    const data = dataOverride || reviewData;
+    if (!receipt) return;
+    const amount = data.grossAmount ?? data.netAmount;
     if (!Number.isFinite(amount) || Number(amount) < 0) {
       setError('Bitte zuerst einen gültigen Brutto- oder Nettobetrag erfassen.');
       return;
     }
 
-    const entryDate = reviewData.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(reviewData.documentDate)
-      ? reviewData.documentDate
+    const entryDate = data.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(data.documentDate)
+      ? data.documentDate
       : new Date().toISOString().slice(0, 10);
-    const description = reviewData.vendorName?.trim() || selectedReceipt.name.replace(/\.[^.]+$/, '');
+    const description = data.vendorName?.trim() || receipt.name.replace(/\.[^.]+$/, '');
     const notes = [
-      `Beleg: ${selectedReceipt.name}`,
-      reviewData.documentNumber ? `Belegnummer: ${reviewData.documentNumber}` : '',
+      `Beleg: ${receipt.name}`,
+      data.documentNumber ? `Belegnummer: ${data.documentNumber}` : '',
       'Erstellt aus lokalem OCR-Vorschlag; bitte steuerlich prüfen.',
     ].filter(Boolean).join(' · ');
     const payload: EuerEntryPayload = {
@@ -186,23 +221,37 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
       description,
       category: 'other_expense',
       amount: Number(amount),
-      taxRate: Number(reviewData.taxRate || 0),
+      taxRate: Number(data.taxRate || 0),
       notes,
       sourceType: 'receipt',
-      sourceId: selectedReceipt.id,
+      sourceId: receipt.id,
     };
 
-    setBusyId(selectedReceipt.id);
+    setBusyId(receipt.id);
     setError('');
     try {
       const entry = await apiService.createEuerEntry(payload);
-      const linked = await apiService.linkReceiptToEuerEntry(selectedReceipt.id, entry.id);
+      const linked = await apiService.linkReceiptToEuerEntry(receipt.id, entry.id);
       updateReceiptInState(linked);
       setNotice('EÜR-Ausgabe wurde angelegt und mit dem Beleg verknüpft.');
     } catch (linkError) {
       setError(linkError instanceof Error ? linkError.message : 'Die EÜR-Ausgabe konnte nicht angelegt werden.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const saveAndCreateEuerEntry = async () => {
+    if (!selectedReceipt) return;
+    setSavingReview(true);
+    setError('');
+    try {
+      const updated = await persistReview();
+      if (updated) await createEuerEntry(updated, updated.extractedData);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Die Belegprüfung konnte nicht gespeichert werden.');
+    } finally {
+      setSavingReview(false);
     }
   };
 
@@ -308,44 +357,42 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
       </section>
 
       {selectedReceipt && (
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Beleg prüfen</h2><p className="mt-1 text-sm text-gray-500">{selectedReceipt.name} · OCR-Vorschläge vor der Übernahme kontrollieren</p></div><button type="button" onClick={() => setSelectedReceipt(null)} className="rounded-md p-1 text-gray-500 hover:bg-gray-100" aria-label="Belegprüfung schließen"><X className="h-5 w-5" /></button></div>
-          <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <div className="space-y-4">
-              {selectedReceipt.content && <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50"><img src={`data:${selectedReceipt.contentType};base64,${selectedReceipt.content}`} alt={`Vorschau ${selectedReceipt.name}`} className="max-h-[32rem] w-full object-contain" /></div>}
-              <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600"><p className="font-medium text-gray-800">So funktioniert die Zuordnung</p><p className="mt-1 leading-6">Speichere die korrigierten Felder und lege danach eine EÜR-Ausgabe an. Die Anwendung verknüpft die neue Buchung mit diesem Beleg.</p></div>
-            </div>
-            <div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="text-sm font-medium text-gray-700 sm:col-span-2">Lieferant / Aussteller<input value={inputValue(reviewData.vendorName)} onChange={event => updateReviewField('vendorName', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">Belegdatum<input type="date" value={inputValue(reviewData.documentDate)} onChange={event => updateReviewField('documentDate', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">Belegnummer<input value={inputValue(reviewData.documentNumber)} onChange={event => updateReviewField('documentNumber', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">Netto<input inputMode="decimal" value={inputValue(reviewData.netAmount)} onChange={event => updateReviewField('netAmount', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">MwSt. Betrag<input inputMode="decimal" value={inputValue(reviewData.taxAmount)} onChange={event => updateReviewField('taxAmount', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">Brutto<input inputMode="decimal" value={inputValue(reviewData.grossAmount)} onChange={event => updateReviewField('grossAmount', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700">MwSt.-Satz in %<input inputMode="decimal" value={inputValue(reviewData.taxRate)} onChange={event => updateReviewField('taxRate', event.target.value)} className="form-input mt-1 w-full" /></label>
-                <label className="text-sm font-medium text-gray-700 sm:col-span-2">Kategorie-Vorschlag
-                  <select value={reviewData.suggestedCategory || 'other_expense'} onChange={event => updateReviewField('suggestedCategory', event.target.value)} className="form-input mt-1 w-full">
-                    <option value="materials">Material und Waren</option>
-                    <option value="office">Bürobedarf</option>
-                    <option value="software">Software und Lizenzen</option>
-                    <option value="telecommunications">Telefon und Internet</option>
-                    <option value="travel">Reisekosten</option>
-                    <option value="vehicle">Fahrzeugkosten</option>
-                    <option value="marketing">Werbung und Marketing</option>
-                    <option value="professional_services">Fremdleistungen</option>
-                    <option value="insurance">Versicherungen</option>
-                    <option value="bank_fees">Bankgebühren</option>
-                    <option value="other_expense">Sonstige Betriebsausgaben</option>
-                  </select>
-                </label>
+        <div className="fixed inset-0 z-[1100] overflow-y-auto bg-gray-950/50 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedReceipt(null); }}>
+          <div className="flex min-h-full items-center justify-center">
+            <section role="dialog" aria-modal="true" aria-labelledby="receipt-review-title" className="relative flex max-h-[calc(100vh-1rem)] w-full max-w-[880px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:max-h-[calc(100vh-2rem)]" onMouseDown={event => event.stopPropagation()}>
+              <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-5">
+                <div className="min-w-0"><h2 id="receipt-review-title" className="text-lg font-semibold text-gray-900">Beleg prüfen</h2><p className="mt-1 text-sm text-gray-500">· OCR-Vorschläge vor der Übernahme kontrollieren</p></div>
+                <button type="button" onClick={() => setSelectedReceipt(null)} className="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800" aria-label="Belegprüfung schließen"><X className="h-5 w-5" /></button>
+              </header>
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1fr)]">
+                  <div className="self-start rounded-lg bg-gray-50 p-4 text-sm text-gray-600"><h3 className="font-semibold text-gray-900">So funktioniert die Zuordnung</h3><p className="mt-2 leading-6">Speichere die korrigierten Felder und lege danach eine EÜR-Ausgabe an. Die Anwendung verknüpft die neue Buchung mit diesem Beleg.</p></div>
+                  <div className="min-w-0">
+                    <label htmlFor="receipt-vendor" className="block text-sm font-medium text-gray-700">Lieferant / Aussteller<input id="receipt-vendor" value={inputValue(reviewData.vendorName)} onChange={event => updateReviewField('vendorName', event.target.value)} className={fieldClassName('vendorName')} /></label>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label htmlFor="receipt-date" className="block text-sm font-medium text-gray-700">Belegdatum<input id="receipt-date" type="date" value={inputValue(reviewData.documentDate)} onChange={event => updateReviewField('documentDate', event.target.value)} className={fieldClassName('documentDate')} /></label>
+                      <label htmlFor="receipt-number" className="block text-sm font-medium text-gray-700">Belegnummer<input id="receipt-number" value={inputValue(reviewData.documentNumber)} onChange={event => updateReviewField('documentNumber', event.target.value)} className={fieldClassName('documentNumber')} /></label>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label htmlFor="receipt-net" className="block text-sm font-medium text-gray-700">Netto<input id="receipt-net" inputMode="decimal" value={inputValue(reviewData.netAmount)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} /></label>
+                      <label htmlFor="receipt-tax" className="block text-sm font-medium text-gray-700">MwSt. Betrag<input id="receipt-tax" inputMode="decimal" value={inputValue(reviewData.taxAmount)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} /></label>
+                      <label htmlFor="receipt-gross" className="block text-sm font-medium text-gray-700">Brutto<input id="receipt-gross" inputMode="decimal" value={inputValue(reviewData.grossAmount)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} /></label>
+                      <label htmlFor="receipt-tax-rate" className="block text-sm font-medium text-gray-700">MwSt.-Satz in %<input id="receipt-tax-rate" inputMode="decimal" value={inputValue(reviewData.taxRate)} onChange={event => updateReviewField('taxRate', event.target.value)} className={fieldClassName('taxRate')} /></label>
+                      <label htmlFor="receipt-category" className="block text-sm font-medium text-gray-700 sm:col-span-2">Kategorie-Vorschlag<select id="receipt-category" value={reviewData.suggestedCategory || 'other_expense'} onChange={event => updateReviewField('suggestedCategory', event.target.value)} className={fieldClassName('suggestedCategory')}><option value="materials">Material und Waren</option><option value="office">Bürobedarf</option><option value="software">Software und Lizenzen</option><option value="telecommunications">Telefon und Internet</option><option value="travel">Reisekosten</option><option value="vehicle">Fahrzeugkosten</option><option value="marketing">Werbung und Marketing</option><option value="professional_services">Fremdleistungen</option><option value="insurance">Versicherungen</option><option value="bank_fees">Bankgebühren</option><option value="other_expense">Sonstige Betriebsausgaben</option></select></label>
+                    </div>
+
+                    <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap"><button type="button" onClick={() => void saveReview()} className="btn-primary inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm text-white" disabled={savingReview}>{savingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Prüfung speichern</button><button type="button" onClick={() => void saveAndCreateEuerEntry()} className="action-button inline-flex min-h-10 items-center justify-center gap-2" disabled={Boolean(selectedReceipt.linkedEuerEntryId) || savingReview || busyId === selectedReceipt.id}><Link2 className="h-4 w-4" />{selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe übernehmen'}</button></div>
+                    {selectedReceipt.ocrError && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><p className="font-medium">Lokale OCR konnte nicht ausgeführt werden</p><p className="mt-1">{selectedReceipt.ocrError}</p><button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-2 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}><RefreshCw className="h-3.5 w-3.5" />Erneut versuchen</button></div>}
+                    {selectedReceipt.ocrText && <details className="mt-4 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Erkannten OCR-Text anzeigen</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap border-t border-gray-200 bg-gray-50 p-3 text-xs leading-5 text-gray-600">{selectedReceipt.ocrText}</pre></details>}
+                    {selectedReceipt.content && <details className="mt-3 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Originalbeleg anzeigen</summary><div className="flex min-h-48 items-center justify-center border-t border-gray-200 bg-gray-50 p-3"><img src={`data:${selectedReceipt.contentType};base64,${selectedReceipt.content}`} alt={`Originalbeleg ${selectedReceipt.name}`} className="max-h-[28rem] w-full object-contain" /></div></details>}
+                  </div>
+                </div>
               </div>
-              <div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => void saveReview()} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white" disabled={savingReview}>{savingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Prüfung speichern</button><button type="button" onClick={() => void createEuerEntry()} className="action-button flex items-center gap-2" disabled={Boolean(selectedReceipt.linkedEuerEntryId) || busyId === selectedReceipt.id}><Link2 className="h-4 w-4" />{selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe übernehmen'}</button></div>
-              {selectedReceipt.ocrError && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><p className="font-medium">Lokale OCR konnte nicht ausgeführt werden</p><p className="mt-1">{selectedReceipt.ocrError}</p><button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-2 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}><RefreshCw className="h-3.5 w-3.5" />Erneut versuchen</button></div>}
-              {selectedReceipt.ocrText && <details className="mt-5 rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700">Erkannten OCR-Text anzeigen</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap border-t border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">{selectedReceipt.ocrText}</pre></details>}
-            </div>
+            </section>
           </div>
-        </section>
+        </div>
       )}
     </div>
   );

@@ -9,7 +9,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 const receiptFields = `
   id, name, content_type, size, ocr_status, ocr_text, ocr_confidence,
-  ocr_error, extracted_data, linked_euer_entry_id, created_at, updated_at
+  ocr_error, extracted_data, ocr_extracted_data, linked_euer_entry_id, created_at, updated_at
 `;
 
 function toReceipt(row, includeContent = false) {
@@ -24,6 +24,7 @@ function toReceipt(row, includeContent = false) {
     ocrConfidence: row.ocr_confidence === null || row.ocr_confidence === undefined ? undefined : Number(row.ocr_confidence),
     ocrError: row.ocr_error || undefined,
     extractedData: row.extracted_data || {},
+    ocrExtractedData: row.ocr_extracted_data || row.extracted_data || {},
     linkedEuerEntryId: row.linked_euer_entry_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -69,6 +70,7 @@ async function saveOcrResult(receipt, ocrResult) {
         ocr_confidence = $3,
         ocr_error = $4,
         extracted_data = $5,
+        ocr_extracted_data = $5,
         updated_at = NOW()
     WHERE id = $6
     RETURNING ${receiptFields}
@@ -115,9 +117,9 @@ router.post('/', async (req, res, next) => {
     const result = await query(`
       INSERT INTO receipts (
         name, content, content_type, size, ocr_status, ocr_text,
-        ocr_confidence, ocr_error, extracted_data
+        ocr_confidence, ocr_error, extracted_data, ocr_extracted_data
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
       RETURNING ${receiptFields}
     `, [
       validated.name,

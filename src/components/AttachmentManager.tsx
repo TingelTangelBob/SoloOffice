@@ -236,7 +236,7 @@ export function AttachmentManager({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
-          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+          className={`border-2 border-dashed rounded-lg p-3 sm:p-4 text-center transition-colors ${
             dragOver 
               ? 'border-primary-custom bg-primary-custom/5' 
               : 'border-gray-300 hover:border-gray-400'
@@ -251,7 +251,7 @@ export function AttachmentManager({
             accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.xls,.xlsx"
           />
           
-          <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+          <Upload className="h-6 w-6 text-gray-400 mx-auto mb-1" />
           <p className="text-sm text-gray-600 mb-2">
             Dateien hier ablegen oder{' '}
             <label htmlFor="attachment-upload" className="text-primary-custom hover:text-primary-custom/80 cursor-pointer">

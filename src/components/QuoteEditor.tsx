@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Plus, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, FileText } from 'lucide-react';
+import { Save, X, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -48,6 +48,17 @@ interface SortableQuoteItemProps {
   isFirst: boolean;
   isLast: boolean;
   isSmallBusiness: boolean;
+  templateSuggestions: QuoteTemplateSuggestion[];
+  onSelectTemplate: (itemId: string, suggestion: QuoteTemplateSuggestion) => void;
+}
+
+interface QuoteTemplateSuggestion {
+  id: string;
+  type: 'material' | 'hourly';
+  label: string;
+  detail: string;
+  unitPrice: number;
+  taxRate: number;
 }
 
 function SortableQuoteItem({ 
@@ -59,7 +70,9 @@ function SortableQuoteItem({
   onMoveDown, 
   isFirst, 
   isLast,
-  isSmallBusiness 
+  isSmallBusiness,
+  templateSuggestions,
+  onSelectTemplate,
 }: SortableQuoteItemProps) {
   const { company } = useCompany();
   const discountsEnabled = company.discountsEnabled !== false;
@@ -83,6 +96,47 @@ function SortableQuoteItem({
   const discountAmount = item.discountAmount || 0;
   const itemTotalBeforeDiscount = item.quantity * item.unitPrice;
   const itemTotalAfterDiscount = itemTotalBeforeDiscount - discountAmount;
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const itemDescription = String(item.description || '');
+  const matchingTemplateSuggestions = itemDescription.trim().length >= 2
+    ? templateSuggestions.filter(suggestion => suggestion.label.toLowerCase().includes(itemDescription.trim().toLowerCase())).slice(0, 5)
+    : [];
+
+  const renderDescriptionField = (compact = false) => (
+    <div className="relative">
+      <input
+        type="text"
+        required
+        value={item.description}
+        onChange={(e) => {
+          onUpdate(item.id, 'description', e.target.value);
+          setShowSuggestions(true);
+        }}
+        onFocus={() => setShowSuggestions(true)}
+        className={`w-full ${compact ? 'px-3 py-2' : 'px-2 py-1.5'} text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
+        placeholder="Beschreibung der Position"
+      />
+      {showSuggestions && matchingTemplateSuggestions.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+          {matchingTemplateSuggestions.map(suggestion => (
+            <button
+              key={`${suggestion.type}-${suggestion.id}`}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onSelectTemplate(item.id, suggestion);
+                setShowSuggestions(false);
+              }}
+              className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-blue-50"
+            >
+              <span className="block font-medium text-gray-900">{suggestion.label}</span>
+              <span className="block text-xs text-gray-500">{suggestion.detail} · {formatCurrency(suggestion.unitPrice, company.locale, company.numberFormat, company.currency)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   // Calculate grid columns dynamically based on isSmallBusiness and discountsEnabled
   const getGridCols = () => {
@@ -119,14 +173,7 @@ function SortableQuoteItem({
           <label className="block text-xs font-medium text-gray-700 mb-1">
             Beschreibung *
           </label>
-          <input
-            type="text"
-            required
-            value={item.description}
-            onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Beschreibung der Position"
-          />
+          {renderDescriptionField()}
         </div>
         
         {/* Menge - 1 column */}
@@ -324,14 +371,7 @@ function SortableQuoteItem({
             <label className="block text-xs font-medium text-gray-700 mb-1">
               Beschreibung *
             </label>
-            <input
-              type="text"
-              required
-              value={item.description}
-              onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Beschreibung der Position"
-            />
+            {renderDescriptionField(true)}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -527,7 +567,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setSelectedCustomerId(quote.customerId);
       setIssueDate(new Date(quote.issueDate).toISOString().split('T')[0]);
       setValidUntil(new Date(quote.validUntil).toISOString().split('T')[0]);
-      setItems(quote.items || []);
+      const existingItems = quote.items || [];
+      setItems(existingItems.length > 0 && String(existingItems[existingItems.length - 1].description || '').trim()
+        ? [...existingItems, createEmptyItem(existingItems.length + 1)]
+        : existingItems);
       setNotes(quote.notes || '');
       setGlobalDiscountType(quote.globalDiscountType || '');
       setGlobalDiscountValue(quote.globalDiscountValue?.toString() || '');
@@ -580,65 +623,9 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     customer.email?.toLowerCase().includes(customerSearchTerm.toLowerCase())
   );
 
-  const addItem = () => {
-    const newOrder = items.length > 0 ? Math.max(...items.map(i => i.order || 0)) + 1 : 1;
-    setItems([...items, createEmptyItem(newOrder)]);
-  };
-
-  const addItemFromTemplate = (templateType: 'material' | 'hourly', templateId: string) => {
-    const newOrder = items.length > 0 ? Math.max(...items.map(i => i.order || 0)) + 1 : 1;
-    
-    if (templateType === 'material') {
-      // Get templates based on dropdown mode
-      const templates = company.showCombinedDropdowns 
-        ? getCombinedMaterialTemplatesForCustomer(selectedCustomerId)
-        : getMaterialTemplatesForCustomer(selectedCustomerId);
-      
-      const template = templates.find(t => t.id === templateId);
-      if (template) {
-        const newItem: QuoteItem = {
-          id: generateUUID(),
-          description: template.name,
-          quantity: 1,
-          unitPrice: template.unitPrice,
-          taxRate: template.taxRate || (company.isSmallBusiness ? 0 : 19),
-          total: template.unitPrice,
-          order: newOrder,
-          discountType: undefined,
-          discountValue: undefined,
-          discountAmount: 0
-        };
-        setItems([...items, newItem]);
-      }
-    } else if (templateType === 'hourly') {
-      // Get templates based on dropdown mode
-      const templates = company.showCombinedDropdowns 
-        ? getCombinedHourlyRatesForCustomer(selectedCustomerId)
-        : getHourlyRatesForCustomer(selectedCustomerId);
-      
-      const template = templates.find(t => t.id === templateId);
-      if (template) {
-        const newItem: QuoteItem = {
-          id: generateUUID(),
-          description: template.name + (template.description ? ` - ${template.description}` : ''),
-          quantity: 1,
-          unitPrice: template.rate,
-          taxRate: template.taxRate || (company.isSmallBusiness ? 0 : 19),
-          total: template.rate,
-          order: newOrder,
-          discountType: undefined,
-          discountValue: undefined,
-          discountAmount: 0
-        };
-        setItems([...items, newItem]);
-      }
-    }
-    
-    setShowTemplateDropdown(false);
-  };
-
   const updateItem = (id: string, field: keyof QuoteItem, value: string | number | undefined) => {
-    setItems(items.map(item => {
+    setItems(currentItems => {
+      const nextItems = currentItems.map(item => {
       if (item.id === id) {
         let parsedValue: string | number | undefined = value;
         
@@ -654,7 +641,11 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           }
         }
         
-        const updatedItem = { ...item, [field]: parsedValue };
+        const updatedItem = {
+          ...item,
+          [field]: parsedValue,
+          ...(field === 'discountType' && !parsedValue ? { discountValue: undefined } : {})
+        };
         
         // Recalculate total and discount when relevant fields change
         if (['quantity', 'unitPrice', 'discountType', 'discountValue'].includes(field)) {
@@ -683,7 +674,22 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
         return updatedItem;
       }
       return item;
-    }));
+      });
+
+      if (field === 'description' && String(value || '').trim() && nextItems[nextItems.length - 1]?.id === id) {
+        return [...nextItems, createEmptyItem(nextItems.length + 1)];
+      }
+      return nextItems;
+    });
+  };
+
+  const addItem = () => {
+    setItems(currentItems => [...currentItems, createEmptyItem(currentItems.length + 1)]);
+  };
+
+  const addItemFromTemplate = () => {
+    addItem();
+    setShowTemplateDropdown(false);
   };
 
   const removeItem = (id: string) => {
@@ -780,13 +786,15 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       return;
     }
 
-    if (items.length === 0) {
+    const filledItems = items.filter(item => String(item.description || '').trim());
+
+    if (filledItems.length === 0) {
       alert('Bitte fügen Sie mindestens eine Position hinzu');
       return;
     }
 
     // Validate all items
-    for (const item of items) {
+    for (const item of filledItems) {
       if (!item.description || item.quantity <= 0 || item.unitPrice < 0) {
         alert('Bitte füllen Sie alle Pflichtfelder korrekt aus');
         return;
@@ -819,7 +827,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       customerName: customer?.name || '',
       issueDate: new Date(issueDate),
       validUntil: new Date(validUntil),
-      items: items.map(item => ({
+      items: filledItems.map(item => ({
         ...item,
         total: (item.quantity * item.unitPrice) - (item.discountAmount || 0)
       })),
@@ -859,6 +867,81 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     ? getCombinedHourlyRatesForCustomer(selectedCustomerId)
     : getHourlyRatesForCustomer(selectedCustomerId);
 
+  const templateSuggestions: QuoteTemplateSuggestion[] = [
+    ...hourlyRateTemplates.map(template => ({
+      id: template.id,
+      type: 'hourly' as const,
+      label: 'displayName' in template && typeof template.displayName === 'string' ? template.displayName : template.name,
+      detail: 'Stundensatz',
+      unitPrice: typeof template.rate === 'number' ? template.rate : 0,
+      taxRate: template.taxRate || (company.isSmallBusiness ? 0 : 19),
+    })),
+    ...materialTemplates.map(template => ({
+      id: template.id,
+      type: 'material' as const,
+      label: 'displayName' in template && typeof template.displayName === 'string' ? template.displayName : template.name,
+      detail: template.unit,
+      unitPrice: typeof template.unitPrice === 'number' ? template.unitPrice : 0,
+      taxRate: template.taxRate || (company.isSmallBusiness ? 0 : 19),
+    })),
+  ];
+
+  const selectTemplateForItem = (itemId: string, suggestion: QuoteTemplateSuggestion) => {
+    setItems(currentItems => {
+      const nextItems = currentItems.map(item => item.id === itemId ? {
+        ...item,
+        description: suggestion.label,
+        unitPrice: suggestion.unitPrice,
+        taxRate: suggestion.taxRate,
+        total: item.quantity * suggestion.unitPrice,
+        discountAmount: 0,
+        discountType: undefined,
+        discountValue: undefined,
+      } : item);
+      return nextItems[nextItems.length - 1]?.id === itemId
+        ? [...nextItems, createEmptyItem(nextItems.length + 1)]
+        : nextItems;
+    });
+  };
+
+  const handleQuotePreview = () => {
+    const customer = customers.find(currentCustomer => currentCustomer.id === selectedCustomerId);
+    if (!customer) {
+      alert(`Bitte wÃ¤hlen Sie zuerst einen ${terminology.entity.singular} aus`);
+      return;
+    }
+
+    const previewQuote: Quote = {
+      id: quote?.id || generateUUID(),
+      createdAt: quote?.createdAt || new Date(),
+      updatedAt: new Date(),
+      quoteNumber: quoteNumber || 'Vorschau',
+      customerId: selectedCustomerId,
+      customerName: customer.name,
+      issueDate: new Date(issueDate),
+      validUntil: new Date(validUntil),
+      items: items.filter(item => String(item.description || '').trim()),
+      subtotal: totals.subtotal,
+      taxAmount: totals.taxAmount,
+      total: totals.total,
+      status: quote?.status || 'draft',
+      notes,
+      globalDiscountType: globalDiscountType || undefined,
+      globalDiscountValue: globalDiscountValue ? parseFloat(globalDiscountValue) : undefined,
+      globalDiscountAmount: totals.globalDiscountAmount,
+      attachments,
+    };
+
+    setPreviewDocuments([{
+      id: `quote-preview-${previewQuote.id}`,
+      name: `Angebot_${previewQuote.quoteNumber}.pdf`,
+      type: 'quote-pdf',
+      quote: previewQuote,
+    }]);
+    setPreviewInitialIndex(0);
+    setShowPreview(true);
+  };
+
   const hasNoTemplates = materialTemplates.length === 0 && hourlyRateTemplates.length === 0;
 
   return (
@@ -868,7 +951,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
         if (event.target === event.currentTarget) requestClose();
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl my-8 max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl my-4 max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <h2 className="text-2xl font-bold text-gray-900">
@@ -966,6 +1049,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               </label>
               <input
                 type="date"
+                lang="de-DE"
                 required
                 value={issueDate}
                 onChange={(e) => {
@@ -982,6 +1066,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               </label>
               <input
                 type="date"
+                lang="de-DE"
                 required
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
@@ -997,7 +1082,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 <Calculator className="w-5 h-5 text-blue-600" />
                 Positionen
               </h3>
-              <div className="flex gap-2">
+              <div className="hidden">
                 <div className="relative">
                   <button
                     type="button"
@@ -1124,6 +1209,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                       isFirst={index === 0}
                       isLast={index === items.length - 1}
                       isSmallBusiness={company.isSmallBusiness || false}
+                      templateSuggestions={templateSuggestions}
+                      onSelectTemplate={selectTemplateForItem}
                     />
                   ))}
                 </div>
@@ -1147,10 +1234,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
 
           {/* Global Discount */}
           {discountsEnabled && (
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-4 border border-yellow-200">
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
               <div className="flex items-center gap-3 mb-3">
                 <Percent className="w-5 h-5 text-orange-600" />
-                <h3 className="text-sm font-semibold text-gray-900">Gesamtrabatt</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Rabattzeile</h3>
               </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1294,7 +1381,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           </div>
 
           {/* Action Buttons */}
-          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 flex gap-3 border-t border-gray-200 bg-white/95 p-6 backdrop-blur">
+          <div className="sticky bottom-0 z-10 -mx-6 flex gap-3 border-t border-gray-200 bg-white p-4 backdrop-blur sm:p-6">
             <button
               type="button"
               onClick={requestClose}
@@ -1303,8 +1390,16 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               Abbrechen
             </button>
             <button
+              type="button"
+              onClick={handleQuotePreview}
+              className="flex-1 rounded-lg border border-primary-custom px-6 py-3 font-medium text-primary-custom transition-colors hover:bg-primary-light-custom"
+            >
+              <Eye className="mr-2 inline h-5 w-5" />
+              Vorschau
+            </button>
+            <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+              className="btn-primary flex-1 rounded-lg px-6 py-3 font-medium text-white transition-colors"
             >
               <Save className="w-5 h-5" />
               {quote ? 'Änderungen speichern' : 'Angebot erstellen'}

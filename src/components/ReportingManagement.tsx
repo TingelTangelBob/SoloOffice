@@ -526,10 +526,10 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
             ) : journalData?.invoices.length ? (
               <>
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200">
+              <div className="hidden w-full min-w-0 max-w-full overflow-x-auto lg:block">
+                <table className="w-full min-w-[760px]">
+                  <thead className="bg-gray-50">
+                    <tr>
                       <th className="text-left py-3 px-2 font-medium text-gray-700">Datum</th>
                       <th className="text-left py-3 px-2 font-medium text-gray-700">Rechnung</th>
                       <th className="text-left py-3 px-2 font-medium text-gray-700">{terminology.entity.singular}</th>
@@ -537,9 +537,9 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                       <th className="text-center py-3 px-2 font-medium text-gray-700">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-200 bg-white">
                     {journalData.invoices.map((invoice: InvoiceJournalEntry) => (
-                      <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <tr key={invoice.id} className="group hover:bg-gray-50">
                         <td className="py-3 px-2 text-xs">
                           {invoice.issueDate ? 
                             formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) :
@@ -717,13 +717,14 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
         </div>
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:p-6">
+      <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-lg font-semibold text-gray-900">EÜR-Auswertung {selectedYear}</h2><p className="mt-1 text-sm text-gray-500">Einnahmen, Ausgaben und Überschuss aus dem EÜR-Journal an einem Ort.</p></div>
           <button type="button" onClick={() => onNavigate?.('euer')} className="action-button flex items-center gap-2">EÜR öffnen <TrendingUp className="h-4 w-4" /></button>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Einnahmen</p><p className="mt-1 font-semibold text-emerald-900">{formatAmount(euerSummary.income)}</p></div><div className="rounded-lg bg-rose-50 p-3"><p className="text-xs text-rose-700">Ausgaben</p><p className="mt-1 font-semibold text-rose-900">{formatAmount(euerSummary.expenses)}</p></div><div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">Überschuss</p><p className="mt-1 font-semibold text-blue-900">{formatAmount(euerSummary.profit)}</p></div></div>
-        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"><th className="px-3 py-3">Monat</th><th className="px-3 py-3 text-right">Einnahmen</th><th className="px-3 py-3 text-right">Ausgaben</th><th className="px-3 py-3 text-right">Überschuss</th></tr></thead><tbody>{euerMonthly.map(item => <tr key={item.month} className="border-b border-gray-100"><td className="px-3 py-2 font-medium text-gray-700">{monthNames[item.month]}</td><td className="px-3 py-2 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-3 py-2 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className="px-3 py-2 text-right font-medium text-gray-900">{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
+        <div className="mt-5 hidden overflow-x-auto lg:block"><table className="w-full min-w-[680px]"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead><tbody className="divide-y divide-gray-200 bg-white">{euerMonthly.map(item => <tr key={item.month} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{monthNames[item.month]}</td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className="px-4 py-3 text-right font-medium text-gray-900">{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
+        <div className="divide-y divide-gray-100 lg:hidden">{euerMonthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><div className="flex items-center justify-between gap-3"><span className="font-medium text-gray-900">{monthNames[item.month]}</span><span className="font-semibold text-gray-900">{formatAmount(item.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
         <p className="mt-4 text-xs text-gray-500">Die EÜR-Auswertung ist eine vorbereitende Arbeitsunterlage. Zahlungseingangsdaten und Teilzahlungen sollten geprüft werden.</p>
       </section>
     </div>
