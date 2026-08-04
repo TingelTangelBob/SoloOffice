@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
 import { 
   X, 
@@ -15,10 +15,11 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { generateInvoicePDF, generateJobPDF, downloadBlob } from '../utils/pdfGenerator';
-import { Invoice, Quote, JobEntry } from '../types';
+import { generateInvoicePDF, generateJobPDF, generateQuotePDF, downloadBlob } from '../utils/pdfGenerator';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
+import { getTerminology } from '../utils/terminology';
+import type { PreviewDocument } from '../utils/previewDocuments';
 
 interface DocumentPreviewProps {
   isOpen: boolean;
@@ -26,23 +27,9 @@ interface DocumentPreviewProps {
   documents?: PreviewDocument[];
   initialIndex?: number;
 }
-
-export interface PreviewDocument {
-  id: string;
-  name: string;
-  type: 'invoice-pdf' | 'job-pdf' | 'quote-pdf' | 'attachment';
-  size?: number;
-  content?: string; // Base64 content for attachments
-  contentType?: string;
-  // For PDF generation
-  invoice?: Invoice;
-  job?: JobEntry;
-  quote?: Quote;
-  pdfFormat?: 'zugferd' | 'xrechnung';
-}
-
 export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex = 0 }: DocumentPreviewProps) {
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const { customers } = useCustomers();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(100);
@@ -52,6 +39,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [iframeKey, setIframeKey] = useState(0); // For forcing iframe reload
+  const previewUrlRef = useRef<string | null>(null);
   
   const modalRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -83,14 +71,6 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
     };
   }, [isOpen, onClose]);
 
-  // Load document content when current document changes
-  useEffect(() => {
-    if (!isOpen || !currentDocument) return;
-
-    loadDocumentContent();
-  }, [isOpen, currentDocument, currentIndex]);
-  
-
   // Cleanup URL when component unmounts or closes
   useEffect(() => {
     return () => {
@@ -100,19 +80,18 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
     };
   }, [previewUrl]);
 
-  const loadDocumentContent = async () => {
+  const loadDocumentContent = useCallback(async () => {
     if (!currentDocument) return;
 
     setIsLoading(true);
     setError(null);
     
     // Cleanup previous URL before creating new one (prevent memory leaks)
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
       setPreviewUrl(null);
     }
-
-    let temporaryUrl: string | null = null;
 
     try {
       let blob: Blob;
@@ -129,7 +108,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         // Generate invoice PDF
         const customer = customers.find(c => c.id === currentDocument.invoice!.customerId);
         if (!customer || !company) {
-          throw new Error('Fehlende Kunden- oder Firmendaten');
+          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
         }
 
         blob = await generateInvoicePDF(currentDocument.invoice, {
@@ -141,7 +120,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         // Generate job PDF
         const customer = customers.find(c => c.id === currentDocument.job!.customerId);
         if (!customer || !company) {
-          throw new Error('Fehlende Kunden- oder Firmendaten');
+          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
         }
 
         blob = await generateJobPDF(currentDocument.job, {
@@ -152,13 +131,12 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         // Generate quote PDF
         const customer = customers.find(c => c.id === currentDocument.quote!.customerId);
         if (!customer) {
-          throw new Error('Kunde nicht gefunden');
+          throw new Error(`${terminology.entity.singular} nicht gefunden`);
         }
         if (!company) {
-          throw new Error('Firmendaten nicht geladen');
+          throw new Error(`${terminology.organization.dataLabel} nicht geladen`);
         }
 
-        const { generateQuotePDF } = await import('../utils/pdfGenerator');
         blob = await generateQuotePDF(currentDocument.quote, {
           company,
           customer
@@ -168,20 +146,23 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
       }
 
       const url = URL.createObjectURL(blob);
+      previewUrlRef.current = url;
       setPreviewUrl(url);
       setIframeKey(prev => prev + 1); // Force iframe reload
     } catch (err) {
-      // Cleanup temporary URL if we created one but failed to set it to state
-      if (temporaryUrl) {
-        URL.revokeObjectURL(temporaryUrl);
-      }
-      
       logger.error('Fehler beim Laden des Dokuments:', err);
       setError(err instanceof Error ? err.message : 'Fehler beim Laden des Dokuments');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [company, currentDocument, customers, terminology]);
+
+  // Load document content when current document changes
+  useEffect(() => {
+    if (!isOpen || !currentDocument) return;
+
+    void loadDocumentContent();
+  }, [currentDocument, isOpen, loadDocumentContent]);
 
   const handleDownload = async () => {
     if (!currentDocument) return;
@@ -203,7 +184,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
       } else if (currentDocument.type === 'invoice-pdf' && currentDocument.invoice) {
         const customer = customers.find(c => c.id === currentDocument.invoice!.customerId);
         if (!customer || !company) {
-          throw new Error('Fehlende Kunden- oder Firmendaten');
+          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
         }
 
         blob = await generateInvoicePDF(currentDocument.invoice, {
@@ -222,7 +203,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
       } else if (currentDocument.type === 'job-pdf' && currentDocument.job) {
         const customer = customers.find(c => c.id === currentDocument.job!.customerId);
         if (!customer || !company) {
-          throw new Error('Fehlende Kunden- oder Firmendaten');
+          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
         }
 
         blob = await generateJobPDF(currentDocument.job, {
@@ -231,17 +212,16 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         });
         
         const jobNumber = currentDocument.job.jobNumber || currentDocument.job.id.slice(-8).toUpperCase();
-        filename = `Auftrag_${jobNumber}.pdf`;
+        filename = `${terminology.work.singular}_${jobNumber}.pdf`;
       } else if (currentDocument.type === 'quote-pdf' && currentDocument.quote) {
         const customer = customers.find(c => c.id === currentDocument.quote!.customerId);
         if (!customer) {
-          throw new Error('Kunde nicht gefunden');
+          throw new Error(`${terminology.entity.singular} nicht gefunden`);
         }
         if (!company) {
-          throw new Error('Firmendaten nicht geladen');
+          throw new Error(`${terminology.organization.dataLabel} nicht geladen`);
         }
 
-        const { generateQuotePDF } = await import('../utils/pdfGenerator');
         blob = await generateQuotePDF(currentDocument.quote, {
           company,
           customer
@@ -598,98 +578,4 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
       </div>
     </div>
   );
-}
-
-// Helper function to create preview documents from invoice attachments
-export function createInvoiceAttachmentPreviewDocuments(
-  invoice: Invoice
-): PreviewDocument[] {
-  const documents: PreviewDocument[] = [];
-
-  // Add only the ZUGFeRD PDF (the version that would be sent via email)
-  documents.push({
-    id: `invoice-pdf-${invoice.id}`,
-    name: `Rechnung_${invoice.invoiceNumber}.pdf`,
-    type: 'invoice-pdf',
-    invoice,
-    pdfFormat: 'zugferd'
-  });
-
-  // Add attachments
-  if (invoice.attachments) {
-    invoice.attachments.forEach(attachment => {
-      documents.push({
-        id: attachment.id,
-        name: attachment.name,
-        type: 'attachment',
-        content: attachment.content,
-        contentType: attachment.contentType,
-        size: attachment.size
-      });
-    });
-  }
-
-  return documents;
-}
-
-// Helper function to create preview documents from quote attachments
-export function createQuoteAttachmentPreviewDocuments(
-  quote: Quote
-): PreviewDocument[] {
-  const documents: PreviewDocument[] = [];
-
-  // Add the quote PDF itself
-  documents.push({
-    id: `quote-pdf-${quote.id}`,
-    name: `Angebot_${quote.quoteNumber}.pdf`,
-    type: 'quote-pdf',
-    quote
-  });
-
-  // Add attachments
-  if (quote.attachments) {
-    quote.attachments.forEach(attachment => {
-      documents.push({
-        id: attachment.id,
-        name: attachment.name,
-        type: 'attachment',
-        content: attachment.content,
-        contentType: attachment.contentType,
-        size: attachment.size
-      });
-    });
-  }
-
-  return documents;
-}
-
-// Helper function to create preview documents from job attachments
-export function createJobAttachmentPreviewDocuments(
-  job: JobEntry
-): PreviewDocument[] {
-  const documents: PreviewDocument[] = [];
-
-  // Add the job PDF itself
-  documents.push({
-    id: `job-pdf-${job.id}`,
-    name: `Auftrag_${job.jobNumber || job.id.slice(-8).toUpperCase()}.pdf`,
-    type: 'job-pdf',
-    job
-  });
-
-  // Add attachments
-  if (job.attachments) {
-    job.attachments.forEach(attachment => {
-      documents.push({
-        id: attachment.id,
-        name: attachment.name,
-        type: 'attachment',
-        content: attachment.content,
-        contentType: attachment.contentType,
-        size: attachment.size
-      });
-    });
-  }
-
-  return documents;
 }

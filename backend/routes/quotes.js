@@ -176,6 +176,11 @@ router.post('/:id/send-email', async (req, res) => {
         email: company.email,
         primaryColor: company.primary_color,
         secondaryColor: company.secondary_color,
+        locale: company.locale,
+        numberFormat: company.number_format,
+        currency: company.currency,
+        dateFormat: company.date_format,
+        timeFormat: company.time_format,
       },
       customText,
       attachments || []

@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Bell, Send, Clock, AlertCircle, Download, Eye, MoreVertical } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import { ReminderEligibility, Invoice, Customer } from '../types';
+import { ReminderEligibility, Invoice, Company } from '../types';
 import logger from '../utils/logger';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate as formatDateValue } from '../utils/formatters';
 import { generateReminderPDF } from '../utils/pdfGenerator';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { ReminderSendModal } from './ReminderSendModal';
 import { blobToBase64 } from '../utils/blobUtils';
-import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { PageHeader } from './PageHeader';
+import { BulkSelectionHeader } from './BulkSelectionHeader';
+import { getTerminology } from '../utils/terminology';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
@@ -44,11 +48,7 @@ export function ReminderManagement() {
     documents: []
   });
 
-  useEffect(() => {
-    loadData();
-  }, [activeTab]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       if (activeTab === 'eligible') {
@@ -68,7 +68,7 @@ export function ReminderManagement() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeTab]);
 
   const handleSendReminder = async (invoiceId: string, stage: number) => {
     try {
@@ -103,13 +103,6 @@ export function ReminderManagement() {
   const handleReminderSuccess = async () => {
     await refreshInvoices();
     await loadData();
-  };
-
-  const getReminderStageFromStatus = (status: Invoice['status']): 1 | 2 | 3 | null => {
-    if (status === 'reminded_1x') return 1;
-    if (status === 'reminded_2x') return 2;
-    if (status === 'reminded_3x') return 3;
-    return null;
   };
 
   const handleDownloadReminder = async (invoice: Invoice, stage: 1 | 2 | 3) => {
@@ -205,8 +198,12 @@ export function ReminderManagement() {
   };
 
   const formatDate = (date: Date | string) => {
-    return new Date(date).toLocaleDateString('de-DE');
+    return formatDateValue(date, company?.locale || 'de-DE', company?.dateFormat);
   };
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const getStatusBadge = (status: Invoice['status']) => {
     const statusConfig: Record<Invoice['status'], { label: string; color: string }> = {
@@ -227,15 +224,6 @@ export function ReminderManagement() {
     );
   };
 
-  const getStageBadge = (stage: number) => {
-    const colors = ['bg-yellow-100 text-yellow-800', 'bg-orange-100 text-orange-800', 'bg-red-100 text-red-800'];
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[stage - 1] || colors[0]}`}>
-        {stage}. Mahnung
-      </span>
-    );
-  };
-
   const handleSelectInvoice = (invoiceId: string) => {
     setSelectedInvoiceIds(prev =>
       prev.includes(invoiceId)
@@ -244,12 +232,14 @@ export function ReminderManagement() {
     );
   };
 
-  const handleSelectAll = () => {
-    if (selectedInvoiceIds.length === eligibleReminders.filter(r => r.isEligible).length) {
-      setSelectedInvoiceIds([]);
-    } else {
-      setSelectedInvoiceIds(eligibleReminders.filter(r => r.isEligible).map(r => r.invoiceId));
+  const handleSelectAll = (checked?: boolean) => {
+    const eligibleIds = eligibleReminders.filter(r => r.isEligible).map(r => r.invoiceId);
+    if (checked !== undefined) {
+      setSelectedInvoiceIds(checked ? eligibleIds : []);
+      return;
     }
+
+    setSelectedInvoiceIds(selectedInvoiceIds.length === eligibleIds.length ? [] : eligibleIds);
   };
 
   const handleBulkSendReminders = async () => {
@@ -397,13 +387,15 @@ export function ReminderManagement() {
               onSelectAll={handleSelectAll}
               onSendReminder={handleSendReminder}
               onSendBulk={handleBulkSendReminders}
-              onRefresh={loadData}
+              formatDate={formatDate}
+              company={company}
             />
           ) : activeTab === 'history' ? (
             <ReminderHistoryTab
               invoices={reminderHistory}
               formatDate={formatDate}
               getStatusBadge={getStatusBadge}
+              company={company}
               onDownloadReminder={handleDownloadReminder}
               onPreviewReminder={handlePreviewReminder}
             />
@@ -427,10 +419,11 @@ interface EligibleRemindersTabProps {
   reminders: ReminderEligibility[];
   selectedIds: string[];
   onSelect: (id: string) => void;
-  onSelectAll: () => void;
+  onSelectAll: (checked?: boolean) => void;
   onSendReminder: (invoiceId: string, stage: number) => void;
   onSendBulk: () => void;
-  onRefresh: () => void;
+  formatDate: (date: Date | string) => string;
+  company: Company;
 }
 
 function EligibleRemindersTab({
@@ -440,8 +433,10 @@ function EligibleRemindersTab({
   onSelectAll,
   onSendReminder,
   onSendBulk,
-  onRefresh
+  formatDate,
+  company
 }: EligibleRemindersTabProps) {
+  const terminology = getTerminology(company.terminologyProfile);
   if (reminders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -455,69 +450,55 @@ function EligibleRemindersTab({
 
   return (
     <div>
-      {/* Bulk Actions */}
-      {eligibleCount > 0 && (
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selectedIds.length === eligibleCount && eligibleCount > 0}
-                onChange={onSelectAll}
-                className="custom-checkbox"
-              />
-              <span className="ml-2 text-sm text-gray-700">
-                Alle auswählen ({eligibleCount})
-              </span>
-            </label>
-            {selectedIds.length > 0 && (
-              <span className="text-sm text-gray-600">
-                {selectedIds.length} ausgewählt
-              </span>
-            )}
-          </div>
-          {selectedIds.length > 0 && (
-            <button
-              onClick={onSendBulk}
-              className="px-4 py-2 bg-primary-custom text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Ausgewählte mahnen ({selectedIds.length})
-            </button>
-          )}
-        </div>
-      )}
+      <BulkSelectionHeader
+        itemLabel="Rechnung"
+        itemLabelPlural="Rechnungen"
+        visibleCount={reminders.length}
+        selectedCount={selectedIds.length}
+        allSelected={selectedIds.length === eligibleCount && eligibleCount > 0}
+        onSelectAll={onSelectAll}
+      >
+        <button
+          type="button"
+          onClick={onSendBulk}
+          className="action-icon-button bulk-action-icon-button action-icon-blue"
+          title="Ausgewählte mahnen"
+          aria-label="Ausgewählte mahnen"
+        >
+          <Send className="h-4 w-4" />
+        </button>
+      </BulkSelectionHeader>
 
       {/* Reminders Table */}
-      <div className="w-full max-w-full overflow-x-auto">
+      <div className="hidden w-full max-w-full overflow-x-auto lg:block">
         <table className="w-full min-w-[820px] divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Auswahl
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <span className="sr-only">Auswahl</span>
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Rechnungsnr.
-              </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Kunde
-              </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Fälligkeitsdatum
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Rechnungsnr.
+              </th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {terminology.entity.singular}
+              </th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Tage überfällig
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Betrag
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Nächste Mahnung
               </th>
-              <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-20 2xl:px-3">
+              <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-20 2xl:px-3">
                 <span className="sr-only">Aktionen</span>
               </th>
             </tr>
@@ -525,7 +506,7 @@ function EligibleRemindersTab({
           <tbody className="bg-white divide-y divide-gray-200">
             {reminders.map((reminder) => (
               <tr key={reminder.invoiceId} className={!reminder.isEligible ? 'bg-gray-50' : ''}>
-                <td className="px-2 py-3 whitespace-nowrap">
+                <td className="px-2 py-2 whitespace-nowrap">
                   {reminder.isEligible && (
                     <input
                       type="checkbox"
@@ -535,25 +516,25 @@ function EligibleRemindersTab({
                     />
                   )}
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500">
+                  {formatDate(reminder.dueDate)}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
                   {reminder.invoiceNumber}
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-900">
                   {reminder.customerName}
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(reminder.dueDate).toLocaleDateString('de-DE')}
-                </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-900">
                   {reminder.daysSinceDue} Tage
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {formatCurrency(reminder.total)}
+                <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {formatCurrency(reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap">
+                <td className="px-2 py-2 whitespace-nowrap">
                   {getStatusBadgeForReminder(reminder.currentStatus)}
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap">
+                <td className="px-2 py-2 whitespace-nowrap">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     reminder.nextStage === 1 ? 'bg-yellow-100 text-yellow-800' :
                     reminder.nextStage === 2 ? 'bg-orange-100 text-orange-800' :
@@ -563,26 +544,26 @@ function EligibleRemindersTab({
                   </span>
                   {!reminder.isEligible && reminder.nextEligibleDate && (
                     <div className="text-xs text-gray-500 mt-1">
-                      ab {new Date(reminder.nextEligibleDate).toLocaleDateString('de-DE')}
+                      ab {formatDate(reminder.nextEligibleDate)}
                     </div>
                   )}
                 </td>
-                <td className="w-14 px-2 py-3 whitespace-nowrap text-sm 2xl:w-20 2xl:px-3">
-                  <details className="relative 2xl:hidden">
-                    <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
-                      <MoreVertical className="h-4 w-4" />
-                    </summary>
-                    <div className="absolute right-0 top-9 z-20 min-w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-                      <button
-                        type="button"
+                <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap text-sm 2xl:w-20 2xl:px-3">
+                  <ActionMenu
+                    containerClassName="2xl:hidden"
+                    icon={<MoreVertical className="h-4 w-4" />}
+                    triggerClassName="action-icon-button action-icon-indigo"
+                    menuClassName="min-w-40"
+                  >
+                      <ActionMenuItem
+                        icon={<Send className="h-4 w-4" />}
+                        tone="blue"
                         onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
                         disabled={!reminder.isEligible}
-                        className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
                       >
                         Mahnung senden
-                      </button>
-                    </div>
-                  </details>
+                      </ActionMenuItem>
+                  </ActionMenu>
                   <button
                     type="button"
                     onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
@@ -602,6 +583,59 @@ function EligibleRemindersTab({
           </tbody>
         </table>
       </div>
+
+      <div className="divide-y divide-gray-200 rounded-xl border border-gray-100 bg-white lg:hidden">
+        {reminders.map((reminder) => (
+          <div key={reminder.invoiceId} className={`p-4 ${!reminder.isEligible ? 'bg-gray-50' : ''}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                {reminder.isEligible ? (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(reminder.invoiceId)}
+                    onChange={() => onSelect(reminder.invoiceId)}
+                    className="custom-checkbox mt-0.5 shrink-0"
+                    aria-label={`${reminder.invoiceNumber} auswählen`}
+                  />
+                ) : <span className="w-4 shrink-0" />}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-900">{reminder.invoiceNumber}</p>
+                  <p className="truncate text-sm text-gray-600">{reminder.customerName}</p>
+                </div>
+              </div>
+              <ActionMenu
+                icon={<MoreVertical className="h-4 w-4" />}
+                triggerClassName="action-icon-button action-icon-indigo"
+                menuClassName="min-w-40"
+              >
+                <ActionMenuItem
+                  icon={<Send className="h-4 w-4" />}
+                  tone="blue"
+                  onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
+                  disabled={!reminder.isEligible}
+                >
+                  Mahnung senden
+                </ActionMenuItem>
+              </ActionMenu>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <div><span className="block text-xs text-gray-500">Fällig</span>{formatDate(reminder.dueDate)}</div>
+              <div><span className="block text-xs text-gray-500">Überfällig</span>{reminder.daysSinceDue} Tage</div>
+              <div><span className="block text-xs text-gray-500">Betrag</span>{formatCurrency(reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</div>
+              <div><span className="block text-xs text-gray-500">Status</span>{getStatusBadgeForReminder(reminder.currentStatus)}</div>
+              <div className="col-span-2"><span className="block text-xs text-gray-500">Nächste Mahnung</span>
+                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                  reminder.nextStage === 1 ? 'bg-yellow-100 text-yellow-800' : reminder.nextStage === 2 ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'
+                }`}>{reminder.nextStage}. Mahnung</span>
+                {!reminder.isEligible && reminder.nextEligibleDate && <span className="ml-2 text-xs text-gray-500">ab {formatDate(reminder.nextEligibleDate)}</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-right text-xs text-gray-500">
+        {reminders.length} {reminders.length === 1 ? 'Rechnung' : 'Rechnungen'}
+      </div>
     </div>
   );
 }
@@ -611,11 +645,12 @@ interface ReminderHistoryTabProps {
   invoices: Invoice[];
   formatDate: (date: Date | string) => string;
   getStatusBadge: (status: Invoice['status']) => React.ReactNode;
+  company: Company;
   onDownloadReminder: (invoice: Invoice, stage: 1 | 2 | 3) => void;
   onPreviewReminder: (invoice: Invoice, stage: 1 | 2 | 3) => void;
 }
 
-function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, onDownloadReminder, onPreviewReminder }: ReminderHistoryTabProps) {
+function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, company, onDownloadReminder, onPreviewReminder }: ReminderHistoryTabProps) {
   if (invoices.length === 0) {
     return (
       <div className="text-center py-12">
@@ -654,7 +689,6 @@ function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, onDownloadRe
   return (
     <div className="space-y-6">
       {invoices.map((invoice) => {
-        const maxStage = getMaxReminderStage(invoice);
         const allStages = getAllReminderStages(invoice);
         
         return (
@@ -666,7 +700,7 @@ function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, onDownloadRe
               </div>
               <div className="text-right">
                 {getStatusBadge(invoice.status)}
-                <p className="text-sm text-gray-600 mt-1">{formatCurrency(invoice.total)}</p>
+                <p className="text-sm text-gray-600 mt-1">{formatCurrency(invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
               </div>
             </div>
 
@@ -746,6 +780,7 @@ interface HardshipCasesTabProps {
 
 function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadReminder, onPreviewReminder }: HardshipCasesTabProps) {
   const { company } = useCompany();
+  const terminology = getTerminology(company?.terminologyProfile);
   
   // Calculate total amount including all reminder fees
   const calculateTotalWithReminderFees = (invoice: Invoice): number => {
@@ -792,7 +827,7 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
           <div>
             <h3 className="text-sm font-medium text-red-800">Härtefälle - Weitere Schritte erforderlich</h3>
             <p className="text-sm text-red-700 mt-1">
-              Diese Rechnungen wurden bereits 3x gemahnt und sind noch immer unbezahlt. Bitte erwägen Sie weitere rechtliche Schritte oder ein persönliches Gespräch mit dem Kunden.
+              Diese Rechnungen wurden bereits 3x gemahnt und sind noch immer unbezahlt. Bitte erwägen Sie weitere rechtliche Schritte oder ein persönliches Gespräch mit dem {terminology.entity.dative}.
             </p>
           </div>
         </div>
@@ -818,11 +853,11 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
                 <p className="text-sm text-gray-600">{invoice.customerName}</p>
               </div>
               <div className="text-right">
-                <p className="text-xl font-bold text-red-600">{formatCurrency(totalWithFees)}</p>
+                <p className="text-xl font-bold text-red-600">{formatCurrency(totalWithFees, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                 <p className="text-xs text-gray-500 mt-1">Offener Betrag (inkl. Mahngebühren)</p>
                 {totalWithFees !== invoice.total && (
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Rechnung: {formatCurrency(invoice.total)} + Gebühren: {formatCurrency(totalWithFees - invoice.total)}
+                    Rechnung: {formatCurrency(invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)} + Gebühren: {formatCurrency(totalWithFees - invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
                   </p>
                 )}
               </div>
@@ -882,7 +917,7 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
             <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-xs font-medium text-yellow-800">Empfohlene nächste Schritte:</p>
               <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside space-y-1">
-                <li>Persönlicher Kontakt mit dem Kunden aufnehmen</li>
+                <li>Persönlicher Kontakt mit dem {terminology.entity.dative} aufnehmen</li>
                 <li>Ratenzahlungsvereinbarung anbieten</li>
                 <li>Inkassobüro oder Rechtsanwalt einschalten</li>
                 <li>Gerichtliches Mahnverfahren einleiten</li>

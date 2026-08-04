@@ -15,6 +15,8 @@ import {
 import { JobAttachment, InvoiceAttachment } from '../types';
 import { fileToBase64, formatFileSize, validateFile, generateUniqueFileName } from '../utils/fileUtils';
 import { generateUUID } from '../utils/uuid';
+import { useCompany } from '../context/CompanyContext';
+import { formatDate } from '../utils/formatters';
 
 interface AttachmentManagerProps {
   attachments: (JobAttachment | InvoiceAttachment)[];
@@ -41,6 +43,7 @@ export function AttachmentManager({
   allowPreview = false,
   onPreview
 }: AttachmentManagerProps) {
+  const { company } = useCompany();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -186,7 +189,7 @@ export function AttachmentManager({
     }
   };
 
-  const getFileIconComponent = (fileName: string, contentType: string) => {
+  const getFileIconComponent = (contentType: string) => {
     if (contentType.startsWith('image/')) {
       return <Image className="h-4 w-4 text-blue-500" />;
     } else if (contentType === 'application/pdf') {
@@ -293,14 +296,14 @@ export function AttachmentManager({
                   />
                 )}
                 
-                {getFileIconComponent(attachment.name, attachment.contentType)}
+                {getFileIconComponent(attachment.contentType)}
                 
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">
                     {attachment.name}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {formatFileSize(attachment.size)} • {new Date(attachment.uploadedAt).toLocaleDateString('de-DE')}
+                    {formatFileSize(attachment.size)} • {formatDate(attachment.uploadedAt, company.locale, company.dateFormat)}
                   </p>
                 </div>
               </div>

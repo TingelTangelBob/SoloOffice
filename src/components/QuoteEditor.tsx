@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Plus, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Euro, FileText } from 'lucide-react';
+import { Save, X, Plus, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, FileText } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -24,19 +24,24 @@ import { useQuotes } from '../context/QuoteContext';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
-import { Quote, QuoteItem, QuoteAttachment } from '../types';
+import { Customer, Quote, QuoteItem, QuoteAttachment } from '../types';
 import { AttachmentManager } from './AttachmentManager';
 import { calculateInvoiceWithDiscounts, validateDiscount } from '../utils/discountUtils';
-import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
+import { ConfirmationModal } from './ConfirmationModal';
 import { formatCustomerNumber } from '../utils/customerUtils';
 import { generateUUID } from '../utils/uuid';
+import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { getTerminology } from '../utils/terminology';
 
 // Sortable Item Component for Drag & Drop
 interface SortableQuoteItemProps {
   item: QuoteItem;
   index: number;
-  onUpdate: (id: string, field: keyof QuoteItem, value: string | number) => void;
+  onUpdate: (id: string, field: keyof QuoteItem, value: string | number | undefined) => void;
   onRemove: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
@@ -58,6 +63,7 @@ function SortableQuoteItem({
 }: SortableQuoteItemProps) {
   const { company } = useCompany();
   const discountsEnabled = company.discountsEnabled !== false;
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const {
     attributes,
     listeners,
@@ -128,13 +134,14 @@ function SortableQuoteItem({
           <label className="block text-xs font-medium text-gray-700 mb-1">
             Menge *
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             min="0"
             step="0.01"
             required
             value={item.quantity}
-            onChange={(e) => onUpdate(item.id, 'quantity', e.target.value)}
+            locale={company.locale}
+            numberFormat={company.numberFormat}
+            onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
             className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -142,15 +149,16 @@ function SortableQuoteItem({
         {/* Einzelpreis - 1 column */}
         <div className="col-span-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            Einzelpreis €
+            Einzelpreis {currencySymbol}
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             min="0"
             step="0.01"
             required
             value={item.unitPrice}
-            onChange={(e) => onUpdate(item.id, 'unitPrice', e.target.value)}
+            locale={company.locale}
+            numberFormat={company.numberFormat}
+            onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
             className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -161,13 +169,14 @@ function SortableQuoteItem({
             <label className="block text-xs font-medium text-gray-700 mb-1">
               MwSt %
             </label>
-            <input
-              type="number"
+            <LocalizedNumberInput
               min="0"
               max="100"
               step="0.01"
               value={item.taxRate}
-              onChange={(e) => onUpdate(item.id, 'taxRate', e.target.value)}
+              locale={company.locale}
+              numberFormat={company.numberFormat}
+              onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -193,18 +202,19 @@ function SortableQuoteItem({
               >
                 <option value="">-</option>
                 <option value="percentage">%</option>
-                <option value="fixed">€</option>
+                <option value="fixed">{currencySymbol}</option>
               </select>
               {item.discountType && (
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   min="0"
                   max={item.discountType === 'percentage' ? '100' : undefined}
                   step="0.01"
                   value={item.discountValue || ''}
-                  onChange={(e) => onUpdate(item.id, 'discountValue', e.target.value)}
+                  locale={company.locale || 'de-DE'}
+                  numberFormat={company.numberFormat}
+                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={item.discountType === 'percentage' ? '%' : '€'}
+                  placeholder={item.discountType === 'percentage' ? '%' : currencySymbol}
                 />
               )}
             </div>
@@ -214,20 +224,20 @@ function SortableQuoteItem({
         {/* Gesamt - 1 column */}
         <div className="col-span-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            Gesamt €
+            Gesamt {currencySymbol}
           </label>
           <div className="relative">
             <input
               type="text"
               disabled
-              value={itemTotalAfterDiscount.toFixed(2)}
+              value={formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
               className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-gray-50 ${
                 discountAmount > 0 ? 'text-green-600 font-semibold' : ''
               }`}
             />
             {discountAmount > 0 && (
               <div className="absolute -top-5 right-0 text-xs text-gray-500 line-through">
-                {itemTotalBeforeDiscount.toFixed(2)}
+                {formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}
               </div>
             )}
           </div>
@@ -329,28 +339,30 @@ function SortableQuoteItem({
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Menge *
               </label>
-              <input
-                type="number"
+              <LocalizedNumberInput
                 min="0"
                 step="0.01"
                 required
                 value={item.quantity}
-                onChange={(e) => onUpdate(item.id, 'quantity', e.target.value)}
+                locale={company.locale}
+                numberFormat={company.numberFormat}
+                onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Einzelpreis €
+                Einzelpreis {currencySymbol}
               </label>
-              <input
-                type="number"
+              <LocalizedNumberInput
                 min="0"
                 step="0.01"
                 required
                 value={item.unitPrice}
-                onChange={(e) => onUpdate(item.id, 'unitPrice', e.target.value)}
+                locale={company.locale}
+                numberFormat={company.numberFormat}
+                onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -361,13 +373,14 @@ function SortableQuoteItem({
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 MwSt %
               </label>
-              <input
-                type="number"
+              <LocalizedNumberInput
                 min="0"
                 max="100"
                 step="0.01"
                 value={item.taxRate}
-                onChange={(e) => onUpdate(item.id, 'taxRate', e.target.value)}
+                locale={company.locale}
+                numberFormat={company.numberFormat}
+                onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -394,15 +407,16 @@ function SortableQuoteItem({
                 <option value="fixed">Euro</option>
               </select>
               {item.discountType && (
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   min="0"
                   max={item.discountType === 'percentage' ? '100' : undefined}
                   step="0.01"
                   value={item.discountValue || ''}
-                  onChange={(e) => onUpdate(item.id, 'discountValue', e.target.value)}
+                  locale={company.locale || 'de-DE'}
+                  numberFormat={company.numberFormat}
+                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={item.discountType === 'percentage' ? 'Prozentsatz' : 'Betrag in €'}
+                  placeholder={item.discountType === 'percentage' ? 'Prozentsatz' : `Betrag in ${currencySymbol}`}
                 />
               )}
             </div>
@@ -414,11 +428,11 @@ function SortableQuoteItem({
               <div className="text-right">
                 {discountAmount > 0 && (
                   <div className="text-xs text-gray-500 line-through">
-                    {itemTotalBeforeDiscount.toFixed(2)} €
+                    {formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}
                   </div>
                 )}
                 <div className={`text-lg font-semibold ${discountAmount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                  {itemTotalAfterDiscount.toFixed(2)} €
+                  {formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
                 </div>
               </div>
             </div>
@@ -443,6 +457,14 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const { addQuote, updateQuote } = useQuotes();
   const { getMaterialTemplatesForCustomer, getHourlyRatesForCustomer, getCombinedMaterialTemplatesForCustomer, getCombinedHourlyRatesForCustomer } = useDocumentHelpers();
   const discountsEnabled = company.discountsEnabled !== false;
+  const terminology = getTerminology(company.terminologyProfile);
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
+  const formatMoney = (amount: number) => formatCurrency(
+    amount,
+    company.locale,
+    company.numberFormat,
+    company.currency
+  );
   
   const [quoteNumber, setQuoteNumber] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -458,8 +480,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
+  const [previewInitialIndex, setPreviewInitialIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [redirectModalType, setRedirectModalType] = useState<'hourlyRates' | 'materials' | null>(null);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
 
   // Drag & Drop sensors
   const sensors = useSensors(
@@ -480,7 +504,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     return date.toISOString().split('T')[0];
   }
 
-  function createEmptyItem(order: number): QuoteItem {
+  const createEmptyItem = useCallback((order: number): QuoteItem => {
     return {
       id: generateUUID(),
       description: '',
@@ -493,7 +517,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       discountValue: undefined,
       discountAmount: 0
     };
-  }
+  }, [company.isSmallBusiness]);
 
   // Initialize form
   useEffect(() => {
@@ -523,17 +547,18 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setItems([createEmptyItem(1)]);
     }
     setIsDirty(false);
-  }, [quote, customers]);
+  }, [quote, customers, createEmptyItem]);
 
   const requestClose = () => {
-    if (isDirty && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+    if (isDirty) {
+      setShowDiscardModal(true);
       return;
     }
     onClose();
   };
 
 
-  const handleCustomerSelect = (customer: any) => {
+  const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomerId(customer.id);
     setCustomerSearchTerm(`${formatCustomerNumber(customer.customerNumber)} - ${customer.name}`);
     setShowCustomerDropdown(false);
@@ -711,10 +736,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
 
   const calculateTotals = () => {
     const result = calculateInvoiceWithDiscounts({
-      items: items as any,
+      items,
       globalDiscountType: globalDiscountType || undefined,
       globalDiscountValue: globalDiscountValue ? parseFloat(globalDiscountValue) : undefined
-    } as any);
+    });
 
     return {
       subtotal: result.subtotal,
@@ -738,6 +763,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     }));
     
     setPreviewDocuments(docs);
+    setPreviewInitialIndex(initialIndex);
     setShowPreview(true);
   };
 
@@ -750,7 +776,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     e.preventDefault();
     
     if (!selectedCustomerId) {
-      alert('Bitte wählen Sie einen Kunden aus');
+      alert(`Bitte wählen Sie einen ${terminology.entity.accusative} aus`);
       return;
     }
 
@@ -772,7 +798,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       const validation = validateDiscount(
         globalDiscountType as 'percentage' | 'fixed',
         parseFloat(globalDiscountValue),
-        calculateTotals().subtotal
+        calculateTotals().subtotal,
+        company.locale,
+        company.numberFormat,
+        company.currency
       );
       
       if (!validation.isValid) {
@@ -821,8 +850,6 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   };
 
   const totals = calculateTotals();
-  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
-
   // Get templates based on dropdown mode
   const materialTemplates = company.showCombinedDropdowns 
     ? getCombinedMaterialTemplatesForCustomer(selectedCustomerId)
@@ -878,7 +905,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
 
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Kunde *
+                {terminology.entity.singular} *
               </label>
               <div className="relative">
                 <input
@@ -888,7 +915,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                   onChange={handleCustomerSearchChange}
                   onFocus={() => setShowCustomerDropdown(true)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Kunde suchen..."
+                  placeholder={terminology.entity.searchPlaceholder}
                 />
                 
                 {showCustomerDropdown && (
@@ -911,7 +938,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                       ))
                     ) : (
                       <div className="px-4 py-8 text-center">
-                        <p className="text-gray-500 mb-4">Keine Kunden gefunden</p>
+                        <p className="text-gray-500 mb-4">{terminology.entity.noResults}</p>
                         {onCreateCustomer && (
                           <button
                             type="button"
@@ -921,7 +948,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                             }}
                             className="text-blue-600 hover:text-blue-700 font-medium"
                           >
-                            Neuen Kunden anlegen
+                            {terminology.entity.newLabel}
                           </button>
                         )}
                       </div>
@@ -977,7 +1004,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                     onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
                     disabled={!selectedCustomerId || hasNoTemplates}
                     className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                    title={!selectedCustomerId ? 'Bitte wählen Sie zuerst einen Kunden aus' : hasNoTemplates ? 'Keine Vorlagen verfügbar' : 'Position aus Vorlage hinzufügen'}
+                    title={!selectedCustomerId ? `Bitte wählen Sie zuerst einen ${terminology.entity.accusative} aus` : hasNoTemplates ? 'Keine Vorlagen verfügbar' : 'Position aus Vorlage hinzufügen'}
                   >
                     <FileText className="w-4 h-4" />
                     <span className="hidden sm:inline">Vorlage</span>
@@ -992,6 +1019,9 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                           </div>
                           {hourlyRateTemplates.map((template) => {
                             const rate = typeof template.rate === 'number' ? template.rate : 0;
+                            const templateName = 'displayName' in template && typeof template.displayName === 'string'
+                              ? template.displayName
+                              : template.name;
                             return (
                               <button
                                 key={template.id}
@@ -1000,10 +1030,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                                 className="w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
                               >
                                 <div className="font-medium text-gray-900">
-                                  {(template as any).displayName || template.name}
+                                  {templateName}
                                 </div>
                                 <div className="text-sm text-gray-500">
-                                  {rate.toFixed(2)} € / Stunde
+                                  {formatMoney(rate)} / Stunde
                                 </div>
                               </button>
                             );
@@ -1018,6 +1048,9 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                           </div>
                           {materialTemplates.map((template) => {
                             const unitPrice = typeof template.unitPrice === 'number' ? template.unitPrice : 0;
+                            const templateName = 'displayName' in template && typeof template.displayName === 'string'
+                              ? template.displayName
+                              : template.name;
                             return (
                               <button
                                 key={template.id}
@@ -1026,10 +1059,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                                 className="w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
                               >
                                 <div className="font-medium text-gray-900">
-                                  {(template as any).displayName || template.name}
+                                  {templateName}
                                 </div>
                                 <div className="text-sm text-gray-500">
-                                  {unitPrice.toFixed(2)} € / {template.unit}
+                                  {formatMoney(unitPrice)} / {template.unit}
                                 </div>
                               </button>
                             );
@@ -1137,7 +1170,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 >
                   <option value="">Kein Rabatt</option>
                   <option value="percentage">Prozentual (%)</option>
-                  <option value="fixed">Festbetrag (€)</option>
+                  <option value="fixed">Festbetrag ({currencySymbol})</option>
                 </select>
               </div>
 
@@ -1145,15 +1178,16 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 <>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      {globalDiscountType === 'percentage' ? 'Prozentsatz' : 'Betrag in €'}
+                      {globalDiscountType === 'percentage' ? 'Prozentsatz' : `Betrag in ${currencySymbol}`}
                     </label>
-                    <input
-                      type="number"
+                    <LocalizedNumberInput
                       min="0"
                       max={globalDiscountType === 'percentage' ? '100' : undefined}
                       step="0.01"
                       value={globalDiscountValue}
-                      onChange={(e) => setGlobalDiscountValue(e.target.value)}
+                      locale={company.locale}
+                      numberFormat={company.numberFormat}
+                      onValueChange={(value) => setGlobalDiscountValue(value === '' ? '' : String(value))}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder={globalDiscountType === 'percentage' ? '0-100' : '0.00'}
                     />
@@ -1164,7 +1198,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                       Rabattbetrag
                     </label>
                     <div className="px-3 py-2 text-sm bg-orange-100 text-orange-900 font-semibold rounded-lg border border-orange-200">
-                      -{totals.globalDiscountAmount.toFixed(2)} €
+                      -{formatMoney(totals.globalDiscountAmount)}
                     </div>
                   </div>
                 </>
@@ -1183,40 +1217,40 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg p-6 border border-gray-200 space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Zwischensumme:</span>
-              <span className="font-medium text-gray-900">{totals.subtotal.toFixed(2)} €</span>
+              <span className="font-medium text-gray-900">{formatMoney(totals.subtotal)}</span>
             </div>
 
             {discountsEnabled && totals.itemDiscountAmount > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Positionsrabatte:</span>
-                <span className="font-medium text-red-600">-{totals.itemDiscountAmount.toFixed(2)} €</span>
+                <span className="font-medium text-red-600">-{formatMoney(totals.itemDiscountAmount)}</span>
               </div>
             )}
 
             {discountsEnabled && totals.globalDiscountAmount > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Gesamtrabatt:</span>
-                <span className="font-medium text-red-600">-{totals.globalDiscountAmount.toFixed(2)} €</span>
+                <span className="font-medium text-red-600">-{formatMoney(totals.globalDiscountAmount)}</span>
               </div>
             )}
 
             {discountsEnabled && (totals.itemDiscountAmount > 0 || totals.globalDiscountAmount > 0) && (
               <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
                 <span className="text-gray-600">Zwischensumme nach Rabatten:</span>
-                <span className="font-medium text-gray-900">{totals.discountedSubtotal.toFixed(2)} €</span>
+                <span className="font-medium text-gray-900">{formatMoney(totals.discountedSubtotal)}</span>
               </div>
             )}
 
             {!company.isSmallBusiness && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">MwSt.:</span>
-                <span className="font-medium text-gray-900">{totals.taxAmount.toFixed(2)} €</span>
+                <span className="font-medium text-gray-900">{formatMoney(totals.taxAmount)}</span>
               </div>
             )}
 
             <div className="flex justify-between text-lg font-bold pt-3 border-t-2 border-blue-300">
               <span className="text-gray-900">Gesamtbetrag:</span>
-              <span className="text-blue-600">{totals.total.toFixed(2)} €</span>
+              <span className="text-blue-600">{formatMoney(totals.total)}</span>
             </div>
 
             {company.isSmallBusiness && (
@@ -1227,7 +1261,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
 
             {totals.totalDiscountAmount > 0 && (
               <div className="text-xs text-green-700 bg-green-50 rounded p-2 border border-green-200">
-                <strong>Ersparnis:</strong> {totals.totalDiscountAmount.toFixed(2)} € 
+                <strong>Ersparnis:</strong> {formatMoney(totals.totalDiscountAmount)}
                 ({((totals.totalDiscountAmount / (totals.subtotal + totals.totalDiscountAmount)) * 100).toFixed(1)}%)
               </div>
             )}
@@ -1285,7 +1319,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           isOpen={showPreview}
           onClose={handleClosePreview}
           documents={previewDocuments}
-          initialIndex={0}
+          initialIndex={previewInitialIndex}
         />
       )}
 
@@ -1299,6 +1333,20 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           type={redirectModalType}
         />
       )}
+
+      <ConfirmationModal
+        isOpen={showDiscardModal}
+        onClose={() => setShowDiscardModal(false)}
+        onConfirm={() => {
+          setShowDiscardModal(false);
+          onClose();
+        }}
+        title="Änderungen verwerfen?"
+        message="Es gibt ungespeicherte Änderungen. Möchten Sie diese wirklich verwerfen?"
+        confirmText="Änderungen verwerfen"
+        cancelText="Weiter bearbeiten"
+        isDestructive
+      />
     </div>
   );
 }

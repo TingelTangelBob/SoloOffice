@@ -8,7 +8,7 @@ import { CustomerProvider, useCustomers } from './CustomerContext';
 import { InvoiceProvider, useInvoices } from './InvoiceContext';
 import { QuoteProvider, useQuotes } from './QuoteContext';
 import { JobProvider, useJobs } from './JobContext';
-import { CompanyProvider, useCompany, defaultCompany } from './CompanyContext';
+import { CompanyProvider, useCompany, defaultCompany, defaultDocumentTemplates } from './CompanyContext';
 
 // ============================================================================
 // Loading Context
@@ -65,11 +65,43 @@ function DataLoader({ children }: DataLoaderProps) {
         invoiceContext.setInvoices(invoicesData);
         quoteContext.setQuotes(quotesData);
         jobContext.setJobEntries(jobEntriesData);
-        companyContext.setCompany(companyData);
+        const storedDocumentTemplates = companyData.documentTemplates || [];
+        const storedDocumentTypes = new Set(storedDocumentTemplates.map(template => template.documentType));
+        const normalisedStoredTemplates = storedDocumentTemplates.map(template => {
+          const defaults = defaultDocumentTemplates.find(defaultTemplate => defaultTemplate.documentType === template.documentType);
+          return defaults ? {
+            ...defaults,
+            ...template,
+            layout: template.layout || defaults.layout,
+            accentColor: template.accentColor || defaults.accentColor,
+            logoMode: template.logoMode || defaults.logoMode,
+            headerAlignment: template.headerAlignment || defaults.headerAlignment,
+            tableStyle: template.tableStyle || defaults.tableStyle,
+            showPaymentInformation: template.showPaymentInformation ?? defaults.showPaymentInformation,
+            showFooter: template.showFooter ?? defaults.showFooter,
+            reminderTexts: template.reminderTexts || defaults.reminderTexts,
+          } : template;
+        });
+        const documentTemplates = storedDocumentTemplates.length > 0
+          ? [
+              ...normalisedStoredTemplates,
+              ...defaultDocumentTemplates
+                .filter(template => !storedDocumentTypes.has(template.documentType))
+                .map(template => ({ ...template })),
+            ]
+          : defaultDocumentTemplates.map(template => ({ ...template }));
+
+        companyContext.setCompany({
+          ...companyData,
+          themeMode: companyData.themeMode || defaultCompany.themeMode,
+          terminologyProfile: companyData.terminologyProfile || defaultCompany.terminologyProfile,
+          paymentInformationMode: companyData.paymentInformationMode || defaultCompany.paymentInformationMode,
+          documentTemplates,
+        });
         companyContext.setMaterialTemplates(materialTemplatesData);
         companyContext.setHourlyRates(hourlyRatesData);
       } catch (error) {
-        logger.error('Error loading data:', error);
+        logger.error('Error loading data:', { error: error instanceof Error ? error.message : String(error) });
       } finally {
         setLoading(false);
       }

@@ -17,6 +17,9 @@ import backupRouter from './routes/backup.js';
 import reportingRouter from './routes/reporting.js';
 import remindersRouter from './routes/reminders.js';
 import calendarEventsRouter from './routes/calendarEvents.js';
+import recurringInvoicesRouter from './routes/recurringInvoices.js';
+import creditNotesRouter from './routes/creditNotes.js';
+import euerEntriesRouter from './routes/euerEntries.js';
 
 dotenv.config();
 
@@ -57,6 +60,9 @@ app.get('/health', async (req, res) => {
 // API routes
 app.use('/api/customers', customersRouter);
 app.use('/api/invoices', invoicesRouter);
+app.use('/api/recurring-invoices', recurringInvoicesRouter);
+app.use('/api/credit-notes', creditNotesRouter);
+app.use('/api/euer-entries', euerEntriesRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/company', companyRouter);
 app.use('/api/email', emailRouter);

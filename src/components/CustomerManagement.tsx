@@ -1,14 +1,23 @@
 import React, { useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users, MoreHorizontal } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
+import { useCompany } from '../context/CompanyContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
 import { PageHeader } from './PageHeader';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { ConfirmationModal } from './ConfirmationModal';
+import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { getTerminology } from '../utils/terminology';
 
 export function CustomerManagement() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, refreshCustomers } = useCustomers();
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,7 +25,6 @@ export function CustomerManagement() {
   const [newEmailData, setNewEmailData] = useState({ email: '', label: '' });
   const [isAddingEmail, setIsAddingEmail] = useState(false);
   const [customerHourlyRates, setCustomerHourlyRates] = useState<HourlyRate[]>([]);
-  const [isAddingHourlyRate, setIsAddingHourlyRate] = useState(false);
   const [editingHourlyRate, setEditingHourlyRate] = useState<HourlyRate | null>(null);
   const [isHourlyRateModalOpen, setIsHourlyRateModalOpen] = useState(false);
   const [isCreateHourlyRateModalOpen, setIsCreateHourlyRateModalOpen] = useState(false);
@@ -28,10 +36,11 @@ export function CustomerManagement() {
     isDefault: false
   });
   const [customerMaterials, setCustomerMaterials] = useState<MaterialTemplate[]>([]);
-  const [isAddingMaterial, setIsAddingMaterial] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialTemplate | null>(null);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [isCreateMaterialModalOpen, setIsCreateMaterialModalOpen] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
   const [newMaterialData, setNewMaterialData] = useState({
     name: '',
     description: '',
@@ -143,7 +152,6 @@ export function CustomerManagement() {
     }
     setNewEmailData({ email: '', label: '' });
     setIsAddingEmail(false);
-    setIsAddingHourlyRate(false);
     setEditingHourlyRate(null);
     setIsHourlyRateModalOpen(false);
     setIsCreateHourlyRateModalOpen(false);
@@ -154,7 +162,6 @@ export function CustomerManagement() {
       taxRate: 19,
       isDefault: false
     });
-    setIsAddingMaterial(false);
     setEditingMaterial(null);
     setIsMaterialModalOpen(false);
     setIsCreateMaterialModalOpen(false);
@@ -188,7 +195,8 @@ export function CustomerManagement() {
   };
 
   const requestCloseModal = () => {
-    if (hasFormChanges && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+    if (hasFormChanges) {
+      setShowDiscardModal(true);
       return;
     }
     handleCloseModal();
@@ -201,7 +209,7 @@ export function CustomerManagement() {
     const existingCustomer = findDuplicateCustomer(customers, formData, editingCustomer?.id);
     
     if (existingCustomer) {
-      const shouldContinue = showDuplicateCustomerAlert(existingCustomer);
+      const shouldContinue = showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
       if (!shouldContinue) {
         return; // Nur abbrechen wenn der Benutzer "Abbrechen" wählt
       }
@@ -265,18 +273,23 @@ export function CustomerManagement() {
       }
     } catch (error) {
       logger.error('Error saving customer:', error);
-      alert('Fehler beim Speichern des Kunden. Bitte versuchen Sie es erneut.');
+      alert(`Fehler beim Speichern des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Möchten Sie diesen Kunden wirklich löschen?')) {
-      try {
-        await deleteCustomer(id);
-      } catch (error) {
-        logger.error('Error deleting customer:', error);
-        // You might want to show an error message to the user here
-      }
+  const handleDelete = (id: string) => {
+    setDeleteCustomerId(id);
+  };
+
+  const confirmDeleteCustomer = async () => {
+    if (!deleteCustomerId) return;
+
+    const id = deleteCustomerId;
+    setDeleteCustomerId(null);
+    try {
+      await deleteCustomer(id);
+    } catch (error) {
+      logger.error('Error deleting customer:', error);
     }
   };
 
@@ -627,14 +640,13 @@ export function CustomerManagement() {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-        <PageHeader icon={Users} title="Kunden" subtitle="Verwalten Sie Ihre Kundendaten">
+        <PageHeader icon={Users} title={terminology.entity.navLabel} subtitle={`Verwalten Sie Ihre ${terminology.entity.dataLabel}`}>
         <button
           onClick={() => handleOpenModal()}
           className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
         >
           <Plus className="h-5 w-5" />
-          <span className="hidden sm:inline">Neuer Kunde</span>
-          <span className="sm:hidden">Neu</span>
+          <span className="hidden sm:inline">{terminology.entity.newLabel}</span>
         </button>
         </PageHeader>
       </div>
@@ -645,7 +657,7 @@ export function CustomerManagement() {
           <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
           <input
             type="text"
-            placeholder="Kunden suchen..."
+            placeholder={terminology.entity.searchPlaceholder}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -669,7 +681,7 @@ export function CustomerManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Adresse
                 </th>
-                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-24 2xl:px-6">
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-24 2xl:px-6">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
@@ -679,7 +691,7 @@ export function CustomerManagement() {
                 <tr key={customer.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{customer.name}</div>
-                    <div className="text-sm text-gray-500">Kunden-Nr: {formatCustomerNumber(customer.customerNumber)}</div>
+                    <div className="text-sm text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>
                     {customer.taxId && (
                       <div className="text-sm text-gray-500">USt-IdNr: {customer.taxId}</div>
                     )}
@@ -702,7 +714,7 @@ export function CustomerManagement() {
                       </div>
                     </div>
                   </td>
-                  <td className="relative w-14 px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-24 2xl:px-6">
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-24 2xl:px-6">
                     <div className="hidden 2xl:flex space-x-2">
                       <button
                         type="button"
@@ -721,15 +733,22 @@ export function CustomerManagement() {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
-                    <details className="relative hidden lg:block 2xl:hidden">
-                      <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </summary>
-                      <div className="absolute right-0 z-20 mt-2 w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-                        <button type="button" onClick={() => handleOpenModal(customer)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Bearbeiten</button>
-                        <button type="button" onClick={() => handleDelete(customer.id)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">LÃ¶schen</button>
-                      </div>
-                    </details>
+                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" menuClassName="min-w-40">
+                      <ActionMenuItem
+                        icon={<Edit className="h-4 w-4" />}
+                        tone="indigo"
+                        onClick={() => handleOpenModal(customer)}
+                      >
+                        Bearbeiten
+                      </ActionMenuItem>
+                      <ActionMenuItem
+                        icon={<Trash2 className="h-4 w-4" />}
+                        tone="red"
+                        onClick={() => handleDelete(customer.id)}
+                      >
+                        Löschen
+                      </ActionMenuItem>
+                    </ActionMenu>
                   </td>
                 </tr>
               ))}
@@ -744,34 +763,27 @@ export function CustomerManagement() {
               <div className="flex justify-between items-start mb-2">
                 <div className="flex-1">
                   <h3 className="text-sm font-medium text-gray-900">{customer.name}</h3>
-                  <p className="text-xs text-gray-500">Kunden-Nr: {customer.customerNumber}</p>
+                  <p className="text-xs text-gray-500">{terminology.entity.numberShortLabel} {customer.customerNumber}</p>
                   {customer.taxId && (
                     <p className="text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
                   )}
                 </div>
-                <details className="relative ml-2">
-                  <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </summary>
-                  <div className="absolute right-0 z-10 mt-2 w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-                  <button
-                    type="button"
+                <ActionMenu containerClassName="relative ml-2" menuClassName="min-w-40">
+                  <ActionMenuItem
+                    icon={<Edit className="h-4 w-4" />}
+                    tone="indigo"
                     onClick={() => handleOpenModal(customer)}
-                    className="action-icon-button action-icon-indigo"
-                    title="Bearbeiten"
                   >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
+                    Bearbeiten
+                  </ActionMenuItem>
+                  <ActionMenuItem
+                    icon={<Trash2 className="h-4 w-4" />}
+                    tone="red"
                     onClick={() => handleDelete(customer.id)}
-                    className="action-icon-button action-icon-red"
-                    title="Löschen"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  </div>
-                </details>
+                    Löschen
+                  </ActionMenuItem>
+                </ActionMenu>
               </div>
               
               <div className="space-y-1">
@@ -799,7 +811,7 @@ export function CustomerManagement() {
 
         {filteredCustomers.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-gray-500">Keine Kunden gefunden</p>
+            <p className="text-gray-500">{terminology.entity.noResults}</p>
           </div>
         )}
       </div>
@@ -814,13 +826,13 @@ export function CustomerManagement() {
         >
           <div className="bg-white rounded-xl w-full max-w-md h-[90vh] max-h-[90vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <h3 className="flex-shrink-0 px-4 pt-4 lg:px-6 text-lg font-semibold text-gray-900 mb-4">
-              {editingCustomer ? 'Kunde bearbeiten' : 'Neuer Kunde'}
+              {editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
             </h3>
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-4 lg:px-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Kundennummer
+                  {terminology.entity.numberLabel}
                 </label>
                 <input
                   type="text"
@@ -1035,7 +1047,7 @@ export function CustomerManagement() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-medium text-gray-700">
-                    Kundenspezifische Stundensätze
+                    {terminology.entity.specificLabel.charAt(0).toUpperCase() + terminology.entity.specificLabel.slice(1)} Stundensätze
                   </label>
                   <button
                     type="button"
@@ -1049,7 +1061,7 @@ export function CustomerManagement() {
                 
                 {!editingCustomer && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Stundensätze werden beim Speichern des Kunden automatisch angelegt.
+                    Stundensätze werden beim Speichern des {terminology.entity.genitive} automatisch angelegt.
                   </p>
                 )}
 
@@ -1065,7 +1077,7 @@ export function CustomerManagement() {
                             {rate.isDefault && <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">Standard</span>}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {(rate.rate != null ? Number(rate.rate).toFixed(2) : '0.00')}€/h • MwSt: {rate.taxRate != null ? rate.taxRate : 19}%
+                            {formatCurrency(rate.rate != null ? Number(rate.rate) : 0, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}/h • MwSt: {rate.taxRate != null ? rate.taxRate : 19}%
                             {rate.description && ` • ${rate.description}`}
                           </div>
                         </div>
@@ -1096,7 +1108,7 @@ export function CustomerManagement() {
                 
                 {customerHourlyRates.length === 0 && editingCustomer && (
                   <p className="text-xs text-gray-500 italic">
-                    Keine kundenspezifischen Stundensätze konfiguriert. Es werden die Standard-Stundensätze verwendet.
+                    Keine {terminology.entity.specificLabel} Stundensätze konfiguriert. Es werden die Standard-Stundensätze verwendet.
                   </p>
                 )}
               </div>
@@ -1105,7 +1117,7 @@ export function CustomerManagement() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-medium text-gray-700">
-                    Kundenspezifische Materialien
+                    {terminology.entity.specificLabel.charAt(0).toUpperCase() + terminology.entity.specificLabel.slice(1)} Materialien
                   </label>
                   <button
                     type="button"
@@ -1119,7 +1131,7 @@ export function CustomerManagement() {
                 
                 {!editingCustomer && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Materialien werden beim Speichern des Kunden automatisch angelegt.
+                    Materialien werden beim Speichern des {terminology.entity.genitive} automatisch angelegt.
                   </p>
                 )}
 
@@ -1135,7 +1147,7 @@ export function CustomerManagement() {
                             {material.isDefault && <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">Standard</span>}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {(material.unitPrice != null ? Number(material.unitPrice).toFixed(2) : '0.00')}€/{material.unit} • MwSt: {material.taxRate != null ? material.taxRate : 19}%
+                            {formatCurrency(material.unitPrice != null ? Number(material.unitPrice) : 0, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}/{material.unit} • MwSt: {material.taxRate != null ? material.taxRate : 19}%
                             {material.description && ` • ${material.description}`}
                           </div>
                         </div>
@@ -1166,7 +1178,7 @@ export function CustomerManagement() {
                 
                 {customerMaterials.length === 0 && editingCustomer && (
                   <p className="text-xs text-gray-500 italic">
-                    Keine kundenspezifischen Materialien konfiguriert. Es werden die Standard-Materialien verwendet.
+                    Keine {terminology.entity.specificLabel} Materialien konfiguriert. Es werden die Standard-Materialien verwendet.
                   </p>
                 )}
               </div>
@@ -1195,6 +1207,31 @@ export function CustomerManagement() {
         </div>
       )}
 
+      <ConfirmationModal
+        isOpen={showDiscardModal}
+        onClose={() => setShowDiscardModal(false)}
+        onConfirm={() => {
+          setShowDiscardModal(false);
+          handleCloseModal();
+        }}
+        title="Änderungen verwerfen?"
+        message="Es gibt ungespeicherte Änderungen. Möchten Sie diese wirklich verwerfen?"
+        confirmText="Änderungen verwerfen"
+        cancelText="Weiter bearbeiten"
+        isDestructive
+      />
+
+      <ConfirmationModal
+        isOpen={deleteCustomerId !== null}
+        onClose={() => setDeleteCustomerId(null)}
+        onConfirm={confirmDeleteCustomer}
+        title={`${terminology.entity.plural} löschen?`}
+        message={`Möchten Sie diesen ${terminology.entity.accusative} wirklich löschen?`}
+        confirmText="Löschen"
+        cancelText="Abbrechen"
+        isDestructive
+      />
+
       {/* Hourly Rate Edit Modal */}
       {isHourlyRateModalOpen && editingHourlyRate && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1212,6 +1249,9 @@ export function CustomerManagement() {
             </div>
             <HourlyRateEditForm
               rate={editingHourlyRate}
+              currencySymbol={currencySymbol}
+              locale={company.locale || 'de-DE'}
+              numberFormat={company.numberFormat}
               onSave={(updatedData) => handleUpdateHourlyRate(editingHourlyRate.id, updatedData)}
               onCancel={handleCloseHourlyRateModal}
             />
@@ -1236,6 +1276,9 @@ export function CustomerManagement() {
             </div>
             <MaterialEditForm
               material={editingMaterial}
+              currencySymbol={currencySymbol}
+              locale={company.locale || 'de-DE'}
+              numberFormat={company.numberFormat}
               onSave={(updatedData) => handleUpdateMaterial(editingMaterial.id, updatedData)}
               onCancel={handleCloseMaterialModal}
             />
@@ -1274,14 +1317,15 @@ export function CustomerManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stundensatz (€) *
+                    Stundensatz ({currencySymbol}) *
                   </label>
-                  <input
-                    type="number"
+                  <LocalizedNumberInput
                     step="0.01"
                     min="0"
                     value={newHourlyRateData.rate}
-                    onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, rate: parseFloat(e.target.value) || 0 })}
+                    locale={company.locale}
+                    numberFormat={company.numberFormat}
+                    onValueChange={(value) => setNewHourlyRateData({ ...newHourlyRateData, rate: value === '' ? 0 : value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     placeholder="0.00"
                   />
@@ -1379,14 +1423,15 @@ export function CustomerManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Preis (€) *
+                    Preis ({currencySymbol}) *
                   </label>
-                  <input
-                    type="number"
+                  <LocalizedNumberInput
                     step="0.01"
                     min="0"
                     value={newMaterialData.unitPrice}
-                    onChange={(e) => setNewMaterialData({ ...newMaterialData, unitPrice: parseFloat(e.target.value) || 0 })}
+                    locale={company.locale}
+                    numberFormat={company.numberFormat}
+                    onValueChange={(value) => setNewMaterialData({ ...newMaterialData, unitPrice: value === '' ? 0 : value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                     placeholder="0.00"
                   />
@@ -1471,11 +1516,14 @@ export function CustomerManagement() {
 // HourlyRateEditForm component for inline editing
 interface HourlyRateEditFormProps {
   rate: HourlyRate;
+  currencySymbol: string;
+  locale: string;
+  numberFormat?: import('../types').NumberFormat;
   onSave: (data: Partial<HourlyRate>) => void;
   onCancel: () => void;
 }
 
-function HourlyRateEditForm({ rate, onSave, onCancel }: HourlyRateEditFormProps) {
+function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave, onCancel }: HourlyRateEditFormProps) {
   const [formData, setFormData] = useState({
     name: rate.name,
     description: rate.description || '',
@@ -1508,14 +1556,15 @@ function HourlyRateEditForm({ rate, onSave, onCancel }: HourlyRateEditFormProps)
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Stundensatz (€) *
+            Stundensatz ({currencySymbol}) *
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             step="0.01"
             min="0"
             value={formData.rate}
-            onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
+            locale={locale}
+            numberFormat={numberFormat}
+            onValueChange={(value) => setFormData({ ...formData, rate: value === '' ? 0 : value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
         </div>
@@ -1582,11 +1631,14 @@ function HourlyRateEditForm({ rate, onSave, onCancel }: HourlyRateEditFormProps)
 // MaterialEditForm component for inline editing
 interface MaterialEditFormProps {
   material: MaterialTemplate;
+  currencySymbol: string;
+  locale: string;
+  numberFormat?: import('../types').NumberFormat;
   onSave: (data: Partial<MaterialTemplate>) => void;
   onCancel: () => void;
 }
 
-function MaterialEditForm({ material, onSave, onCancel }: MaterialEditFormProps) {
+function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSave, onCancel }: MaterialEditFormProps) {
   const [formData, setFormData] = useState({
     name: material.name,
     description: material.description || '',
@@ -1620,14 +1672,15 @@ function MaterialEditForm({ material, onSave, onCancel }: MaterialEditFormProps)
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Preis (€) *
+            Preis ({currencySymbol}) *
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             step="0.01"
             min="0"
             value={formData.unitPrice}
-            onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
+            locale={locale}
+            numberFormat={numberFormat}
+            onValueChange={(value) => setFormData({ ...formData, unitPrice: value === '' ? 0 : value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
           />
         </div>

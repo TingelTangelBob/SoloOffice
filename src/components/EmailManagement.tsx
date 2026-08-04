@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
 import {
   Mail,
@@ -21,6 +21,14 @@ import {
   Lock
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { useCompany } from '../context/CompanyContext';
+import { formatDate as formatDateValue, formatTime } from '../utils/formatters';
+import { getTerminology } from '../utils/terminology';
+
+interface EmailAttachment {
+  filename: string;
+  size?: number;
+}
 
 interface EmailHistoryItem {
   id: string;
@@ -29,7 +37,7 @@ interface EmailHistoryItem {
   recipient_email: string;
   subject: string;
   body_html?: string;
-  attachments: any[];
+  attachments: EmailAttachment[];
   message_id?: string;
   invoice_id?: string;
   invoice_number?: string;
@@ -78,6 +86,8 @@ interface EmailManagementProps {
 }
 
 export function EmailManagement({ onClose }: EmailManagementProps) {
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -91,7 +101,6 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [selectedEmail, setSelectedEmail] = useState<EmailHistoryItem | null>(null);
@@ -122,17 +131,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   // Messages State
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
-  useEffect(() => {
-    if (activeTab === 'history') {
-      loadEmails();
-    } else if (activeTab === 'settings') {
-      loadSmtpSettings();
-    } else if (activeTab === 'statistics') {
-      loadStatistics();
-    }
-  }, [activeTab, currentPage, statusFilter, searchTerm]);
-
-  const loadEmails = async (page = currentPage) => {
+  const loadEmails = useCallback(async (page = currentPage) => {
     setIsLoading(true);
     try {
       const data = await apiService.getEmailHistory<EmailHistoryItem>({
@@ -145,7 +144,6 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
       if (data.success) {
         setEmails(data.emails);
         setTotalPages(data.pagination.totalPages);
-        setHasMore(data.pagination.hasMore);
         setCurrentPage(data.pagination.currentPage);
       } else {
         setMessage({ type: 'error', text: data.message || 'Fehler beim Laden der E-Mail-Historie' });
@@ -156,9 +154,9 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentPage, searchTerm, statusFilter]);
 
-  const loadStatistics = async () => {
+  const loadStatistics = useCallback(async () => {
     setIsLoadingStats(true);
     try {
       const data = await apiService.getEmailStatistics<EmailStatistics>();
@@ -174,9 +172,9 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
     } finally {
       setIsLoadingStats(false);
     }
-  };
+  }, []);
 
-  const loadSmtpSettings = async () => {
+  const loadSmtpSettings = useCallback(async () => {
     try {
       const data = await apiService.getSmtpSettings<SmtpSettings>();
       
@@ -190,7 +188,17 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
       logger.error('Error loading SMTP settings:', error);
       setMessage({ type: 'error', text: 'Fehler beim Laden der SMTP-Einstellungen' });
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      void loadEmails();
+    } else if (activeTab === 'settings') {
+      void loadSmtpSettings();
+    } else if (activeTab === 'statistics') {
+      void loadStatistics();
+    }
+  }, [activeTab, loadEmails, loadSmtpSettings, loadStatistics]);
 
   const saveSmtpSettings = async () => {
     setIsSavingSettings(true);
@@ -216,7 +224,11 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   const testSmtpConnection = async () => {
     setIsTestingConnection(true);
     try {
-      const data = await apiService.testSmtpConnection();
+      const useDatabaseSettings = smtpSettings.smtp_pass === '****' || !smtpSettings.smtp_host;
+      const data = await apiService.testSmtpConnection(
+        useDatabaseSettings,
+        useDatabaseSettings ? null : smtpSettings,
+      );
       
       if (data.success) {
         setMessage({ type: 'success', text: data.message });
@@ -268,13 +280,8 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   };
 
   const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleString('de-DE', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const date = new Date(dateString);
+    return `${formatDateValue(date, company.locale, company.dateFormat)} ${formatTime(date, company.locale, company.timeFormat)}`;
   };
 
   const getStatusIcon = (status: string) => {
@@ -409,7 +416,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <input
                         type="text"
-                        placeholder="Suche nach E-Mail, Betreff, Kunde..."
+                        placeholder={`Suche nach E-Mail, Betreff, ${terminology.entity.singular}...`}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
@@ -786,7 +793,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                     </button>
                     <button
                       onClick={testSmtpConnection}
-                      disabled={isTestingConnection || !smtpSettings.is_enabled}
+                      disabled={isTestingConnection}
                       className="btn-secondary text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center space-x-2"
                     >
                       {isTestingConnection ? (
@@ -946,7 +953,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
                   {selectedEmail.customer_name && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Kunde:</label>
+                      <label className="text-sm font-medium text-gray-500">{terminology.entity.singular}:</label>
                       <p className="text-gray-900">{selectedEmail.customer_name}</p>
                     </div>
                   )}

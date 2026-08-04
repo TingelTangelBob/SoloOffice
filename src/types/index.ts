@@ -4,6 +4,7 @@
 
 export type UUID = string;
 export type ISODateString = string;
+export type TerminologyProfile = 'customers' | 'mandants' | 'patients' | 'students' | 'clients';
 
 export interface Timestamps {
   createdAt: Date;
@@ -64,6 +65,8 @@ export interface InvoiceItem extends Discount {
   order: number;
 }
 
+export type InvoiceItemPayload = Omit<InvoiceItem, 'id' | 'total'> & Partial<Pick<InvoiceItem, 'id' | 'total'>>;
+
 export interface InvoiceAttachment {
   id: UUID;
   name: string;
@@ -97,6 +100,81 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   lastReminderDate?: Date;
   lastReminderSentAt?: Date;
   maxReminderStage?: number;
+  /** Shared document metadata used by credit notes and recurring invoices. */
+  documentType?: 'invoice' | 'credit_note';
+  referenceInvoiceId?: UUID | null;
+  referenceInvoiceNumber?: string;
+  creditNoteReason?: string;
+  recurringInvoiceId?: UUID;
+}
+
+export type CreditNote = Invoice & { documentType: 'credit_note' };
+
+// ============================================================================
+// Recurring Invoice Types
+// ============================================================================
+
+export type RecurringInvoiceFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual' | 'custom';
+export type RecurringInvoiceIntervalUnit = 'day' | 'week' | 'month' | 'year';
+export type RecurringInvoiceStatus = 'active' | 'paused' | 'ended';
+export type RecurringInvoiceRunStatus = 'success' | 'failed';
+
+export interface RecurringInvoice extends Timestamps, GlobalDiscount {
+  id: UUID;
+  name: string;
+  customerId: UUID;
+  customerName: string;
+  items: InvoiceItem[];
+  frequency: RecurringInvoiceFrequency;
+  intervalValue: number;
+  intervalUnit: RecurringInvoiceIntervalUnit;
+  startDate: Date;
+  endDate?: Date;
+  nextRunDate: Date;
+  lastRunDate?: Date;
+  dueDays: number;
+  notes?: string;
+  status: RecurringInvoiceStatus;
+}
+
+export interface RecurringInvoiceRun {
+  id: UUID;
+  recurringInvoiceId: UUID;
+  invoiceId?: UUID;
+  invoiceNumber?: string;
+  scheduledDate: Date;
+  status: RecurringInvoiceRunStatus;
+  errorMessage?: string;
+  createdAt: Date;
+}
+
+export interface RecurringInvoicePayload {
+  name: string;
+  customerId: UUID;
+  items: InvoiceItemPayload[];
+  frequency: RecurringInvoiceFrequency;
+  intervalValue?: number;
+  intervalUnit?: RecurringInvoiceIntervalUnit;
+  startDate: Date | string;
+  endDate?: Date | string;
+  nextRunDate?: Date | string;
+  dueDays?: number;
+  notes?: string;
+  status?: RecurringInvoiceStatus;
+  globalDiscountType?: DiscountType;
+  globalDiscountValue?: number;
+  globalDiscountAmount?: number;
+}
+
+export interface CreditNotePayload {
+  customerId: UUID;
+  referenceInvoiceId?: UUID | null;
+  creditNoteReason: string;
+  issueDate: Date | string;
+  dueDate?: Date | string;
+  items: InvoiceItemPayload[];
+  notes?: string;
+  status?: InvoiceStatus;
 }
 
 // ============================================================================
@@ -240,6 +318,11 @@ export interface JobInvoiceGeneration {
 // ============================================================================
 
 export type Locale = 'de-DE' | 'en-US' | 'fr-FR' | 'es-ES';
+export type NumberFormat = 'european' | 'american';
+export type DateFormat = 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+export type TimeFormat = '24h' | '12h';
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type PaymentInformationMode = 'separate' | 'company';
 
 export interface PaymentInformation {
   accountHolder?: string;
@@ -281,9 +364,15 @@ export interface Company extends ReminderSettings, CompanyHeader {
   taxIdentificationNumber?: string; // Steuernummer
   logo?: string | null;
   icon?: string | null;
+  terminologyProfile?: TerminologyProfile;
   locale?: Locale;
+  numberFormat?: NumberFormat;
+  currency?: string;
+  dateFormat?: DateFormat;
+  timeFormat?: TimeFormat;
   primaryColor?: string;
   secondaryColor?: string;
+  themeMode?: ThemeMode;
   // Feature flags
   jobTrackingEnabled?: boolean;
   reportingEnabled?: boolean;
@@ -296,10 +385,11 @@ export interface Company extends ReminderSettings, CompanyHeader {
   immediatePaymentClause?: string;
   invoiceStartNumber?: number;
   paymentInformation?: PaymentInformation;
-  // Templates
-  hourlyRates?: HourlyRate[];
-  materialTemplates?: MaterialTemplate[];
+  paymentInformationMode?: PaymentInformationMode;
+  // Invoice position templates
   invoiceTemplates?: InvoiceTemplate[];
+  // Document templates for invoices, quotes and reminders
+  documentTemplates?: DocumentTemplate[];
   // Legacy fields (deprecated)
   bankAccount?: string;
   bic?: string;
@@ -339,6 +429,51 @@ export interface InvoiceTemplate {
   unitPrice: number;
   unit: string;
   taxRate: number;
+  isDefault?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type DocumentTemplateType = 'invoice' | 'quote' | 'reminder' | 'orderConfirmation';
+export type DocumentLayout =
+  | 'classic'
+  | 'minimal'
+  | 'editorial'
+  | 'modern'
+  | 'compact'
+  | 'split'
+  | 'bold'
+  | 'air'
+  | 'frame';
+export type DocumentLogoMode = 'company' | 'none';
+export type DocumentHeaderAlignment = 'left' | 'center' | 'split';
+export type DocumentTableStyle = 'light' | 'dark' | 'accent';
+
+export interface ReminderTemplateTexts {
+  stage1?: string;
+  stage2?: string;
+  stage3?: string;
+}
+
+export interface DocumentTemplate {
+  id: UUID;
+  documentType: DocumentTemplateType;
+  name: string;
+  description?: string;
+  subject?: string;
+  introText?: string;
+  closingText?: string;
+  paymentTerms?: string;
+  /** Visual PDF layout profile. Older templates without these fields use a safe default. */
+  layout?: DocumentLayout;
+  accentColor?: string;
+  logoMode?: DocumentLogoMode;
+  headerAlignment?: DocumentHeaderAlignment;
+  tableStyle?: DocumentTableStyle;
+  showPaymentInformation?: boolean;
+  showFooter?: boolean;
+  reminderTexts?: ReminderTemplateTexts;
+  reminderStage?: 1 | 2 | 3;
   isDefault?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -438,6 +573,47 @@ export interface ReportingStatistics {
   topCustomers: CustomerStats[];
   statusDistribution: StatusDistribution[];
   yearOverview: YearOverview | null;
+}
+
+// ============================================================================
+// EÜR Types
+// ============================================================================
+
+export type EuerEntryType = 'income' | 'expense';
+
+export type EuerEntryCategory =
+  | 'other_income'
+  | 'materials'
+  | 'office'
+  | 'software'
+  | 'telecommunications'
+  | 'travel'
+  | 'vehicle'
+  | 'marketing'
+  | 'professional_services'
+  | 'insurance'
+  | 'bank_fees'
+  | 'other_expense';
+
+export interface EuerEntry extends Timestamps {
+  id: UUID;
+  entryType: EuerEntryType;
+  entryDate: Date;
+  description: string;
+  category: EuerEntryCategory;
+  amount: number;
+  taxRate: number;
+  notes?: string;
+}
+
+export interface EuerEntryPayload {
+  entryType: EuerEntryType;
+  entryDate: Date | string;
+  description: string;
+  category: EuerEntryCategory;
+  amount: number;
+  taxRate?: number;
+  notes?: string;
 }
 
 // ============================================================================

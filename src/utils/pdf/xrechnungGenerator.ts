@@ -7,6 +7,7 @@ import { Invoice } from '../../types';
 import { PDFOptions } from '../pdfGenerator';
 import { escapeXML, formatAmountForXML } from './xmlUtils';
 import { calculateTaxBreakdown, hasOnlyZeroTaxRate } from './taxCalculations';
+import { getEffectivePaymentInformation } from '../paymentInformation';
 
 /**
  * Generate XRechnung XML as a Blob
@@ -16,7 +17,9 @@ import { calculateTaxBreakdown, hasOnlyZeroTaxRate } from './taxCalculations';
  */
 export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Promise<Blob> {
   // Use new payment information or fall back to legacy fields
-  const paymentInfo = options.company.paymentInformation;
+  const paymentInfo = getEffectivePaymentInformation(options.company);
+  const currency = escapeXML(options.company.currency || 'EUR');
+  const isCreditNote = invoice.documentType === 'credit_note';
   
   // Create a properly formatted XRechnung document following XRechnung 3.0 standard
   const xmlContent = `<?xml version="1.0" encoding="utf-8"?>
@@ -29,7 +32,7 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
   <cbc:ID>${escapeXML(invoice.invoiceNumber)}</cbc:ID>
   <cbc:IssueDate>${new Date(invoice.issueDate).toISOString().split('T')[0]}</cbc:IssueDate>
   <cbc:DueDate>${new Date(invoice.dueDate).toISOString().split('T')[0]}</cbc:DueDate>
-  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode>${isCreditNote ? '381' : '380'}</cbc:InvoiceTypeCode>
   ${(() => {
     const bankAccount = paymentInfo?.bankAccount || options.company.bankAccount;
     const bic = paymentInfo?.bic || options.company.bic || 'XXXXXXXX';
@@ -38,11 +41,17 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
     const bankInfo = bankAccount ? `${escapeXML(accountHolder)} - BIC: ${escapeXML(bic)}  IBAN: ${escapeXML(bankAccount)}` : '';
     const reverseChargeNote = hasOnlyZeroTaxRate(invoice.items) ? 'Gemäß § 13b UStG geht die Steuerschuld auf den Leistungsempfänger über' : '';
     
-    const noteContent = [invoice.notes, bankInfo, reverseChargeNote].filter(Boolean).join('\n');
+    const noteContent = [
+      invoice.referenceInvoiceNumber ? `Bezug zur Rechnung: ${invoice.referenceInvoiceNumber}` : '',
+      invoice.creditNoteReason ? `Grund: ${invoice.creditNoteReason}` : '',
+      invoice.notes,
+      bankInfo,
+      reverseChargeNote,
+    ].filter(Boolean).join('\n');
     
     return noteContent ? `<cbc:Note>${escapeXML(noteContent)}</cbc:Note>` : '';
   })()}
-  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:DocumentCurrencyCode>${currency}</cbc:DocumentCurrencyCode>
   <cbc:BuyerReference>${options.customer.customerNumber || 'KUNDE'}</cbc:BuyerReference>
   
   
@@ -113,14 +122,14 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
   </cac:PaymentTerms>
   
   <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="EUR">${formatAmountForXML(invoice.taxAmount)}</cbc:TaxAmount>
+    <cbc:TaxAmount currencyID="${currency}">${formatAmountForXML(invoice.taxAmount)}</cbc:TaxAmount>
     ${Object.entries(calculateTaxBreakdown(invoice.items, invoice))
       .filter(([rate]) => Number(rate) > 0)
       .sort(([rateA], [rateB]) => Number(rateA) - Number(rateB))
       .map(([rate, breakdown]) => `
     <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="EUR">${formatAmountForXML(breakdown.taxableAmount)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="EUR">${formatAmountForXML(breakdown.taxAmount)}</cbc:TaxAmount>
+      <cbc:TaxableAmount currencyID="${currency}">${formatAmountForXML(breakdown.taxableAmount)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${currency}">${formatAmountForXML(breakdown.taxAmount)}</cbc:TaxAmount>
       <cac:TaxCategory>
         <cbc:ID>S</cbc:ID>
         <cbc:Percent>${rate}</cbc:Percent>
@@ -132,21 +141,21 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
   </cac:TaxTotal>
   
   <cac:LegalMonetaryTotal>
-    <cbc:LineExtensionAmount currencyID="EUR">${formatAmountForXML(invoice.subtotal)}</cbc:LineExtensionAmount>
-    <cbc:TaxExclusiveAmount currencyID="EUR">${formatAmountForXML(invoice.subtotal - (invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0) - (invoice.globalDiscountAmount || 0))}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="EUR">${formatAmountForXML(invoice.total)}</cbc:TaxInclusiveAmount>
-    <cbc:AllowanceTotalAmount currencyID="EUR">${formatAmountForXML((invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0) + (invoice.globalDiscountAmount || 0))}</cbc:AllowanceTotalAmount>
-    <cbc:ChargeTotalAmount currencyID="EUR">0.00</cbc:ChargeTotalAmount>
-    <cbc:PrepaidAmount currencyID="EUR">0.00</cbc:PrepaidAmount>
-    <cbc:PayableRoundingAmount currencyID="EUR">0.00</cbc:PayableRoundingAmount>
-    <cbc:PayableAmount currencyID="EUR">${formatAmountForXML(invoice.total)}</cbc:PayableAmount>
+    <cbc:LineExtensionAmount currencyID="${currency}">${formatAmountForXML(invoice.subtotal)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="${currency}">${formatAmountForXML(invoice.subtotal - (invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0) - (invoice.globalDiscountAmount || 0))}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="${currency}">${formatAmountForXML(invoice.total)}</cbc:TaxInclusiveAmount>
+    <cbc:AllowanceTotalAmount currencyID="${currency}">${formatAmountForXML((invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0) + (invoice.globalDiscountAmount || 0))}</cbc:AllowanceTotalAmount>
+    <cbc:ChargeTotalAmount currencyID="${currency}">0.00</cbc:ChargeTotalAmount>
+    <cbc:PrepaidAmount currencyID="${currency}">0.00</cbc:PrepaidAmount>
+    <cbc:PayableRoundingAmount currencyID="${currency}">0.00</cbc:PayableRoundingAmount>
+    <cbc:PayableAmount currencyID="${currency}">${formatAmountForXML(invoice.total)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
   
   ${invoice.items.map((item, index) => `
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
     <cbc:InvoicedQuantity unitCode="C62">${formatAmountForXML(item.quantity)}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount currencyID="EUR">${formatAmountForXML((item.quantity * item.unitPrice) - (item.discountAmount || 0))}</cbc:LineExtensionAmount>
+    <cbc:LineExtensionAmount currencyID="${currency}">${formatAmountForXML((item.quantity * item.unitPrice) - (item.discountAmount || 0))}</cbc:LineExtensionAmount>
     <cac:Item>
       <cbc:Description>${item.description}</cbc:Description>
       <cbc:Name>${item.description}</cbc:Name>
@@ -162,7 +171,7 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
       </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
-      <cbc:PriceAmount currencyID="EUR">${formatAmountForXML(item.unitPrice)}</cbc:PriceAmount>
+      <cbc:PriceAmount currencyID="${currency}">${formatAmountForXML(item.unitPrice)}</cbc:PriceAmount>
       <cbc:BaseQuantity unitCode="C62">1.00</cbc:BaseQuantity>
     </cac:Price>
   </cac:InvoiceLine>`).join('')}

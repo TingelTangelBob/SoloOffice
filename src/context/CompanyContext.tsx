@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import { Company, HourlyRate, MaterialTemplate, InvoiceTemplate } from '../types';
+import { Company, HourlyRate, MaterialTemplate, InvoiceTemplate, DocumentTemplate } from '../types';
 import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
@@ -8,6 +8,214 @@ import logger from '../utils/logger';
 // ============================================================================
 // Default Values
 // ============================================================================
+
+export const defaultDocumentTemplates: DocumentTemplate[] = [
+  {
+    id: 'invoice-standard',
+    documentType: 'invoice',
+    name: 'Standardrechnung',
+    description: 'Klassische Rechnung mit allen Unternehmensdaten und Zahlungsinformationen.',
+    subject: 'Rechnung {invoiceNumber}',
+    introText: 'Vielen Dank für Ihre Anfrage. Hiermit berechnen wir Ihnen folgende Leistungen:',
+    closingText: 'Vielen Dank für Ihr Vertrauen.',
+    paymentTerms: 'Zahlbar innerhalb der vereinbarten Zahlungsfrist.',
+    layout: 'classic',
+    accentColor: '#2563eb',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'light',
+    showPaymentInformation: true,
+    showFooter: true,
+    isDefault: true,
+  },
+  {
+    id: 'invoice-short',
+    documentType: 'invoice',
+    name: 'Kurzrechnung',
+    description: 'Kompakte Rechnung für einfache Leistungen.',
+    subject: 'Ihre Rechnung {invoiceNumber}',
+    introText: 'Für die erbrachten Leistungen berechnen wir:',
+    closingText: 'Vielen Dank für die gute Zusammenarbeit.',
+    paymentTerms: 'Bitte überweisen Sie den Rechnungsbetrag fristgerecht.',
+    layout: 'minimal',
+    accentColor: '#111827',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'dark',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'invoice-project',
+    documentType: 'invoice',
+    name: 'Projektabrechnung',
+    description: 'Rechnung mit ausführlicher Einleitung für Projekt- und Sammelabrechnungen.',
+    subject: 'Projektabrechnung {invoiceNumber}',
+    introText: 'Nach Abschluss des Projektschritts stellen wir Ihnen die folgenden Positionen in Rechnung:',
+    closingText: 'Bei Fragen zur Abrechnung stehen wir Ihnen gerne zur Verfügung.',
+    paymentTerms: 'Zahlbar gemäß den vertraglich vereinbarten Zahlungsbedingungen.',
+    layout: 'editorial',
+    accentColor: '#b0894f',
+    logoMode: 'company',
+    headerAlignment: 'center',
+    tableStyle: 'accent',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'quote-standard',
+    documentType: 'quote',
+    name: 'Standardangebot',
+    description: 'Übersichtliches Angebot für typische Anfragen.',
+    subject: 'Ihr Angebot {quoteNumber}',
+    introText: 'Vielen Dank für Ihre Anfrage. Gerne unterbreiten wir Ihnen folgendes Angebot:',
+    closingText: 'Wir freuen uns auf Ihre Rückmeldung.',
+    paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    layout: 'classic',
+    accentColor: '#2563eb',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'light',
+    showPaymentInformation: true,
+    showFooter: true,
+    isDefault: true,
+  },
+  {
+    id: 'quote-project',
+    documentType: 'quote',
+    name: 'Projektangebot',
+    description: 'Ausführliches Angebot für Projekte und umfangreiche Leistungen.',
+    subject: 'Projektangebot {quoteNumber}',
+    introText: 'Auf Basis der besprochenen Anforderungen bieten wir Ihnen folgende Projektleistungen an:',
+    closingText: 'Gerne erläutern wir die einzelnen Positionen in einem persönlichen Gespräch.',
+    paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    layout: 'editorial',
+    accentColor: '#b0894f',
+    logoMode: 'company',
+    headerAlignment: 'center',
+    tableStyle: 'accent',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'quote-flat-rate',
+    documentType: 'quote',
+    name: 'Pauschalangebot',
+    description: 'Kompaktes Angebot für einen klar abgegrenzten Leistungsumfang.',
+    subject: 'Pauschalangebot {quoteNumber}',
+    introText: 'Für den vereinbarten Leistungsumfang bieten wir Ihnen pauschal an:',
+    closingText: 'Wir freuen uns auf die weitere Zusammenarbeit.',
+    paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    layout: 'minimal',
+    accentColor: '#111827',
+    logoMode: 'company',
+    headerAlignment: 'left',
+    tableStyle: 'dark',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'order-confirmation-standard',
+    documentType: 'orderConfirmation',
+    name: 'Standard-Bestätigung',
+    description: 'Klassische Bestätigung mit Positionen und Status.',
+    layout: 'classic',
+    accentColor: '#2563eb',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'light',
+    showPaymentInformation: true,
+    showFooter: true,
+    isDefault: true,
+  },
+  {
+    id: 'order-confirmation-minimal',
+    documentType: 'orderConfirmation',
+    name: 'Kompakte Bestätigung',
+    description: 'Reduziertes Layout für kurze Dokumente.',
+    layout: 'minimal',
+    accentColor: '#111827',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'dark',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'order-confirmation-editorial',
+    documentType: 'orderConfirmation',
+    name: 'Editorial-Bestätigung',
+    description: 'Markantes Layout mit warmer Akzentfarbe.',
+    layout: 'editorial',
+    accentColor: '#b0894f',
+    logoMode: 'company',
+    headerAlignment: 'center',
+    tableStyle: 'accent',
+    showPaymentInformation: true,
+    showFooter: true,
+  },
+  {
+    id: 'reminder-friendly',
+    documentType: 'reminder',
+    name: 'Mahnung Klassisch',
+    description: 'Klassisches Mahnungs-Layout für die Stufen 1–3.',
+    subject: 'Mahnung zu Rechnung {invoiceNumber}',
+    introText: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen.',
+    layout: 'classic',
+    accentColor: '#2563eb',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'light',
+    showPaymentInformation: true,
+    showFooter: true,
+    reminderTexts: {
+      stage1: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen.',
+      stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
+      stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
+    },
+    isDefault: true,
+  },
+  {
+    id: 'reminder-clear',
+    documentType: 'reminder',
+    name: 'Mahnung Minimal',
+    description: 'Reduziertes Mahnungs-Layout für die Stufen 1–3.',
+    subject: 'Mahnung zu Rechnung {invoiceNumber}',
+    introText: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
+    layout: 'minimal',
+    accentColor: '#111827',
+    logoMode: 'company',
+    headerAlignment: 'split',
+    tableStyle: 'dark',
+    showPaymentInformation: true,
+    showFooter: true,
+    reminderTexts: {
+      stage1: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen.',
+      stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
+      stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
+    },
+  },
+  {
+    id: 'reminder-final',
+    documentType: 'reminder',
+    name: 'Mahnung Editorial',
+    description: 'Markantes Mahnungs-Layout für die Stufen 1–3.',
+    subject: 'Mahnung zu Rechnung {invoiceNumber}',
+    introText: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
+    layout: 'editorial',
+    accentColor: '#b0894f',
+    logoMode: 'company',
+    headerAlignment: 'center',
+    tableStyle: 'accent',
+    showPaymentInformation: true,
+    showFooter: true,
+    reminderTexts: {
+      stage1: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen.',
+      stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
+      stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
+    },
+  },
+];
 
 export const defaultCompany: Company = {
   name: 'Meine Firma GmbH',
@@ -19,9 +227,28 @@ export const defaultCompany: Company = {
   email: 'info@meinefirma.de',
   website: 'www.meinefirma.de',
   taxId: 'DE123456789',
+  taxIdentificationNumber: '',
+  logo: null,
+  icon: null,
+  terminologyProfile: 'customers',
   bankAccount: 'DE89 3704 0044 0532 0130 00',
+  paymentInformation: {
+    accountHolder: 'Meine Firma GmbH',
+    bankAccount: 'DE89 3704 0044 0532 0130 00',
+    bic: '',
+    bankName: '',
+    paymentTerms: '',
+    paymentMethods: [],
+  },
+  paymentInformationMode: 'separate',
   primaryColor: '#2563eb',
   secondaryColor: '#64748b',
+  locale: 'de-DE',
+  numberFormat: 'european',
+  currency: 'EUR',
+  dateFormat: 'DD.MM.YYYY',
+  timeFormat: '24h',
+  themeMode: 'system',
   jobTrackingEnabled: true,
   reportingEnabled: true,
   defaultPaymentDays: 30,
@@ -29,46 +256,18 @@ export const defaultCompany: Company = {
   invoiceStartNumber: 1,
   showCombinedDropdowns: false,
   isSmallBusiness: false,
-  hourlyRates: [
-    {
-      id: '1',
-      name: 'Standard',
-      description: 'Normale Arbeitszeit',
-      rate: 75.0,
-      isDefault: true,
-    },
-    {
-      id: '2',
-      name: 'Anfahrt',
-      description: 'Anfahrtszeit zum Kunden',
-      rate: 50.0,
-      isDefault: false,
-    },
-  ],
-  invoiceTemplates: [
-    {
-      id: '1',
-      name: 'Beratung',
-      description: 'Beratungsleistungen',
-      unitPrice: 120,
-      unit: 'Stunde',
-      taxRate: 19,
-      isDefault: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      name: 'Projektmanagement',
-      description: 'Projektmanagement und Koordination',
-      unitPrice: 100,
-      unit: 'Stunde',
-      taxRate: 19,
-      isDefault: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ],
+  companyHeaderTwoLine: false,
+  companyHeaderLine1: '',
+  companyHeaderLine2: '',
+  quotesEnabled: false,
+  discountsEnabled: true,
+  remindersEnabled: false,
+  reminderDaysAfterDue: 7,
+  reminderDaysBetween: 7,
+  reminderFeeStage1: 0,
+  reminderFeeStage2: 0,
+  reminderFeeStage3: 0,
+  documentTemplates: defaultDocumentTemplates,
 };
 
 // ============================================================================
@@ -85,19 +284,22 @@ interface CompanyContextType {
   addHourlyRate: (rate: Omit<HourlyRate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateHourlyRate: (id: string, rate: Partial<HourlyRate>) => Promise<void>;
   deleteHourlyRate: (id: string) => Promise<void>;
-  getHourlyRates: () => HourlyRate[];
   // Material Templates
   materialTemplates: MaterialTemplate[];
   setMaterialTemplates: React.Dispatch<React.SetStateAction<MaterialTemplate[]>>;
   addMaterialTemplate: (template: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateMaterialTemplate: (id: string, template: Partial<MaterialTemplate>) => Promise<void>;
   deleteMaterialTemplate: (id: string) => Promise<void>;
-  getMaterialTemplates: () => MaterialTemplate[];
   // Invoice Templates
   addInvoiceTemplate: (template: Omit<InvoiceTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateInvoiceTemplate: (id: string, template: Partial<InvoiceTemplate>) => Promise<void>;
   deleteInvoiceTemplate: (id: string) => Promise<void>;
   getInvoiceTemplates: () => InvoiceTemplate[];
+  // Document Templates
+  documentTemplates: DocumentTemplate[];
+  addDocumentTemplate: (template: Omit<DocumentTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateDocumentTemplate: (id: string, template: Partial<DocumentTemplate>) => Promise<void>;
+  deleteDocumentTemplate: (id: string) => Promise<void>;
 }
 
 // ============================================================================
@@ -144,11 +346,18 @@ export function CompanyProvider({
   const updateCompanyData = useCallback(async (companyData: Partial<Company>): Promise<void> => {
     try {
       const updatedCompany = await apiService.updateCompany(companyData);
-      setCompany(updatedCompany);
+      setCompany(previousCompany => ({
+        ...updatedCompany,
+        themeMode: updatedCompany.themeMode || previousCompany.themeMode || 'system',
+        terminologyProfile: updatedCompany.terminologyProfile || previousCompany.terminologyProfile || 'customers',
+        paymentInformationMode: updatedCompany.paymentInformationMode || previousCompany.paymentInformationMode || 'separate',
+        documentTemplates: updatedCompany.documentTemplates?.length
+          ? updatedCompany.documentTemplates
+          : previousCompany.documentTemplates || defaultDocumentTemplates.map(template => ({ ...template })),
+      }));
     } catch (error) {
-      logger.error('Error updating company:', error);
-      // Fallback: Update locally
-      setCompany(prev => ({ ...prev, ...companyData }));
+      logger.error('Error updating company:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
 
@@ -161,7 +370,8 @@ export function CompanyProvider({
       const newRate = await apiService.createHourlyRate(hourlyRateData);
       setHourlyRates(prev => [...prev, newRate]);
     } catch (error) {
-      logger.error('Error adding hourly rate:', error);
+      logger.error('Error adding hourly rate:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
 
@@ -172,7 +382,8 @@ export function CompanyProvider({
         rate.id === id ? updatedRate : rate
       ));
     } catch (error) {
-      logger.error('Error updating hourly rate:', error);
+      logger.error('Error updating hourly rate:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
 
@@ -181,13 +392,10 @@ export function CompanyProvider({
       await apiService.deleteHourlyRate(id);
       setHourlyRates(prev => prev.filter(rate => rate.id !== id));
     } catch (error) {
-      logger.error('Error deleting hourly rate:', error);
+      logger.error('Error deleting hourly rate:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
-
-  const getHourlyRates = useCallback((): HourlyRate[] => {
-    return hourlyRates;
-  }, [hourlyRates]);
 
   // --------------------------------------------------------------------------
   // Material Template Methods
@@ -198,7 +406,8 @@ export function CompanyProvider({
       const newTemplate = await apiService.createMaterialTemplate(templateData);
       setMaterialTemplates(prev => [...prev, newTemplate]);
     } catch (error) {
-      logger.error('Error adding material template:', error);
+      logger.error('Error adding material template:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
 
@@ -209,7 +418,8 @@ export function CompanyProvider({
         template.id === id ? updatedTemplate : template
       ));
     } catch (error) {
-      logger.error('Error updating material template:', error);
+      logger.error('Error updating material template:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
 
@@ -218,13 +428,10 @@ export function CompanyProvider({
       await apiService.deleteMaterialTemplate(id);
       setMaterialTemplates(prev => prev.filter(template => template.id !== id));
     } catch (error) {
-      logger.error('Error deleting material template:', error);
+      logger.error('Error deleting material template:', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   }, []);
-
-  const getMaterialTemplates = useCallback((): MaterialTemplate[] => {
-    return materialTemplates;
-  }, [materialTemplates]);
 
   // --------------------------------------------------------------------------
   // Invoice Template Methods
@@ -243,7 +450,7 @@ export function CompanyProvider({
     try {
       await updateCompanyData({ invoiceTemplates: updatedInvoiceTemplates });
     } catch (error) {
-      logger.error('Error adding invoice template:', error);
+      logger.error('Error adding invoice template:', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }, [company.invoiceTemplates, updateCompanyData]);
@@ -258,7 +465,7 @@ export function CompanyProvider({
     try {
       await updateCompanyData({ invoiceTemplates: updatedInvoiceTemplates });
     } catch (error) {
-      logger.error('Error updating invoice template:', error);
+      logger.error('Error updating invoice template:', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }, [company.invoiceTemplates, updateCompanyData]);
@@ -269,7 +476,7 @@ export function CompanyProvider({
     try {
       await updateCompanyData({ invoiceTemplates: updatedInvoiceTemplates });
     } catch (error) {
-      logger.error('Error deleting invoice template:', error);
+      logger.error('Error deleting invoice template:', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }, [company.invoiceTemplates, updateCompanyData]);
@@ -277,6 +484,62 @@ export function CompanyProvider({
   const getInvoiceTemplates = useCallback((): InvoiceTemplate[] => {
     return company.invoiceTemplates || [];
   }, [company.invoiceTemplates]);
+
+  // --------------------------------------------------------------------------
+  // Document Template Methods
+  // --------------------------------------------------------------------------
+
+  const documentTemplates = company.documentTemplates || [];
+
+  const addDocumentTemplate = useCallback(async (templateData: Omit<DocumentTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> => {
+    const now = new Date();
+    const newTemplate: DocumentTemplate = {
+      id: generateUUID(),
+      createdAt: now,
+      updatedAt: now,
+      ...templateData,
+    };
+    const currentTemplates = company.documentTemplates || [];
+    const updatedTemplates = [
+      ...currentTemplates.map(template => templateData.isDefault && template.documentType === templateData.documentType
+        ? { ...template, isDefault: false }
+        : template),
+      newTemplate,
+    ];
+
+    await updateCompanyData({ documentTemplates: updatedTemplates });
+  }, [company.documentTemplates, updateCompanyData]);
+
+  const updateDocumentTemplateData = useCallback(async (id: string, templateData: Partial<DocumentTemplate>): Promise<void> => {
+    const currentTemplates = company.documentTemplates || [];
+    const existing = currentTemplates.find(template => template.id === id);
+    if (!existing) return;
+    const documentType = templateData.documentType || existing.documentType;
+    const updatedTemplates = currentTemplates.map(template => {
+      if (template.id === id) {
+        return { ...template, ...templateData, updatedAt: new Date() };
+      }
+      if (templateData.isDefault && template.documentType === documentType) {
+        return { ...template, isDefault: false };
+      }
+      return template;
+    });
+
+    await updateCompanyData({ documentTemplates: updatedTemplates });
+  }, [company.documentTemplates, updateCompanyData]);
+
+  const deleteDocumentTemplateData = useCallback(async (id: string): Promise<void> => {
+    const currentTemplates = company.documentTemplates || [];
+    const deleted = currentTemplates.find(template => template.id === id);
+    const remaining = currentTemplates.filter(template => template.id !== id);
+    if (deleted?.isDefault) {
+      const replacement = remaining.find(template => template.documentType === deleted.documentType);
+      if (replacement) {
+        replacement.isDefault = true;
+      }
+    }
+    await updateCompanyData({ documentTemplates: remaining });
+  }, [company.documentTemplates, updateCompanyData]);
 
   const value: CompanyContextType = {
     company,
@@ -287,17 +550,19 @@ export function CompanyProvider({
     addHourlyRate,
     updateHourlyRate: updateHourlyRateData,
     deleteHourlyRate: deleteHourlyRateData,
-    getHourlyRates,
     materialTemplates,
     setMaterialTemplates,
     addMaterialTemplate,
     updateMaterialTemplate: updateMaterialTemplateData,
     deleteMaterialTemplate: deleteMaterialTemplateData,
-    getMaterialTemplates,
     addInvoiceTemplate,
     updateInvoiceTemplate: updateInvoiceTemplateData,
     deleteInvoiceTemplate: deleteInvoiceTemplateData,
     getInvoiceTemplates,
+    documentTemplates,
+    addDocumentTemplate,
+    updateDocumentTemplate: updateDocumentTemplateData,
+    deleteDocumentTemplate: deleteDocumentTemplateData,
   };
 
   return (

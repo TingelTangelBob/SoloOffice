@@ -3,6 +3,87 @@ import { query } from '../database.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
+const LOCALES = new Set(['de-DE', 'en-US', 'fr-FR', 'es-ES']);
+const NUMBER_FORMATS = new Set(['european', 'american']);
+const DATE_FORMATS = new Set(['DD.MM.YYYY', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']);
+const TIME_FORMATS = new Set(['24h', '12h']);
+const THEME_MODES = new Set(['system', 'light', 'dark']);
+const PAYMENT_INFORMATION_MODES = new Set(['separate', 'company']);
+const TERMINOLOGY_PROFILES = new Set(['customers', 'mandants', 'patients', 'students', 'clients']);
+const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+function jsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapCompanyRow(row) {
+  return {
+    name: row.name,
+    address: row.address,
+    city: row.city,
+    postalCode: row.postal_code,
+    country: row.country,
+    phone: row.phone,
+    email: row.email,
+    website: row.website,
+    taxId: row.tax_id,
+    taxIdentificationNumber: row.tax_identification_number,
+    logo: row.logo,
+    icon: row.icon,
+    terminologyProfile: row.terminology_profile || 'customers',
+    locale: row.locale,
+    numberFormat: row.number_format || (row.locale === 'en-US' ? 'american' : 'european'),
+    currency: row.currency || 'EUR',
+    dateFormat: row.date_format || 'DD.MM.YYYY',
+    timeFormat: row.time_format || '24h',
+    primaryColor: row.primary_color,
+    secondaryColor: row.secondary_color,
+    themeMode: row.theme_mode || 'system',
+    paymentInformationMode: row.payment_information_mode || 'separate',
+    jobTrackingEnabled: row.job_tracking_enabled ?? false,
+    reportingEnabled: row.reporting_enabled ?? false,
+    quotesEnabled: row.quotes_enabled ?? false,
+    discountsEnabled: row.discounts_enabled ?? true,
+    defaultPaymentDays: row.default_payment_days ?? 30,
+    immediatePaymentClause: row.immediate_payment_clause,
+    invoiceStartNumber: row.invoice_start_number || 1,
+    remindersEnabled: row.reminders_enabled ?? false,
+    reminderDaysAfterDue: row.reminder_days_after_due ?? 7,
+    reminderDaysBetween: row.reminder_days_between ?? 7,
+    reminderFeeStage1: row.reminder_fee_stage_1 !== null ? parseFloat(row.reminder_fee_stage_1) : 0,
+    reminderFeeStage2: row.reminder_fee_stage_2 !== null ? parseFloat(row.reminder_fee_stage_2) : 0,
+    reminderFeeStage3: row.reminder_fee_stage_3 !== null ? parseFloat(row.reminder_fee_stage_3) : 0,
+    reminderTextStage1: row.reminder_text_stage_1,
+    reminderTextStage2: row.reminder_text_stage_2,
+    reminderTextStage3: row.reminder_text_stage_3,
+    paymentInformation: {
+      accountHolder: row.payment_account_holder,
+      bankAccount: row.payment_bank_account || row.bank_account,
+      bic: row.payment_bic || row.bic,
+      bankName: row.payment_bank_name,
+      paymentTerms: row.payment_terms,
+      paymentMethods: jsonArray(row.payment_methods)
+    },
+    companyHeaderTwoLine: row.company_header_two_line ?? false,
+    companyHeaderLine1: row.company_header_line1,
+    companyHeaderLine2: row.company_header_line2,
+    showCombinedDropdowns: row.show_combined_dropdowns ?? false,
+    isSmallBusiness: row.is_small_business ?? false,
+    bankAccount: row.bank_account || row.payment_bank_account,
+    bic: row.bic || row.payment_bic,
+    invoiceTemplates: jsonArray(row.invoice_templates),
+    documentTemplates: jsonArray(row.document_templates)
+  };
+}
 
 // Get company information
 router.get('/', async (req, res) => {
@@ -14,72 +95,7 @@ router.get('/', async (req, res) => {
     }
 
     const row = companyResult.rows[0];
-    
-    // Get hourly rates
-    const hourlyRatesResult = await query('SELECT * FROM hourly_rates ORDER BY is_default DESC, name ASC');
-    const hourlyRates = hourlyRatesResult.rows.map(rate => ({
-      id: rate.id,
-      name: rate.name,
-      description: rate.description,
-      rate: parseFloat(rate.rate),
-      isDefault: rate.is_default
-    }));
-
-    const company = {
-      name: row.name,
-      address: row.address,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      phone: row.phone,
-      email: row.email,
-      website: row.website,
-      taxId: row.tax_id,
-      taxIdentificationNumber: row.tax_identification_number,
-      logo: row.logo,
-      icon: row.icon,
-      locale: row.locale,
-      primaryColor: row.primary_color,
-      secondaryColor: row.secondary_color,
-      jobTrackingEnabled: row.job_tracking_enabled || false,
-      reportingEnabled: row.reporting_enabled || false,
-      quotesEnabled: row.quotes_enabled || false,
-      discountsEnabled: row.discounts_enabled !== null ? row.discounts_enabled : true,
-      defaultPaymentDays: row.default_payment_days !== null ? row.default_payment_days : 30,
-      immediatePaymentClause: row.immediate_payment_clause,
-      invoiceStartNumber: row.invoice_start_number || 1,
-      // Reminder settings
-      remindersEnabled: row.reminders_enabled || false,
-      reminderDaysAfterDue: row.reminder_days_after_due !== null ? row.reminder_days_after_due : 7,
-      reminderDaysBetween: row.reminder_days_between !== null ? row.reminder_days_between : 7,
-      reminderFeeStage1: row.reminder_fee_stage_1 !== null ? parseFloat(row.reminder_fee_stage_1) : 0,
-      reminderFeeStage2: row.reminder_fee_stage_2 !== null ? parseFloat(row.reminder_fee_stage_2) : 0,
-      reminderFeeStage3: row.reminder_fee_stage_3 !== null ? parseFloat(row.reminder_fee_stage_3) : 0,
-      reminderTextStage1: row.reminder_text_stage_1,
-      reminderTextStage2: row.reminder_text_stage_2,
-      reminderTextStage3: row.reminder_text_stage_3,
-      // Separated payment information
-      paymentInformation: {
-        accountHolder: row.payment_account_holder,
-        bankAccount: row.payment_bank_account,
-        bic: row.payment_bic,
-        bankName: row.payment_bank_name,
-        paymentTerms: row.payment_terms,
-        paymentMethods: row.payment_methods || []
-      },
-      // Company header layout options
-      companyHeaderTwoLine: row.company_header_two_line || false,
-      companyHeaderLine1: row.company_header_line1,
-      companyHeaderLine2: row.company_header_line2,
-      // Dropdown settings
-      showCombinedDropdowns: row.show_combined_dropdowns !== null ? row.show_combined_dropdowns : false,
-      // Small business regulation
-      isSmallBusiness: row.is_small_business || false,
-      // Legacy fields for backward compatibility
-      bankAccount: row.bank_account || row.payment_bank_account,
-      bic: row.bic || row.payment_bic,
-      hourlyRates: hourlyRates
-    };
+    const company = mapCompanyRow(row);
 
     res.json(company);
   } catch (error) {
@@ -136,11 +152,22 @@ router.put('/', async (req, res) => {
       updates.push(`tax_identification_number = $${paramIndex++}`);
       values.push(req.body.taxIdentificationNumber);
     }
-    if (req.body.bankAccount !== undefined) {
+    const paymentInfo = req.body.paymentInformation;
+    if (paymentInfo?.bankAccount !== undefined) {
+      updates.push(`bank_account = $${paramIndex++}`);
+      values.push(paymentInfo.bankAccount);
+      updates.push(`payment_bank_account = $${paramIndex++}`);
+      values.push(paymentInfo.bankAccount);
+    } else if (req.body.bankAccount !== undefined) {
       updates.push(`bank_account = $${paramIndex++}`);
       values.push(req.body.bankAccount);
     }
-    if (req.body.bic !== undefined) {
+    if (paymentInfo?.bic !== undefined) {
+      updates.push(`bic = $${paramIndex++}`);
+      values.push(paymentInfo.bic);
+      updates.push(`payment_bic = $${paramIndex++}`);
+      values.push(paymentInfo.bic);
+    } else if (req.body.bic !== undefined) {
       updates.push(`bic = $${paramIndex++}`);
       values.push(req.body.bic);
     }
@@ -153,8 +180,47 @@ router.put('/', async (req, res) => {
       values.push(req.body.icon);
     }
     if (req.body.locale !== undefined) {
+      if (!LOCALES.has(req.body.locale)) {
+        return res.status(400).json({
+          error: 'locale must be one of de-DE, en-US, fr-FR or es-ES'
+        });
+      }
       updates.push(`locale = $${paramIndex++}`);
       values.push(req.body.locale);
+    }
+    if (req.body.numberFormat !== undefined) {
+      if (!NUMBER_FORMATS.has(req.body.numberFormat)) {
+        return res.status(400).json({
+          error: 'numberFormat must be either european or american'
+        });
+      }
+      updates.push(`number_format = $${paramIndex++}`);
+      values.push(req.body.numberFormat);
+    }
+    if (req.body.currency !== undefined) {
+      if (typeof req.body.currency !== 'string' || !CURRENCY_CODE_PATTERN.test(req.body.currency)) {
+        return res.status(400).json({
+          error: 'currency must be a three-letter uppercase ISO 4217 code'
+        });
+      }
+      updates.push(`currency = $${paramIndex++}`);
+      values.push(req.body.currency);
+    }
+    if (req.body.dateFormat !== undefined) {
+      if (!DATE_FORMATS.has(req.body.dateFormat)) {
+        return res.status(400).json({
+          error: 'dateFormat must be one of DD.MM.YYYY, DD/MM/YYYY, MM/DD/YYYY or YYYY-MM-DD'
+        });
+      }
+      updates.push(`date_format = $${paramIndex++}`);
+      values.push(req.body.dateFormat);
+    }
+    if (req.body.timeFormat !== undefined) {
+      if (!TIME_FORMATS.has(req.body.timeFormat)) {
+        return res.status(400).json({ error: 'timeFormat must be either 24h or 12h' });
+      }
+      updates.push(`time_format = $${paramIndex++}`);
+      values.push(req.body.timeFormat);
     }
     if (req.body.primaryColor !== undefined) {
       updates.push(`primary_color = $${paramIndex++}`);
@@ -163,6 +229,27 @@ router.put('/', async (req, res) => {
     if (req.body.secondaryColor !== undefined) {
       updates.push(`secondary_color = $${paramIndex++}`);
       values.push(req.body.secondaryColor);
+    }
+    if (req.body.themeMode !== undefined) {
+      if (!THEME_MODES.has(req.body.themeMode)) {
+        return res.status(400).json({ error: 'themeMode must be system, light or dark' });
+      }
+      updates.push(`theme_mode = $${paramIndex++}`);
+      values.push(req.body.themeMode);
+    }
+    if (req.body.terminologyProfile !== undefined) {
+      if (!TERMINOLOGY_PROFILES.has(req.body.terminologyProfile)) {
+        return res.status(400).json({ error: 'terminologyProfile is not supported' });
+      }
+      updates.push(`terminology_profile = $${paramIndex++}`);
+      values.push(req.body.terminologyProfile);
+    }
+    if (req.body.paymentInformationMode !== undefined) {
+      if (!PAYMENT_INFORMATION_MODES.has(req.body.paymentInformationMode)) {
+        return res.status(400).json({ error: 'paymentInformationMode must be separate or company' });
+      }
+      updates.push(`payment_information_mode = $${paramIndex++}`);
+      values.push(req.body.paymentInformationMode);
     }
     if (req.body.jobTrackingEnabled !== undefined) {
       updates.push(`job_tracking_enabled = $${paramIndex++}`);
@@ -192,22 +279,26 @@ router.put('/', async (req, res) => {
       updates.push(`invoice_start_number = $${paramIndex++}`);
       values.push(req.body.invoiceStartNumber);
     }
+    if (req.body.invoiceTemplates !== undefined) {
+      if (!Array.isArray(req.body.invoiceTemplates)) {
+        return res.status(400).json({ error: 'invoiceTemplates must be an array' });
+      }
+      updates.push(`invoice_templates = $${paramIndex++}`);
+      values.push(JSON.stringify(req.body.invoiceTemplates));
+    }
+    if (req.body.documentTemplates !== undefined) {
+      if (!Array.isArray(req.body.documentTemplates)) {
+        return res.status(400).json({ error: 'documentTemplates must be an array' });
+      }
+      updates.push(`document_templates = $${paramIndex++}`);
+      values.push(JSON.stringify(req.body.documentTemplates));
+    }
     
     // Handle payment information fields
-    if (req.body.paymentInformation) {
-      const paymentInfo = req.body.paymentInformation;
-      
+    if (paymentInfo) {
       if (paymentInfo.accountHolder !== undefined) {
         updates.push(`payment_account_holder = $${paramIndex++}`);
         values.push(paymentInfo.accountHolder);
-      }
-      if (paymentInfo.bankAccount !== undefined) {
-        updates.push(`payment_bank_account = $${paramIndex++}`);
-        values.push(paymentInfo.bankAccount);
-      }
-      if (paymentInfo.bic !== undefined) {
-        updates.push(`payment_bic = $${paramIndex++}`);
-        values.push(paymentInfo.bic);
       }
       if (paymentInfo.bankName !== undefined) {
         updates.push(`payment_bank_name = $${paramIndex++}`);
@@ -307,86 +398,8 @@ router.put('/', async (req, res) => {
       return res.status(404).json({ error: 'Company information not found' });
     }
 
-    // Update hourly rates if provided
-    if (req.body.hourlyRates && Array.isArray(req.body.hourlyRates)) {
-      // Delete existing hourly rates
-      await query('DELETE FROM hourly_rates WHERE company_id = 1');
-      
-      // Insert new hourly rates
-      for (const rate of req.body.hourlyRates) {
-        await query(`
-          INSERT INTO hourly_rates (id, name, description, rate, is_default, company_id)
-          VALUES ($1, $2, $3, $4, $5, 1)
-        `, [rate.id, rate.name, rate.description || null, rate.rate, rate.isDefault || false]);
-      }
-    }
-
-    // Get updated hourly rates
-    const hourlyRatesResult = await query('SELECT * FROM hourly_rates ORDER BY is_default DESC, name ASC');
-    const updatedHourlyRates = hourlyRatesResult.rows.map(rate => ({
-      id: rate.id,
-      name: rate.name,
-      description: rate.description,
-      rate: parseFloat(rate.rate),
-      isDefault: rate.is_default
-    }));
-
     const row = result.rows[0];
-    const company = {
-      name: row.name,
-      address: row.address,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      phone: row.phone,
-      email: row.email,
-      website: row.website,
-      taxId: row.tax_id,
-      taxIdentificationNumber: row.tax_identification_number,
-      logo: row.logo,
-      icon: row.icon,
-      locale: row.locale,
-      primaryColor: row.primary_color,
-      secondaryColor: row.secondary_color,
-      jobTrackingEnabled: row.job_tracking_enabled,
-      reportingEnabled: row.reporting_enabled,
-      quotesEnabled: row.quotes_enabled || false,
-      discountsEnabled: row.discounts_enabled !== null ? row.discounts_enabled : true,
-      defaultPaymentDays: row.default_payment_days !== null ? row.default_payment_days : 30,
-      immediatePaymentClause: row.immediate_payment_clause,
-      invoiceStartNumber: row.invoice_start_number || 1,
-      // Reminder settings
-      remindersEnabled: row.reminders_enabled || false,
-      reminderDaysAfterDue: row.reminder_days_after_due !== null ? row.reminder_days_after_due : 7,
-      reminderDaysBetween: row.reminder_days_between !== null ? row.reminder_days_between : 7,
-      reminderFeeStage1: row.reminder_fee_stage_1 !== null ? parseFloat(row.reminder_fee_stage_1) : 0,
-      reminderFeeStage2: row.reminder_fee_stage_2 !== null ? parseFloat(row.reminder_fee_stage_2) : 0,
-      reminderFeeStage3: row.reminder_fee_stage_3 !== null ? parseFloat(row.reminder_fee_stage_3) : 0,
-      reminderTextStage1: row.reminder_text_stage_1,
-      reminderTextStage2: row.reminder_text_stage_2,
-      reminderTextStage3: row.reminder_text_stage_3,
-      // Separated payment information
-      paymentInformation: {
-        accountHolder: row.payment_account_holder,
-        bankAccount: row.payment_bank_account,
-        bic: row.payment_bic,
-        bankName: row.payment_bank_name,
-        paymentTerms: row.payment_terms,
-        paymentMethods: row.payment_methods || []
-      },
-      // Company header layout options
-      companyHeaderTwoLine: row.company_header_two_line || false,
-      companyHeaderLine1: row.company_header_line1,
-      companyHeaderLine2: row.company_header_line2,
-      // Dropdown settings
-      showCombinedDropdowns: row.show_combined_dropdowns !== null ? row.show_combined_dropdowns : false,
-      // Small business regulation
-      isSmallBusiness: row.is_small_business || false,
-      // Legacy fields for backward compatibility
-      bankAccount: row.bank_account || row.payment_bank_account,
-      bic: row.bic || row.payment_bic,
-      hourlyRates: updatedHourlyRates
-    };
+    const company = mapCompanyRow(row);
 
     res.json(company);
   } catch (error) {

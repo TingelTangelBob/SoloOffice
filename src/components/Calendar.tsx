@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
 import { 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Calendar as CalendarIcon,
   Clock,
   User,
@@ -11,9 +12,11 @@ import {
   Hash,
   ExternalLink,
   Search,
+  Share2,
   X,
   Plus,
-  Trash2
+  Trash2,
+  Edit,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -22,7 +25,9 @@ import { CalendarEvent, JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { ConfirmationModal } from './ConfirmationModal';
 import { PageHeader } from './PageHeader';
+import { getTerminology } from '../utils/terminology';
 import { calculateTotalHours } from '../utils/jobUtils';
+import { formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { apiService } from '../services/api';
 
 interface CalendarProps {
@@ -42,6 +47,51 @@ const CALENDAR_START_HOUR = 0;
 const CALENDAR_END_HOUR = 24;
 const CALENDAR_HOUR_HEIGHT = 56;
 
+type CalendarDensity = 'spacious' | 'compact' | 'minimal' | 'indicator';
+
+interface CalendarCellSize {
+  width: number;
+  height: number;
+}
+
+interface TimeGridDragPreview {
+  dateKey: string;
+  startMinutes: number;
+}
+
+const getCalendarDensity = (width: number, height: number, entryCount: number): CalendarDensity => {
+  let density: CalendarDensity = 'indicator';
+
+  if (width >= 170 && height >= 120) {
+    density = 'spacious';
+  } else if (width >= 110 && height >= 85) {
+    density = 'compact';
+  } else if (width >= 70 && height >= 58) {
+    density = 'minimal';
+  }
+
+  if (entryCount >= 8) return 'indicator';
+  if (entryCount >= 5 && density === 'spacious') return 'compact';
+  if (entryCount >= 6 && density === 'compact') return 'minimal';
+
+  return density;
+};
+
+const getMaxVisibleEntries = (density: CalendarDensity, cellHeight: number) => {
+  const contentHeight = Math.max(0, cellHeight - 38);
+
+  switch (density) {
+    case 'spacious':
+      return Math.max(1, Math.floor(contentHeight / 66));
+    case 'compact':
+      return Math.max(1, Math.floor(contentHeight / 44));
+    case 'minimal':
+      return Math.max(1, Math.floor(contentHeight / 25));
+    case 'indicator':
+      return 1;
+  }
+};
+
 const parseTimeToMinutes = (time?: string, fallback = 8 * 60) => {
   if (!time) return fallback;
   const [hours, minutes] = time.split(':').map(Number);
@@ -49,36 +99,40 @@ const parseTimeToMinutes = (time?: string, fallback = 8 * 60) => {
   return Math.max(0, Math.min(24 * 60, hours * 60 + minutes));
 };
 
-const formatMinutesToTime = (minutes: number) => {
+const formatMinutesToTime = (minutes: number, locale = 'de-DE', timeFormat?: '24h' | '12h') => {
   const normalizedMinutes = Math.max(0, Math.min(24 * 60, Math.round(minutes)));
-  return `${String(Math.floor(normalizedMinutes / 60)).padStart(2, '0')}:${String(normalizedMinutes % 60).padStart(2, '0')}`;
+  const value = `${String(Math.floor(normalizedMinutes / 60)).padStart(2, '0')}:${String(normalizedMinutes % 60).padStart(2, '0')}`;
+  return formatTime(value, locale, timeFormat);
 };
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { jobEntries, addJobEntry, updateJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedJob, setDraggedJob] = useState<JobEntry | null>(null);
+  const [timeGridDragPreview, setTimeGridDragPreview] = useState<TimeGridDragPreview | null>(null);
+  const [dragPointerOffsetMinutes, setDragPointerOffsetMinutes] = useState(0);
   const [showJobForm, setShowJobForm] = useState(false);
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
+  const [previewingJob, setPreviewingJob] = useState<JobEntry | null>(null);
   const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
   const [selectedDateForNewJob, setSelectedDateForNewJob] = useState<Date | null>(null);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [jobPositions, setJobPositions] = useState<Map<string, number>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'workweek' | 'month'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerView, setDatePickerView] = useState<'months' | 'years'>('months');
+  const [datePickerYear, setDatePickerYear] = useState(new Date().getFullYear());
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const datePickerRef = useRef<HTMLDivElement>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [showVacationForm, setShowVacationForm] = useState(false);
-  const [vacationForm, setVacationForm] = useState({
-    title: 'Urlaub',
-    startDate: toDateInputValue(new Date()),
-    endDate: toDateInputValue(new Date()),
-    notes: '',
-  });
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -181,6 +235,20 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     }
   }, [showSearchResults]);
 
+  useEffect(() => {
+    if (!showDatePicker) return;
+
+    const handleDatePickerClickOutside = (event: MouseEvent) => {
+      const target = event.target;
+      if (datePickerRef.current && target instanceof Node && !datePickerRef.current.contains(target)) {
+        setShowDatePicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDatePickerClickOutside);
+    return () => document.removeEventListener('mousedown', handleDatePickerClickOutside);
+  }, [showDatePicker]);
+
   // Function to jump to job date and highlight it
   const jumpToJob = (job: JobEntry) => {
     const jobDate = new Date(job.date);
@@ -205,6 +273,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     // Close search results
     setShowSearchResults(false);
     setSearchQuery('');
+    setIsSearchOpen(false);
   };
 
   // Calendar navigation
@@ -291,17 +360,32 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   };
 
   const selectMonth = (month: number) => {
-    const nextDate = new Date(currentDate.getFullYear(), month, 1);
+    const nextDate = new Date(datePickerYear, month, 1);
     setSelectedDate(nextDate);
     setCurrentDate(nextDate);
     setCurrentWeekStart(getWeekStart(nextDate));
     setExpandedDates(new Set());
+    setShowDatePicker(false);
   };
 
-  const selectYear = (year: number) => {
-    const nextDate = new Date(selectedDate);
-    nextDate.setFullYear(year);
-    selectCalendarDate(nextDate);
+  const openDatePicker = () => {
+    setDatePickerYear(currentDate.getFullYear());
+    setDatePickerView('months');
+    setShowDatePicker((previous) => !previous);
+  };
+
+  const selectPickerYear = (year: number) => {
+    const nextDate = new Date(year, currentDate.getMonth(), 1);
+    setSelectedDate(nextDate);
+    setCurrentDate(nextDate);
+    setCurrentWeekStart(getWeekStart(nextDate));
+    setExpandedDates(new Set());
+    setDatePickerYear(year);
+    setDatePickerView('months');
+  };
+
+  const shiftDatePickerPeriod = (direction: number) => {
+    setDatePickerYear((previousYear) => previousYear + (datePickerView === 'years' ? direction * 12 : direction));
   };
 
   const getCalendarWeek = (date: Date) => {
@@ -360,6 +444,32 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     return { calendarDays: days };
   }, [currentDate]);
 
+  const monthGridRef = useRef<HTMLDivElement>(null);
+  const timeGridBodyRef = useRef<HTMLDivElement>(null);
+  const [monthCellSize, setMonthCellSize] = useState<CalendarCellSize>({ width: 160, height: 140 });
+
+  useEffect(() => {
+    if (viewMode !== 'month' || !monthGridRef.current) return;
+
+    const grid = monthGridRef.current;
+    const updateCellSize = () => {
+      const { width, height } = grid.getBoundingClientRect();
+      const weekCount = calendarDays.length / 7;
+      setMonthCellSize({
+        width: Math.max(0, (width - 40) / 7),
+        height: Math.max(0, (height - 56) / weekCount),
+      });
+    };
+
+    updateCellSize();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateCellSize);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [calendarDays.length, viewMode]);
+
   // Get week data for mobile view
   const { weekDays: currentWeekDays, weekRange, workWeekRange } = useMemo(() => {
     const weekDays = [];
@@ -374,8 +484,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     const endDate = weekDays[6];
     const workWeekEndDate = weekDays[4];
     
-    const weekRange = `${startDate.getDate()}.${String(startDate.getMonth() + 1).padStart(2, '0')}.${startDate.getFullYear()} - ${endDate.getDate()}.${String(endDate.getMonth() + 1).padStart(2, '0')}.${endDate.getFullYear()}`;
-    const workWeekRange = `${startDate.getDate()}.${String(startDate.getMonth() + 1).padStart(2, '0')}.${startDate.getFullYear()} - ${workWeekEndDate.getDate()}.${String(workWeekEndDate.getMonth() + 1).padStart(2, '0')}.${workWeekEndDate.getFullYear()}`;
+    const formatPeriodDate = (date: Date) => `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.`;
+    const weekRange = `${formatPeriodDate(startDate)} - ${formatPeriodDate(endDate)}`;
+    const workWeekRange = `${formatPeriodDate(startDate)} - ${formatPeriodDate(workWeekEndDate)}`;
     
     return { weekDays, weekRange, workWeekRange };
   }, [currentWeekStart]);
@@ -385,11 +496,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     : viewMode === 'workweek'
       ? currentWeekDays.slice(0, 5)
       : currentWeekDays;
-
-  const timeGridHours = Array.from(
-    { length: CALENDAR_END_HOUR - CALENDAR_START_HOUR },
-    (_, index) => CALENDAR_START_HOUR + index,
-  );
 
   const getJobTimeRange = (job: JobEntry) => {
     const timeEntryWithTime = job.timeEntries?.find((entry) => entry.startTime || entry.endTime);
@@ -413,60 +519,77 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     if (!startTime && !endTime) return null;
 
     const { start, end } = getJobTimeRange(job);
-    return `${startTime || formatMinutesToTime(start)}–${endTime || formatMinutesToTime(end)}`;
+    return `${startTime ? formatTime(startTime, locale, company?.timeFormat) : formatMinutesToTime(start, locale, company?.timeFormat)}–${endTime ? formatTime(endTime, locale, company?.timeFormat) : formatMinutesToTime(end, locale, company?.timeFormat)}`;
   };
 
-  // Get jobs for a specific date
-  const getJobsForDate = (date: Date) => {
-    const jobs = jobEntries.filter((job: JobEntry) => {
-      const jobDate = new Date(job.date);
-      return jobDate.toDateString() === date.toDateString();
+  const jobsByDate = useMemo(() => {
+    const groupedJobs = new Map<string, JobEntry[]>();
+
+    jobEntries.forEach((job) => {
+      const dateKey = toDateKey(new Date(job.date));
+      const jobsForDate = groupedJobs.get(dateKey) || [];
+      jobsForDate.push(job);
+      groupedJobs.set(dateKey, jobsForDate);
     });
-    
-    // Sort jobs by position for the day, then by creation time as fallback
-    return jobs.sort((a, b) => {
-      const positionA = jobPositions.get(`${date.toDateString()}-${a.id}`) ?? 999;
-      const positionB = jobPositions.get(`${date.toDateString()}-${b.id}`) ?? 999;
-      
-      if (positionA !== positionB) {
-        return positionA - positionB;
+
+    groupedJobs.forEach((jobsForDate, dateKey) => {
+      const positionDateKey = new Date(`${dateKey}T12:00:00`).toDateString();
+      jobsForDate.sort((a, b) => {
+        const positionA = jobPositions.get(`${positionDateKey}-${a.id}`) ?? 999;
+        const positionB = jobPositions.get(`${positionDateKey}-${b.id}`) ?? 999;
+
+        if (positionA !== positionB) {
+          return positionA - positionB;
+        }
+
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      });
+    });
+
+    return groupedJobs;
+  }, [jobEntries, jobPositions]);
+
+  const getJobsForDate = (date: Date) => jobsByDate.get(toDateKey(date)) || [];
+
+  const firstJobStartMinutes = timeGridDays
+    .flatMap((date) => getJobsForDate(date).map((job) => getJobTimeRange(job).start));
+  const earliestJobStartMinutes = firstJobStartMinutes.length > 0 ? Math.min(...firstJobStartMinutes) : null;
+  const timeGridStartHour = CALENDAR_START_HOUR;
+  const timeGridHours = Array.from(
+    { length: CALENDAR_END_HOUR - timeGridStartHour },
+    (_, index) => timeGridStartHour + index,
+  );
+
+  useEffect(() => {
+    if (viewMode === 'month' || !timeGridBodyRef.current) return;
+
+    const firstVisibleHour = earliestJobStartMinutes === null
+      ? CALENDAR_START_HOUR
+      : Math.floor(earliestJobStartMinutes / 60);
+    const frame = window.requestAnimationFrame(() => {
+      if (timeGridBodyRef.current) {
+        timeGridBodyRef.current.scrollTop = Math.max(
+          0,
+          (firstVisibleHour - CALENDAR_START_HOUR) * CALENDAR_HOUR_HEIGHT,
+        );
       }
-      
-      // Fallback to creation time if positions are equal
-      return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
     });
-  };
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [earliestJobStartMinutes, currentWeekStart, selectedDate, viewMode]);
 
   const getEventsForDate = (date: Date) => {
     const dateKey = toDateKey(date);
     return calendarEvents.filter((event) => event.startDate <= dateKey && event.endDate >= dateKey);
   };
 
-  const handleVacationSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!vacationForm.title.trim() || vacationForm.endDate < vacationForm.startDate) {
-      return;
-    }
-
+  const handleVacationSubmit = async (event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const createdEvent = await apiService.createCalendarEvent({
-        eventType: 'vacation',
-        title: vacationForm.title.trim(),
-        startDate: vacationForm.startDate,
-        endDate: vacationForm.endDate,
-        notes: vacationForm.notes.trim() || undefined,
-        allDay: true,
-      });
+      const createdEvent = await apiService.createCalendarEvent(event);
       setCalendarEvents((previous) => [...previous, createdEvent]);
-      setShowVacationForm(false);
-      setVacationForm({
-        title: 'Urlaub',
-        startDate: vacationForm.startDate,
-        endDate: vacationForm.endDate,
-        notes: '',
-      });
     } catch (error) {
       logger.error('Error creating vacation event:', error);
+      throw error;
     }
   };
 
@@ -524,6 +647,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     }
   };
 
+  const getStatusIndicatorColor = (status: JobEntry['status']) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-400';
+      case 'in-progress': return 'bg-yellow-400';
+      case 'completed': return 'bg-green-500';
+      case 'invoiced': return 'bg-blue-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
   // Get priority color
   const getPriorityColor = (priority?: string) => {
     switch (priority) {
@@ -535,8 +668,22 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   };
 
   // Drag and drop handlers
+  const updateDragPointerOffset = (clientY: number, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const offsetMinutes = ((clientY - rect.top) / CALENDAR_HOUR_HEIGHT) * 60;
+    setDragPointerOffsetMinutes(Math.max(0, Math.min(24 * 60, offsetMinutes)));
+  };
+
+  const handleDragPointerDown = (e: React.MouseEvent<HTMLElement>) => {
+    updateDragPointerOffset(e.clientY, e.currentTarget);
+  };
+
   const handleDragStart = (e: React.DragEvent, job: JobEntry) => {
     setDraggedJob(job);
+    setTimeGridDragPreview(null);
+    if (e.clientY > 0) {
+      updateDragPointerOffset(e.clientY, e.currentTarget as HTMLElement);
+    }
     e.dataTransfer.effectAllowed = 'move';
     // Add visual feedback
     (e.currentTarget as HTMLElement).style.opacity = '0.5';
@@ -547,6 +694,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     (e.currentTarget as HTMLElement).style.opacity = '1';
     setDraggedJob(null);
     setDragOverDate(null);
+    setTimeGridDragPreview(null);
+    setDragPointerOffsetMinutes(0);
   };
 
   const handleDragOver = (e: React.DragEvent, targetDate: Date) => {
@@ -563,6 +712,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
       setDragOverDate(null);
+      setTimeGridDragPreview(null);
     }
   };
 
@@ -603,6 +753,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     
     setDraggedJob(null);
     setDragOverDate(null);
+    setTimeGridDragPreview(null);
+    setDragPointerOffsetMinutes(0);
   };
 
   const handleDrop = async (e: React.DragEvent, targetDate: Date) => {
@@ -610,6 +762,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     e.stopPropagation();
     
     setDragOverDate(null);
+    setTimeGridDragPreview(null);
     
     if (!draggedJob) return;
 
@@ -617,20 +770,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     const jobDate = new Date(draggedJob.date);
     if (jobDate.toDateString() === targetDate.toDateString()) {
       setDraggedJob(null);
+      setTimeGridDragPreview(null);
+      setDragPointerOffsetMinutes(0);
       return;
     }
 
     try {
-      // Create date string in YYYY-MM-DD format (ISO date without time)
-      const year = targetDate.getFullYear();
-      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-      const day = String(targetDate.getDate()).padStart(2, '0');
-      const dateString = `${year}-${month}-${day}`;
-      
-      // Update job date using the ISO date string
+      // Keep the domain value as a Date; the API adapter serializes it for persistence.
       await updateJobEntry(draggedJob.id, {
         ...draggedJob,
-        date: dateString
+        date: targetDate
       });
 
       // Clear position for the moved job from old date and assign new position
@@ -656,31 +805,148 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       logger.error('Error updating job date:', error);
     } finally {
       setDraggedJob(null);
+      setTimeGridDragPreview(null);
+      setDragPointerOffsetMinutes(0);
     }
   };
 
-  // Double click handler for job editing
+  const getSnappedTimeGridStart = (
+    clientY: number,
+    cellRect: DOMRect,
+    dayStartMinutes: number,
+    durationMinutes: number,
+    pointerOffsetMinutes: number,
+  ) => {
+    const minutesFromDayStart = ((clientY - cellRect.top) / CALENDAR_HOUR_HEIGHT) * 60 - pointerOffsetMinutes;
+    const requestedStart = dayStartMinutes + Math.round(minutesFromDayStart / 15) * 15;
+    const latestStart = Math.max(0, 24 * 60 - durationMinutes);
+
+    return Math.max(dayStartMinutes, Math.min(latestStart, requestedStart));
+  };
+
+  const handleTimeGridDragOver = (e: React.DragEvent, targetDate: Date, dayStartMinutes: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverDate(targetDate);
+
+    if (!draggedJob) return;
+
+    const { start, end } = getJobTimeRange(draggedJob);
+    const startMinutes = getSnappedTimeGridStart(
+      e.clientY,
+      (e.currentTarget as HTMLElement).getBoundingClientRect(),
+      dayStartMinutes,
+      Math.max(30, end - start),
+      dragPointerOffsetMinutes,
+    );
+
+    setTimeGridDragPreview({
+      dateKey: toDateKey(targetDate),
+      startMinutes,
+    });
+  };
+
+  const handleTimeGridDrop = async (e: React.DragEvent, targetDate: Date, dayStartMinutes: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setDragOverDate(null);
+    setTimeGridDragPreview(null);
+
+    if (!draggedJob) return;
+
+    const { start: originalStart, end: originalEnd } = getJobTimeRange(draggedJob);
+    const duration = Math.max(30, originalEnd - originalStart);
+    const startMinutes = getSnappedTimeGridStart(
+      e.clientY,
+      (e.currentTarget as HTMLElement).getBoundingClientRect(),
+      dayStartMinutes,
+      duration,
+      dragPointerOffsetMinutes,
+    );
+    const endMinutes = startMinutes + duration;
+    const jobDate = new Date(draggedJob.date);
+    const dateChanged = jobDate.toDateString() !== targetDate.toDateString();
+
+    try {
+      const year = targetDate.getFullYear();
+      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const day = String(targetDate.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
+
+      await updateJobEntry(draggedJob.id, {
+        ...draggedJob,
+        date: dateString as unknown as JobEntry['date'],
+        startTime: formatMinutesToTime(startMinutes, locale, company?.timeFormat),
+        endTime: formatMinutesToTime(endMinutes, locale, company?.timeFormat),
+      });
+
+      if (dateChanged) {
+        const newPositions = new Map(jobPositions);
+        const oldDateKey = jobDate.toDateString();
+        const newDateKey = targetDate.toDateString();
+        const targetDayJobs = getJobsForDate(targetDate);
+
+        newPositions.delete(`${oldDateKey}-${draggedJob.id}`);
+        newPositions.set(`${newDateKey}-${draggedJob.id}`, targetDayJobs.length);
+        setJobPositions(newPositions);
+      }
+
+      logger.info('Job moved via time grid drag and drop', {
+        jobTitle: draggedJob.title,
+        targetDate: targetDate.toLocaleDateString(locale),
+        startTime: formatMinutesToTime(startMinutes, locale, company?.timeFormat),
+        jobId: draggedJob.id,
+      });
+    } catch (error) {
+      logger.error('Error updating job date and time:', error);
+    } finally {
+      setDraggedJob(null);
+      setTimeGridDragPreview(null);
+      setDragPointerOffsetMinutes(0);
+    }
+  };
+
+  const getStatusLabel = (status: JobEntry['status']) => {
+    switch (status) {
+      case 'draft': return 'Entwurf';
+      case 'in-progress': return 'In Bearbeitung';
+      case 'completed': return 'Abgeschlossen';
+      case 'invoiced': return 'Abgerechnet';
+      default: return status;
+    }
+  };
+
+  // Double click opens the compact job summary first.
   const handleJobDoubleClick = (job: JobEntry) => {
-    // Check if job is invoiced and warn user
+    setPreviewingJob(job);
+  };
+
+  const handlePreviewEdit = (job: JobEntry) => {
     if (job.status === 'invoiced') {
       setConfirmModal({
         isOpen: true,
-        title: 'Auftrag bearbeiten',
-        message: 'Dieser Auftrag wurde bereits abgerechnet. Änderungen an abgerechneten Aufträgen sollten nur in Ausnahmefällen vorgenommen werden, da sie die GoBD-Konformität beeinträchtigen können. Möchten Sie trotzdem fortfahren?',
+        title: terminology.work.editLabel,
+        message: `Dieser ${terminology.work.singular} wurde bereits abgerechnet. Änderungen an abgerechneten ${terminology.work.plural} sollten nur in Ausnahmefällen vorgenommen werden, da sie die GoBD-Konformität beeinträchtigen können. Möchten Sie trotzdem fortfahren?`,
         onConfirm: () => {
+          setPreviewingJob(null);
           setEditingJob(job);
+          setSelectedDateForNewJob(null);
           setShowJobForm(true);
         },
         isGoBDWarning: true
       });
     } else {
+      setPreviewingJob(null);
       setEditingJob(job);
+      setSelectedDateForNewJob(null);
       setShowJobForm(true);
     }
   };
 
   // Double click handler for creating new job on a specific date
   const handleDateDoubleClick = (date: Date) => {
+    setPreviewingJob(null);
     setEditingJob(null); // Clear any existing job
     
     // Create date string in YYYY-MM-DD format to avoid timezone issues
@@ -693,6 +959,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     const correctedDate = new Date(dateString + 'T12:00:00.000Z');
     
     setSelectedDateForNewJob(correctedDate);
+    setShowJobForm(true);
+  };
+
+  const handleNewEntry = () => {
+    setPreviewingJob(null);
+    setEditingJob(null);
+    setSelectedDateForNewJob(new Date(selectedDate));
     setShowJobForm(true);
   };
 
@@ -723,53 +996,173 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     { short: 'So', long: 'Sonntag' },
   ];
 
+  const currentMonthLong = currentDate.toLocaleDateString(locale, { month: 'long' });
+  const currentMonthShort = currentDate.toLocaleDateString(locale, { month: 'short' }).replace(/\.$/, '');
+  const currentMonthLabel = `${currentMonthLong} ${currentDate.getFullYear()}`;
+  const currentMonthShortLabel = `${currentMonthShort} ${currentDate.getFullYear()}`;
+
+  const monthPicker = (
+    <div ref={datePickerRef} className="relative w-fit max-w-full justify-self-center">
+      <button
+        type="button"
+        onClick={openDatePicker}
+        className="min-h-0 inline-flex h-11 w-fit max-w-full min-w-0 items-center justify-center gap-1 rounded-lg px-3 text-center text-lg font-semibold capitalize text-gray-900 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-primary-custom lg:text-xl"
+        aria-label="Monat und Jahr auswählen"
+        aria-expanded={showDatePicker}
+      >
+        <span className="truncate md:hidden">{currentMonthShortLabel}</span>
+        <span className="hidden truncate md:inline">{currentMonthLabel}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showDatePicker && (
+        <div className="absolute left-1/2 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-xl">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => shiftDatePickerPeriod(-1)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100"
+              aria-label="Vorheriger Zeitraum"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDatePickerView((view) => view === 'months' ? 'years' : 'months')}
+              className="min-w-0 flex-1 rounded-md px-2 py-1 text-center text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100"
+            >
+              {datePickerView === 'months'
+                ? datePickerYear
+                : `${datePickerYear - 5}–${datePickerYear + 6}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => shiftDatePickerPeriod(1)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100"
+              aria-label="Nächster Zeitraum"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {datePickerView === 'months' ? (
+            <div className="grid grid-cols-3 gap-1">
+              {Array.from({ length: 12 }, (_, month) => {
+                const isActive = currentDate.getFullYear() === datePickerYear && currentDate.getMonth() === month;
+
+                return (
+                  <button
+                    key={month}
+                    type="button"
+                    onClick={() => selectMonth(month)}
+                    className={`h-9 rounded-md px-2 text-sm capitalize transition-colors ${isActive ? 'bg-primary-custom text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                    aria-pressed={isActive}
+                  >
+                    {new Date(datePickerYear, month, 1).toLocaleDateString(locale, { month: 'short' }).replace(/\.$/, '')}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1">
+              {Array.from({ length: 12 }, (_, index) => datePickerYear - 5 + index).map((year) => {
+                const isActive = currentDate.getFullYear() === year;
+
+                return (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => selectPickerYear(year)}
+                    className={`h-9 rounded-md px-2 text-sm transition-colors ${isActive ? 'bg-primary-custom text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                    aria-pressed={isActive}
+                  >
+                    {year}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-3 lg:space-y-0">
       {/* Header */}
       <div className="p-1 lg:p-2">
-        <PageHeader icon={CalendarIcon} title="Kalender">
-        
-        {/* Search and year selection */}
-        <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-        <select
-          value={selectedDate.getFullYear()}
-          onChange={(event) => selectYear(Number(event.target.value))}
-          className="h-10 w-28 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-          aria-label="Jahr auswählen"
+        <PageHeader icon={CalendarIcon} title="Kalender" singleRow>
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleNewEntry}
+          className="order-3 min-h-0 inline-flex h-10 items-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:px-4"
+          aria-label="Neuen Eintrag erstellen"
+          title="Neuen Eintrag erstellen"
         >
-          {Array.from({ length: 11 }, (_, index) => new Date().getFullYear() - 5 + index).map((year) => (
-            <option key={year} value={year}>{year}</option>
-          ))}
-        </select>
-        <div className="relative w-full sm:w-auto search-container">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Neu</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowShareDialog(true)}
+          className="order-2 min-h-0 inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:px-3"
+          aria-label="Kalender teilen"
+          title="Kalender teilen"
+        >
+          <Share2 className="h-4 w-4" />
+          <span className="hidden sm:inline">Teilen</span>
+        </button>
+        <div className="relative order-1 search-container">
+          {isSearchOpen ? (
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Aufträge suchen..."
+              placeholder={terminology.work.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setShowSearchResults(e.target.value.trim().length > 0);
               }}
               onFocus={() => setShowSearchResults(searchQuery.trim().length > 0)}
-              className="h-10 pl-10 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent w-full sm:w-64 text-sm"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
                   setSearchQuery('');
                   setShowSearchResults(false);
-                }}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+                  setIsSearchOpen(false);
+                }
+              }}
+              autoFocus
+              className="h-10 pl-10 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent w-full sm:w-64 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setShowSearchResults(false);
+                setIsSearchOpen(false);
+              }}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
+              aria-label="Suche schließen"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="min-h-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+              aria-label={terminology.work.searchPlaceholder}
+              title={terminology.work.searchPlaceholder}
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          )}
           
           {/* Search Results Dropdown */}
-          {showSearchResults && searchResults.length > 0 && (
+          {isSearchOpen && showSearchResults && searchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
               {searchResults.map((job) => {
                 const customer = customers.find(c => c.id === job.customerId);
@@ -802,9 +1195,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           </div>
                           <div className="flex items-center mt-1">
                             <CalendarIcon className="h-3 w-3 mr-1" />
-                            <span>{jobDate.toLocaleDateString(locale)}</span>
+                            <span>{formatDate(jobDate, locale, company?.dateFormat)}</span>
                             <Clock className="h-3 w-3 ml-3 mr-1" />
-                            <span>{totalHours.toFixed(1)}h</span>
+                            <span>{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
                           </div>
                           {job.jobNumber && (
                             <div className="flex items-center mt-1">
@@ -815,10 +1208,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         </div>
                       </div>
                       <div className={`ml-3 px-2 py-1 rounded text-xs font-medium ${getStatusColor(job.status)}`}>
-                        {job.status === 'draft' ? 'Entwurf' :
-                         job.status === 'in-progress' ? 'In Bearbeitung' :
-                         job.status === 'completed' ? 'Abgeschlossen' :
-                         job.status === 'invoiced' ? 'Abgerechnet' : job.status}
+                        {getStatusLabel(job.status)}
                       </div>
                     </div>
                   </div>
@@ -828,9 +1218,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           )}
           
           {/* No Results Message */}
-          {showSearchResults && searchQuery.trim() && searchResults.length === 0 && (
+          {isSearchOpen && showSearchResults && searchQuery.trim() && searchResults.length === 0 && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 text-center text-gray-500">
-              Keine Aufträge gefunden
+              {terminology.work.noResults}
             </div>
           )}
         </div>
@@ -840,34 +1230,23 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
       {/* Calendar Controls */}
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="grid grid-cols-[40px_minmax(150px,1fr)_40px] items-center gap-2 lg:min-w-[300px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="grid min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
             <button
               type="button"
               onClick={navigatePrevious}
-              className="min-h-0 h-10 w-10 border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              className="min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
               title="Vorheriger Zeitraum"
             >
               <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
 
             {viewMode === 'month' ? (
-              <select
-                value={currentDate.getMonth()}
-                onChange={(event) => selectMonth(Number(event.target.value))}
-                className="min-w-0 w-full appearance-none border-0 bg-transparent px-1 py-1 text-center text-lg lg:text-xl font-semibold text-gray-900 capitalize focus:ring-2 focus:ring-primary-custom rounded-lg"
-                aria-label="Monat auswählen"
-              >
-                {Array.from({ length: 12 }, (_, month) => (
-                  <option key={month} value={month}>
-                    {new Date(currentDate.getFullYear(), month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
-                  </option>
-                ))}
-              </select>
+              monthPicker
             ) : (
-              <h2 className="min-w-[180px] text-base lg:text-lg font-semibold text-gray-900 capitalize">
+              <h2 className="min-w-0 truncate px-1 text-center text-base font-semibold capitalize text-gray-900 lg:text-lg">
                 {viewMode === 'week' || viewMode === 'workweek'
-                  ? `KW ${getCalendarWeek(selectedDate)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
+                  ? `KW ${getCalendarWeek(currentWeekStart)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
                   : selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </h2>
             )}
@@ -875,7 +1254,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={navigateNext}
-              className="min-h-0 h-10 w-10 border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              className="min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
               title="Nächster Zeitraum"
             >
               <ChevronRight className="h-4 w-4 text-gray-600" />
@@ -883,8 +1262,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5" role="group" aria-label="Kalenderansicht">
+          <div className="flex h-11 w-full min-w-0 items-center justify-end gap-1 sm:w-auto">
+            <div className="flex h-11 min-w-0 flex-1 items-stretch rounded-lg border border-gray-200 bg-gray-50 sm:flex-none" role="group" aria-label="Kalenderansicht">
               {([
                 ['day', 'Tag'],
                 ['week', 'Kalenderwoche'],
@@ -895,9 +1274,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   key={mode}
                   type="button"
                   onClick={() => changeViewMode(mode)}
-                  className={`min-h-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
+                  className={`min-h-0 inline-flex h-full min-w-0 flex-1 items-center justify-center rounded-md px-1 text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
                 >
-                  <span className="xl:hidden">{mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : label}</span>
+                  <span className="sm:hidden">{mode === 'day' ? 'T' : mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : 'M'}</span>
+                  <span className="hidden sm:inline xl:hidden">{mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : label}</span>
                   <span className="hidden xl:inline">{label}</span>
                 </button>
               ))}
@@ -905,17 +1285,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={goToToday}
-              className="min-h-0 h-10 bg-primary-custom text-white px-4 rounded-lg hover:bg-primary-custom/90 transition-colors text-sm"
+              className="min-h-0 h-11 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
             >
               Heute
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowVacationForm(true)}
-              className="min-h-0 h-10 inline-flex items-center gap-1.5 border border-primary-custom text-primary-custom px-4 rounded-lg hover:bg-primary-custom/10 transition-colors text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Urlaub eintragen
             </button>
           </div>
         </div>
@@ -923,20 +1295,21 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         {/* Desktop Calendar Grid */}
         {viewMode === 'month' && <div className="mt-3 overflow-x-auto">
           <div
-            className="grid h-[calc(100vh-270px)] w-full min-w-0 grid-cols-[76px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-w-[760px] sm:grid-cols-[76px_repeat(7,minmax(100px,1fr))]"
+            ref={monthGridRef}
+            className="grid h-[calc(100vh-270px)] min-h-[24rem] w-full min-w-0 grid-cols-[40px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-h-0"
             style={{ gridTemplateRows: `56px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
           >
             {/* Week day headers */}
-            <div className="border-b border-r border-slate-200 bg-slate-50 p-3 text-center text-sm font-semibold text-slate-600 sm:text-base">
+            <div className="border-b border-r border-slate-200 bg-slate-50 p-1 text-center text-xs font-semibold text-slate-600">
               KW
             </div>
             {weekDays.map((day) => (
               <div
                 key={day.short}
-                className="border-b border-r border-slate-200 bg-slate-50 p-3 text-center text-sm font-semibold text-slate-600 sm:text-base"
+                className="border-b border-r border-slate-200 bg-slate-50 p-2 text-center text-sm font-semibold text-slate-600 lg:p-3 lg:text-base"
               >
-                <span className="sm:hidden">{day.short}</span>
-                <span className="hidden sm:inline">{day.long}</span>
+                <span className="lg:hidden">{day.short}</span>
+                <span className="hidden lg:inline">{day.long}</span>
               </div>
             ))}
             
@@ -950,9 +1323,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               return (
                 <React.Fragment key={date.toISOString()}>
                   {index % 7 === 0 && (
-                    <div className="flex h-full min-h-0 flex-col items-center justify-start border-b border-r border-slate-200 bg-white p-3 text-sm font-semibold text-primary-custom sm:text-base">
-                      <span>KW</span>
-                      <span>{getCalendarWeek(date)}</span>
+                    <div className="flex h-full min-h-0 items-center justify-center border-b border-r border-slate-200 bg-white p-1 text-xs font-semibold text-primary-custom">
+                      {getCalendarWeek(date)}
                     </div>
                   )}
                 <div
@@ -962,7 +1334,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, date)}
                   className={`
-                    h-full min-h-0 overflow-hidden border-b border-r border-slate-200
+                    h-full min-w-0 min-h-0 overflow-hidden border-b border-r border-slate-200
                     ${isSelectedDate(date) ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'}
                     ${!isInCurrentMonth ? 'bg-slate-50 text-slate-400' : ''}
                     ${isSelectedDate(date) ? 'z-10 bg-blue-50' : ''}
@@ -973,13 +1345,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   {/* Date header - clickable area for creating new jobs */}
                   <div 
                     className={`
-                      px-3 py-1.5
+                      px-1 py-1.5 sm:px-3
                     `}
-                    title="Doppelklick zum Erstellen eines neuen Auftrags"
+                    title={`Doppelklick zum Erstellen eines neuen ${terminology.work.singular}`}
                   >
                     <div className="flex items-start">
                       <span className={`
-                        inline-flex h-7 min-w-7 items-center justify-center rounded-full text-base font-medium
+                        inline-flex h-6 min-w-6 items-center justify-center rounded-full text-sm font-medium sm:h-7 sm:min-w-7 sm:text-base
                         ${isDayToday ? 'border border-primary-custom font-semibold text-primary-custom' : isSelectedDate(date) ? 'font-semibold text-primary-custom' : ''}
                         ${!isInCurrentMonth ? 'text-gray-400' : 'text-gray-900'}
                       `}>
@@ -994,34 +1366,51 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       const isExpanded = isDateExpanded(date);
                       const dayEvents = getEventsForDate(date);
                       const totalEntries = dayJobs.length + dayEvents.length;
-                      const compactEntries = totalEntries > 1 && !isExpanded;
-                      const jobsToShow = isExpanded ? dayJobs : dayJobs.slice(0, Math.max(0, 2 - dayEvents.length));
+                      const density = getCalendarDensity(monthCellSize.width, monthCellSize.height, totalEntries);
+                      const maxVisibleEntries = isExpanded ? totalEntries : getMaxVisibleEntries(density, monthCellSize.height);
+                      const hasMoreEntries = !isExpanded && totalEntries > maxVisibleEntries;
+                      const visibleEntryLimit = hasMoreEntries ? Math.max(1, maxVisibleEntries - 1) : maxVisibleEntries;
+                      const eventsToShow = dayEvents.slice(0, Math.min(dayEvents.length, visibleEntryLimit));
+                      const jobsToShow = dayJobs.slice(0, Math.max(0, visibleEntryLimit - eventsToShow.length));
+                      const hiddenEntryCount = totalEntries - eventsToShow.length - jobsToShow.length;
                       
                       return (
                         <>
-                          {dayEvents.map((calendarEvent) => (
-                            <div
-                              key={calendarEvent.id}
-                              className="flex items-center justify-between gap-1 rounded border border-purple-200 bg-purple-100 px-1.5 py-1 text-xs text-purple-800"
-                              title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
-                            >
-                              <div className="flex min-w-0 items-center gap-1">
-                                <CalendarIcon className="h-3 w-3 shrink-0" />
-                                <span className="truncate font-medium">{calendarEvent.title}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleDeleteCalendarEvent(calendarEvent);
-                                }}
-                                className="shrink-0 rounded p-0.5 text-purple-700 hover:bg-purple-200"
-                                title="Urlaub entfernen"
+                          {eventsToShow.map((calendarEvent) => {
+                            const isMultiDayEvent = calendarEvent.startDate !== calendarEvent.endDate;
+                            const isEventStart = calendarEvent.startDate === toDateKey(date);
+                            const isEventEnd = calendarEvent.endDate === toDateKey(date);
+
+                            return density === 'indicator' || (density === 'minimal' && isMultiDayEvent) ? (
+                              <div
+                                key={calendarEvent.id}
+                                className={`-mx-2 h-2 bg-purple-400 ${isEventStart ? 'rounded-l-full' : ''} ${isEventEnd ? 'rounded-r-full' : ''}`}
+                                title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
+                              />
+                            ) : (
+                              <div
+                                key={calendarEvent.id}
+                                className="flex items-center justify-between gap-1 rounded border border-purple-200 bg-purple-100 px-1.5 py-1 text-xs text-purple-800"
+                                title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
                               >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
+                                <div className="flex min-w-0 items-center gap-1">
+                                  <CalendarIcon className="h-3 w-3 shrink-0" />
+                                  <span className="truncate font-medium">{calendarEvent.title}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleDeleteCalendarEvent(calendarEvent);
+                                  }}
+                                  className="shrink-0 rounded p-0.5 text-purple-700 hover:bg-purple-200"
+                                  title="Urlaub entfernen"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
                           {jobsToShow.map((job, jobIndex) => {
                             const customer = customers.find(c => c.id === job.customerId);
                             const totalHours = calculateTotalHours(job);
@@ -1061,70 +1450,73 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   }}
                                   onDrop={(e) => handleJobDrop(e, date, job.id)}
                                   className={`
-                                    text-xs p-1 rounded border cursor-move
-                                    ${getStatusColor(job.status)}
-                                    ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : 'hover:shadow-sm'}
+                                    cursor-move transition-all duration-150
+                                    ${density === 'indicator'
+                                      ? `h-2 w-2 rounded-full ${getStatusIndicatorColor(job.status)}`
+                                      : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
+                                    ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : density !== 'indicator' ? 'hover:shadow-sm' : ''}
                                     ${draggedJob && draggedJob.id !== job.id && 
                                       new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                       'border-blue-300 border-dashed' : ''}
                                     ${highlightedJobId === job.id ? 'ring-2 ring-red-500 bg-red-100 border-red-500' : ''}
-                                    transition-all duration-150
                                   `}
-                                  title={`${job.title} - ${customer?.name || job.customerName} - ${totalHours.toFixed(1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
+                                  title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                                 >
+                                {density !== 'indicator' && (
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center">
-                                      {job.priority && (
+                                      {density !== 'minimal' && job.priority && (
                                         <AlertTriangle className={`h-3 w-3 mr-1 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
                                       )}
                                       <span className="truncate font-medium">
                                         {job.title}
                                       </span>
-                                      {job.attachments && job.attachments.length > 0 && (
-                                        <FileText className="h-3 w-3 ml-1 flex-shrink-0 text-gray-400" title="Anhänge vorhanden" />
+                                      {density === 'spacious' && job.attachments && job.attachments.length > 0 && (
+                                      <span title="Anhänge vorhanden"><FileText className="h-3 w-3 ml-1 flex-shrink-0 text-gray-400" /></span>
                                       )}
                                     </div>
-                                    <div className={`${compactEntries ? 'hidden' : 'flex'} items-center mt-1 text-xs opacity-75`}>
+                                    {density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
                                       <User className="h-3 w-3 mr-1 flex-shrink-0" />
                                       <span className="truncate">{customer?.name || job.customerName}</span>
-                                    </div>
-                                    {job.jobNumber && !compactEntries && (
+                                    </div>}
+                                    {density === 'spacious' && job.jobNumber && (
                                       <div className="flex items-center mt-1 text-xs opacity-75">
                                         <Hash className="h-3 w-3 mr-1 flex-shrink-0" />
                                         <span className="truncate">{job.jobNumber}</span>
                                       </div>
                                     )}
-                                    {job.externalJobNumber && !compactEntries && (
+                                    {density === 'spacious' && job.externalJobNumber && (
                                       <div className="flex items-center mt-1 text-xs opacity-75">
                                         <ExternalLink className="h-3 w-3 mr-1 flex-shrink-0" />
                                         <span className="truncate">{job.externalJobNumber}</span>
                                       </div>
                                     )}
-                                    <div className="flex items-center mt-1 text-xs opacity-75">
+                                    {density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
                                       <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
-                                      <span>{totalHours.toFixed(1)}h</span>
-                                    </div>
+                                      <span>{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
+                                    </div>}
                                   </div>
                                 </div>
+                                )}
                                 </div>
                               </React.Fragment>
                             );
                           })}
                           
                           {/* Show toggle button if more jobs exist */}
-                          {totalEntries > dayEvents.length + jobsToShow.length && (
+                          {hiddenEntryCount > 0 && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleExpandedDate(date);
                               }}
-                              className="w-full text-xs text-gray-500 hover:text-gray-700 text-center py-1 hover:bg-gray-50 rounded transition-colors"
+                              className="min-h-0 h-5 w-full rounded text-center text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
                               title={isExpanded ? "Weniger anzeigen" : "Alle anzeigen"}
                             >
                               {isExpanded ? 
                                 `Weniger anzeigen` : 
-                                `+${totalEntries - dayEvents.length - jobsToShow.length} weitere`
+                                `+${hiddenEntryCount} weitere`
                               }
                             </button>
                           )}
@@ -1149,17 +1541,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
         {/* Desktop time grid for day, calendar week and work week */}
         {(viewMode === 'day' || viewMode === 'week' || viewMode === 'workweek') && (
-          <div className="mt-3 hidden overflow-x-auto rounded-lg border border-gray-300 lg:block">
-            <div className="min-w-[900px]">
-              <div
-                className="grid"
-                style={{ gridTemplateColumns: '64px minmax(0, 1fr)' }}
-              >
-                <div className="border-b border-r border-gray-300 bg-gray-100 p-2 text-center text-xs font-semibold uppercase text-gray-600">
+          <div className="mt-3 hidden overflow-hidden rounded-lg border border-gray-300 lg:block">
+            <div
+              className="sticky top-0 z-30 grid w-full min-w-0 bg-white pr-[6px]"
+              style={{ gridTemplateColumns: '52px minmax(0, 1fr)' }}
+            >
+                <div className="border-b border-r border-gray-300 bg-gray-100 p-1 text-center text-[10px] font-semibold uppercase text-gray-600">
                   Zeit
                 </div>
                 <div
-                  className="grid"
+                  className="grid min-w-0"
                   style={{ gridTemplateColumns: `repeat(${timeGridDays.length}, minmax(0, 1fr))` }}
                 >
                   {timeGridDays.map((date) => (
@@ -1167,25 +1558,36 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       key={date.toISOString()}
                       onClick={() => selectCalendarDate(date)}
                       onDoubleClick={() => handleDateDoubleClick(date)}
-                      className={`cursor-pointer border-b border-r border-gray-300 p-2 ${
+                      className={`flex min-w-0 cursor-pointer flex-col items-center justify-center border-b border-r border-gray-300 p-2 text-center ${
                         isToday(date) ? 'bg-primary-custom/15 text-primary-custom' : 'bg-gray-100 text-gray-700'
                       } ${isSelectedDate(date) ? 'ring-2 ring-inset ring-primary-custom' : ''}`}
                     >
-                      <div className="text-sm font-semibold">
-                        {date.toLocaleDateString(locale, { weekday: 'long' })}
+                      <div className="truncate text-sm font-semibold">
+                        <span className="xl:hidden">{date.toLocaleDateString(locale, { weekday: 'short' })}</span>
+                        <span className="hidden xl:inline">{date.toLocaleDateString(locale, { weekday: 'long' })}</span>
                       </div>
-                      <div className="mt-1 text-sm font-medium">
+                      <div className="mt-1 truncate text-sm font-medium">
                         {date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
                       </div>
                     </div>
                   ))}
                 </div>
+            </div>
+
+            <div
+              ref={timeGridBodyRef}
+              className="h-[calc(100vh-300px)] min-h-[24rem] overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+            >
+              <div
+                className="grid w-full min-w-0"
+                style={{ gridTemplateColumns: '52px minmax(0, 1fr)' }}
+              >
 
                 <div className="bg-gray-50">
                   {timeGridHours.map((hour) => (
                     <div
                       key={hour}
-                      className="border-b border-r border-gray-200 px-2 pt-1 text-right text-[11px] font-medium text-gray-500"
+                      className="border-b border-r border-gray-200 px-1 pt-1 text-right text-[10px] font-medium text-gray-500"
                       style={{ height: `${CALENDAR_HOUR_HEIGHT}px` }}
                     >
                       {String(hour).padStart(2, '0')}:00
@@ -1199,15 +1601,21 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   {timeGridDays.map((date) => {
                     const dayJobs = getJobsForDate(date);
                     const dayEvents = getEventsForDate(date);
-                    const dayStartMinutes = CALENDAR_START_HOUR * 60;
+                    const dayStartMinutes = timeGridStartHour * 60;
                     const dayEndMinutes = CALENDAR_END_HOUR * 60;
+                    const isPreviewDay = Boolean(
+                      draggedJob && timeGridDragPreview?.dateKey === toDateKey(date),
+                    );
+                    const previewDuration = draggedJob
+                      ? Math.max(30, getJobTimeRange(draggedJob).end - getJobTimeRange(draggedJob).start)
+                      : 0;
 
                     return (
                       <div
                         key={date.toISOString()}
-                        onDragOver={(event) => handleDragOver(event, date)}
+                        onDragOver={(event) => handleTimeGridDragOver(event, date, dayStartMinutes)}
                         onDragLeave={handleDragLeave}
-                        onDrop={(event) => handleDrop(event, date)}
+                        onDrop={(event) => handleTimeGridDrop(event, date, dayStartMinutes)}
                         className={`relative border-b border-r border-gray-300 ${
                           isToday(date) ? 'bg-primary-custom/5' : 'bg-white'
                         } ${isSelectedDate(date) ? 'bg-blue-50/30' : ''} ${
@@ -1220,6 +1628,20 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           backgroundImage: 'repeating-linear-gradient(to bottom, transparent 0, transparent 55px, #e5e7eb 55px, #e5e7eb 56px)',
                         }}
                       >
+                        {isPreviewDay && draggedJob && timeGridDragPreview && (
+                          <div
+                            className="pointer-events-none absolute left-1 right-1 z-30 overflow-hidden rounded border-2 border-dashed border-primary-custom bg-blue-100/80 p-1.5 text-xs text-primary-custom shadow-sm"
+                            style={{
+                              top: `${((timeGridDragPreview.startMinutes - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
+                              height: `${Math.max(32, (previewDuration / 60) * CALENDAR_HOUR_HEIGHT)}px`,
+                            }}
+                          >
+                            <div className="truncate font-semibold">{draggedJob.title}</div>
+                            <div className="truncate">
+                              {formatMinutesToTime(timeGridDragPreview.startMinutes, locale, company?.timeFormat)}–{formatMinutesToTime(timeGridDragPreview.startMinutes + previewDuration, locale, company?.timeFormat)}
+                            </div>
+                          </div>
+                        )}
                         {dayEvents.map((calendarEvent, eventIndex) => (
                           <div
                             key={calendarEvent.id}
@@ -1234,7 +1656,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         {dayJobs.map((job) => {
                           const customer = customers.find((item) => item.id === job.customerId);
                           const { start, end } = getJobTimeRange(job);
-                          const jobTimeLabel = getJobTimeLabel(job) || `${formatMinutesToTime(start)}–${formatMinutesToTime(end)}`;
+                          const jobTimeLabel = getJobTimeLabel(job) || `${formatMinutesToTime(start, locale, company?.timeFormat)}–${formatMinutesToTime(end, locale, company?.timeFormat)}`;
                           const visibleStart = Math.max(dayStartMinutes, start);
                           const visibleEnd = Math.min(dayEndMinutes, end);
 
@@ -1244,6 +1666,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             <div
                               key={job.id}
                               draggable={job.status !== 'invoiced'}
+                              onMouseDown={handleDragPointerDown}
                               onDragStart={(event) => handleDragStart(event, job)}
                               onDragEnd={handleDragEnd}
                               onDoubleClick={(event) => {
@@ -1270,8 +1693,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         })}
                       </div>
                     );
-                  })}
-                </div>
+                })}
+              </div>
               </div>
             </div>
           </div>
@@ -1285,6 +1708,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             const isDayToday = isToday(date);
             const isDragOver = dragOverDate && date.toDateString() === dragOverDate.toDateString();
             const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
+            const dayNameLong = date.toLocaleDateString(locale, { weekday: 'long' });
             
             return (
               <div
@@ -1309,17 +1733,19 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   `}
                   onDoubleClick={() => handleDateDoubleClick(date)}
                   onClick={() => selectCalendarDate(date)}
-                  title="Doppelklick zum Erstellen eines neuen Auftrags"
+                    title={`Doppelklick zum Erstellen eines neuen ${terminology.work.singular}`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="relative flex items-center justify-center text-center">
                     <div className={`
                       font-medium
                       ${isDayToday ? 'text-primary-custom' : 'text-gray-900'}
                     `}>
-                      {dayName}, {date.getDate()}.{String(date.getMonth() + 1).padStart(2, '0')}.
+                      <span className="sm:hidden">{dayName}</span>
+                      <span className="hidden sm:inline">{dayNameLong}</span>
+                      {`, ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, '0')}.`}
                     </div>
                     {dayJobs.length + dayEvents.length > 0 && (
-                      <div className="text-xs text-gray-500">
+                      <div className="absolute right-0 text-xs text-gray-500">
                         {dayJobs.length + dayEvents.length} Eintrag{dayJobs.length + dayEvents.length > 1 ? 'e' : ''}
                       </div>
                     )}
@@ -1349,7 +1775,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   ))}
                   {dayJobs.length === 0 && dayEvents.length === 0 ? (
                     <div className="text-center py-4 text-gray-400 text-sm">
-                      Keine Aufträge
+                      Keine {terminology.work.plural}
                     </div>
                   ) : (
                     dayJobs.map((job, jobIndex) => {
@@ -1398,7 +1824,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               ${highlightedJobId === job.id ? 'ring-2 ring-red-500 bg-red-100 border-red-500' : ''}
                               transition-all duration-150
                             `}
-                            title={`${job.title} - ${customer?.name || job.customerName} - ${totalHours.toFixed(1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
+                            title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                           >
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
@@ -1410,7 +1836,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   {job.title}
                                 </span>
                                 {job.attachments && job.attachments.length > 0 && (
-                                  <FileText className="h-4 w-4 ml-2 flex-shrink-0 text-gray-400" title="Anhänge vorhanden" />
+                                  <span title="Anhänge vorhanden"><FileText className="h-4 w-4 ml-2 flex-shrink-0 text-gray-400" /></span>
                                 )}
                               </div>
                               <div className="flex items-center text-sm text-gray-600 mb-1">
@@ -1431,7 +1857,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               )}
                               <div className="flex items-center text-sm text-gray-600">
                                 <Clock className="h-4 w-4 mr-2 flex-shrink-0" />
-                                <span>{jobTimeLabel ? `${jobTimeLabel} · ` : ''}{totalHours.toFixed(1)}h</span>
+                                <span>{jobTimeLabel ? `${jobTimeLabel} · ` : ''}{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
                               </div>
                             </div>
                           </div>
@@ -1473,85 +1899,131 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             </div>
           </div>
           <div className="mt-3 text-xs text-gray-500">
-            <p>• Ziehen Sie Aufträge per Drag & Drop, um das Datum zu ändern</p>
-            <p>• Ziehen Sie Aufträge innerhalb eines Tages, um die Reihenfolge zu ändern</p>
-            <p>• Doppelklicken Sie auf einen Auftrag, um ihn zu bearbeiten</p>
-            <p>• Doppelklicken Sie auf das Datum, um einen neuen Auftrag zu erstellen</p>
-            <p>• Abgerechnete Aufträge können nicht verschoben werden</p>
+            <p>• Ziehen Sie {terminology.work.plural} per Drag &amp; Drop, um das Datum zu ändern</p>
+            <p>• Ziehen Sie {terminology.work.plural} innerhalb eines Tages, um die Reihenfolge zu ändern</p>
+            <p>• Doppelklicken Sie auf einen {terminology.work.singular}, um die Übersicht zu öffnen</p>
+            <p>• Doppelklicken Sie auf das Datum, um einen neuen {terminology.work.singular} zu erstellen</p>
+            <p>• Abgerechnete {terminology.work.plural} können nicht verschoben werden</p>
           </div>
         </div>
       </div>
 
-      {/* Vacation entry modal */}
-      {showVacationForm && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4" onClick={(event) => event.target === event.currentTarget && setShowVacationForm(false)}>
-          <form
-            onSubmit={handleVacationSubmit}
+      {/* Job summary modal */}
+      {previewingJob && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setPreviewingJob(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-job-preview-title"
+            className="w-full max-w-xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
           >
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Urlaub eintragen</h3>
-                <p className="mt-1 text-sm text-gray-500">Der Zeitraum wird im Kalender als Abwesenheit angezeigt.</p>
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  {terminology.work.managementLabel}
+                </p>
+                <h2 id="calendar-job-preview-title" className="mt-1 truncate text-lg font-semibold text-gray-900">
+                  {previewingJob.title}
+                </h2>
+                {previewingJob.jobNumber && (
+                  <p className="mt-1 text-sm text-gray-500">{previewingJob.jobNumber}</p>
+                )}
               </div>
-              <button type="button" onClick={() => setShowVacationForm(false)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Schließen">
+              <button
+                type="button"
+                onClick={() => setPreviewingJob(null)}
+                className="shrink-0 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                aria-label={`${terminology.work.singular}-Übersicht schließen`}
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Bezeichnung</label>
-                <input
-                  type="text"
-                  required
-                  value={vacationForm.title}
-                  onChange={(event) => setVacationForm((previous) => ({ ...previous, title: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-                  placeholder="z. B. Sommerurlaub"
-                />
+            <div className="space-y-5 px-5 py-5">
+              <div className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(previewingJob.status)}`}>
+                {getStatusLabel(previewingJob.status)}
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Von</label>
-                  <input
-                    type="date"
-                    required
-                    value={vacationForm.startDate}
-                    onChange={(event) => setVacationForm((previous) => ({ ...previous, startDate: event.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-                  />
+                  <dt className="text-gray-500">{terminology.entity.singular}</dt>
+                  <dd className="mt-1 truncate font-medium text-gray-900">
+                    {customers.find((customer) => customer.id === previewingJob.customerId)?.name || previewingJob.customerName}
+                  </dd>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Bis</label>
-                  <input
-                    type="date"
-                    required
-                    min={vacationForm.startDate}
-                    value={vacationForm.endDate}
-                    onChange={(event) => setVacationForm((previous) => ({ ...previous, endDate: event.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-                  />
+                  <dt className="text-gray-500">Datum</dt>
+                  <dd className="mt-1 font-medium text-gray-900">
+                    {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
+                  </dd>
                 </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Notiz (optional)</label>
-                <textarea
-                  value={vacationForm.notes}
-                  onChange={(event) => setVacationForm((previous) => ({ ...previous, notes: event.target.value }))}
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-                  placeholder="Weitere Informationen"
-                />
-              </div>
+                <div>
+                  <dt className="text-gray-500">Zeit</dt>
+                  <dd className="mt-1 font-medium text-gray-900">
+                    {getJobTimeLabel(previewingJob) || 'Keine Zeit hinterlegt'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Arbeitszeit</dt>
+                  <dd className="mt-1 font-medium text-gray-900">
+                    {formatNumber(calculateTotalHours(previewingJob), locale, company?.numberFormat, 1)} h
+                  </dd>
+                </div>
+                {previewingJob.externalJobNumber && (
+                  <div>
+                    <dt className="text-gray-500">Externe {terminology.work.numberLabel}</dt>
+                    <dd className="mt-1 truncate font-medium text-gray-900">{previewingJob.externalJobNumber}</dd>
+                  </div>
+                )}
+                {previewingJob.location && (
+                  <div>
+                    <dt className="text-gray-500">Ausführungsort</dt>
+                    <dd className="mt-1 truncate font-medium text-gray-900">{previewingJob.location}</dd>
+                  </div>
+                )}
+              </dl>
+
+              {previewingJob.description && (
+                <div className="border-t border-gray-100 pt-4">
+                  <h3 className="text-sm font-medium text-gray-700">Beschreibung</h3>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">
+                    {previewingJob.description}
+                  </p>
+                </div>
+              )}
+
+              {previewingJob.notes && (
+                <div className="border-t border-gray-100 pt-4">
+                  <h3 className="text-sm font-medium text-gray-700">Notizen</h3>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">
+                    {previewingJob.notes}
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowVacationForm(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Abbrechen</button>
-              <button type="submit" className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm text-white hover:bg-primary-custom/90"><Plus className="h-4 w-4" />Eintragen</button>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewingJob(null)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Schließen
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePreviewEdit(previewingJob)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-custom/90"
+              >
+                <Edit className="h-4 w-4" />
+                Bearbeiten
+              </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
@@ -1569,12 +2041,77 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 setEditingJob(null);
                 setSelectedDateForNewJob(null);
               }}
+              onSubmitVacation={handleVacationSubmit}
               onCreateCustomer={() => {
                 setShowCustomerForm(true);
               }}
               onNavigateToCustomers={() => onNavigate && onNavigate('customers')}
               onNavigateToSettings={() => onNavigate && onNavigate('settings')}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Calendar sharing preparation */}
+      {showShareDialog && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowShareDialog(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-share-title"
+            className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Share2 className="h-5 w-5 text-primary-custom" />
+                <h3 id="calendar-share-title" className="text-lg font-semibold text-gray-900">
+                  Kalender teilen
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShareDialog(false)}
+                className="min-h-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Dialog schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="font-medium">Kalender abonnieren</p>
+              <p className="mt-1 text-blue-800">
+                Die Kalenderfreigabe wird vorbereitet. Sobald der persönliche Abonnement-Link eingerichtet ist, kann er hier kopiert oder geteilt werden.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="calendar-subscription-link">
+                Abonnement-Link
+              </label>
+              <input
+                id="calendar-subscription-link"
+                type="text"
+                readOnly
+                disabled
+                value="Nach Einrichtung der Kalenderfreigabe verfügbar"
+                className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm text-gray-400"
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowShareDialog(false)}
+                className="min-h-0 rounded-lg bg-primary-custom px-4 py-2 text-sm text-white transition-colors hover:bg-primary-custom/90"
+              >
+                Schließen
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1595,7 +2132,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Neuer Kunde
+              {terminology.entity.newLabel}
             </h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -1737,7 +2274,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   type="submit"
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
-                  Kunde erstellen
+                  {terminology.entity.createLabel}
                 </button>
               </div>
             </form>

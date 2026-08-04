@@ -1,4 +1,5 @@
-import { InvoiceItem, Invoice, JobMaterial, JobTimeEntry } from '../types';
+import { InvoiceItem, Invoice, JobMaterial, JobTimeEntry, NumberFormat } from '../types';
+import { formatCurrency } from './formatters';
 
 export interface DiscountCalculation {
   subtotal: number;
@@ -180,16 +181,19 @@ export function updateItemWithDiscount(item: InvoiceItem): InvoiceItem {
 export function formatDiscountDisplay(
   discountType?: 'percentage' | 'fixed',
   discountValue?: number,
-  discountAmount?: number
+  discountAmount?: number,
+  locale = 'de-DE',
+  numberFormat?: NumberFormat,
+  currency?: string,
 ): string {
   if (!discountType || !discountValue || discountValue <= 0) {
     return '';
   }
 
   if (discountType === 'percentage') {
-    return `${discountValue}% (${(discountAmount || 0).toFixed(2)}€)`;
+    return `${discountValue}% (${formatCurrency(discountAmount || 0, locale, numberFormat, currency)})`;
   } else {
-    return `${discountValue.toFixed(2)}€`;
+    return formatCurrency(discountValue, locale, numberFormat, currency);
   }
 }
 
@@ -199,7 +203,10 @@ export function formatDiscountDisplay(
 export function validateDiscount(
   discountType?: 'percentage' | 'fixed',
   discountValue?: number,
-  maxAmount?: number
+  maxAmount?: number,
+  locale = 'de-DE',
+  numberFormat?: NumberFormat,
+  currency?: string,
 ): { isValid: boolean; error?: string } {
   if (!discountType || !discountValue) {
     return { isValid: true }; // Kein Rabatt ist gültig
@@ -214,7 +221,7 @@ export function validateDiscount(
   }
 
   if (discountType === 'fixed' && maxAmount && discountValue > maxAmount) {
-    return { isValid: false, error: `Festbetrag kann nicht höher als ${maxAmount.toFixed(2)}€ sein` };
+    return { isValid: false, error: `Festbetrag kann nicht höher als ${formatCurrency(maxAmount, locale, numberFormat, currency)} sein` };
   }
 
   return { isValid: true };

@@ -2,6 +2,8 @@
  * Utility functions for file handling
  */
 
+import logger from './logger';
+
 export interface AttachmentFile {
   id: string;
   file: File;
@@ -48,7 +50,7 @@ export const processAttachments = async (attachments: AttachmentFile[]): Promise
         contentType: attachment.file.type || 'application/octet-stream'
       });
     } catch (error) {
-      logger.error('Fehler beim Verarbeiten des Anhangs:', attachment.name, error);
+      logger.error('Fehler beim Verarbeiten des Anhangs', { fileName: attachment.name, error });
       throw new Error(`Fehler beim Verarbeiten der Datei "${attachment.name}"`);
     }
   }
@@ -107,7 +109,7 @@ export const generateUniqueFileName = (originalName: string, existingNames: stri
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').substring(0, 19);
   
   // Create base name with timestamp
-  let uniqueName = `${nameWithoutExtension}_${timestamp}${extension}`;
+  const uniqueName = `${nameWithoutExtension}_${timestamp}${extension}`;
   
   // If still conflicts, add counter
   let counter = 1;

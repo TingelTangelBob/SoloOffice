@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useCompany } from '../context/CompanyContext';
 
 export function DynamicColors() {
@@ -59,38 +60,57 @@ export function DynamicColors() {
   const primaryMedium = lightenColor(primaryColor, 80);
   const secondaryLight = lightenColor(secondaryColor, 90);
 
+  useEffect(() => {
+    const appShell = document.getElementById('app-shell');
+    if (!appShell) return undefined;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const resolvedTheme = company.themeMode === 'dark'
+        || (company.themeMode !== 'light' && mediaQuery.matches)
+        ? 'dark'
+        : 'light';
+      appShell.dataset.theme = resolvedTheme;
+      appShell.style.colorScheme = resolvedTheme;
+    };
+
+    appShell.style.setProperty('--primary-color', primaryColor);
+    appShell.style.setProperty('--primary-light', primaryLight);
+    appShell.style.setProperty('--primary-medium', primaryMedium);
+    appShell.style.setProperty('--primary-text-color', primaryTextColor);
+    appShell.style.setProperty('--secondary-color', secondaryColor);
+    appShell.style.setProperty('--secondary-light', secondaryLight);
+    appShell.style.setProperty('--secondary-text-color', secondaryTextColor);
+    applyTheme();
+    mediaQuery.addEventListener('change', applyTheme);
+
+    return () => {
+      mediaQuery.removeEventListener('change', applyTheme);
+    };
+  }, [company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, secondaryColor, secondaryLight, secondaryTextColor]);
+
   return (
     <style>
       {`
-        :root {
-          --primary-color: ${primaryColor};
-          --primary-light: ${primaryLight};
-          --primary-medium: ${primaryMedium};
-          --primary-text-color: ${primaryTextColor};
-          --secondary-color: ${secondaryColor};
-          --secondary-light: ${secondaryLight};
-          --secondary-text-color: ${secondaryTextColor};
-        }
-        
         /* Button styles */
-        .btn-primary {
+        #app-shell .btn-primary {
           background-color: var(--primary-color) !important;
           border-color: var(--primary-color) !important;
           color: var(--primary-text-color) !important;
         }
-        .btn-primary:hover {
+        #app-shell .btn-primary:hover {
           background-color: var(--primary-color) !important;
           filter: brightness(0.9) !important;
           border-color: var(--primary-color) !important;
           color: var(--primary-text-color) !important;
         }
         
-        .btn-secondary {
+        #app-shell .btn-secondary {
           background-color: var(--secondary-color) !important;
           border-color: var(--secondary-color) !important;
           color: var(--secondary-text-color) !important;
         }
-        .btn-secondary:hover {
+        #app-shell .btn-secondary:hover {
           background-color: var(--secondary-color) !important;
           filter: brightness(0.9) !important;
           border-color: var(--secondary-color) !important;
@@ -98,73 +118,113 @@ export function DynamicColors() {
         }
         
         /* Focus styles */
-        .focus-primary:focus {
+        #app-shell .focus-primary:focus {
           box-shadow: 0 0 0 2px var(--primary-light), 0 0 0 4px var(--primary-color) !important;
           border-color: var(--primary-color) !important;
         }
         
         /* Text colors */
-        .text-primary-custom {
+        #app-shell .text-primary-custom {
           color: var(--primary-color) !important;
         }
-        .text-secondary-custom {
+        #app-shell .text-secondary-custom {
           color: var(--secondary-color) !important;
         }
         
         /* Background colors */
-        .bg-primary-custom {
+        #app-shell .bg-primary-custom {
           background-color: var(--primary-color) !important;
           color: var(--primary-text-color) !important;
         }
-        .bg-primary-light-custom {
+        #app-shell .bg-primary-light-custom {
           background-color: var(--primary-light) !important;
         }
-        .bg-primary-medium-custom {
+        #app-shell .bg-primary-medium-custom {
           background-color: var(--primary-medium) !important;
         }
-        .bg-secondary-custom {
+        #app-shell .bg-secondary-custom {
           background-color: var(--secondary-color) !important;
           color: var(--secondary-text-color) !important;
         }
 
         /* Toggle track colors */
-        label:has(> input[type="checkbox"]:checked) > div {
+        #app-shell label:has(> input[type="checkbox"]:checked) > div {
           background-color: var(--primary-color) !important;
         }
         
         /* Border colors */
-        .border-primary-custom {
+        #app-shell .border-primary-custom {
           border-color: var(--primary-color) !important;
         }
-        .border-secondary-custom {
+        #app-shell .border-secondary-custom {
           border-color: var(--secondary-color) !important;
         }
         
         /* Navigation active state */
-        .nav-active {
+        #app-shell .nav-active {
           background-color: var(--primary-light) !important;
           color: var(--primary-color) !important;
           border-right: 2px solid var(--primary-color) !important;
         }
         
         /* Loading spinner */
-        .spinner-primary {
+        #app-shell .spinner-primary {
           border-color: var(--primary-light) var(--primary-light) var(--primary-light) var(--primary-color) !important;
         }
         
         /* Status colors - override for primary colored elements */
-        .status-sent {
+        #app-shell .status-sent {
           background-color: var(--primary-light) !important;
           color: var(--primary-color) !important;
         }
         
         /* Links */
-        .link-primary {
+        #app-shell .link-primary {
           color: var(--primary-color) !important;
         }
-        .link-primary:hover {
+        #app-shell .link-primary:hover {
           color: var(--primary-color) !important;
           filter: brightness(0.8) !important;
+        }
+
+        /* Theme overrides stay inside the app shell. */
+        #app-shell[data-theme="dark"] {
+          background-color: #111827 !important;
+          color: #e5e7eb;
+        }
+        #app-shell[data-theme="dark"] .bg-white {
+          background-color: #1f2937 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-gray-50 {
+          background-color: #111827 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-gray-100 {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .text-gray-900,
+        #app-shell[data-theme="dark"] .text-gray-800,
+        #app-shell[data-theme="dark"] .text-gray-700 {
+          color: #f3f4f6 !important;
+        }
+        #app-shell[data-theme="dark"] .text-gray-600,
+        #app-shell[data-theme="dark"] .text-gray-500,
+        #app-shell[data-theme="dark"] .text-gray-400 {
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .border-gray-100,
+        #app-shell[data-theme="dark"] .border-gray-200,
+        #app-shell[data-theme="dark"] .border-gray-300 {
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+        #app-shell[data-theme="dark"] textarea,
+        #app-shell[data-theme="dark"] select {
+          background-color: #1f2937 !important;
+          color: #f3f4f6 !important;
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
+          background-color: #374151 !important;
         }
       `}
     </style>

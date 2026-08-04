@@ -9,6 +9,7 @@ import { PDFOptions } from '../pdfGenerator';
 import logger from '../logger';
 import { escapeXML, formatAmountForXML } from './xmlUtils';
 import { calculateTaxBreakdown, hasOnlyZeroTaxRate } from './taxCalculations';
+import { getEffectivePaymentInformation } from '../paymentInformation';
 
 /**
  * Generate ZUGFeRD XML string
@@ -18,7 +19,9 @@ import { calculateTaxBreakdown, hasOnlyZeroTaxRate } from './taxCalculations';
  */
 export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): string {
   // Use new payment information or fall back to legacy fields
-  const paymentInfo = options.company.paymentInformation;
+  const paymentInfo = getEffectivePaymentInformation(options.company);
+  const currency = escapeXML(options.company.currency || 'EUR');
+  const isCreditNote = invoice.documentType === 'credit_note';
   
   // Generate proper ZUGFeRD 2.1 XML (EN 16931 compliant)
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -35,7 +38,7 @@ export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): strin
   
 	<rsm:ExchangedDocument>
 		<ram:ID>${escapeXML(invoice.invoiceNumber)}</ram:ID>
-		<ram:TypeCode>380</ram:TypeCode>
+		<ram:TypeCode>${isCreditNote ? '381' : '380'}</ram:TypeCode>
 		<ram:IssueDateTime>
 			<udt:DateTimeString format="102">${new Date(invoice.issueDate).toISOString().split('T')[0].replace(/-/g, '')}</udt:DateTimeString>
 		</ram:IssueDateTime>
@@ -49,7 +52,13 @@ export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): strin
         const bankInfo = `${accountHolder} - BIC: ${bic}  IBAN: ${bankAccount}`;
         const reverseChargeNote = hasOnlyZeroTaxRate(invoice.items) ? 'Gemäß § 13b UStG geht die Steuerschuld auf den Leistungsempfänger über' : '';
         
-        return [bankInfo, reverseChargeNote].filter(Boolean).join('\n');
+        return [
+          invoice.referenceInvoiceNumber ? `Bezug zur Rechnung: ${invoice.referenceInvoiceNumber}` : '',
+          invoice.creditNoteReason ? `Grund: ${invoice.creditNoteReason}` : '',
+          invoice.notes || '',
+          bankInfo,
+          reverseChargeNote,
+        ].filter(Boolean).join('\n');
       })()}</ram:Content>
 		</ram:IncludedNote>
 	</rsm:ExchangedDocument>
@@ -134,7 +143,7 @@ export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): strin
 			</ram:ActualDeliverySupplyChainEvent>
 		</ram:ApplicableHeaderTradeDelivery>
 		<ram:ApplicableHeaderTradeSettlement>
-			<ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+			<ram:InvoiceCurrencyCode>${currency}</ram:InvoiceCurrencyCode>
 			<ram:SpecifiedTradeSettlementPaymentMeans>
 				<ram:TypeCode>58</ram:TypeCode>
 				<ram:Information>SEPA credit transfer</ram:Information>
@@ -171,7 +180,7 @@ export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): strin
 					return totalDiscountAmount > 0 ? `<ram:AllowanceTotalAmount>${formatAmountForXML(totalDiscountAmount)}</ram:AllowanceTotalAmount>` : '';
 				})()}
 				<ram:TaxBasisTotalAmount>${formatAmountForXML(invoice.subtotal - (invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0) - (invoice.globalDiscountAmount || 0))}</ram:TaxBasisTotalAmount>
-				<ram:TaxTotalAmount currencyID="EUR">${formatAmountForXML(invoice.taxAmount)}</ram:TaxTotalAmount>
+				<ram:TaxTotalAmount currencyID="${currency}">${formatAmountForXML(invoice.taxAmount)}</ram:TaxTotalAmount>
 				<ram:GrandTotalAmount>${formatAmountForXML(invoice.total)}</ram:GrandTotalAmount>
 				<ram:DuePayableAmount>${formatAmountForXML(invoice.total)}</ram:DuePayableAmount>
 			</ram:SpecifiedTradeSettlementHeaderMonetarySummation>
@@ -198,8 +207,9 @@ export async function embedZUGFeRDXMLIntoPDF(pdfBuffer: ArrayBuffer, invoice: In
     
     const xmlBytes = new TextEncoder().encode(xmlData);
     
-    pdfDoc.setTitle(`Rechnung ${invoice.invoiceNumber}`);
-    pdfDoc.setSubject(`ZUGFeRD invoice ${invoice.invoiceNumber}`);
+    const documentLabel = invoice.documentType === 'credit_note' ? 'Gutschrift' : 'Rechnung';
+    pdfDoc.setTitle(`${documentLabel} ${invoice.invoiceNumber}`);
+    pdfDoc.setSubject(`ZUGFeRD ${documentLabel.toLowerCase()} ${invoice.invoiceNumber}`);
     pdfDoc.setKeywords(['ZUGFeRD', 'invoice', 'electronic invoice', 'EN 16931']);
     pdfDoc.setProducer('SoloOffice');
     pdfDoc.setCreator('SoloOffice');
@@ -222,8 +232,11 @@ export async function embedZUGFeRDXMLIntoPDF(pdfBuffer: ArrayBuffer, invoice: In
     
     return new Blob([pdfBytes], { type: 'application/pdf' });
     
-  } catch (error: any) {
-    logger.error('Error embedding ZUGFeRD XML into PDF:', error.message);
+  } catch (error: unknown) {
+    logger.error(
+      'Error embedding ZUGFeRD XML into PDF:',
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return new Blob([pdfBuffer], { type: 'application/pdf' });
   }
 }

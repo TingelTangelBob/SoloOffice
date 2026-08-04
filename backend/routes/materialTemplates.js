@@ -14,6 +14,7 @@ router.get('/', async (req, res) => {
         description,
         unit_price as "unitPrice",
         unit,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
 // Create a new material template
 router.post('/', async (req, res) => {
   try {
-    const { name, description, unitPrice, unit, isDefault } = req.body;
+    const { name, description, unitPrice, unit, taxRate, isDefault } = req.body;
     
     if (!name || unitPrice === undefined) {
       return res.status(400).json({ error: 'Name und Preis sind erforderlich' });
@@ -44,18 +45,19 @@ router.post('/', async (req, res) => {
     }
     
     const result = await query(`
-      INSERT INTO material_templates (name, description, unit_price, unit, is_default)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO material_templates (name, description, unit_price, unit, tax_rate, is_default)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING 
         id,
         name,
         description,
         unit_price as "unitPrice",
         unit,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
-    `, [name, description || '', unitPrice, unit || 'Stück', isDefault || false]);
+    `, [name, description || '', unitPrice, unit || 'Stück', taxRate ?? 19, isDefault || false]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -68,7 +70,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, unitPrice, unit, isDefault } = req.body;
+    const { name, description, unitPrice, unit, taxRate, isDefault } = req.body;
     
     if (!name || unitPrice === undefined) {
       return res.status(400).json({ error: 'Name und Preis sind erforderlich' });
@@ -83,18 +85,19 @@ router.put('/:id', async (req, res) => {
     
     const result = await query(`
       UPDATE material_templates 
-      SET name = $1, description = $2, unit_price = $3, unit = $4, is_default = $5, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $6
+      SET name = $1, description = $2, unit_price = $3, unit = $4, tax_rate = $5, is_default = $6, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
       RETURNING 
         id,
         name,
         description,
         unit_price as "unitPrice",
         unit,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
-    `, [name, description || '', unitPrice, unit || 'Stück', isDefault || false, id]);
+    `, [name, description || '', unitPrice, unit || 'Stück', taxRate ?? 19, isDefault || false, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Material-Vorlage nicht gefunden' });

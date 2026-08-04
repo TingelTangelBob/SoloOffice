@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Mail, Eye, Receipt, MoreHorizontal } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, Receipt } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -9,12 +9,19 @@ import { InvoiceEditor } from './InvoiceEditor';
 import { ConfirmationModal } from './ConfirmationModal';
 import { EmailSendModal } from './EmailSendModal';
 import { DownloadModal } from './DownloadModal';
-import { DocumentPreview, createInvoiceAttachmentPreviewDocuments, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocuments';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { generateInvoicePDF, downloadBlob } from '../utils/pdfGenerator';
 import { apiService } from '../services/api';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
+import { processAttachments } from '../utils/fileUtils';
 import { PageHeader } from './PageHeader';
+import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { BulkSelectionHeader } from './BulkSelectionHeader';
+import { getTerminology } from '../utils/terminology';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -26,6 +33,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   const { customers, addCustomer } = useCustomers();
   const { invoices, deleteInvoice, updateInvoice } = useInvoices();
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
+  const invoiceRecords = useMemo(
+    () => invoices.filter(invoice => invoice.documentType !== 'credit_note'),
+    [invoices],
+  );
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
@@ -117,12 +129,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   // Check for overdue invoices automatically on every load
   useEffect(() => {
     const checkOverdueInvoices = async () => {
-      if (invoices.length === 0) return;
+      if (invoiceRecords.length === 0) return;
       
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
       
-      const overdueUpdates = invoices
+      const overdueUpdates = invoiceRecords
         .filter(invoice => {
           // Only check sent invoices that are not already overdue or paid
           if (invoice.status !== 'sent') return false;
@@ -149,12 +161,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
     };
 
     // Run overdue check whenever invoices are loaded or updated
-    if (invoices.length > 0) {
+    if (invoiceRecords.length > 0) {
       checkOverdueInvoices();
     }
-  }, [invoices, updateInvoice]);
+  }, [invoiceRecords, updateInvoice]);
 
-  const filteredInvoices = invoices.filter(invoice => {
+  const filteredInvoices = invoiceRecords.filter(invoice => {
     const invoiceNumber = invoice.invoiceNumber || '';
     const customerName = invoice.customerName || '';
     const searchTermLower = searchTerm.toLowerCase();
@@ -375,7 +387,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
     try {
       const customer = customers.find(c => c.id === invoice.customerId);
       if (!customer) {
-        alert('Kundendaten nicht gefunden.');
+        alert(`${terminology.entity.dataLabel} nicht gefunden.`);
         return;
       }      // Download each format with delay
       for (let i = 0; i < formats.length; i++) {
@@ -450,12 +462,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   const handleSendEmail = async (invoice: Invoice) => {
     const customer = customers.find(c => c.id === invoice.customerId);
     if (!customer) {
-      alert('Kundendaten nicht gefunden.');
+      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
       return;
     }
 
     if (!customer.email) {
-      alert('Kunde hat keine E-Mail-Adresse hinterlegt.');
+      alert(terminology.entity.emailMissingMessage);
       return;
     }
 
@@ -494,7 +506,6 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
             let processedAttachments: { name: string; content: string; contentType: string }[] = [];
             if (attachments && attachments.length > 0) {
               try {
-                const { processAttachments } = await import('../utils/fileUtils');
                 processedAttachments = await processAttachments(attachments);
               } catch (error) {
                 logger.error('Error processing attachments:', error);
@@ -534,7 +545,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
             
             // Send email
             const result = await apiService.sendInvoiceEmailMultiFormat(
-              customer.email, 
+              [customer.email],
               invoiceFormats,
               invoice, 
               customText,
@@ -591,7 +602,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
       // Generate PDFs for each format and send emails
       const customer = customers.find(c => c.id === emailModal.invoice!.customerId);
       if (!customer) {
-        alert('Kundendaten nicht gefunden.');
+      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
         return;
       }
 
@@ -599,8 +610,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
       let processedAttachments: { name: string; content: string; contentType: string }[] = [];
       if (attachments && attachments.length > 0) {
         try {
-          const { processAttachments } = await import('../utils/fileUtils');
-          processedAttachments = await processAttachments(attachments);
+        processedAttachments = await processAttachments(attachments);
         } catch (error) {
           logger.error('Fehler beim Verarbeiten der Anhänge:', error);
           alert('Fehler beim Verarbeiten der Anhänge');
@@ -760,7 +770,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   const handleBulkEmail = async () => {
     if (selectedInvoiceIds.length === 0) return;
     
-    const selectedInvoices = invoices.filter(inv => selectedInvoiceIds.includes(inv.id));
+    const selectedInvoices = invoiceRecords.filter(inv => selectedInvoiceIds.includes(inv.id));
     
     // Open email modal in bulk mode for all selected invoices
     setEmailModal({
@@ -775,7 +785,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   const handleBulkDownload = async () => {
     if (selectedInvoiceIds.length === 0) return;
     
-    const selectedInvoices = invoices.filter(inv => selectedInvoiceIds.includes(inv.id));
+    const selectedInvoices = invoiceRecords.filter(inv => selectedInvoiceIds.includes(inv.id));
     
     // Open download modal in bulk mode
     setDownloadModal({
@@ -812,79 +822,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">Neue Rechnung</span>
-          <span className="sm:hidden">Neu</span>
         </button>
         </PageHeader>
       </div>
 
-      {/* Bulk Operations Bar */}
-      {selectedInvoiceIds.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center">
-              <span className="text-sm text-blue-800 font-medium">
-                {selectedInvoiceIds.length} Rechnung(en) ausgewählt
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              {/* Bulk Status Change */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-blue-800">Status ändern:</span>
-                <select
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleBulkStatusChange(e.target.value as Invoice['status']);
-                      e.target.value = '';
-                    }
-                  }}
-                  disabled={isBulkOperation}
-                  className="text-xs px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500"
-                  defaultValue=""
-                >
-                  <option value="">Wählen...</option>
-                  <option value="draft">Entwurf</option>
-                  <option value="sent">Versendet</option>
-                  <option value="paid">Bezahlt</option>
-                  <option value="overdue">Überfällig</option>
-                </select>
-              </div>
-              
-              {/* Bulk Email */}
-              <button
-                onClick={handleBulkEmail}
-                disabled={isBulkOperation}
-                className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors flex items-center text-sm disabled:bg-gray-400"
-              >
-                <Mail className="h-4 w-4 mr-1" />
-                E-Mail versenden
-              </button>
-              
-              {/* Bulk Download */}
-              <button
-                onClick={handleBulkDownload}
-                disabled={isBulkOperation}
-                className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors flex items-center text-sm disabled:bg-gray-400"
-              >
-                <Download className="h-4 w-4 mr-1" />
-                Herunterladen
-              </button>
-              
-              {/* Clear Selection */}
-              <button
-                onClick={() => setSelectedInvoiceIds([])}
-                className="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors text-sm"
-              >
-                Auswahl aufheben
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+      <ResponsiveFilterBar
+        hasActiveFilters={filterStatus !== 'all'}
+        search={(
+          <div className="relative">
             <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
             <input
               type="text"
@@ -894,10 +840,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <select
+        )}
+        filters={(
+          <FilterSelect
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">Alle Status</option>
             <option value="not-paid">Alle außer bezahlt</option>
@@ -905,41 +853,81 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
             <option value="sent">Versendet</option>
             <option value="paid">Bezahlt</option>
             <option value="overdue">Überfällig</option>
-          </select>
-        </div>
-      </div>
+          </FilterSelect>
+        )}
+      />
 
       {/* Invoice List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <BulkSelectionHeader
+          itemLabel="Rechnung"
+          itemLabelPlural="Rechnungen"
+          visibleCount={filteredInvoices.length}
+          selectedCount={selectedInvoiceIds.length}
+          allSelected={filteredInvoices.length > 0 && filteredInvoices.every(invoice => selectedInvoiceIds.includes(invoice.id))}
+          onSelectAll={handleSelectAll}
+        >
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs text-gray-600 sm:inline">Status ändern:</span>
+            <select
+              onChange={(e) => {
+                if (e.target.value) {
+                  handleBulkStatusChange(e.target.value as Invoice['status']);
+                  e.target.value = '';
+                }
+              }}
+              disabled={isBulkOperation}
+              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-blue-500"
+              defaultValue=""
+              aria-label="Status ändern"
+            >
+              <option value="">Wählen...</option>
+              <option value="draft">Entwurf</option>
+              <option value="sent">Versendet</option>
+              <option value="paid">Bezahlt</option>
+              <option value="overdue">Überfällig</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={handleBulkEmail}
+            disabled={isBulkOperation}
+            className="action-icon-button bulk-action-icon-button action-icon-blue disabled:cursor-not-allowed disabled:opacity-50"
+            title="Per E-Mail versenden"
+            aria-label="Per E-Mail versenden"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkDownload}
+            disabled={isBulkOperation}
+            className="action-icon-button bulk-action-icon-button action-icon-green disabled:cursor-not-allowed disabled:opacity-50"
+            title="Herunterladen"
+            aria-label="Herunterladen"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+        </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
-          <div className="min-w-full">
-            <table className="w-full min-w-[920px]">
+        <div className="hidden w-full min-w-0 max-w-full overflow-hidden lg:block">
+            <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">
-                  <input
-                    type="checkbox"
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    checked={
-                      filteredInvoices.length > 0 &&
-                      filteredInvoices.every(invoice => selectedInvoiceIds.includes(invoice.id))
-                    }
-                    className="custom-checkbox"
-                    title="Alle auswählen"
-                  />
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                  Rechnungsnummer
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Kunde
+                  <span className="sr-only">Auswahl</span>
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Datum
                 </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                  Rechnungsnr.
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {terminology.entity.singular}
+                </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Fälligkeitsdatum
+                  Fällig am
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Betrag
@@ -947,14 +935,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                   Status
                 </th>
-                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredInvoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-gray-50">
+                <tr key={invoice.id} className="group hover:bg-gray-50">
                   <td className="px-3 py-4 w-16">
                     <input
                       type="checkbox"
@@ -964,27 +952,27 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                       title="Rechnung auswählen"
                     />
                   </td>
+                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatDate(invoice.issueDate, locale, company?.dateFormat)}
+                  </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {invoice.invoiceNumber}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {invoice.customerName}
+                  <td className="max-w-0 px-3 py-4 text-sm text-gray-900">
+                    <span className="block truncate">{invoice.customerName}</span>
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(invoice.issueDate).toLocaleDateString('de-DE')}
+                    {formatDate(invoice.dueDate, locale, company?.dateFormat)}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(invoice.dueDate).toLocaleDateString('de-DE')}
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(invoice.total, locale)}
+                    {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
                     </span>
                   </td>
-                  <td className="relative w-14 px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-56 2xl:px-3">
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 2xl:w-56 2xl:px-3">
                     <div className="hidden 2xl:flex flex-wrap gap-1">
                       {invoice.status === 'draft' && (
                         <button
@@ -1044,55 +1032,27 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <details className="relative hidden lg:block 2xl:hidden">
-                      <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </summary>
-                      <div className="absolute right-0 z-20 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-                        {invoice.status === 'draft' && <button type="button" onClick={() => handleSendEmail(invoice)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Per E-Mail versenden</button>}
-                        {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <button type="button" onClick={() => handleStatusChange(invoice.id, 'paid')} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Als bezahlt markieren</button>}
-                        <button type="button" onClick={() => handleOpenEditor(invoice)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Bearbeiten</button>
-                        <button type="button" onClick={() => handlePreview(invoice)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Vorschau anzeigen</button>
-                        <button type="button" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Herunterladen</button>
-                        <button type="button" onClick={() => handleDelete(invoice)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">LÃ¶schen</button>
-                      </div>
-                    </details>
+                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
+                        {invoice.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>}
+                        {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(invoice.id, 'paid')}>Als bezahlt markieren</ActionMenuItem>}
+                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
+                        <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
+                        <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
+                    </ActionMenu>
                   </td>
                 </tr>
               ))}
             </tbody>
             </table>
-          </div>
         </div>
 
         {/* Mobile Card View */}
         <div className="lg:hidden">
-          {/* Mobile Select All */}
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  checked={
-                    filteredInvoices.length > 0 &&
-                    filteredInvoices.every(invoice => selectedInvoiceIds.includes(invoice.id))
-                  }
-                  className="custom-checkbox"
-                  title="Alle auswählen"
-                />
-                <span className="ml-2 text-sm text-gray-600">Alle auswählen</span>
-              </div>
-              <span className="text-xs text-gray-500">
-                {filteredInvoices.length} Rechnung(en)
-              </span>
-            </div>
-          </div>
-          
           {filteredInvoices.map((invoice) => (
             <div key={invoice.id} className="p-4 border-b border-gray-200 last:border-b-0">
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0 pt-1">
+              <div className="grid grid-cols-[auto,minmax(0,1fr),auto,auto] items-start gap-x-3">
+                <div className="pt-1">
                   <input
                     type="checkbox"
                     checked={selectedInvoiceIds.includes(invoice.id)}
@@ -1102,100 +1062,52 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                   />
                 </div>
                 
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">{invoice.invoiceNumber}</h3>
-                      <p className="text-sm text-gray-600 truncate">{invoice.customerName}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(invoice.issueDate).toLocaleDateString('de-DE')} - Fällig: {new Date(invoice.dueDate).toLocaleDateString('de-DE')}
-                      </p>
-                    </div>
-                    <div className="text-right ml-4">
-                      <p className="text-sm font-medium text-gray-900">{formatCurrency(invoice.total, locale)}</p>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
-                        {getStatusLabel(invoice.status)}
-                      </span>
-                    </div>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">{invoice.invoiceNumber}</h3>
+                    <span className={`inline-flex shrink-0 px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
+                      {getStatusLabel(invoice.status)}
+                    </span>
                   </div>
+                  <p className="mt-1 truncate text-sm text-gray-600">{invoice.customerName}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatDate(invoice.issueDate, locale, company?.dateFormat)} - Fällig: {formatDate(invoice.dueDate, locale, company?.dateFormat)}
+                  </p>
+                </div>
+                <div className="self-center whitespace-nowrap text-right">
+                  <p className="text-sm font-medium text-gray-900">{formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}</p>
+                </div>
 
                   {/* Action buttons for mobile */}
-                  <details className="relative mt-3">
-                    <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </summary>
-                    <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-                  <div className="flex flex-wrap gap-2">
+                  <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue">
+                  <div className="flex flex-col gap-0.5">
                     {invoice.status === 'draft' && (
-                      <button
-                        type="button"
-                        className="action-icon-button action-icon-blue"
-                        title="Per E-Mail versenden"
-                        onClick={() => handleSendEmail(invoice)}
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
+                      <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>
                     )}
                     {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && (
-                      <button
-                        type="button"
-                        className="action-icon-button action-icon-green"
-                        title="Als bezahlt markieren"
-                        onClick={() => handleStatusChange(invoice.id, 'paid')}
-                      >
-                        <Check className="h-4 w-4" />
-                      </button>
+                      <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(invoice.id, 'paid')}>Als bezahlt markieren</ActionMenuItem>
                     )}
                     
-                    <div className="flex space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditor(invoice)}
-                        className="action-icon-button action-icon-indigo"
-                        title="Bearbeiten"
-                      >
-                        <Edit className="h-3 w-3" />
-                      </button>
+                    <>
+                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                       
-                      <button
-                        type="button"
-                        onClick={() => handlePreview(invoice)}
-                        className="action-icon-button action-icon-blue"
-                        title="Vorschau anzeigen"
-                      >
-                        <Eye className="h-3 w-3" />
-                      </button>
+                      <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                       
-                      <button 
-                        type="button"
-                        onClick={() => handleExport(invoice)}
-                        disabled={isExporting === invoice.id}
-                        className="action-icon-button action-icon-green"
-                        title="Herunterladen"
-                      >
-                        {isExporting === invoice.id ? (
-                          <div className="animate-spin h-3 w-3 border-2 border-green-600 border-t-transparent rounded-full"></div>
-                        ) : (
-                          <Download className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(invoice)}
-                        className="action-icon-button action-icon-red"
-                        title="Löschen"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                      <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                      <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
+                    </>
                   </div>
-                    </div>
-                  </details>
-                </div>
+                  </ActionMenu>
               </div>
             </div>
           ))}
         </div>
+
+        {filteredInvoices.length > 0 && (
+          <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-right text-xs text-gray-500">
+            {filteredInvoices.length} {filteredInvoices.length === 1 ? 'Rechnung' : 'Rechnungen'}
+          </div>
+        )}
 
         {filteredInvoices.length === 0 && (
           <div className="text-center py-8">
@@ -1253,7 +1165,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-xl p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Neuer Kunde
+              {terminology.entity.newLabel}
             </h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -1364,7 +1276,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-xl hover:bg-primary-custom/90 transition-all duration-300 hover:scale-105"
                 >
-                  Kunde erstellen
+                  {terminology.entity.createLabel}
                 </button>
                 <button
                   type="button"

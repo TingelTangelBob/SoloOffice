@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
 import { 
   BarChart3, 
@@ -14,16 +14,22 @@ import {
 } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
+import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import { 
+import {
   InvoiceJournalResponse, 
   ReportingStatistics,
   InvoiceJournalEntry,
   CustomerStats 
 } from '../types';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { getTerminology } from '../utils/terminology';
 
 export function ReportingManagement() {
   const { customers } = useCustomers();
+  const { company } = useCompany();
+  const terminology = getTerminology(company?.terminologyProfile);
+  const formatAmount = (amount: number) => formatCurrency(amount, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
   
   // State for invoice journal
   const [journalData, setJournalData] = useState<InvoiceJournalResponse | null>(null);
@@ -43,13 +49,7 @@ export function ReportingManagement() {
   // Error handling
   const [error, setError] = useState<string>('');
 
-  // Load initial data
-  useEffect(() => {
-    loadJournalData();
-    loadStatistics();
-  }, []);
-
-  const loadJournalData = async () => {
+  const loadJournalData = useCallback(async () => {
     setJournalLoading(true);
     setError('');
     try {
@@ -65,9 +65,9 @@ export function ReportingManagement() {
     } finally {
       setJournalLoading(false);
     }
-  };
+  }, [endDate, selectedCustomer, startDate]);
 
-  const loadStatistics = async () => {
+  const loadStatistics = useCallback(async () => {
     setStatisticsLoading(true);
     setError('');
     try {
@@ -79,18 +79,24 @@ export function ReportingManagement() {
     } finally {
       setStatisticsLoading(false);
     }
-  };
+  }, [selectedYear]);
+
+  // Load initial data and refresh when the selected filters change.
+  useEffect(() => {
+    void loadJournalData();
+    void loadStatistics();
+  }, [loadJournalData, loadStatistics]);
 
   const handleGeneratePDF = async () => {
     setGeneratingPDF(true);
     try {
       let title = 'Rechnungsjournal';
       if (startDate && endDate) {
-        title += ` vom ${new Date(startDate).toLocaleDateString('de-DE')} bis ${new Date(endDate).toLocaleDateString('de-DE')}`;
+        title += ` vom ${formatDate(startDate, company?.locale || 'de-DE', company?.dateFormat)} bis ${formatDate(endDate, company?.locale || 'de-DE', company?.dateFormat)}`;
       } else if (startDate) {
-        title += ` ab ${new Date(startDate).toLocaleDateString('de-DE')}`;
+        title += ` ab ${formatDate(startDate, company?.locale || 'de-DE', company?.dateFormat)}`;
       } else if (endDate) {
-        title += ` bis ${new Date(endDate).toLocaleDateString('de-DE')}`;
+        title += ` bis ${formatDate(endDate, company?.locale || 'de-DE', company?.dateFormat)}`;
       }
 
       await apiService.generateInvoiceJournalPDF({
@@ -136,12 +142,14 @@ export function ReportingManagement() {
         end = new Date(today.getFullYear(), today.getMonth(), 0);
         break;
       case 'thisQuarter':
-        const currentQuarter = Math.floor(today.getMonth() / 3);
-        // Erster Tag des aktuellen Quartals
-        start = new Date(today.getFullYear(), currentQuarter * 3, 1);
-        // Letzter Tag des aktuellen Quartals
-        end = new Date(today.getFullYear(), (currentQuarter + 1) * 3, 0);
-        break;
+        {
+          const currentQuarter = Math.floor(today.getMonth() / 3);
+          // Erster Tag des aktuellen Quartals
+          start = new Date(today.getFullYear(), currentQuarter * 3, 1);
+          // Letzter Tag des aktuellen Quartals
+          end = new Date(today.getFullYear(), (currentQuarter + 1) * 3, 0);
+          break;
+        }
       case 'thisYear':
         // 1. Januar des aktuellen Jahres
         start = new Date(today.getFullYear(), 0, 1);
@@ -253,10 +261,7 @@ export function ReportingManagement() {
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Gesamtumsatz</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {(statistics.yearOverview?.totalAmount || 0).toLocaleString('de-DE', { 
-                    style: 'currency', 
-                    currency: 'EUR' 
-                  })}
+                  {formatAmount(statistics.yearOverview?.totalAmount || 0)}
                 </p>
               </div>
             </div>
@@ -270,10 +275,7 @@ export function ReportingManagement() {
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Bezahlt</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {(statistics.yearOverview?.paidAmount || 0).toLocaleString('de-DE', { 
-                    style: 'currency', 
-                    currency: 'EUR' 
-                  })}
+                  {formatAmount(statistics.yearOverview?.paidAmount || 0)}
                 </p>
               </div>
             </div>
@@ -287,10 +289,7 @@ export function ReportingManagement() {
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Überfällig</p>
                 <p className="text-2xl font-bold text-red-600">
-                  {(statistics.yearOverview?.overdueAmount || 0).toLocaleString('de-DE', { 
-                    style: 'currency', 
-                    currency: 'EUR' 
-                  })}
+                  {formatAmount(statistics.yearOverview?.overdueAmount || 0)}
                 </p>
               </div>
             </div>
@@ -399,14 +398,14 @@ export function ReportingManagement() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Kunde
+                    {terminology.entity.singular}
                   </label>
                   <select
                     value={selectedCustomer}
                     onChange={(e) => setSelectedCustomer(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   >
-                    <option value="">Alle Kunden</option>
+                    <option value="">Alle {terminology.entity.plural}</option>
                     {customers.map((customer) => (
                       <option key={customer.id} value={customer.id}>
                         {customer.name}
@@ -448,26 +447,20 @@ export function ReportingManagement() {
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-700">
-                      {journalData.summary.subtotalSum.toLocaleString('de-DE', { 
-                        style: 'currency', 
-                        currency: 'EUR' 
-                      })}
+                      {formatAmount(journalData.summary.subtotalSum)}
                     </div>
                     <div className="text-blue-600">Nettosumme</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-700">
-                      {journalData.summary.totalAmount.toLocaleString('de-DE', { 
-                        style: 'currency', 
-                        currency: 'EUR' 
-                      })}
+                      {formatAmount(journalData.summary.totalAmount)}
                     </div>
                     <div className="text-blue-600">Bruttosumme</div>
                   </div>
                 </div>
                 {journalData.dateRange.startDate && journalData.dateRange.endDate && (
                   <div className="mt-3 text-center text-xs text-blue-600">
-                    Zeitraum: {new Date(journalData.dateRange.startDate).toLocaleDateString('de-DE')} - {new Date(journalData.dateRange.endDate).toLocaleDateString('de-DE')}
+                    Zeitraum: {formatDate(journalData.dateRange.startDate, company?.locale || 'de-DE', company?.dateFormat)} - {formatDate(journalData.dateRange.endDate, company?.locale || 'de-DE', company?.dateFormat)}
                   </div>
                 )}
               </div>
@@ -479,13 +472,14 @@ export function ReportingManagement() {
                 <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
               </div>
             ) : journalData?.invoices.length ? (
-              <div className="overflow-x-auto">
+              <>
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-2 font-medium text-gray-700">Rechnung</th>
                       <th className="text-left py-3 px-2 font-medium text-gray-700">Datum</th>
-                      <th className="text-left py-3 px-2 font-medium text-gray-700">Kunde</th>
+                      <th className="text-left py-3 px-2 font-medium text-gray-700">Rechnung</th>
+                      <th className="text-left py-3 px-2 font-medium text-gray-700">{terminology.entity.singular}</th>
                       <th className="text-right py-3 px-2 font-medium text-gray-700">Betrag</th>
                       <th className="text-center py-3 px-2 font-medium text-gray-700">Status</th>
                     </tr>
@@ -493,23 +487,20 @@ export function ReportingManagement() {
                   <tbody>
                     {journalData.invoices.map((invoice: InvoiceJournalEntry) => (
                       <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-2 font-mono text-xs">
-                          {invoice.invoiceNumber || 'N/A'}
-                        </td>
                         <td className="py-3 px-2 text-xs">
                           {invoice.issueDate ? 
-                            new Date(invoice.issueDate).toLocaleDateString('de-DE') : 
+                            formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) :
                             'N/A'
                           }
+                        </td>
+                        <td className="py-3 px-2 font-mono text-xs">
+                          {invoice.invoiceNumber || 'N/A'}
                         </td>
                         <td className="py-3 px-2 text-xs max-w-32 truncate" title={invoice.customerName}>
                           {invoice.customerName || 'N/A'}
                         </td>
                         <td className="py-3 px-2 text-xs text-right font-medium">
-                          {(invoice.total || 0).toLocaleString('de-DE', { 
-                            style: 'currency', 
-                            currency: 'EUR' 
-                          })}
+                          {formatAmount(invoice.total || 0)}
                         </td>
                         <td className="py-3 px-2 text-center">
                           <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
@@ -521,6 +512,28 @@ export function ReportingManagement() {
                   </tbody>
                 </table>
               </div>
+              <div className="divide-y divide-gray-100 lg:hidden">
+                {journalData.invoices.map((invoice: InvoiceJournalEntry) => (
+                  <div key={invoice.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm text-gray-900">{invoice.invoiceNumber || 'N/A'}</p>
+                        <p className="truncate text-sm text-gray-600">{invoice.customerName || 'N/A'}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-semibold text-gray-900">
+                        {formatAmount(invoice.total || 0)}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500">
+                      <span>{invoice.issueDate ? formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) : 'N/A'}</span>
+                      <span className={`inline-block rounded-full px-2 py-1 font-medium ${getStatusColor(invoice.status)}`}>
+                        {getStatusText(invoice.status)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              </>
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
@@ -592,11 +605,7 @@ export function ReportingManagement() {
                           ></div>
                           {monthData && (
                             <span className="absolute right-2 top-0 h-4 flex items-center text-xs text-white font-medium">
-                              {monthData.totalSum.toLocaleString('de-DE', { 
-                                style: 'currency', 
-                                currency: 'EUR',
-                                maximumFractionDigits: 0
-                              })}
+                              {formatAmount(monthData.totalSum)}
                             </span>
                           )}
                         </div>
@@ -617,7 +626,7 @@ export function ReportingManagement() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
             <div className="flex items-center mb-4">
               <Users className="h-5 w-5 text-primary-custom mr-2" />
-              <h2 className="text-lg font-semibold text-gray-900">Top Kunden {selectedYear}</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Top {terminology.entity.plural} {selectedYear}</h2>
             </div>
 
             {statistics?.topCustomers.length ? (
@@ -637,16 +646,10 @@ export function ReportingManagement() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-gray-900">
-                        {customer.totalRevenue.toLocaleString('de-DE', { 
-                          style: 'currency', 
-                          currency: 'EUR' 
-                        })}
+                        {formatAmount(customer.totalRevenue)}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Ø {customer.avgInvoiceAmount.toLocaleString('de-DE', { 
-                          style: 'currency', 
-                          currency: 'EUR' 
-                        })}
+                        Ø {formatAmount(customer.avgInvoiceAmount)}
                       </p>
                     </div>
                   </div>
@@ -655,7 +658,7 @@ export function ReportingManagement() {
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>Keine Kundendaten verfügbar</p>
+                <p>Keine {terminology.entity.dataLabel} verfügbar</p>
               </div>
             )}
           </div>

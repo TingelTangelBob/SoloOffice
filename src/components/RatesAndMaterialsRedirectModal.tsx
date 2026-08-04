@@ -1,4 +1,6 @@
 import { X, User, Settings, DollarSign, Package } from 'lucide-react';
+import { useCompany } from '../context/CompanyContext';
+import { getTerminology } from '../utils/terminology';
 
 interface RatesAndMaterialsRedirectModalProps {
   isOpen: boolean;
@@ -15,6 +17,8 @@ export function RatesAndMaterialsRedirectModal({
   onNavigateToSettings,
   type
 }: RatesAndMaterialsRedirectModalProps) {
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   if (!isOpen) return null;
 
   const typeLabel = type === 'hourlyRates' ? 'Stundensätze' : 'Materialien';
@@ -59,10 +63,10 @@ export function RatesAndMaterialsRedirectModal({
               <User className="h-6 w-6 text-blue-600" />
               <div>
                 <h4 className="font-medium text-blue-900 group-hover:text-blue-800">
-                  Kundenspezifisch
+                  {terminology.entity.specificLabel.charAt(0).toUpperCase() + terminology.entity.specificLabel.slice(1)}
                 </h4>
                 <p className="text-sm text-blue-700">
-                  {typeLabel} für einzelne Kunden verwalten
+                  {typeLabel} für einzelne {terminology.entity.plural} verwalten
                 </p>
               </div>
             </div>
@@ -79,7 +83,7 @@ export function RatesAndMaterialsRedirectModal({
               <Settings className="h-6 w-6 text-gray-600" />
               <div>
                 <h4 className="font-medium text-gray-900 group-hover:text-gray-800">
-                  Allgemein
+                  {terminology.organization.dataLabel}
                 </h4>
                 <p className="text-sm text-gray-700">
                   Standard-{typeLabel.toLowerCase()} in den Einstellungen verwalten

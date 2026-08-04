@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { X, Download, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { Invoice } from '../types';
 import { formatFileSize, getFileIcon } from '../utils/fileUtils';
+import { useCompany } from '../context/CompanyContext';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { getTerminology } from '../utils/terminology';
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -22,6 +25,8 @@ export function DownloadModal({
   isBulkMode = false,
   bulkCount = 0
 }: DownloadModalProps) {
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const [selectedFormats, setSelectedFormats] = useState<('zugferd' | 'xrechnung')[]>(['zugferd']);
   const [markAsSent, setMarkAsSent] = useState<boolean>(true);
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
@@ -41,10 +46,6 @@ export function DownloadModal({
       // Mindestens ein Format muss ausgewählt sein
       return newFormats.length === 0 ? ['zugferd'] : newFormats;
     });
-  };
-
-  const isFormatDisabled = (format: 'zugferd' | 'xrechnung') => {
-    return false; // Keine Beschränkungen mehr
   };
 
   const formatOptions = [
@@ -101,8 +102,8 @@ export function DownloadModal({
             ) : (
               <p className="text-sm text-primary-custom">
                 <strong>Rechnung:</strong> {invoice.invoiceNumber}<br/>
-                <strong>Kunde:</strong> {invoice.customerName}<br/>
-                <strong>Betrag:</strong> €{invoice.total.toFixed(2)}<br/>
+                <strong>{terminology.entity.singular}:</strong> {invoice.customerName}<br/>
+                <strong>Betrag:</strong> {formatCurrency(invoice.total, company.locale, company.numberFormat, company.currency)}<br/>
                 <strong>Status:</strong> {invoice.status === 'draft' ? 'Entwurf' : 
                                        invoice.status === 'sent' ? 'Versendet' :
                                        invoice.status === 'paid' ? 'Bezahlt' : 
@@ -121,7 +122,7 @@ export function DownloadModal({
               {formatOptions.map((option) => {
                 const IconComponent = option.icon;
                 const isSelected = selectedFormats.includes(option.value);
-                const isDisabled = isFormatDisabled(option.value);
+                const isDisabled = false;
                 
                 return (
                   <label
@@ -233,7 +234,7 @@ export function DownloadModal({
                           {attachment.name}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatFileSize(attachment.size)} • {new Date(attachment.uploadedAt).toLocaleDateString('de-DE')}
+                          {formatFileSize(attachment.size)} • {formatDate(attachment.uploadedAt, company.locale, company.dateFormat)}
                         </p>
                       </div>
                     </div>

@@ -3,36 +3,45 @@ import { findInvoiceById } from '../queries/invoiceQueries.js';
 import logger from '../utils/logger.js';
 import { validateDiscountFields } from '../utils/validation.js';
 
-export async function generateInvoiceNumber(issueDate) {
+export async function generateInvoiceNumber(issueDate, documentType = 'invoice') {
   const client = await pool.connect();
   try {
     // Use the year from the issue date instead of current system year
     const invoiceYear = new Date(issueDate).getFullYear();
-    const yearPattern = `RE-${invoiceYear}-%`;
-    const lastInvoiceResult = await client.query('SELECT invoice_number FROM invoices WHERE invoice_number LIKE $1 ORDER BY created_at DESC LIMIT 1', [yearPattern]);
+    const prefix = documentType === 'credit_note' ? 'GS' : 'RE';
+    const yearPattern = `${prefix}-${invoiceYear}-%`;
+    const lastInvoiceResult = await client.query(`
+      SELECT invoice_number
+      FROM invoices
+      WHERE invoice_number LIKE $1
+      ORDER BY NULLIF(SUBSTRING(invoice_number FROM '[0-9]+$'), '')::INTEGER DESC NULLS LAST
+      LIMIT 1
+    `, [yearPattern]);
 
-    // Get year-specific invoice start number, fallback to 1 if not defined
+    // Get the year-specific start number, falling back to the company default.
     const yearlyStartResult = await client.query('SELECT start_number FROM yearly_invoice_start_numbers WHERE year = $1', [invoiceYear]);
-    const yearStartNumber = yearlyStartResult.rows.length > 0 ? yearlyStartResult.rows[0].start_number : 1;
+    const companyStartResult = await client.query('SELECT invoice_start_number FROM company WHERE id = 1');
+    const companyStartNumber = companyStartResult.rows[0]?.invoice_start_number || 1;
+    const yearStartNumber = yearlyStartResult.rows.length > 0 ? yearlyStartResult.rows[0].start_number : companyStartNumber;
 
     let invoiceNumber;
     if (lastInvoiceResult.rows.length === 0) {
       // No invoices for this year found - start with year-specific start number
-      invoiceNumber = `RE-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
+      invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
     } else {
       const lastInvoiceNumber = lastInvoiceResult.rows[0].invoice_number;
-      if (lastInvoiceNumber && lastInvoiceNumber.startsWith(`RE-${invoiceYear}-`)) {
-        const numberPart = lastInvoiceNumber.substring(`RE-${invoiceYear}-`.length); // Remove "RE-YYYY-" prefix
+      if (lastInvoiceNumber && lastInvoiceNumber.startsWith(`${prefix}-${invoiceYear}-`)) {
+        const numberPart = lastInvoiceNumber.substring(`${prefix}-${invoiceYear}-`.length); // Remove prefix
         const lastNumber = parseInt(numberPart);
         if (!isNaN(lastNumber)) {
           // Continue from last number, but respect year start number as minimum
           const nextNumber = Math.max(lastNumber + 1, yearStartNumber);
-          invoiceNumber = `RE-${invoiceYear}-${String(nextNumber).padStart(3, '0')}`;
+          invoiceNumber = `${prefix}-${invoiceYear}-${String(nextNumber).padStart(3, '0')}`;
         } else {
-          invoiceNumber = `RE-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
+          invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
         }
       } else {
-        invoiceNumber = `RE-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
+        invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
       }
     }
 
@@ -61,10 +70,20 @@ export async function createInvoice(data) {
     globalDiscountType = null,
     globalDiscountValue = null,
     globalDiscountAmount = null,
+    documentType = 'invoice',
+    referenceInvoiceId = null,
+    creditNoteReason = null,
+    recurringInvoiceId = null,
   } = data;
 
+  if (!['invoice', 'credit_note'].includes(documentType)) {
+    const err = new Error('Invalid document type');
+    err.statusCode = 400;
+    throw err;
+  }
+
   // Generate invoice number before opening transaction (generateInvoiceNumber uses its own connection)
-  const invoiceNumber = await generateInvoiceNumber(issueDate);
+  const invoiceNumber = await generateInvoiceNumber(issueDate, documentType);
 
   const client = await pool.connect();
 
@@ -86,12 +105,15 @@ export async function createInvoice(data) {
     const taxBreakdown = {};
 
     const processedItems = items.map(item => {
+      const sign = documentType === 'credit_note' ? -1 : 1;
+      const unitPrice = Math.abs(Number(item.unitPrice || 0)) * sign;
+      const discountAmount = Math.abs(Number(item.discountAmount || 0)) * sign;
       // Berechne Item-Total vor Rabatt
-      const itemTotalBeforeDiscount = item.quantity * item.unitPrice;
+      const itemTotalBeforeDiscount = item.quantity * unitPrice;
       subtotalBeforeDiscounts += itemTotalBeforeDiscount;
 
       // Berechne Item-Rabatt
-      const itemDiscountAmount = item.discountAmount || 0;
+      const itemDiscountAmount = discountAmount;
       totalItemDiscounts += itemDiscountAmount;
 
       // Item-Total nach Item-Rabatt
@@ -106,6 +128,8 @@ export async function createInvoice(data) {
 
       return {
         ...item,
+        unitPrice,
+        discountAmount,
         total: itemTotalAfterDiscount // Item-Total nach Rabatt (ohne Steuer)
       };
     });
@@ -114,7 +138,9 @@ export async function createInvoice(data) {
     const subtotalAfterItemDiscounts = subtotalBeforeDiscounts - totalItemDiscounts;
 
     // Global-Rabatt wird auf die bereits rabattierte Subtotal angewendet
-    const globalDiscAmount = globalDiscountAmount || 0;
+    const globalDiscAmount = documentType === 'credit_note'
+      ? -Math.abs(Number(globalDiscountAmount || 0))
+      : (globalDiscountAmount || 0);
     const subtotalAfterAllDiscounts = subtotalAfterItemDiscounts - globalDiscAmount;
 
     // Berechne Steuer proportional auf die rabattierte Subtotal
@@ -140,10 +166,10 @@ export async function createInvoice(data) {
 
     // Insert invoice
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
-    `, [invoiceNumber, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscountAmount]);
+    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscAmount]);
 
     const invoiceId = invoiceResult.rows[0].id;
 
@@ -277,6 +303,9 @@ export async function updateInvoice(id, data) {
       globalDiscountType: updateData.globalDiscountType ?? current.global_discount_type,
       globalDiscountValue: updateData.globalDiscountValue ?? current.global_discount_value,
       globalDiscountAmount: updateData.globalDiscountAmount ?? current.global_discount_amount,
+      referenceInvoiceId: updateData.referenceInvoiceId !== undefined ? updateData.referenceInvoiceId : current.reference_invoice_id,
+      creditNoteReason: updateData.creditNoteReason !== undefined ? updateData.creditNoteReason : current.credit_note_reason,
+      recurringInvoiceId: updateData.recurringInvoiceId !== undefined ? updateData.recurringInvoiceId : current.recurring_invoice_id,
       items: updateData.items // items are handled separately
     };
 
@@ -285,8 +314,9 @@ export async function updateInvoice(id, data) {
       UPDATE invoices
       SET invoice_number = $1, customer_id = $2, customer_name = $3, issue_date = $4,
           due_date = $5, subtotal = $6, tax_amount = $7, total = $8, status = $9, notes = $10,
-          global_discount_type = $11, global_discount_value = $12, global_discount_amount = $13
-      WHERE id = $14
+          global_discount_type = $11, global_discount_value = $12, global_discount_amount = $13,
+          reference_invoice_id = $14, credit_note_reason = $15, recurring_invoice_id = $16
+      WHERE id = $17
       RETURNING *
     `, [
       mergedData.invoiceNumber,
@@ -302,6 +332,9 @@ export async function updateInvoice(id, data) {
       mergedData.globalDiscountType,
       mergedData.globalDiscountValue,
       mergedData.globalDiscountAmount,
+      mergedData.referenceInvoiceId,
+      mergedData.creditNoteReason,
+      mergedData.recurringInvoiceId,
       id
     ]);
 

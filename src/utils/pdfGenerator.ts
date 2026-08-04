@@ -5,8 +5,8 @@
 
 import jsPDF from 'jspdf';
 import logger from './logger';
-import { Invoice, Company, Customer, JobEntry } from '../types';
-import { formatCurrency } from './formatters';
+import { Invoice, Company, Customer, JobEntry, Quote } from '../types';
+import { formatCurrency, formatDate, formatTime } from './formatters';
 
 // Import modular components
 import { getColorConfiguration } from './pdf/colorUtils';
@@ -27,6 +27,12 @@ import {
 import type { PDFContext, PageMargins } from './pdf/pdfComponents';
 import { generateXRechnungXML } from './pdf/xrechnungGenerator';
 import { embedZUGFeRDXMLIntoPDF } from './pdf/zugferdGenerator';
+import { resolveDocumentTemplate, getReminderTemplateText } from './documentTemplateProfiles';
+import { getEffectivePaymentInformation } from './paymentInformation';
+import { getTerminology } from './terminology';
+
+const DOCUMENT_PRIMARY_COLOR = '#2563eb';
+const DOCUMENT_SECONDARY_COLOR = '#64748b';
 
 // Export types for external use
 export interface PDFOptions {
@@ -72,16 +78,25 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const locale = options.company.locale || 'de-DE';
-  
+  const terminology = getTerminology(options.company.terminologyProfile);
+  const template = resolveDocumentTemplate(options.company, 'invoice');
+  const isCreditNote = invoice.documentType === 'credit_note';
+  const documentTitle = isCreditNote ? 'GUTSCHRIFT' : 'RECHNUNG';
+  const documentNumberLabel = isCreditNote ? 'Gutschrift-Nr.:' : 'Rechnungs-Nr.:';
+  const documentNotes = [
+    invoice.referenceInvoiceNumber ? `Bezug zur Rechnung: ${invoice.referenceInvoiceNumber}` : '',
+    invoice.creditNoteReason ? `Grund: ${invoice.creditNoteReason}` : '',
+    invoice.notes || '',
+  ].filter(Boolean).join('\n');
+
   // Colors configuration
-  const primaryColor = options.company.primaryColor || '#2563eb';
-  const secondaryColor = options.company.secondaryColor || '#64748b';
+  const primaryColor = template.accentColor || DOCUMENT_PRIMARY_COLOR;
+  const secondaryColor = DOCUMENT_SECONDARY_COLOR;
   const colors = getColorConfiguration(primaryColor, secondaryColor);
   const { primaryRgb, secondaryRgb, darkText, grayText } = colors;
   
   const margins: PageMargins = { top: 15, bottom: 25, left: 20, right: 20 };
   let yPosition = margins.top;
-  let currentPage = 1;
 
   // Create PDF context for shared components
   const context: PDFContext = {
@@ -92,13 +107,13 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     colors,
     company: options.company,
     customer: options.customer,
-    locale
+    locale,
+    template,
   };
 
   // Helper to check page break and handle new pages
   const handlePageBreak = async (requiredSpace: number, minimumSpace: number = 30): Promise<boolean> => {
     const result = await checkPageBreak(context, yPosition, requiredSpace, minimumSpace, async () => {
-      currentPage++;
       return await addInvoiceHeader();
     });
     
@@ -116,13 +131,13 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     const issueDate = new Date(invoice.issueDate);
     const dueDate = new Date(invoice.dueDate);
     const daysDifference = Math.ceil((dueDate.getTime() - issueDate.getTime()) / (1000 * 3600 * 24));
-    const dueDateDisplay = daysDifference <= 0 ? 'sofort' : new Date(invoice.dueDate).toLocaleDateString(locale);
+    const dueDateDisplay = daysDifference <= 0 ? 'sofort' : formatDate(invoice.dueDate, locale, options.company.dateFormat);
 
     const metadataBox = {
-      title: 'RECHNUNG',
+      title: documentTitle,
       fields: [
-        { label: 'Rechnungs-Nr.:', value: invoice.invoiceNumber },
-        { label: 'Datum:', value: new Date(invoice.issueDate).toLocaleDateString(locale) },
+        { label: documentNumberLabel, value: invoice.invoiceNumber },
+        { label: 'Datum:', value: formatDate(invoice.issueDate, locale, options.company.dateFormat) },
         { label: 'Fällig am:', value: dueDateDisplay }
       ]
     };
@@ -133,6 +148,16 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   // Add first page header
   yPosition = await addInvoiceHeader();
   resetFont(pdf, darkText);
+
+  if (template.introText?.trim()) {
+    const introLines = pdf.splitTextToSize(template.introText.trim(), pageWidth - 40);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(grayText);
+    pdf.text(introLines, margins.left, yPosition);
+    yPosition += introLines.length * 4.5 + 7;
+    resetFont(pdf, darkText);
+  }
 
   // === ITEMS TABLE ===
   const showDiscounts = options.company.discountsEnabled !== false && checkHasDiscounts(invoice.items);
@@ -155,7 +180,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     { label: 'Gesamt', x: 170 }
   ];
 
-  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
 
   // Table rows
   pdf.setFont('helvetica', 'normal');
@@ -169,7 +194,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     
     // Add job number if available
     if (item.jobNumber) {
-      description = `${description} (Auftrag: ${item.jobNumber})`;
+      description = `${description} (${terminology.work.singular}: ${item.jobNumber})`;
     }
     
     const splitDesc = pdf.splitTextToSize(description, 52);
@@ -178,7 +203,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     // Check for page break
     if (await handlePageBreak(totalRowHeight + 5)) {
       // Re-add table header on new page
-      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
       pdf.setFont('helvetica', 'normal');
     }
     
@@ -196,24 +221,24 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     
     const discountAmount = item.discountAmount || 0;
     if (showDiscounts) {
-      pdf.text(formatCurrency(item.unitPrice, locale), 115, yPosition);
+      pdf.text(formatCurrency(item.unitPrice, locale, options.company.numberFormat, options.company.currency), 115, yPosition);
       if (discountAmount > 0) {
         if (item.discountType === 'percentage') {
           pdf.text(`${item.discountValue}%`, 135, yPosition);
         } else {
-          pdf.text(formatCurrency(item.discountValue || 0, locale), 135, yPosition);
+          pdf.text(formatCurrency(item.discountValue || 0, locale, options.company.numberFormat, options.company.currency), 135, yPosition);
         }
       } else {
         pdf.text('-', 135, yPosition);
       }
       pdf.text(`${item.taxRate}%`, 155, yPosition);
     } else {
-      pdf.text(formatCurrency(item.unitPrice, locale), 120, yPosition);
+      pdf.text(formatCurrency(item.unitPrice, locale, options.company.numberFormat, options.company.currency), 120, yPosition);
       pdf.text(`${item.taxRate}%`, 150, yPosition);
     }
     
     const itemTotal = (item.quantity * item.unitPrice) - discountAmount;
-    pdf.text(formatCurrency(itemTotal, locale), 170, yPosition);
+    pdf.text(formatCurrency(itemTotal, locale, options.company.numberFormat, options.company.currency), 170, yPosition);
     
     yPosition += 4.5;
     
@@ -253,7 +278,6 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   const availableSpaceForTotals = pageHeight - yPosition - margins.bottom;
   if (totalTotalsSpace > availableSpaceForTotals && availableSpaceForTotals < 80) {
     pdf.addPage();
-    currentPage++;
     yPosition = await addInvoiceHeader();
     resetFont(pdf, darkText);
   }
@@ -273,14 +297,14 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
   pdf.text('Zwischensumme:', totalsLabelX, yPosition);
   pdf.setTextColor(darkText);
-  pdf.text(formatCurrency(invoice.subtotal, locale), totalsStartX, yPosition);
+  pdf.text(formatCurrency(invoice.subtotal, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
   yPosition += 7;
   
   // Item discounts
   if (itemDiscountAmount > 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Artikelrabatte:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(itemDiscountAmount, locale)}`, totalsStartX, yPosition);
+    pdf.text(`-${formatCurrency(itemDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -288,7 +312,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   if (globalDiscountAmount > 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Gesamtrabatt:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(globalDiscountAmount, locale)}`, totalsStartX, yPosition);
+    pdf.text(`-${formatCurrency(globalDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -298,7 +322,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     pdf.text('Nettobetrag:', totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
     const discountedSubtotal = invoice.subtotal - itemDiscountAmount - globalDiscountAmount;
-    pdf.text(formatCurrency(discountedSubtotal, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(discountedSubtotal, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -312,7 +336,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text(`MwSt. (${rate}%):`, totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(breakdown.taxAmount, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(breakdown.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -321,7 +345,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text('MwSt. gesamt:', totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(invoice.taxAmount, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(invoice.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -330,7 +354,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text('Gesamtbetrag:', totalsLabelX, yPosition);
-  pdf.text(formatCurrency(invoice.total, locale), totalsStartX, yPosition);
+  pdf.text(formatCurrency(invoice.total, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
   
   resetFont(pdf, darkText);
   yPosition = totalsNotesStartY + totalsBoxHeight;
@@ -362,24 +386,25 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   let notesHeight = 0;
   let paymentInfoHeight = 0;
   
-  if (invoice.notes) {
+  if (documentNotes) {
     const notesWidth = totalsLabelX - 35;
-    const splitNotes = pdf.splitTextToSize(invoice.notes, notesWidth);
+    const splitNotes = pdf.splitTextToSize(documentNotes, notesWidth);
     notesHeight = 15 + (splitNotes.length * 4.5);
   }
   
   // Check for payment information
-  const paymentInfo = options.company.paymentInformation;
-  const bankAccount = paymentInfo?.bankAccount || options.company.bankAccount;
-  const bic = paymentInfo?.bic || options.company.bic;
-  const accountHolder = paymentInfo?.accountHolder || options.company.name;
+  const paymentInfo = getEffectivePaymentInformation(options.company);
+  const bankAccount = paymentInfo.bankAccount;
+  const bic = paymentInfo.bic;
+  const accountHolder = paymentInfo.accountHolder || options.company.name;
   const bankName = paymentInfo?.bankName;
+  const paymentTerms = template.paymentTerms || paymentInfo.paymentTerms;
   
-  if (bankAccount) {
+  if (template.showPaymentInformation && bankAccount) {
     paymentInfoHeight = 35;
     if (bankName) paymentInfoHeight += 5;
-    if (paymentInfo?.paymentTerms) {
-      const splitTerms = pdf.splitTextToSize(paymentInfo.paymentTerms, pageWidth - 40);
+    if (paymentTerms) {
+      const splitTerms = pdf.splitTextToSize(paymentTerms, pageWidth - 40);
       paymentInfoHeight += splitTerms.length * 4;
     }
   }
@@ -391,7 +416,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   let notesY = totalsNotesStartY + 5;
   
   // Notes (left side)
-  if (invoice.notes) {
+  if (documentNotes) {
     pdf.setFontSize(10);
     pdf.setTextColor(darkText);
     pdf.setFont('helvetica', 'bold');
@@ -401,14 +426,14 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(9);
     pdf.setTextColor(grayText);
-    const splitNotes = pdf.splitTextToSize(invoice.notes, totalsLabelX - 35);
+    const splitNotes = pdf.splitTextToSize(documentNotes, totalsLabelX - 35);
     pdf.text(splitNotes, 20, notesY);
     
     resetFont(pdf, darkText);
   }
   
   // Payment information (left side, below notes or totals)
-  if (bankAccount) {
+  if (template.showPaymentInformation && bankAccount) {
     yPosition = Math.max(notesStartY + 10, yPosition);
     
     // Check for immediate payment
@@ -455,22 +480,34 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     }
     pdf.text(`Verwendungszweck: ${invoice.invoiceNumber}`, 20, yPosition);
     
-    if (paymentInfo?.paymentTerms) {
+    if (paymentTerms) {
       yPosition += 6;
       pdf.setFontSize(8);
       pdf.setTextColor(grayText);
-      const splitTerms = pdf.splitTextToSize(paymentInfo.paymentTerms, pageWidth - 40);
+      const splitTerms = pdf.splitTextToSize(paymentTerms, pageWidth - 40);
       pdf.text(splitTerms, 20, yPosition);
     }
     
     resetFont(pdf, darkText);
   }
 
+  if (template.closingText?.trim()) {
+    await handlePageBreak(14, 20);
+    yPosition += 8;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(grayText);
+    pdf.text(pdf.splitTextToSize(template.closingText.trim(), pageWidth - 40), margins.left, yPosition);
+    resetFont(pdf, darkText);
+  }
+
   // === ADD FOOTERS TO ALL PAGES ===
-  const pageCount = (pdf as any).getNumberOfPages();
-  for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-    pdf.setPage(pageNum);
-    addPDFFooter(context, pageNum, pageCount);
+  const pageCount = pdf.getNumberOfPages();
+  if (template.showFooter) {
+    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+      pdf.setPage(pageNum);
+      addPDFFooter(context, pageNum, pageCount);
+    }
   }
 
   // === EMBED ZUGFERD XML ===
@@ -485,15 +522,16 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const locale = options.company.locale || 'de-DE';
+  const terminology = getTerminology(options.company.terminologyProfile);
+  const template = resolveDocumentTemplate(options.company, 'orderConfirmation');
   
-  const primaryColor = options.company.primaryColor || '#2563eb';
-  const secondaryColor = options.company.secondaryColor || '#64748b';
+  const primaryColor = template.accentColor || DOCUMENT_PRIMARY_COLOR;
+  const secondaryColor = DOCUMENT_SECONDARY_COLOR;
   const colors = getColorConfiguration(primaryColor, secondaryColor);
   const { primaryRgb, secondaryRgb, darkText, grayText } = colors;
   
   const margins: PageMargins = { top: 15, bottom: 25, left: 20, right: 20 };
   let yPosition = margins.top;
-  let currentPage = 1;
 
   const context: PDFContext = {
     pdf,
@@ -503,12 +541,12 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     colors,
     company: options.company,
     customer: options.customer,
-    locale
+    locale,
+    template,
   };
 
   const handlePageBreak = async (requiredSpace: number, minimumSpace: number = 30): Promise<boolean> => {
     const result = await checkPageBreak(context, yPosition, requiredSpace, minimumSpace, async () => {
-      currentPage++;
       return await addJobHeader();
     });
     
@@ -522,10 +560,10 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
 
   const addJobHeader = async (): Promise<number> => {
     const metadataBox = {
-      title: 'AUFTRAGSBESTÄTIGUNG',
+      title: terminology.work.confirmationLabel.toUpperCase(),
       fields: [
-        { label: 'Auftrags-Nr.:', value: job.jobNumber },
-        { label: 'Datum:', value: new Date(job.date).toLocaleDateString(locale) },
+        { label: terminology.work.numberShortLabel, value: job.jobNumber },
+        { label: 'Datum:', value: formatDate(job.date, locale, options.company.dateFormat) },
         { label: 'Status:', value: job.status === 'completed' ? 'Abgeschlossen' : 
                                       job.status === 'in-progress' ? 'In Bearbeitung' : 'Offen' }
       ]
@@ -542,7 +580,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(darkText);
-    pdf.text('Auftragsbeschreibung:', 20, yPosition);
+    pdf.text(`${terminology.work.descriptionLabel}:`, 20, yPosition);
     yPosition += 6;
     
     pdf.setFont('helvetica', 'normal');
@@ -555,7 +593,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(darkText);
-      pdf.text('Auftragsbeschreibung:', 20, yPosition);
+      pdf.text(`${terminology.work.descriptionLabel}:`, 20, yPosition);
       yPosition += 6;
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
@@ -585,7 +623,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     { label: 'Gesamt', x: 170 }
   ];
 
-  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
 
   let positionIndex = 1;
 
@@ -600,7 +638,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     const rowHeight = splitDesc.length * 4.5 + 5.5;
     
     if (await handlePageBreak(rowHeight + 5)) {
-      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
     }
     
     if (positionIndex % 2 === 0) {
@@ -616,13 +654,13 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     pdf.text(positionIndex.toString(), 25, yPosition);
     pdf.text(splitDesc[0], 40, yPosition);
     pdf.text(`${entry.hoursWorked} Std.`, 95, yPosition);
-    pdf.text(formatCurrency(entry.hourlyRate, locale), 125, yPosition);
+    pdf.text(formatCurrency(entry.hourlyRate, locale, options.company.numberFormat, options.company.currency), 125, yPosition);
     
     const taxRate = options.company.isSmallBusiness ? 0 : (entry.taxRate != null ? entry.taxRate : 19);
     pdf.text(`${taxRate}%`, 155, yPosition);
     
     const entryTotal = entry.hoursWorked * entry.hourlyRate;
-    pdf.text(formatCurrency(entryTotal, locale), 170, yPosition);
+    pdf.text(formatCurrency(entryTotal, locale, options.company.numberFormat, options.company.currency), 170, yPosition);
     
     yPosition += 4.5;
     
@@ -643,7 +681,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
       const rowHeight = splitDesc.length * 4.5 + 5.5;
       
       if (await handlePageBreak(rowHeight + 5)) {
-        yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+        yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
       }
       
       if (positionIndex % 2 === 0) {
@@ -658,13 +696,13 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
       pdf.text(positionIndex.toString(), 25, yPosition);
       pdf.text(splitDesc[0], 40, yPosition);
       pdf.text(material.quantity.toString(), 95, yPosition);
-      pdf.text(formatCurrency(material.unitPrice, locale), 125, yPosition);
+      pdf.text(formatCurrency(material.unitPrice, locale, options.company.numberFormat, options.company.currency), 125, yPosition);
       
       const taxRate = options.company.isSmallBusiness ? 0 : (material.taxRate != null ? material.taxRate : 19);
       pdf.text(`${taxRate}%`, 155, yPosition);
       
       const materialTotal = material.quantity * material.unitPrice;
-      pdf.text(formatCurrency(materialTotal, locale), 170, yPosition);
+      pdf.text(formatCurrency(materialTotal, locale, options.company.numberFormat, options.company.currency), 170, yPosition);
       
       yPosition += 4.5;
       
@@ -715,7 +753,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
   pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
   pdf.text('Nettobetrag:', totalsLabelX, yPosition);
   pdf.setTextColor(darkText);
-  pdf.text(formatCurrency(subtotal, locale), totalsValueX, yPosition, { align: 'right' });
+  pdf.text(formatCurrency(subtotal, locale, options.company.numberFormat, options.company.currency), totalsValueX, yPosition, { align: 'right' });
   yPosition += 6;
   
   for (const rate of taxRates) {
@@ -723,7 +761,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text(`MwSt. (${rate}%):`, totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(breakdown.taxAmount, locale), totalsValueX, yPosition, { align: 'right' });
+    pdf.text(formatCurrency(breakdown.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsValueX, yPosition, { align: 'right' });
     yPosition += 6;
   }
   
@@ -731,7 +769,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text('MwSt. gesamt:', totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(totalTaxAmount, locale), totalsValueX, yPosition, { align: 'right' });
+    pdf.text(formatCurrency(totalTaxAmount, locale, options.company.numberFormat, options.company.currency), totalsValueX, yPosition, { align: 'right' });
     yPosition += 6;
   }
   
@@ -739,7 +777,7 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text('Gesamtbetrag:', totalsLabelX, yPosition);
-  pdf.text(formatCurrency(total, locale), totalsValueX, yPosition, { align: 'right' });
+  pdf.text(formatCurrency(total, locale, options.company.numberFormat, options.company.currency), totalsValueX, yPosition, { align: 'right' });
   
   resetFont(pdf, darkText);
 
@@ -808,22 +846,16 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     pdf.setFontSize(10);
     pdf.setTextColor(darkText);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Kundenunterschrift:', margins.left, yPosition);
+    pdf.text(`${terminology.entity.signatureLabel}:`, margins.left, yPosition);
     yPosition += 6;
     
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(9);
     pdf.setTextColor(grayText);
-    pdf.text(`Kunde: ${job.signature.customerName}`, margins.left, yPosition);
+    pdf.text(`${terminology.entity.singular}: ${job.signature.customerName}`, margins.left, yPosition);
     yPosition += 4;
     
-    const signatureDate = new Date(job.signature.signedAt).toLocaleDateString(locale, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const signatureDate = `${formatDate(job.signature.signedAt, locale, options.company.dateFormat)} ${formatTime(job.signature.signedAt, locale, options.company.timeFormat)}`;
     pdf.text(`Unterschrieben am: ${signatureDate}`, margins.left, yPosition);
     yPosition += 6;
     
@@ -858,10 +890,12 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
   }
 
   // Add footers to all pages
-  const totalPages = (pdf as any).getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    pdf.setPage(i);
-    addPDFFooter(context, i, undefined); // Job PDFs show single page number
+  const totalPages = pdf.getNumberOfPages();
+  if (template.showFooter) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      addPDFFooter(context, i, undefined); // Job PDFs show single page number
+    }
   }
   
   return pdf.output('blob');
@@ -870,15 +904,16 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
 /**
  * Generate Quote PDF
  */
-export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Promise<Blob> {
+export async function generateQuotePDF(quote: Quote, options: QuotePDFOptions): Promise<Blob> {
   const pdf = new jsPDF();
   
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const locale = options.company.locale || 'de-DE';
+  const template = resolveDocumentTemplate(options.company, 'quote');
   
-  const primaryColor = options.company.primaryColor || '#2563eb';
-  const secondaryColor = options.company.secondaryColor || '#64748b';
+  const primaryColor = template.accentColor || DOCUMENT_PRIMARY_COLOR;
+  const secondaryColor = DOCUMENT_SECONDARY_COLOR;
   const colors = getColorConfiguration(primaryColor, secondaryColor);
   const { primaryRgb, secondaryRgb, darkText, grayText } = colors;
   
@@ -893,7 +928,8 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     colors,
     company: options.company,
     customer: options.customer,
-    locale
+    locale,
+    template,
   };
 
   // Add quote-specific header
@@ -902,8 +938,8 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
       title: 'ANGEBOT',
       fields: [
         { label: 'Angebots-Nr.:', value: quote.quoteNumber },
-        { label: 'Datum:', value: new Date(quote.issueDate).toLocaleDateString(locale) },
-        { label: 'Gültig bis:', value: new Date(quote.validUntil).toLocaleDateString(locale) }
+        { label: 'Datum:', value: formatDate(quote.issueDate, locale, options.company.dateFormat) },
+        { label: 'Gültig bis:', value: formatDate(quote.validUntil, locale, options.company.dateFormat) }
       ]
     };
 
@@ -927,20 +963,13 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
   yPosition = await addQuoteHeader();
   resetFont(pdf, darkText);
 
-  // === QUOTE DESCRIPTION ===
-  if (quote.description) {
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(darkText);
-    pdf.text('Angebotsbeschreibung:', 20, yPosition);
-    yPosition += 6;
-    
+  if (template.introText?.trim()) {
+    const introLines = pdf.splitTextToSize(template.introText.trim(), pageWidth - 40);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(9);
     pdf.setTextColor(grayText);
-    const splitDesc = pdf.splitTextToSize(quote.description, pageWidth - 40);
-    pdf.text(splitDesc, 20, yPosition);
-    yPosition += splitDesc.length * 4.5 + 10;
+    pdf.text(introLines, margins.left, yPosition);
+    yPosition += introLines.length * 4.5 + 7;
     resetFont(pdf, darkText);
   }
 
@@ -964,7 +993,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     { label: 'Gesamt', x: 170 }
   ];
 
-  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+  yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
@@ -979,7 +1008,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     const totalRowHeight = splitDesc.length * 4.5 + 5.5;
     
     if (await handlePageBreak(totalRowHeight + 5)) {
-      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText);
+      yPosition = drawTableHeader(pdf, yPosition, pageWidth, colors, tableColumns, darkText, template.tableStyle, primaryRgb);
       pdf.setFont('helvetica', 'normal');
     }
     
@@ -996,24 +1025,24 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     
     const discountAmount = item.discountAmount || 0;
     if (showDiscounts) {
-      pdf.text(formatCurrency(item.unitPrice, locale), 115, yPosition);
+      pdf.text(formatCurrency(item.unitPrice, locale, options.company.numberFormat, options.company.currency), 115, yPosition);
       if (discountAmount > 0) {
         if (item.discountType === 'percentage') {
           pdf.text(`${item.discountValue}%`, 135, yPosition);
         } else {
-          pdf.text(formatCurrency(item.discountValue || 0, locale), 135, yPosition);
+          pdf.text(formatCurrency(item.discountValue || 0, locale, options.company.numberFormat, options.company.currency), 135, yPosition);
         }
       } else {
         pdf.text('-', 135, yPosition);
       }
       pdf.text(`${item.taxRate}%`, 155, yPosition);
     } else {
-      pdf.text(formatCurrency(item.unitPrice, locale), 120, yPosition);
+      pdf.text(formatCurrency(item.unitPrice, locale, options.company.numberFormat, options.company.currency), 120, yPosition);
       pdf.text(`${item.taxRate}%`, 150, yPosition);
     }
     
     const itemTotal = (item.quantity * item.unitPrice) - discountAmount;
-    pdf.text(formatCurrency(itemTotal, locale), 170, yPosition);
+    pdf.text(formatCurrency(itemTotal, locale, options.company.numberFormat, options.company.currency), 170, yPosition);
     
     yPosition += 4.5;
     
@@ -1034,7 +1063,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
   const numberOfTaxRates = Object.keys(taxBreakdownData).filter(rate => Number(rate) > 0).length;
   const showTotalTaxLine = numberOfTaxRates > 1;
   
-  const itemDiscountAmount = quote.items?.reduce((sum: number, item: any) => sum + (item.discountAmount || 0), 0) || 0;
+  const itemDiscountAmount = quote.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0;
   const globalDiscountAmount = quote.globalDiscountAmount || 0;
   const hasDiscountData = itemDiscountAmount > 0 || globalDiscountAmount > 0;
   
@@ -1067,20 +1096,20 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
   pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
   pdf.text('Zwischensumme:', totalsLabelX, yPosition);
   pdf.setTextColor(darkText);
-  pdf.text(formatCurrency(quote.subtotal, locale), totalsStartX, yPosition);
+  pdf.text(formatCurrency(quote.subtotal, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
   yPosition += 7;
   
   if (itemDiscountAmount > 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Artikelrabatte:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(itemDiscountAmount, locale)}`, totalsStartX, yPosition);
+    pdf.text(`-${formatCurrency(itemDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
     yPosition += 7;
   }
   
   if (globalDiscountAmount > 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Gesamtrabatt:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(globalDiscountAmount, locale)}`, totalsStartX, yPosition);
+    pdf.text(`-${formatCurrency(globalDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -1089,7 +1118,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     pdf.text('Nettobetrag:', totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
     const discountedSubtotal = quote.subtotal - itemDiscountAmount - globalDiscountAmount;
-    pdf.text(formatCurrency(discountedSubtotal, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(discountedSubtotal, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -1102,7 +1131,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text(`MwSt. (${rate}%):`, totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(breakdown.taxAmount, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(breakdown.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -1110,7 +1139,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
     pdf.text('MwSt. gesamt:', totalsLabelX, yPosition);
     pdf.setTextColor(darkText);
-    pdf.text(formatCurrency(quote.taxAmount, locale), totalsStartX, yPosition);
+    pdf.text(formatCurrency(quote.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -1118,7 +1147,7 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text('Gesamtbetrag:', totalsLabelX, yPosition);
-  pdf.text(formatCurrency(quote.total, locale), totalsStartX, yPosition);
+  pdf.text(formatCurrency(quote.total, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
   
   resetFont(pdf, darkText);
   yPosition = totalsNotesStartY + totalsBoxHeight;
@@ -1163,10 +1192,27 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     resetFont(pdf, darkText);
   }
 
+  if (template.paymentTerms?.trim() || template.closingText?.trim()) {
+    await handlePageBreak(24, 20);
+    yPosition += 8;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(grayText);
+    if (template.paymentTerms?.trim()) {
+      pdf.text(pdf.splitTextToSize(template.paymentTerms.trim(), pageWidth - 40), margins.left, yPosition);
+      yPosition += 8;
+    }
+    if (template.closingText?.trim()) {
+      pdf.text(pdf.splitTextToSize(template.closingText.trim(), pageWidth - 40), margins.left, yPosition);
+    }
+    resetFont(pdf, darkText);
+  }
+
   // Add footers to all pages
-  const pageCount = (pdf as any).getNumberOfPages();
-  for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-    pdf.setPage(pageNum);
+  const pageCount = pdf.getNumberOfPages();
+  if (template.showFooter) {
+    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+      pdf.setPage(pageNum);
     
     const footerY = pageHeight - margins.bottom;
     
@@ -1196,8 +1242,9 @@ export async function generateQuotePDF(quote: any, options: QuotePDFOptions): Pr
     pdf.text(footerContact, 20, footerY);
     
     // Page number if multiple pages
-    if (pageCount > 1) {
-      pdf.text(`Seite ${pageNum} von ${pageCount}`, pageWidth - 40, footerY + 8);
+      if (pageCount > 1) {
+        pdf.text(`Seite ${pageNum} von ${pageCount}`, pageWidth - 40, footerY + 8);
+      }
     }
   }
   
@@ -1218,9 +1265,10 @@ export async function generateReminderPDF(
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const locale = options.company.locale || 'de-DE';
+  const template = resolveDocumentTemplate(options.company, 'reminder');
   
-  const primaryColor = options.company.primaryColor || '#2563eb';
-  const secondaryColor = options.company.secondaryColor || '#64748b';
+  const primaryColor = template.accentColor || DOCUMENT_PRIMARY_COLOR;
+  const secondaryColor = DOCUMENT_SECONDARY_COLOR;
   const colors = getColorConfiguration(primaryColor, secondaryColor);
   const { primaryRgb, darkText, grayText } = colors;
   
@@ -1235,8 +1283,11 @@ export async function generateReminderPDF(
     colors,
     company: options.company,
     customer: options.customer,
-    locale
+    locale,
+    template,
   };
+
+  const selectedReminderText = getReminderTemplateText(template, stage, reminderText);
 
   // Add reminder-specific header
   const addReminderHeader = async (): Promise<number> => {
@@ -1246,8 +1297,8 @@ export async function generateReminderPDF(
       title: stageText,
       fields: [
         { label: 'Rechnung-Nr.:', value: invoice.invoiceNumber },
-        { label: 'Mahndatum:', value: new Date().toLocaleDateString(locale) },
-        { label: 'Fällig war:', value: new Date(invoice.dueDate).toLocaleDateString(locale) }
+        { label: 'Mahndatum:', value: formatDate(new Date(), locale, options.company.dateFormat) },
+        { label: 'Fällig war:', value: formatDate(invoice.dueDate, locale, options.company.dateFormat) }
       ]
     };
 
@@ -1282,8 +1333,8 @@ export async function generateReminderPDF(
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
-  const invoiceDateText = `vom ${new Date(invoice.issueDate).toLocaleDateString(locale)}`;
-  const dueDateText = `fällig am ${new Date(invoice.dueDate).toLocaleDateString(locale)}`;
+  const invoiceDateText = `vom ${formatDate(invoice.issueDate, locale, options.company.dateFormat)}`;
+  const dueDateText = `fällig am ${formatDate(invoice.dueDate, locale, options.company.dateFormat)}`;
   const rightBoxText = `${invoiceDateText}, ${dueDateText}`;
   const rightBoxTextWidth = pdf.getTextWidth(rightBoxText);
   pdf.text(rightBoxText, pageWidth - 25 - rightBoxTextWidth, yPos);
@@ -1295,7 +1346,7 @@ export async function generateReminderPDF(
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
   
-  const reminderLines = pdf.splitTextToSize(reminderText, pageWidth - 40);
+  const reminderLines = pdf.splitTextToSize(selectedReminderText, pageWidth - 40);
   reminderLines.forEach((line: string) => {
     if (yPos > pageHeight - 80) {
       pdf.addPage();
@@ -1329,7 +1380,7 @@ export async function generateReminderPDF(
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(60, 60, 60);
   pdf.text('Rechnungsbetrag:', colLabelX, yPos);
-  const originalAmount = formatCurrency(invoice.total, locale);
+  const originalAmount = formatCurrency(invoice.total, locale, options.company.numberFormat, options.company.currency);
   const originalAmountWidth = pdf.getTextWidth(originalAmount);
   pdf.text(originalAmount, colAmountX + 20 - originalAmountWidth, yPos);
   
@@ -1339,7 +1390,7 @@ export async function generateReminderPDF(
     pdf.setTextColor(60, 60, 60);
     pdf.text('Mahngebühren:', colLabelX, yPos);
     pdf.setTextColor(180, 50, 50);
-    const feeAmount = formatCurrency(cumulativeFee, locale);
+    const feeAmount = formatCurrency(cumulativeFee, locale, options.company.numberFormat, options.company.currency);
     const feeAmountWidth = pdf.getTextWidth(feeAmount);
     pdf.text(feeAmount, colAmountX + 20 - feeAmountWidth, yPos);
     yPos += 7;
@@ -1355,7 +1406,7 @@ export async function generateReminderPDF(
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text('Zu zahlender Gesamtbetrag:', colLabelX, yPos);
-  const totalAmount = formatCurrency(invoice.total + cumulativeFee, locale);
+  const totalAmount = formatCurrency(invoice.total + cumulativeFee, locale, options.company.numberFormat, options.company.currency);
   const totalAmountWidth = pdf.getTextWidth(totalAmount);
   pdf.text(totalAmount, colAmountX + 20 - totalAmountWidth, yPos);
   
@@ -1365,31 +1416,33 @@ export async function generateReminderPDF(
   pdf.setDrawColor(0, 0, 0);
 
   // Payment information
-  const paymentInfo = options.company.paymentInformation || {};
-  const bankAccount = paymentInfo.bankAccount || options.company.bankAccount;
-  const bic = paymentInfo.bic || options.company.bic;
+  const paymentInfo = getEffectivePaymentInformation(options.company);
+  const bankAccount = paymentInfo.bankAccount;
+  const bic = paymentInfo.bic;
   
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(60, 60, 60);
-  pdf.text('Zahlungsinformationen:', 20, yPos);
-  
-  yPos += 6;
-  
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  
-  if (bankAccount) {
-    pdf.text(`IBAN: ${bankAccount}`, 20, yPos);
-    yPos += 5;
+  if (template.showPaymentInformation) {
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(60, 60, 60);
+    pdf.text('Zahlungsinformationen:', 20, yPos);
+
+    yPos += 6;
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(0, 0, 0);
+
+    if (bankAccount) {
+      pdf.text(`IBAN: ${bankAccount}`, 20, yPos);
+      yPos += 5;
+    }
+    if (bic) {
+      pdf.text(`BIC: ${bic}`, 20, yPos);
+      yPos += 5;
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`Verwendungszweck: ${invoice.invoiceNumber}`, 20, yPos);
   }
-  if (bic) {
-    pdf.text(`BIC: ${bic}`, 20, yPos);
-    yPos += 5;
-  }
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`Verwendungszweck: ${invoice.invoiceNumber}`, 20, yPos);
 
   // Footer (same style as invoice PDF)
   const addFooter = () => {
@@ -1421,7 +1474,9 @@ export async function generateReminderPDF(
     pdf.text(footerContact, 20, footerY);
   };
   
-  addFooter();
+  if (template.showFooter) {
+    addFooter();
+  }
   
   return pdf.output('blob');
 }

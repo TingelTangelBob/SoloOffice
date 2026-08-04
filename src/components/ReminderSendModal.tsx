@@ -4,11 +4,13 @@ import { Invoice, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency } from '../utils/formatters';
-import { generateReminderPDF } from '../utils/pdfGenerator';
+import { generateInvoicePDF, generateReminderPDF } from '../utils/pdfGenerator';
 import { blobToBase64 } from '../utils/blobUtils';
 import { apiService } from '../services/api';
 import logger from '../utils/logger';
-import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import type { PreviewDocument } from '../utils/previewDocuments';
+import { getTerminology } from '../utils/terminology';
 
 interface ReminderSendModalProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ export function ReminderSendModal({
   bulkInvoices = []
 }: ReminderSendModalProps) {
   const { company } = useCompany();
+  const terminology = getTerminology(company?.terminologyProfile);
   const { customers } = useCustomers();
   const [isLoading, setIsLoading] = useState(false);
   const [updateStatus, setUpdateStatus] = useState(true);
@@ -249,13 +252,11 @@ export function ReminderSendModal({
           const reminderPdfBase64 = await blobToBase64(reminderPdfBlob);
 
           // Prepare additional attachments (original invoice + its attachments)
-          let additionalAttachments: { name: string; content: string; contentType: string }[] = [];
+          const additionalAttachments: { name: string; content: string; contentType: string }[] = [];
           
           if (includeOriginalInvoice) {
             try {
               // Import generateInvoicePDF dynamically
-              const { generateInvoicePDF } = await import('../utils/pdfGenerator');
-              
               // Generate original invoice PDF
               const originalInvoicePdfBlob = await generateInvoicePDF(
                 inv,
@@ -402,7 +403,7 @@ export function ReminderSendModal({
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Gesamtbetrag (exkl. Gebühren)</p>
-                      <p className="font-medium">{formatCurrency(bulkInvoices.reduce((sum, inv) => sum + inv.total, 0))}</p>
+                      <p className="font-medium">{formatCurrency(bulkInvoices.reduce((sum, inv) => sum + inv.total, 0), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                     </div>
                   </div>
                   <div className="max-h-32 overflow-y-auto border-t border-gray-200 pt-2 mt-2">
@@ -410,7 +411,7 @@ export function ReminderSendModal({
                     {bulkInvoices.map(inv => (
                       <div key={inv.id} className="text-xs text-gray-700 flex justify-between py-1">
                         <span>{inv.invoiceNumber}</span>
-                        <span className="text-gray-500">{formatCurrency(inv.total)}</span>
+                        <span className="text-gray-500">{formatCurrency(inv.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</span>
                       </div>
                     ))}
                   </div>
@@ -422,22 +423,22 @@ export function ReminderSendModal({
                     <p className="font-medium">{invoice.invoiceNumber}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Kunde</p>
+                    <p className="text-sm text-gray-600">{terminology.entity.singular}</p>
                     <p className="font-medium">{customer.name}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Rechnungsbetrag</p>
-                    <p className="font-medium">{formatCurrency(invoice.total)}</p>
+                    <p className="font-medium">{formatCurrency(invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                   </div>
                   {cumulativeFee > 0 && (
                     <div>
                       <p className="text-sm text-gray-600">Mahngebühren (gesamt)</p>
-                      <p className="font-medium text-red-600">{formatCurrency(cumulativeFee)}</p>
+                      <p className="font-medium text-red-600">{formatCurrency(cumulativeFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                     </div>
                   )}
                   <div className="col-span-2 pt-2 border-t border-gray-200">
                     <p className="text-sm text-gray-600">Gesamtbetrag</p>
-                    <p className="text-lg font-bold text-primary-custom">{formatCurrency(totalWithFee)}</p>
+                    <p className="text-lg font-bold text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                   </div>
                 </div>
               )}

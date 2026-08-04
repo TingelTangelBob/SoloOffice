@@ -230,7 +230,7 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
     await client.query(`
       INSERT INTO hourly_rates (name, description, rate, is_default) VALUES
       ('Standard', 'Normale Arbeitszeit', 75.00, TRUE),
-      ('Anfahrt', 'Anfahrtszeit zum Kunden', 50.00, FALSE)
+      ('Anfahrt', 'Anfahrtszeit', 50.00, FALSE)
     `);
     logger.info('Default hourly rates created');
   }

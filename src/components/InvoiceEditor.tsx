@@ -24,19 +24,22 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
-import { Invoice, InvoiceItem, InvoiceAttachment } from '../types';
+import { Invoice, InvoiceItem, InvoiceAttachment, InvoiceTemplate, Customer } from '../types';
 import { AttachmentManager } from './AttachmentManager';
 import { calculateInvoiceWithDiscounts, updateItemWithDiscount, formatDiscountDisplay } from '../utils/discountUtils';
-import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
 import { generateUUID } from '../utils/uuid';
+import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { getTerminology } from '../utils/terminology';
 
 // Sortable Item Component for Drag & Drop
 interface SortableInvoiceItemProps {
   item: InvoiceItem;
-  index: number;
-  onUpdate: (id: string, field: keyof InvoiceItem, value: string | number) => void;
+  onUpdate: (id: string, field: keyof InvoiceItem, value: string | number | undefined) => void;
   onRemove: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
@@ -47,7 +50,6 @@ interface SortableInvoiceItemProps {
 
 function SortableInvoiceItem({ 
   item, 
-  index, 
   onUpdate, 
   onRemove, 
   onMoveUp, 
@@ -58,6 +60,7 @@ function SortableInvoiceItem({
 }: SortableInvoiceItemProps) {
   const { company } = useCompany();
   const discountsEnabled = company.discountsEnabled !== false;
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const {
     attributes,
     listeners,
@@ -100,18 +103,14 @@ function SortableInvoiceItem({
           <label className="block text-xs font-medium text-gray-700 mb-1">
             Menge *
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             min="0"
             step="0.01"
             required
             value={item.quantity}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '' || !isNaN(parseFloat(value))) {
-                onUpdate(item.id, 'quantity', value === '' ? '' : parseFloat(value));
-              }
-            }}
+            locale={company.locale}
+            numberFormat={company.numberFormat}
+            onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
             onBlur={(e) => {
               if (e.target.value === '') {
                 onUpdate(item.id, 'quantity', 0);
@@ -126,18 +125,14 @@ function SortableInvoiceItem({
           <label className="block text-xs font-medium text-gray-700 mb-1">
             Preis *
           </label>
-          <input
-            type="number"
+          <LocalizedNumberInput
             min="0"
             step="0.01"
             required
             value={item.unitPrice}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '' || !isNaN(parseFloat(value))) {
-                onUpdate(item.id, 'unitPrice', value === '' ? '' : parseFloat(value));
-              }
-            }}
+            locale={company.locale}
+            numberFormat={company.numberFormat}
+            onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
             onBlur={(e) => {
               if (e.target.value === '') {
                 onUpdate(item.id, 'unitPrice', 0);
@@ -186,19 +181,15 @@ function SortableInvoiceItem({
               >
                 <option value="">-</option>
                 <option value="percentage">%</option>
-                <option value="fixed">€</option>
+                <option value="fixed">{currencySymbol}</option>
               </select>
-              <input
-                type="number"
+              <LocalizedNumberInput
                 min="0"
                 step="0.01"
                 value={item.discountValue || ''}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '' || !isNaN(parseFloat(value))) {
-                    onUpdate(item.id, 'discountValue', value === '' ? undefined : parseFloat(value));
-                  }
-                }}
+                locale={company.locale || 'de-DE'}
+                numberFormat={company.numberFormat}
+                onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                 disabled={!item.discountType}
                 placeholder="0"
                 className="flex-1 px-2 py-1.5 text-sm border border-l-0 border-gray-300 rounded-r focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
@@ -213,7 +204,12 @@ function SortableInvoiceItem({
             Summe
           </label>
           <div className="text-sm font-medium text-gray-900 py-1.5 px-2 bg-gray-50 border border-gray-200 rounded">
-            €{((item.quantity * item.unitPrice) - (item.discountAmount || 0)).toFixed(2)}
+            {formatCurrency(
+              (item.quantity * item.unitPrice) - (item.discountAmount || 0),
+              company.locale,
+              company.numberFormat,
+              company.currency
+            )}
           </div>
         </div>
         
@@ -281,18 +277,14 @@ function SortableInvoiceItem({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Menge *
             </label>
-            <input
-              type="number"
+            <LocalizedNumberInput
               min="0"
               step="0.01"
               required
               value={item.quantity}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === '' || !isNaN(parseFloat(value))) {
-                  onUpdate(item.id, 'quantity', value === '' ? '' : parseFloat(value));
-                }
-              }}
+                locale={company.locale || 'de-DE'}
+              numberFormat={company.numberFormat}
+              onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
               onBlur={(e) => {
                 if (e.target.value === '') {
                   onUpdate(item.id, 'quantity', 0);
@@ -305,18 +297,14 @@ function SortableInvoiceItem({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Preis *
             </label>
-            <input
-              type="number"
+            <LocalizedNumberInput
               min="0"
               step="0.01"
               required
               value={item.unitPrice}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === '' || !isNaN(parseFloat(value))) {
-                  onUpdate(item.id, 'unitPrice', value === '' ? '' : parseFloat(value));
-                }
-              }}
+              locale={company.locale}
+              numberFormat={company.numberFormat}
+              onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
               onBlur={(e) => {
                 if (e.target.value === '') {
                   onUpdate(item.id, 'unitPrice', 0);
@@ -365,19 +353,15 @@ function SortableInvoiceItem({
                 >
                   <option value="">-</option>
                   <option value="percentage">%</option>
-                  <option value="fixed">€</option>
+                  <option value="fixed">{currencySymbol}</option>
                 </select>
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   min="0"
                   step="0.01"
                   value={item.discountValue || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === '' || !isNaN(parseFloat(value))) {
-                      onUpdate(item.id, 'discountValue', value === '' ? undefined : parseFloat(value));
-                    }
-                  }}
+                  locale={company.locale}
+                  numberFormat={company.numberFormat}
+                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   disabled={!item.discountType}
                   placeholder="0"
                   className="flex-1 px-2 py-1.5 border border-l-0 border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-xs min-w-0"
@@ -385,7 +369,14 @@ function SortableInvoiceItem({
               </div>
               {item.discountType && item.discountValue && (
                 <p className="text-xs text-gray-500 mt-1 break-words">
-                  -{formatDiscountDisplay(item.discountType, item.discountValue, item.discountAmount)}
+                  -{formatDiscountDisplay(
+                    item.discountType,
+                    item.discountValue,
+                    item.discountAmount,
+                    company.locale,
+                    company.numberFormat,
+                    company.currency
+                  )}
                 </p>
               )}
             </div>
@@ -396,11 +387,16 @@ function SortableInvoiceItem({
               Summe
             </label>
             <div className="text-xs font-medium text-gray-900 py-1.5 px-2 bg-gray-50 border border-gray-200 rounded-lg">
-              €{((item.quantity * item.unitPrice) - (item.discountAmount || 0)).toFixed(2)}
+              {formatCurrency(
+                (item.quantity * item.unitPrice) - (item.discountAmount || 0),
+                company.locale,
+                company.numberFormat,
+                company.currency
+              )}
             </div>
             {item.discountAmount && item.discountAmount > 0 && (
               <div className="text-xs text-gray-500 mt-1 break-words">
-                (€{(item.quantity * item.unitPrice).toFixed(2)} - €{item.discountAmount.toFixed(2)})
+                ({formatCurrency(item.quantity * item.unitPrice, company.locale, company.numberFormat, company.currency)} - {formatCurrency(item.discountAmount, company.locale, company.numberFormat, company.currency)})
               </div>
             )}
           </div>
@@ -473,6 +469,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     company,
     getInvoiceTemplates,
     addInvoiceTemplate,
+    updateInvoiceTemplate,
     deleteInvoiceTemplate,
   } = useCompany();
   const {
@@ -480,6 +477,14 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     getCombinedMaterialTemplatesForCustomer,
   } = useDocumentHelpers();
   const discountsEnabled = company.discountsEnabled !== false;
+  const terminology = getTerminology(company.terminologyProfile);
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
+  const formatMoney = (amount: number) => formatCurrency(
+    amount,
+    company.locale,
+    company.numberFormat,
+    company.currency
+  );
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [showInvoiceTemplateForm, setShowInvoiceTemplateForm] = useState(false);
   const [showInvoiceTemplateManager, setShowInvoiceTemplateManager] = useState(false);
@@ -490,7 +495,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     isOpen: false,
     type: 'hourlyRates'
   });
-  const [editingInvoiceTemplate, setEditingInvoiceTemplate] = useState(null);
+  const [editingInvoiceTemplate, setEditingInvoiceTemplate] = useState<InvoiceTemplate | null>(null);
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
     email: '',
@@ -610,7 +615,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     `${formatCustomerNumber(selectedCustomer.customerNumber)} - ${selectedCustomer.name}` : '';
     
   // Handle customer selection
-  const handleCustomerSelect = (customer: any) => {
+  const handleCustomerSelect = (customer: Customer) => {
     setFormData(prev => ({ ...prev, customerId: customer.id }));
     setCustomerSearchTerm(`${formatCustomerNumber(customer.customerNumber)} - ${customer.name}`);
     setIsCustomerDropdownOpen(false);
@@ -661,9 +666,9 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         id: generateUUID(),
         description: template.name,
         quantity: 1,
-        unitPrice: parseFloat(template.unitPrice || 0),
+        unitPrice: Number(template.unitPrice || 0),
         taxRate: company?.isSmallBusiness ? 0 : template.taxRate,
-        total: parseFloat(template.unitPrice || 0) * 1,
+        total: Number(template.unitPrice || 0),
         order: items.length + 1,
         discountType: undefined,
         discountValue: undefined,
@@ -678,9 +683,9 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         id: generateUUID(),
         description: template.name,
         quantity: 1,
-        unitPrice: parseFloat(template.unitPrice || 0),
+        unitPrice: Number(template.unitPrice || 0),
         taxRate: company?.isSmallBusiness ? 0 : (template.taxRate != null ? template.taxRate : 19),
-        total: parseFloat(template.unitPrice || 0) * 1,
+        total: Number(template.unitPrice || 0),
         order: items.length + 1,
         discountType: undefined,
         discountValue: undefined,
@@ -695,9 +700,9 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         id: generateUUID(),
         description: template.name,
         quantity: 1,
-        unitPrice: parseFloat(template.rate || 0),
+        unitPrice: Number(template.rate || 0),
         taxRate: company?.isSmallBusiness ? 0 : (template.taxRate != null ? template.taxRate : 19),
-        total: parseFloat(template.rate || 0) * 1,
+        total: Number(template.rate || 0),
         order: items.length + 1,
         discountType: undefined,
         discountValue: undefined,
@@ -887,7 +892,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
     const customer = customers.find(c => c.id === formData.customerId);
     if (!customer) {
-      alert('Bitte wählen Sie einen Kunden aus.');
+      alert(`Bitte wählen Sie einen ${terminology.entity.accusative} aus.`);
       return;
     }
 
@@ -983,7 +988,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Kunde *
+                {terminology.entity.singular} *
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="flex-1 relative">
@@ -993,7 +998,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                     onChange={handleCustomerSearchChange}
                     onFocus={() => setIsCustomerDropdownOpen(true)}
                     onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
-                    placeholder="Kunde suchen oder auswählen..."
+                    placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
@@ -1015,7 +1020,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                         ))
                       ) : (
                         <div className="px-3 py-2 text-gray-500 text-sm">
-                          Keine Kunden gefunden
+                          {terminology.entity.noResults}
                         </div>
                       )}
                     </div>
@@ -1029,10 +1034,10 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       setShowCustomerForm(true);
                     }}
                     className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center text-sm sm:w-auto w-full"
-                    title="Neuen Kunden anlegen"
+                          title={terminology.entity.newLabel}
                   >
                     <Plus className="h-4 w-4 mr-2 sm:mr-0" />
-                    <span className="sm:hidden">Neuen Kunden anlegen</span>
+                    <span className="sm:hidden">{terminology.entity.newLabel}</span>
                   </button>
                 )}
               </div>
@@ -1112,29 +1117,29 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       <optgroup label="Eigene Positionen">
                         {getInvoiceTemplates().map((template) => (
                           <option key={`invoice:${template.id}`} value={`invoice:${template.id}`}>
-                            {template.name} - {parseFloat(template.unitPrice || 0).toFixed(2)}€/{template.unit}
+                            {template.name} - {formatMoney(Number(template.unitPrice) || 0)}/{template.unit}
                           </option>
                         ))}
                       </optgroup>
                     )}
                     
-                    {/* Stundensätze - Kombiniert (Allgemein + Kundenspezifisch) */}
+                    {/* Stundensätze - kombiniert (allgemein + profilspezifisch) */}
                     {getCombinedHourlyRatesForCustomer(formData.customerId).length > 0 && (
                       <optgroup label="Stundensätze">
                         {getCombinedHourlyRatesForCustomer(formData.customerId).map((rate) => (
                           <option key={`hourly:${rate.id}`} value={`hourly:${rate.id}`}>
-                            {rate.displayName} - {parseFloat(rate.rate || 0).toFixed(2)}€/h
+                            {rate.displayName} - {formatMoney(Number(rate.rate) || 0)}/h
                           </option>
                         ))}
                       </optgroup>
                     )}
                     
-                    {/* Materialien - Kombiniert (Allgemein + Kundenspezifisch) */}
+                    {/* Materialien - kombiniert (allgemein + profilspezifisch) */}
                     {getCombinedMaterialTemplatesForCustomer(formData.customerId).length > 0 && (
                       <optgroup label="Materialien">
                         {getCombinedMaterialTemplatesForCustomer(formData.customerId).map((material) => (
                           <option key={`material:${material.id}`} value={`material:${material.id}`}>
-                            {material.displayName} - {parseFloat(material.unitPrice || 0).toFixed(2)}€/{material.unit}
+                            {material.displayName} - {formatMoney(Number(material.unitPrice) || 0)}/{material.unit}
                           </option>
                         ))}
                       </optgroup>
@@ -1180,7 +1185,6 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   <SortableInvoiceItem
                     key={item.id}
                     item={item}
-                    index={index}
                     onUpdate={updateItem}
                     onRemove={removeItem}
                     onMoveUp={moveItemUp}
@@ -1225,7 +1229,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 >
                   <option value="">Kein Gesamtrabatt</option>
                   <option value="percentage">Prozentual (%)</option>
-                  <option value="fixed">Festbetrag (€)</option>
+                  <option value="fixed">Festbetrag ({currencySymbol})</option>
                 </select>
               </div>
               
@@ -1234,26 +1238,22 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   Rabattwert
                 </label>
                 <div className="flex">
-                  <input
-                    type="number"
+                  <LocalizedNumberInput
                     min="0"
                     step="0.01"
                     value={formData.globalDiscountValue || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || !isNaN(parseFloat(value))) {
-                        setFormData(prev => ({ 
-                          ...prev, 
-                          globalDiscountValue: value === '' ? undefined : parseFloat(value)
-                        }));
-                      }
-                    }}
+                    locale={company.locale}
+                    numberFormat={company.numberFormat}
+                    onValueChange={(value) => setFormData(prev => ({
+                      ...prev,
+                      globalDiscountValue: value === '' ? undefined : value
+                    }))}
                     disabled={!formData.globalDiscountType}
                     placeholder="0"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 min-w-0"
                   />
                   <div className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-gray-600 text-sm flex items-center flex-shrink-0">
-                    {formData.globalDiscountType === 'percentage' ? '%' : '€'}
+                    {formData.globalDiscountType === 'percentage' ? '%' : currencySymbol}
                   </div>
                 </div>
               </div>
@@ -1263,7 +1263,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   Rabattbetrag
                 </label>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-medium">
-                  €{(globalDiscountAmount || 0).toFixed(2)}
+                  {formatMoney(globalDiscountAmount || 0)}
                 </div>
               </div>
             </div>
@@ -1271,7 +1271,14 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             {formData.globalDiscountType && formData.globalDiscountValue && (
               <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>Gesamtrabatt:</strong> {formatDiscountDisplay(formData.globalDiscountType, formData.globalDiscountValue, globalDiscountAmount)}
+                  <strong>Gesamtrabatt:</strong> {formatDiscountDisplay(
+                    formData.globalDiscountType,
+                    formData.globalDiscountValue,
+                    globalDiscountAmount,
+                    company.locale,
+                    company.numberFormat,
+                    company.currency
+                  )}
                 </p>
               </div>
             )}
@@ -1285,14 +1292,14 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             <div className="space-y-2 text-sm sm:text-base">
               <div className="flex justify-between">
                 <span className="text-gray-600">Zwischensumme:</span>
-                <span className="font-medium">€{subtotal.toFixed(2)}</span>
+                <span className="font-medium">{formatMoney(subtotal)}</span>
               </div>
               
               {/* Show item discounts if any */}
               {discountsEnabled && itemDiscountAmount > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>Artikelrabatte:</span>
-                  <span>-€{itemDiscountAmount.toFixed(2)}</span>
+                  <span>-{formatMoney(itemDiscountAmount)}</span>
                 </div>
               )}
               
@@ -1300,7 +1307,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               {discountsEnabled && globalDiscountAmount > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>Gesamtrabatt:</span>
-                  <span>-€{globalDiscountAmount.toFixed(2)}</span>
+                  <span>-{formatMoney(globalDiscountAmount)}</span>
                 </div>
               )}
               
@@ -1308,7 +1315,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               {discountsEnabled && (itemDiscountAmount > 0 || globalDiscountAmount > 0) && (
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-gray-600">Zwischensumme nach Rabatt:</span>
-                  <span className="font-medium">€{discountedSubtotal.toFixed(2)}</span>
+                  <span className="font-medium">{formatMoney(discountedSubtotal)}</span>
                 </div>
               )}
               
@@ -1323,7 +1330,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       <span className="text-gray-600">
                         MwSt. ({rate}%):
                       </span>
-                      <span className="font-medium">€{breakdown.taxAmount.toFixed(2)}</span>
+                      <span className="font-medium">{formatMoney(breakdown.taxAmount)}</span>
                     </div>
                   ))}
                 </>
@@ -1333,20 +1340,20 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               {Object.keys(taxBreakdown).filter(rate => Number(rate) > 0).length > 1 && (
                 <div className="flex justify-between text-sm border-t pt-1 mt-1">
                   <span className="text-gray-600">MwSt. gesamt:</span>
-                  <span className="font-medium">€{taxAmount.toFixed(2)}</span>
+                  <span className="font-medium">{formatMoney(taxAmount)}</span>
                 </div>
               )}
               
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Gesamtbetrag:</span>
-                <span>€{total.toFixed(2)}</span>
+                <span>{formatMoney(total)}</span>
               </div>
               
               {/* Show total discount summary if any */}
               {totalDiscountAmount > 0 && (
                 <div className="flex justify-between text-sm text-green-600 border-t pt-2">
                   <span>Gesamtersparnis:</span>
-                  <span className="font-medium">€{totalDiscountAmount.toFixed(2)}</span>
+                  <span className="font-medium">{formatMoney(totalDiscountAmount)}</span>
                 </div>
               )}
               
@@ -1413,7 +1420,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
           <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Neuer Kunde
+              {terminology.entity.newLabel}
             </h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -1422,7 +1429,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               const existingCustomer = findDuplicateCustomer(customers, newCustomerData);
               
               if (existingCustomer) {
-                showDuplicateCustomerAlert(existingCustomer);
+                showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
                 return;
               }
               
@@ -1451,7 +1458,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Failed to create customer', { error: (error as Error).message });
-                alert('Fehler beim Erstellen des Kunden. Bitte versuchen Sie es erneut.');
+                alert(`Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
               }
             }} className="space-y-4">
               <div>
@@ -1567,7 +1574,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
                 >
-                  Kunde erstellen
+                  {terminology.entity.createLabel}
                 </button>
                 <button
                   type="button"
@@ -1587,7 +1594,9 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Neue Rechnungsvorlage erstellen</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {editingInvoiceTemplate ? 'Rechnungsvorlage bearbeiten' : 'Neue Rechnungsvorlage erstellen'}
+              </h3>
             </div>
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -1599,7 +1608,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
               // Check for duplicate names
               const templates = getInvoiceTemplates() || [];
-              const existingTemplate = templates.find((t: any) => 
+              const existingTemplate = templates.find((t) =>
+                t.id !== editingInvoiceTemplate?.id &&
                 t.name.toLowerCase().replace(/\s+/g, '') === newInvoiceTemplateData.name.toLowerCase().replace(/\s+/g, '')
               );
 
@@ -1609,7 +1619,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               }
 
               try {
-                await addInvoiceTemplate(newInvoiceTemplateData);
+                if (editingInvoiceTemplate) {
+                  await updateInvoiceTemplate(editingInvoiceTemplate.id, newInvoiceTemplateData);
+                } else {
+                  await addInvoiceTemplate(newInvoiceTemplateData);
+                }
                 
                 // Reset form
                 setNewInvoiceTemplateData({
@@ -1620,10 +1634,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   taxRate: 19,
                   isDefault: false
                 });
+                setEditingInvoiceTemplate(null);
                 setShowInvoiceTemplateForm(false);
               } catch (error) {
-                console.error('Error creating invoice template:', error);
-                alert('Fehler beim Erstellen der Rechnungsvorlage. Bitte versuchen Sie es erneut.');
+                console.error('Error saving invoice template:', error);
+                alert('Fehler beim Speichern der Rechnungsvorlage. Bitte versuchen Sie es erneut.');
               }
             }} className="p-6 space-y-4">
               <div>
@@ -1656,19 +1671,15 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Preis (€) *
+                    Preis ({currencySymbol}) *
                   </label>
-                  <input
-                    type="number"
+                  <LocalizedNumberInput
                     step="0.01"
                     min="0"
                     value={newInvoiceTemplateData.unitPrice}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || !isNaN(parseFloat(value))) {
-                        setNewInvoiceTemplateData({ ...newInvoiceTemplateData, unitPrice: value === '' ? 0 : parseFloat(value) || 0 });
-                      }
-                    }}
+                    locale={company.locale}
+                    numberFormat={company.numberFormat}
+                    onValueChange={(value) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, unitPrice: value === '' ? 0 : value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                     placeholder="0.00"
                     required
@@ -1722,7 +1733,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
                 >
-                  Vorlage erstellen
+                  {editingInvoiceTemplate ? 'Änderungen speichern' : 'Vorlage erstellen'}
                 </button>
                 <button
                   type="button"
@@ -1735,6 +1746,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       taxRate: 19,
                       isDefault: false
                     });
+                    setEditingInvoiceTemplate(null);
                     setShowInvoiceTemplateForm(false);
                   }}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
@@ -1763,7 +1775,19 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             <div className="p-6">
               <div className="mb-4">
                 <button
-                  onClick={() => setShowInvoiceTemplateForm(true)}
+                  onClick={() => {
+                    setEditingInvoiceTemplate(null);
+                    setNewInvoiceTemplateData({
+                      name: '',
+                      description: '',
+                      unitPrice: 0,
+                      unit: 'Stunde',
+                      taxRate: 19,
+                      isDefault: false
+                    });
+                    setShowInvoiceTemplateManager(false);
+                    setShowInvoiceTemplateForm(true);
+                  }}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="h-4 w-4" />
@@ -1772,19 +1796,31 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               </div>
               
               <div className="grid gap-4">
-                {getInvoiceTemplates().map((template: any) => (
+                {getInvoiceTemplates().map((template) => (
                   <div key={template.id} className="border border-gray-200 rounded-lg p-4 flex justify-between items-center">
                     <div>
                       <h4 className="font-medium text-gray-900">{template.name}</h4>
                       <p className="text-sm text-gray-600">{template.description}</p>
                       <p className="text-sm text-gray-500">
-                        {parseFloat(template.unitPrice || 0).toFixed(2)}€/{template.unit} • {template.taxRate}% MwSt.
+                        {formatMoney(Number(template.unitPrice) || 0)}/{template.unit} • {template.taxRate}% MwSt.
                         {template.isDefault && <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">Standard</span>}
                       </p>
                     </div>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => setEditingInvoiceTemplate(template)}
+                        onClick={() => {
+                          setEditingInvoiceTemplate(template);
+                          setNewInvoiceTemplateData({
+                            name: template.name,
+                            description: template.description || '',
+                            unitPrice: Number(template.unitPrice) || 0,
+                            unit: template.unit,
+                            taxRate: Number(template.taxRate) || 0,
+                            isDefault: template.isDefault || false
+                          });
+                          setShowInvoiceTemplateManager(false);
+                          setShowInvoiceTemplateForm(true);
+                        }}
                         className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-50 transition-colors"
                         title="Bearbeiten"
                       >

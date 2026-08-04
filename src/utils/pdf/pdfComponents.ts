@@ -6,7 +6,9 @@ import jsPDF from 'jspdf';
 import { Company, Customer } from '../../types';
 import { ColorConfiguration } from './colorUtils';
 import { loadImage } from './imageHelpers';
+import type { ResolvedDocumentTemplate } from '../documentTemplateProfiles';
 import logger from '../logger';
+import { getTerminology } from '../terminology';
 
 export interface PageMargins {
   top: number;
@@ -24,6 +26,7 @@ export interface PDFContext {
   company: Company;
   customer: Customer;
   locale: string;
+  template: ResolvedDocumentTemplate;
 }
 
 /**
@@ -39,13 +42,14 @@ export function resetFont(pdf: jsPDF, darkText: string): void {
  * Add complete header to PDF page
  * Returns the Y position after the header
  */
-export async function addPDFHeader(
+async function addClassicPDFHeader(
   context: PDFContext,
   metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
   customerAddress?: string
 ): Promise<number> {
   const { pdf, pageWidth, margins, colors, company, customer } = context;
   const { primaryRgb, grayText, darkText } = colors;
+  const terminology = getTerminology(company.terminologyProfile);
   
   let currentY = margins.top;
   
@@ -79,7 +83,7 @@ export async function addPDFHeader(
   }
   
   // Company logo or name on the left
-  if (company.logo) {
+  if (company.logo && context.template.logoMode !== 'none') {
     try {
       // Add timeout and error handling for logo loading
       const logoImg = await Promise.race([
@@ -211,7 +215,7 @@ export async function addPDFHeader(
   const customerMetadataX = pageWidth - 80;
   
   if (customer.customerNumber) {
-    pdf.text('Kunden-Nr.:', customerMetadataX, customerDetailsY);
+    pdf.text(terminology.entity.numberShortLabel, customerMetadataX, customerDetailsY);
     pdf.setTextColor(darkText);
     pdf.text(customer.customerNumber, customerMetadataX, customerDetailsY + 4);
     customerDetailsY += 10;
@@ -244,6 +248,244 @@ export async function addPDFHeader(
   currentY += 18;
   
   return currentY;
+}
+
+async function addBrand(
+  context: PDFContext,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+  align: 'left' | 'center' = 'left',
+  fallbackColor?: { r: number; g: number; b: number },
+): Promise<void> {
+  const { pdf, company, colors } = context;
+  const brandColor = fallbackColor || colors.primaryRgb;
+
+  if (company.logo && context.template.logoMode !== 'none') {
+    try {
+      const logo = await Promise.race([
+        loadImage(company.logo),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Logo loading timeout')), 5000)),
+      ]);
+      const ratio = logo.width / logo.height;
+      const width = ratio > maxWidth / maxHeight ? maxWidth : maxHeight * ratio;
+      const height = ratio > maxWidth / maxHeight ? maxWidth / ratio : maxHeight;
+      const startX = align === 'center' ? x - width / 2 : x;
+      const imageFormat = company.logo.toLowerCase().includes('png') ? 'PNG' : 'JPEG';
+      pdf.addImage(company.logo, imageFormat, startX, y + (maxHeight - height) / 2, width, height);
+      return;
+    } catch (error) {
+      logger.warn('Logo konnte nicht geladen werden:', { error: String(error) });
+    }
+  }
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(15);
+  pdf.setTextColor(brandColor.r, brandColor.g, brandColor.b);
+  pdf.text(company.name, align === 'center' ? x : x, y + maxHeight / 2 + 4, align === 'center' ? { align: 'center' } : undefined);
+}
+
+async function addMinimalPDFHeader(
+  context: PDFContext,
+  metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
+  customerAddress?: string,
+): Promise<number> {
+  const { pdf, pageWidth, margins, colors, company, customer } = context;
+  const { primaryRgb, grayText, darkText } = colors;
+  const top = margins.top;
+  const compact = context.template.layout === 'compact';
+  const airy = context.template.layout === 'air';
+  const lineY = top + (compact ? 24 : airy ? 34 : 29);
+
+  const minimalCentered = context.template.headerAlignment === 'center';
+  await addBrand(context, minimalCentered ? pageWidth / 2 : margins.left, top, 70, compact ? 16 : airy ? 24 : 20, minimalCentered ? 'center' : 'left');
+  pdf.setDrawColor(airy ? primaryRgb.r : 31, airy ? primaryRgb.g : 41, airy ? primaryRgb.b : 55);
+  pdf.setLineWidth(0.5);
+  pdf.line(margins.left, lineY, pageWidth - margins.right, lineY);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(compact ? 11 : airy ? 12 : 13);
+  pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+  pdf.text(metadataBox.title, pageWidth - margins.right, top + (compact ? 8 : 9), { align: 'right' });
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(compact ? 7 : 8);
+  let metadataY = top + (compact ? 14 : 16);
+  for (const field of metadataBox.fields) {
+    pdf.setTextColor(grayText);
+    pdf.text(field.label, pageWidth - 58, metadataY);
+    pdf.setTextColor(darkText);
+    pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
+    metadataY += 4;
+  }
+
+  let currentY = top + (compact ? 36 : airy ? 48 : 43);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10);
+  pdf.setTextColor(darkText);
+  pdf.text(customer.name, margins.left, currentY);
+  currentY += 5;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  pdf.text(customer.address, margins.left, currentY);
+  currentY += 4;
+  pdf.text(`${customer.postalCode} ${customer.city}`, margins.left, currentY);
+  if (customer.country && customer.country !== 'Deutschland') {
+    currentY += 4;
+    pdf.text(customer.country, margins.left, currentY);
+  }
+
+  pdf.setFontSize(8);
+  pdf.setTextColor(grayText);
+  const sender = `${company.name} · ${company.address} · ${company.postalCode} ${company.city}`;
+  pdf.text(sender, margins.left, top + (compact ? 70 : airy ? 86 : 80));
+  if (customerAddress?.trim()) {
+    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, margins.left, top + (compact ? 75 : airy ? 91 : 85));
+    return top + (compact ? 81 : airy ? 97 : 91);
+  }
+  return top + (compact ? 76 : airy ? 92 : 86);
+}
+
+async function addEditorialPDFHeader(
+  context: PDFContext,
+  metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
+): Promise<number> {
+  const { pdf, pageWidth, margins, colors, customer } = context;
+  const { primaryRgb, grayText, darkText } = colors;
+  const top = margins.top;
+
+  const editorialCentered = context.template.headerAlignment !== 'left';
+  await addBrand(context, editorialCentered ? pageWidth / 2 : margins.left, top, 75, 24, editorialCentered ? 'center' : 'left');
+  pdf.setDrawColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+  pdf.setLineWidth(1);
+  pdf.line(margins.left, top + 31, pageWidth - margins.right, top + 31);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10);
+  pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+  pdf.text(metadataBox.title, margins.left, top + 45);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  let metadataY = top + 52;
+  for (const field of metadataBox.fields) {
+    pdf.setTextColor(grayText);
+    pdf.text(field.label, pageWidth - 64, metadataY);
+    pdf.setTextColor(darkText);
+    pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
+    metadataY += 4;
+  }
+
+  let currentY = top + 49;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10);
+  pdf.setTextColor(darkText);
+  pdf.text(customer.name, margins.left, currentY);
+  currentY += 5;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  pdf.text(customer.address, margins.left, currentY);
+  currentY += 4;
+  pdf.text(`${customer.postalCode} ${customer.city}`, margins.left, currentY);
+  return top + 82;
+}
+
+type AccentHeaderVariant = 'modern' | 'bold' | 'split' | 'frame';
+
+async function addAccentPDFHeader(
+  context: PDFContext,
+  metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
+  variant: AccentHeaderVariant,
+  customerAddress?: string,
+): Promise<number> {
+  const { pdf, pageWidth, margins, colors, company, customer } = context;
+  const { primaryRgb, grayText, darkText } = colors;
+  const top = margins.top;
+  const contentWidth = pageWidth - margins.left - margins.right;
+  const white = { r: 255, g: 255, b: 255 };
+
+  if (variant === 'bold') {
+    pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+    pdf.rect(0, top - 5, pageWidth, 34, 'F');
+    await addBrand(context, margins.left, top, 74, 20, 'left', white);
+  } else if (variant === 'modern') {
+    pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+    pdf.rect(margins.left, top - 2, contentWidth, 4, 'F');
+    await addBrand(context, margins.left, top + 7, 74, 20, 'left');
+  } else if (variant === 'split') {
+    pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+    pdf.rect(margins.left, top, 4, 82, 'F');
+    await addBrand(context, margins.left + 11, top + 3, 74, 20, 'left');
+  } else {
+    pdf.setDrawColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
+    pdf.setLineWidth(0.8);
+    pdf.rect(margins.left, top, contentWidth, 82);
+    await addBrand(context, margins.left + 8, top + 7, 70, 20, 'left');
+  }
+
+  const titleColor = variant === 'bold' ? '#ffffff' : primaryRgb;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(13);
+  if (typeof titleColor === 'string') {
+    pdf.setTextColor(titleColor);
+  } else {
+    pdf.setTextColor(titleColor.r, titleColor.g, titleColor.b);
+  }
+  pdf.text(metadataBox.title, pageWidth - margins.right, top + (variant === 'bold' ? 9 : 14), { align: 'right' });
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  let metadataY = top + (variant === 'bold' ? 16 : 22);
+  for (const field of metadataBox.fields) {
+    pdf.setTextColor(grayText);
+    pdf.text(field.label, pageWidth - 62, metadataY);
+    pdf.setTextColor(darkText);
+    pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
+    metadataY += 4;
+  }
+
+  const customerY = top + (variant === 'bold' ? 48 : 54);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10);
+  pdf.setTextColor(darkText);
+  pdf.text(customer.name, margins.left + (variant === 'split' ? 11 : 0), customerY);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  pdf.text(customer.address, margins.left + (variant === 'split' ? 11 : 0), customerY + 5);
+  pdf.text(`${customer.postalCode} ${customer.city}`, margins.left + (variant === 'split' ? 11 : 0), customerY + 9);
+  if (customerAddress?.trim()) {
+    pdf.setTextColor(grayText);
+    pdf.setFontSize(8);
+    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, margins.left + (variant === 'split' ? 11 : 0), customerY + 15);
+  }
+
+  pdf.setFontSize(8);
+  pdf.setTextColor(grayText);
+  pdf.text(`${company.name} · ${company.address} · ${company.postalCode} ${company.city}`, margins.left + (variant === 'split' ? 11 : 0), top + 78);
+  return top + (variant === 'bold' ? 91 : 94);
+}
+
+/** Add the selected PDF layout profile's header. */
+export async function addPDFHeader(
+  context: PDFContext,
+  metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
+  customerAddress?: string,
+): Promise<number> {
+  switch (context.template.layout) {
+    case 'minimal':
+    case 'compact':
+    case 'air':
+      return addMinimalPDFHeader(context, metadataBox, customerAddress);
+    case 'editorial':
+      return addEditorialPDFHeader(context, metadataBox);
+    case 'modern':
+    case 'bold':
+    case 'split':
+    case 'frame':
+      return addAccentPDFHeader(context, metadataBox, context.template.layout, customerAddress);
+    case 'classic':
+    default:
+      return addClassicPDFHeader(context, metadataBox, customerAddress);
+  }
 }
 
 /**
@@ -302,10 +544,14 @@ export function drawTableHeader(
   pageWidth: number,
   _colors: ColorConfiguration,
   columns: Array<{ label: string; x: number }>,
-  darkText: string
+  darkText: string,
+  tableStyle: 'light' | 'dark' | 'accent' = 'light',
+  accentRgb: { r: number; g: number; b: number } = { r: 37, g: 99, b: 235 },
 ): number {
   // Table header background
-  pdf.setFillColor(240, 243, 248);
+  const isDark = tableStyle === 'dark';
+  const isAccent = tableStyle === 'accent';
+  pdf.setFillColor(isDark ? 31 : isAccent ? accentRgb.r : 240, isDark ? 41 : isAccent ? accentRgb.g : 243, isDark ? 55 : isAccent ? accentRgb.b : 248);
   pdf.rect(20, yPosition - 2, pageWidth - 40, 12, 'F');
   
   // Table border
@@ -314,7 +560,7 @@ export function drawTableHeader(
   pdf.rect(20, yPosition - 2, pageWidth - 40, 12);
   
   pdf.setFontSize(9);
-  pdf.setTextColor(darkText);
+  pdf.setTextColor(isDark || isAccent ? '#ffffff' : darkText);
   pdf.setFont('helvetica', 'bold');
   
   // Column headers

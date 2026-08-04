@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, Mail, X, CheckCircle, MoreHorizontal } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -8,11 +8,17 @@ import { Quote } from '../types';
 import { ConfirmationModal } from './ConfirmationModal';
 import { EmailSendModal } from './EmailSendModal';
 import { apiService } from '../services/api';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { generateQuotePDF, downloadBlob } from '../utils/pdfGenerator';
-import { DocumentPreview, PreviewDocument, createQuoteAttachmentPreviewDocuments } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import { createQuoteAttachmentPreviewDocuments } from '../utils/previewDocuments';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { processAttachments, AttachmentFile } from '../utils/fileUtils';
 import { PageHeader } from './PageHeader';
+import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { BulkSelectionHeader } from './BulkSelectionHeader';
+import { getTerminology } from '../utils/terminology';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -22,6 +28,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -41,7 +48,6 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     bulkQuotes: []
   });
   const [isEmailSending, setIsEmailSending] = useState(false);
-  const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
@@ -359,13 +365,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     try {
       const customer = customers.find(c => c.id === quote.customerId);
       if (!customer) {
-        alert('Kunde nicht gefunden.');
+        alert(`${terminology.entity.singular} nicht gefunden.`);
         setIsExporting(null);
         return;
       }
 
       if (!company) {
-        alert('Firmendaten nicht geladen.');
+        alert(`${terminology.organization.dataLabel} nicht geladen.`);
         setIsExporting(null);
         return;
       }
@@ -390,12 +396,12 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const handleSendEmail = async (quote: Quote) => {
     const customer = customers.find(c => c.id === quote.customerId);
     if (!customer) {
-      alert('Kunde nicht gefunden.');
+      alert(`${terminology.entity.singular} nicht gefunden.`);
       return;
     }
 
     if (!customer.email && (!customer.additionalEmails || customer.additionalEmails.length === 0)) {
-      alert('Kunde hat keine E-Mail-Adresse hinterlegt.');
+      alert(terminology.entity.emailMissingMessage);
       return;
     }
 
@@ -410,14 +416,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleEmailSend = async (
-    formats: ('zugferd' | 'xrechnung')[], 
+    _formats: ('zugferd' | 'xrechnung')[],
     customText?: string, 
     attachments?: AttachmentFile[], 
     selectedQuoteAttachmentIds?: string[], 
     selectedEmails?: string[], 
     manualEmails?: string[]
   ) => {
-    if (!emailModal.quote) return;
+    const activeQuote = emailModal.quote;
+    if (!activeQuote) return;
 
     setIsEmailSending(true);
     
@@ -515,13 +522,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       }
 
       // Process additional attachments (uploaded in modal)
-      let processedAttachments = attachments && attachments.length > 0 
+      const processedAttachments = attachments && attachments.length > 0
         ? await processAttachments(attachments)
         : [];
 
       // Add selected quote attachments to the processed attachments
-      if (selectedQuoteAttachmentIds && selectedQuoteAttachmentIds.length > 0 && emailModal.quote.attachments) {
-        const selectedQuoteAttachments = emailModal.quote.attachments.filter(att => 
+      if (selectedQuoteAttachmentIds && selectedQuoteAttachmentIds.length > 0 && activeQuote.attachments) {
+        const selectedQuoteAttachments = activeQuote.attachments.filter(att =>
           selectedQuoteAttachmentIds.includes(att.id)
         );
         
@@ -535,12 +542,12 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       }
 
       // Generate PDF using the same function as preview/download
-      const customer = customers.find(c => c.id === emailModal.quote.customerId);
+      const customer = customers.find(c => c.id === activeQuote.customerId);
       if (!customer) {
-        throw new Error('Kunde nicht gefunden');
+        throw new Error(`${terminology.entity.singular} nicht gefunden`);
       }
 
-      const pdfBlob = await generateQuotePDF(emailModal.quote, {
+      const pdfBlob = await generateQuotePDF(activeQuote, {
         company,
         customer,
       });
@@ -552,7 +559,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       const pdfBase64 = btoa(binaryString);
 
       await apiService.sendQuoteEmail(
-        emailModal.quote.id,
+        activeQuote.id,
         allEmails,
         customText,
         processedAttachments,
@@ -560,8 +567,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       );
 
       // Update quote status to 'sent' if it's currently 'draft'
-      if (emailModal.quote.status === 'draft') {
-        await apiService.updateQuote(emailModal.quote.id, { status: 'sent' });
+      if (activeQuote.status === 'draft') {
+        await apiService.updateQuote(activeQuote.id, { status: 'sent' });
         await loadQuotes();
       }
 
@@ -595,15 +602,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">Neues Angebot</span>
-          <span className="sm:hidden">Neu</span>
         </button>
         </PageHeader>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+      <ResponsiveFilterBar
+        hasActiveFilters={filterStatus !== 'all'}
+        search={(
+          <div className="relative">
             <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
             <input
               type="text"
@@ -613,10 +620,12 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <select
+        )}
+        filters={(
+          <FilterSelect
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">Alle Status</option>
             <option value="draft">Entwurf</option>
@@ -624,78 +633,67 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             <option value="accepted">Akzeptiert</option>
             <option value="rejected">Abgelehnt</option>
             <option value="expired">Abgelaufen</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Bulk Operations Bar */}
-      {selectedQuoteIds.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center">
-              <span className="text-sm text-blue-800 font-medium">
-                {selectedQuoteIds.length} Angebot(e) ausgewählt
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              {/* Bulk Status Change */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-blue-800">Status ändern:</span>
-                <select
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleBulkStatusChange(e.target.value as Quote['status']);
-                      e.target.value = '';
-                    }
-                  }}
-                  disabled={isBulkOperation}
-                  className="text-xs px-2 py-1 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500"
-                  defaultValue=""
-                >
-                  <option value="">Wählen...</option>
-                  <option value="draft">Entwurf</option>
-                  <option value="sent">Versendet</option>
-                  <option value="accepted">Akzeptiert</option>
-                  <option value="rejected">Abgelehnt</option>
-                  <option value="expired">Abgelaufen</option>
-                </select>
-              </div>
-              
-              {/* Bulk Email */}
-              <button
-                onClick={handleBulkEmail}
-                disabled={isBulkOperation}
-                className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors flex items-center text-sm disabled:bg-gray-400"
-              >
-                <Mail className="h-4 w-4 mr-1" />
-                E-Mail versenden
-              </button>
-              
-              {/* Bulk Download */}
-              <button
-                onClick={handleBulkDownload}
-                disabled={isBulkOperation || isExporting === 'bulk'}
-                className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors flex items-center text-sm disabled:bg-gray-400"
-              >
-                <Download className="h-4 w-4 mr-1" />
-                {isExporting === 'bulk' ? 'Lädt...' : 'Herunterladen'}
-              </button>
-              
-              {/* Clear Selection */}
-              <button
-                onClick={() => setSelectedQuoteIds([])}
-                className="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors flex items-center text-sm"
-              >
-                <X className="h-4 w-4 mr-1" />
-                Auswahl aufheben
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </FilterSelect>
+        )}
+      />
 
       {/* Quote List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <BulkSelectionHeader
+          itemLabel="Angebot"
+          itemLabelPlural="Angebote"
+          visibleCount={filteredQuotes.length}
+          selectedCount={selectedQuoteIds.length}
+          allSelected={filteredQuotes.length > 0 && filteredQuotes.every(quote => selectedQuoteIds.includes(quote.id))}
+          onSelectAll={handleSelectAll}
+        >
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs text-gray-600 sm:inline">Status ändern:</span>
+            <select
+              onChange={(e) => {
+                if (e.target.value) {
+                  handleBulkStatusChange(e.target.value as Quote['status']);
+                  e.target.value = '';
+                }
+              }}
+              disabled={isBulkOperation}
+              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-blue-500"
+              defaultValue=""
+              aria-label="Status ändern"
+            >
+              <option value="">Wählen...</option>
+              <option value="draft">Entwurf</option>
+              <option value="sent">Versendet</option>
+              <option value="accepted">Akzeptiert</option>
+              <option value="rejected">Abgelehnt</option>
+              <option value="expired">Abgelaufen</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={handleBulkEmail}
+            disabled={isBulkOperation}
+            className="action-icon-button bulk-action-icon-button action-icon-blue disabled:cursor-not-allowed disabled:opacity-50"
+            title="Per E-Mail versenden"
+            aria-label="Per E-Mail versenden"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkDownload}
+            disabled={isBulkOperation || isExporting === 'bulk'}
+            className="action-icon-button bulk-action-icon-button action-icon-green disabled:cursor-not-allowed disabled:opacity-50"
+            title={isExporting === 'bulk' ? 'Wird heruntergeladen' : 'Herunterladen'}
+            aria-label="Herunterladen"
+          >
+            {isExporting === 'bulk' ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </button>
+        </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
         <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
           <div className="min-w-full">
@@ -703,25 +701,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">
-                  <input
-                    type="checkbox"
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    checked={
-                      filteredQuotes.length > 0 &&
-                      filteredQuotes.every(quote => selectedQuoteIds.includes(quote.id))
-                    }
-                    className="custom-checkbox"
-                    title="Alle auswählen"
-                  />
+                  <span className="sr-only">Auswahl</span>
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                  Datum
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                   Angebotsnummer
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Kunde
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Datum
+                  {terminology.entity.singular}
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Gültig bis
@@ -732,7 +721,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                   Status
                 </th>
-                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
@@ -749,6 +738,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                       title="Angebot auswählen"
                     />
                   </td>
+                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatDate(quote.issueDate, locale, company?.dateFormat)}
+                  </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {quote.quoteNumber}
                   </td>
@@ -756,20 +748,17 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     {quote.customerName}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(quote.issueDate).toLocaleDateString('de-DE')}
+                    {formatDate(quote.validUntil, locale, company?.dateFormat)}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(quote.validUntil).toLocaleDateString('de-DE')}
-                  </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(quote.total, locale)}
+                    {formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
                       {getStatusLabel(quote.status)}
                     </span>
                   </td>
-                  <td className="relative w-14 px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-56 2xl:px-3">
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-56 2xl:px-3">
                     <div className="hidden 2xl:flex flex-wrap gap-1">
                       {quote.status === 'draft' && (
                         <button
@@ -849,23 +838,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <details className="relative hidden lg:block 2xl:hidden">
-                      <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </summary>
-                      <div className="absolute right-0 z-20 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-                        {quote.status === 'draft' && <button type="button" onClick={() => handleSendEmail(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Per E-Mail versenden</button>}
+                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
+                        {quote.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>}
                         {quote.status === 'sent' && <>
-                          <button type="button" onClick={() => handleStatusChange(quote.id, 'accepted')} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Als akzeptiert markieren</button>
-                          <button type="button" onClick={() => handleStatusChange(quote.id, 'rejected')} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Als abgelehnt markieren</button>
+                          <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
+                          <ActionMenuItem icon={<X className="h-4 w-4" />} tone="orange" onClick={() => handleStatusChange(quote.id, 'rejected')}>Als abgelehnt markieren</ActionMenuItem>
                         </>}
-                        {quote.status === 'accepted' && !quote.convertedToInvoiceId && <button type="button" onClick={() => handleConvertToInvoice(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">In Rechnung umwandeln</button>}
-                        <button type="button" onClick={() => handleOpenEditor(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Bearbeiten</button>
-                        <button type="button" onClick={() => handlePreview(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Vorschau anzeigen</button>
-                        <button type="button" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id} className="block w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Herunterladen</button>
-                        <button type="button" onClick={() => handleDelete(quote)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">LÃ¶schen</button>
-                      </div>
-                    </details>
+                        {quote.status === 'accepted' && !quote.convertedToInvoiceId && <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} tone="blue" onClick={() => handleConvertToInvoice(quote)}>In Rechnung umwandeln</ActionMenuItem>}
+                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(quote)}>Bearbeiten</ActionMenuItem>
+                        <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(quote)}>Vorschau anzeigen</ActionMenuItem>
+                        <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id}>Herunterladen</ActionMenuItem>
+                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(quote)}>Löschen</ActionMenuItem>
+                    </ActionMenu>
                   </td>
                 </tr>
               ))}
@@ -876,27 +860,6 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
         {/* Mobile Card View */}
         <div className="lg:hidden">
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  checked={
-                    filteredQuotes.length > 0 &&
-                    filteredQuotes.every(quote => selectedQuoteIds.includes(quote.id))
-                  }
-                  className="custom-checkbox"
-                  title="Alle auswählen"
-                />
-                <span className="ml-2 text-sm text-gray-600">Alle auswählen</span>
-              </div>
-              <span className="text-xs text-gray-500">
-                {filteredQuotes.length} Angebot(e)
-              </span>
-            </div>
-          </div>
-          
           {filteredQuotes.map((quote) => (
             <div key={quote.id} className="p-4 border-b border-gray-200 last:border-b-0">
               <div className="flex items-start space-x-3">
@@ -916,115 +879,55 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                       <h3 className="text-sm font-medium text-gray-900 truncate">{quote.quoteNumber}</h3>
                       <p className="text-sm text-gray-600 truncate">{quote.customerName}</p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {new Date(quote.issueDate).toLocaleDateString('de-DE')} - Gültig bis: {new Date(quote.validUntil).toLocaleDateString('de-DE')}
+                        {formatDate(quote.issueDate, locale, company?.dateFormat)} - Gültig bis: {formatDate(quote.validUntil, locale, company?.dateFormat)}
                       </p>
                     </div>
                     <div className="text-right ml-4">
-                      <p className="text-sm font-medium text-gray-900">{formatCurrency(quote.total, locale)}</p>
+                      <p className="text-sm font-medium text-gray-900">{formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}</p>
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
                         {getStatusLabel(quote.status)}
                       </span>
                     </div>
                   </div>
 
-                  <details className="relative mt-3">
-                    <summary className="action-icon-button action-icon-blue list-none cursor-pointer" title="Aktionen" aria-label="Aktionen">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </summary>
-                    <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-                  <div className="flex flex-wrap gap-2">
+                  <ActionMenu containerClassName="relative mt-3" triggerClassName="action-icon-button action-icon-blue">
+                  <div className="flex flex-col gap-0.5">
                     {/* Status-based action buttons */}
                     {quote.status === 'draft' && (
-                      <button
-                        type="button"
-                        className="action-icon-button action-icon-blue"
-                        title="Per E-Mail versenden"
-                        onClick={() => handleSendEmail(quote)}
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
+                      <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>
                     )}
                     {quote.status === 'sent' && (
                       <>
-                        <button
-                          type="button"
-                          className="action-icon-button action-icon-green"
-                          title="Als akzeptiert markieren"
-                          onClick={() => handleStatusChange(quote.id, 'accepted')}
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="action-icon-button action-icon-red"
-                          title="Als abgelehnt markieren"
-                          onClick={() => handleStatusChange(quote.id, 'rejected')}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
+                        <ActionMenuItem icon={<X className="h-4 w-4" />} tone="orange" onClick={() => handleStatusChange(quote.id, 'rejected')}>Als abgelehnt markieren</ActionMenuItem>
                       </>
                     )}
                     {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
-                      <button
-                        type="button"
-                        onClick={() => handleConvertToInvoice(quote)}
-                        className="action-icon-button action-icon-blue"
-                        title="In Rechnung umwandeln"
-                      >
-                        <FileCheck className="h-4 w-4" />
-                      </button>
+                      <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} tone="blue" onClick={() => handleConvertToInvoice(quote)}>In Rechnung umwandeln</ActionMenuItem>
                     )}
                     
                     {/* Icon action buttons */}
-                    <div className="flex space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditor(quote)}
-                        className="action-icon-button action-icon-indigo"
-                        title="Bearbeiten"
-                      >
-                        <Edit className="h-3 w-3" />
-                      </button>
+                    <>
+                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(quote)}>Bearbeiten</ActionMenuItem>
                       
-                      <button
-                        type="button"
-                        onClick={() => handlePreview(quote)}
-                        className="action-icon-button action-icon-blue"
-                        title="Vorschau anzeigen"
-                      >
-                        <Eye className="h-3 w-3" />
-                      </button>
+                      <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(quote)}>Vorschau anzeigen</ActionMenuItem>
                       
-                      <button 
-                        type="button"
-                        onClick={() => handleDownloadPDF(quote)}
-                        disabled={isExporting === quote.id}
-                        className="action-icon-button action-icon-green"
-                        title="Herunterladen"
-                      >
-                        {isExporting === quote.id ? (
-                          <div className="animate-spin h-3 w-3 border-2 border-green-600 border-t-transparent rounded-full"></div>
-                        ) : (
-                          <Download className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(quote)}
-                        className="action-icon-button action-icon-red"
-                        title="Löschen"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                      <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id}>Herunterladen</ActionMenuItem>
+                      <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(quote)}>Löschen</ActionMenuItem>
+                    </>
                   </div>
-                    </div>
-                  </details>
+                  </ActionMenu>
                 </div>
               </div>
             </div>
           ))}
         </div>
+
+        {filteredQuotes.length > 0 && (
+          <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-right text-xs text-gray-500">
+            {filteredQuotes.length} {filteredQuotes.length === 1 ? 'Angebot' : 'Angebote'}
+          </div>
+        )}
 
         {filteredQuotes.length === 0 && (
           <div className="text-center py-8">

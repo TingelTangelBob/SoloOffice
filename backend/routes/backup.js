@@ -12,8 +12,74 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JSONB_COLUMNS = {
   'email_history': ['attachments', 'smtp_response'],
   'job_entries': ['materials', 'signature'],
-  'company': ['payment_methods']
+  'company': ['payment_methods', 'invoice_templates', 'document_templates']
 };
+
+const BACKUP_TABLES = [
+  'customers',
+  'customer_emails',
+  'invoices',
+  'invoice_items',
+  'invoice_attachments',
+  'quotes',
+  'quote_items',
+  'quote_attachments',
+  'job_entries',
+  'calendar_events',
+  'job_attachments',
+  'job_time_entries',
+  'company',
+  'hourly_rates',
+  'material_templates',
+  'yearly_invoice_start_numbers',
+  'euer_entries',
+  'email_history',
+  'smtp_settings',
+  'customer_hourly_rates',
+  'customer_specific_hourly_rates',
+  'customer_specific_materials',
+  'migrations'
+];
+
+const RESTORE_CLEAR_TABLES = [
+  'email_history', 'customer_emails', 'customer_hourly_rates',
+  'customer_specific_hourly_rates', 'customer_specific_materials',
+  'job_time_entries', 'job_attachments',
+  'quote_attachments', 'quote_items', 'quotes',
+  'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
+  'hourly_rates', 'material_templates', 'customers', 'company',
+  'yearly_invoice_start_numbers', 'euer_entries', 'migrations'
+];
+
+const RESTORE_ORDER = [
+  'migrations',
+  'company',
+  'customers',
+  'yearly_invoice_start_numbers',
+  'euer_entries',
+  'hourly_rates',
+  'material_templates',
+  'customer_hourly_rates',
+  'customer_specific_hourly_rates',
+  'customer_specific_materials',
+  'calendar_events',
+  'invoices',
+  'invoice_items',
+  'invoice_attachments',
+  'quotes',
+  'quote_items',
+  'quote_attachments',
+  'job_entries',
+  'job_attachments',
+  'job_time_entries',
+  'customer_emails',
+  'email_history'
+];
+
+function prepareBackupRecord(table, record) {
+  if (table !== 'smtp_settings') return record;
+  return { ...record, smtp_pass: null };
+}
 
 // Function to process values for JSONB columns
 function processValueForRestore(table, column, value) {
@@ -61,36 +127,10 @@ router.post('/create', async (req, res) => {
       data: {}
     };
 
-    // Backup all tables - COMPLETE LIST including email history and SMTP settings
-    const tables = [
-      'customers',
-      'customer_emails',
-      'invoices',
-      'invoice_items', 
-      'invoice_attachments',
-      'quotes',  // QUOTES MODULE
-      'quote_items',  // QUOTES MODULE
-      'quote_attachments',  // QUOTES MODULE
-      'job_entries',  // Fixed: was 'jobs' but table is 'job_entries'
-      'calendar_events',
-      'job_attachments',
-      'job_time_entries',
-      'company',  // Fixed: was 'company_settings' but table is 'company'
-      'hourly_rates',
-      'material_templates',
-      'yearly_invoice_start_numbers',
-      'email_history',  // ADDED: Email history - critical for user data!
-      'smtp_settings',  // ADDED: SMTP settings - critical for user configuration!
-      'customer_hourly_rates',  // FIXED: Customer-hourly rate associations - critical!
-      'customer_specific_hourly_rates',  // FIXED: Customer-specific hourly rates - critical!
-      'customer_specific_materials',  // FIXED: Customer-specific materials - critical!
-      'migrations'
-    ];
-
-    for (const table of tables) {
+    for (const table of BACKUP_TABLES) {
       try {
         const result = await client.query(`SELECT * FROM ${table}`);
-        backup.data[table] = result.rows;
+        backup.data[table] = result.rows.map(record => prepareBackupRecord(table, record));
         logger.debug(`Backed up ${result.rows.length} records from ${table}`);
       } catch (error) {
         logger.warn(`Could not backup table ${table}`, { table, error: error.message });
@@ -269,19 +309,9 @@ router.post('/restore', async (req, res) => {
     let restoredTables = 0;
     let restoredRecords = 0;
 
-    // Step 1: Clear all data using TRUNCATE CASCADE to handle foreign key constraints
+    // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
     logger.info('Clearing all data for JSON restore...');
-    const tablesToClear = [
-      'email_history', 'customer_emails', 'customer_hourly_rates',
-      'customer_specific_hourly_rates', 'customer_specific_materials',
-      'job_time_entries', 'job_attachments',
-      'quote_attachments', 'quote_items', 'quotes',  // QUOTES MODULE - delete in reverse order
-      'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
-      'hourly_rates', 'material_templates', 'customers', 'company',
-      'yearly_invoice_start_numbers', 'smtp_settings'
-    ];
-    
-    for (const table of tablesToClear) {
+    for (const table of RESTORE_CLEAR_TABLES) {
       try {
         await client.query(`TRUNCATE TABLE ${table} CASCADE`);
         logger.info(`Truncated table ${table}`);
@@ -291,33 +321,8 @@ router.post('/restore', async (req, res) => {
     }
 
     // Step 2: Restore tables in correct dependency order (parent tables first)  
-    const restoreOrder = [
-      'migrations',        // system table - restore first
-      'company',           // parent table
-      'customers',         // parent table  
-      'yearly_invoice_start_numbers',
-      'hourly_rates',      // references company(id)
-      'material_templates', // references company(id)
-      'smtp_settings',     // standalone settings table
-      'customer_hourly_rates',  // references customers(id) and hourly_rates(id)
-      'customer_specific_hourly_rates',  // references customers(id)
-      'customer_specific_materials',  // references customers(id)
-      'calendar_events',
-      'invoices',          // references customers(id)
-      'invoice_items',     // references invoices(id)
-      'invoice_attachments', // references invoices(id)
-      'quotes',            // references customers(id) and invoices(id) - MUST be after invoices!
-      'quote_items',       // references quotes(id)
-      'quote_attachments', // references quotes(id)
-      'job_entries',       // references customers(id) - fixed from 'jobs'
-      'job_attachments',   // references job_entries(id)
-      'job_time_entries',  // references job_entries(id)
-      'customer_emails',   // references customers(id)
-      'email_history'      // references invoices(id), quotes(id) and customers(id) - restore last
-    ];
-
     logger.info('Restoring JSON data...');
-    for (const table of restoreOrder) {
+    for (const table of RESTORE_ORDER) {
       if (backupData.data[table] && Array.isArray(backupData.data[table])) {
         try {
           logger.info(`Restoring table ${table}...`);
@@ -597,36 +602,10 @@ router.post('/create-zip', async (req, res) => {
       data: {}
     };
 
-    // Backup all tables - COMPLETE LIST including email history and SMTP settings
-    const tables = [
-      'customers',
-      'customer_emails',
-      'invoices', 
-      'invoice_items',
-      'invoice_attachments',
-      'quotes',  // QUOTES MODULE
-      'quote_items',  // QUOTES MODULE
-      'quote_attachments',  // QUOTES MODULE
-      'job_entries',  // Fixed: removed duplicate 'jobs' entry
-      'calendar_events',
-      'job_attachments',
-      'job_time_entries',
-      'company',  // Fixed: removed 'company_settings' which doesn't exist
-      'hourly_rates',
-      'material_templates',
-      'yearly_invoice_start_numbers',
-      'email_history',  // ADDED: Email history - critical for user data!
-      'smtp_settings',  // ADDED: SMTP settings - critical for user configuration!
-      'customer_hourly_rates',  // FIXED: Customer-hourly rate associations - critical!
-      'customer_specific_hourly_rates',  // FIXED: Customer-specific hourly rates - critical!
-      'customer_specific_materials',  // FIXED: Customer-specific materials - critical!
-      'migrations'
-    ];
-
-    for (const table of tables) {
+    for (const table of BACKUP_TABLES) {
       try {
         const result = await client.query(`SELECT * FROM ${table}`);
-        backup.data[table] = result.rows;
+        backup.data[table] = result.rows.map(record => prepareBackupRecord(table, record));
         logger.debug(`Backed up ${result.rows.length} records from ${table}`);
       } catch (error) {
         logger.warn(`Could not backup table ${table}`, { table, error: error.message });
@@ -806,19 +785,9 @@ router.post('/restore-zip', async (req, res) => {
       let restoredTables = 0;
       let restoredRecords = 0;
 
-      // Step 1: Clear all data using TRUNCATE CASCADE and explicit DELETE for migrations
+      // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
       logger.info('Clearing all data...');
-      const tablesToClear = [
-        'email_history', 'customer_emails', 'customer_hourly_rates',
-        'customer_specific_hourly_rates', 'customer_specific_materials',
-        'job_time_entries', 'job_attachments',
-        'quote_attachments', 'quote_items', 'quotes',  // QUOTES MODULE - delete in reverse order
-        'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
-        'hourly_rates', 'material_templates', 'customers', 'company',
-        'yearly_invoice_start_numbers', 'smtp_settings'
-      ];
-      
-      for (const table of tablesToClear) {
+      for (const table of RESTORE_CLEAR_TABLES) {
         try {
           await client.query(`TRUNCATE TABLE ${table} CASCADE`);
           logger.info(`Truncated table ${table}`);
@@ -827,42 +796,8 @@ router.post('/restore-zip', async (req, res) => {
         }
       }
       
-      // Special handling for migrations table (explicit DELETE instead of TRUNCATE)
-      try {
-        await client.query(`DELETE FROM migrations`);
-        logger.info(`Deleted all records from migrations table`);
-      } catch (error) {
-        logger.warn(`Could not clear migrations table:`, error.message);
-      }
-
-      // Step 2: Restore tables in correct dependency order (parent tables first)
-      const restoreOrder = [
-        'migrations',        // system table - restore first
-        'company',           // parent table
-        'customers',         // parent table  
-        'yearly_invoice_start_numbers',
-        'hourly_rates',      // references company(id)
-        'material_templates', // references company(id)
-        'smtp_settings',     // standalone settings table
-        'customer_hourly_rates',  // references customers(id) and hourly_rates(id)
-        'customer_specific_hourly_rates',  // references customers(id)
-        'customer_specific_materials',  // references customers(id)
-        'calendar_events',
-        'invoices',          // references customers(id)
-        'invoice_items',     // references invoices(id)
-        'invoice_attachments', // references invoices(id)
-        'quotes',            // references customers(id) and invoices(id) - MUST be after invoices!
-        'quote_items',       // references quotes(id)
-        'quote_attachments', // references quotes(id)
-        'job_entries',       // references customers(id)
-        'job_attachments',   // references job_entries(id)
-        'job_time_entries',  // references job_entries(id)
-        'customer_emails',   // references customers(id)
-        'email_history'      // references invoices(id), quotes(id) and customers(id) - restore last
-      ];
-
       logger.info('Restoring data...');
-      for (const table of restoreOrder) {
+      for (const table of RESTORE_ORDER) {
         if (backupData.data[table] && Array.isArray(backupData.data[table])) {
           try {
             logger.info(`Restoring table ${table}...`);

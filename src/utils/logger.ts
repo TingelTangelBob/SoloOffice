@@ -7,7 +7,26 @@
 type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
 
 interface LogMeta {
-  [key: string]: any;
+  [key: string]: unknown;
+}
+
+type StoredError = Record<string, unknown>;
+
+function normalizeMeta(value: unknown): LogMeta | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value instanceof Error) {
+    return { error: value.message, stack: value.stack };
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as LogMeta;
+  }
+  return { detail: value };
+}
+
+declare global {
+  interface Window {
+    logger?: FrontendLogger;
+  }
 }
 
 class FrontendLogger {
@@ -35,13 +54,13 @@ class FrontendLogger {
   private getCurrentLevel(): number {
     // Check for explicit log level in localStorage (for debugging)
     const storedLevel = localStorage.getItem('LOG_LEVEL');
-    if (storedLevel && this.levels.hasOwnProperty(storedLevel)) {
+    if (storedLevel && Object.prototype.hasOwnProperty.call(this.levels, storedLevel)) {
       return this.levels[storedLevel as LogLevel];
     }
     
     // Set level based on environment
-    const isDev = import.meta.env.DEV || process.env.NODE_ENV === 'development';
-    const isProd = import.meta.env.PROD || process.env.NODE_ENV === 'production';
+    const isDev = import.meta.env.DEV;
+    const isProd = import.meta.env.PROD;
     
     if (isProd) {
       return this.levels.ERROR; // Only errors in production
@@ -52,17 +71,20 @@ class FrontendLogger {
     }
   }
   
-  private formatMessage(level: LogLevel, message: string, meta?: LogMeta): string {
+  private formatMessage(level: LogLevel, message: string, meta?: unknown): string {
+    const normalizedMeta = normalizeMeta(meta);
     const timestamp = new Date().toISOString();
-    const metaStr = meta && Object.keys(meta).length > 0 ? 
-      ` ${JSON.stringify(meta)}` : '';
+    const metaStr = normalizedMeta && Object.keys(normalizedMeta).length > 0
+      ? ` ${JSON.stringify(normalizedMeta)}`
+      : '';
     
     return `[${timestamp}] ${level}: ${message}${metaStr}`;
   }
   
-  private log(level: LogLevel, message: string, meta?: LogMeta): void {
+  private log(level: LogLevel, message: string, meta?: unknown): void {
     if (this.levels[level] <= this.currentLevel) {
-      const formattedMessage = this.formatMessage(level, message, meta);
+      const normalizedMeta = normalizeMeta(meta);
+      const formattedMessage = this.formatMessage(level, message, normalizedMeta);
       const style = this.styles[level];
       
       // Use appropriate console method with styling
@@ -71,7 +93,7 @@ class FrontendLogger {
           console.error(`%c${formattedMessage}`, style, meta);
           // Send errors to monitoring service in production
           if (import.meta.env.PROD) {
-            this.sendToMonitoring('error', message, meta);
+            this.sendToMonitoring('error', message, normalizedMeta);
           }
           break;
         case 'WARN':
@@ -106,30 +128,30 @@ class FrontendLogger {
       // Keep only last 50 errors
       const recentErrors = errors.slice(-50);
       sessionStorage.setItem('app_errors', JSON.stringify(recentErrors));
-    } catch (e) {
+    } catch {
       // Silently fail if sessionStorage is not available
     }
   }
   
   // Convenience methods
-  error(message: string, meta?: LogMeta): void {
+  error(message: string, meta?: unknown): void {
     this.log('ERROR', message, meta);
   }
   
-  warn(message: string, meta?: LogMeta): void {
+  warn(message: string, meta?: unknown): void {
     this.log('WARN', message, meta);
   }
   
-  info(message: string, meta?: LogMeta): void {
+  info(message: string, meta?: unknown): void {
     this.log('INFO', message, meta);
   }
   
-  debug(message: string, meta?: LogMeta): void {
+  debug(message: string, meta?: unknown): void {
     this.log('DEBUG', message, meta);
   }
   
   // Special method for API calls
-  api(method: string, url: string, status?: number, data?: any, error?: Error): void {
+  api(method: string, url: string, status?: number, data?: unknown, error?: Error): void {
     const meta: LogMeta = {
       method: method.toUpperCase(),
       url,
@@ -148,7 +170,7 @@ class FrontendLogger {
   }
   
   // Special method for component lifecycle
-  component(componentName: string, action: string, data?: any): void {
+  component(componentName: string, action: string, data?: unknown): void {
     this.debug(`Component ${componentName}: ${action}`, data ? { data } : undefined);
   }
   
@@ -160,9 +182,12 @@ class FrontendLogger {
   }
   
   // Get stored errors for debugging
-  getStoredErrors(): any[] {
+  getStoredErrors(): StoredError[] {
     try {
-      return JSON.parse(sessionStorage.getItem('app_errors') || '[]');
+      const parsed = JSON.parse(sessionStorage.getItem('app_errors') || '[]') as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((entry): entry is StoredError => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
+        : [];
     } catch {
       return [];
     }
@@ -180,7 +205,7 @@ const logger = new FrontendLogger();
 
 // Make logger available in window for debugging
 if (typeof window !== 'undefined') {
-  (window as any).logger = logger;
+  window.logger = logger;
 }
 
 export default logger;

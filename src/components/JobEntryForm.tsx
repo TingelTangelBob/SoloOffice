@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import { X, Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit } from 'lucide-react';
-import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry } from '../types';
+import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, CalendarEvent } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
 import { AttachmentManager } from './AttachmentManager';
-import { DocumentPreview, PreviewDocument } from './DocumentPreview';
+import { DocumentPreview } from './DocumentPreview';
+import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
+import { ConfirmationModal } from './ConfirmationModal';
 import { createDefaultTimeEntry } from '../utils/jobUtils';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { formatCurrency, formatNumber, getCurrencySymbol } from '../utils/formatters';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { getTerminology } from '../utils/terminology';
 
 interface JobEntryFormProps {
   job?: JobEntry | null;
@@ -18,18 +23,38 @@ interface JobEntryFormProps {
   onSubmit: (jobData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onCancel: () => void;
   onCreateCustomer?: () => void;
+  onSubmitVacation?: (event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => void | Promise<void>;
   onNavigateToCustomers?: () => void;
   onNavigateToSettings?: () => void;
 }
 
-export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
+export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
   const { addCustomer, refreshCustomers } = useCustomers();
-  const { company, addMaterialTemplate, updateMaterialTemplate, deleteMaterialTemplate, addHourlyRate, updateHourlyRate, deleteHourlyRate, getHourlyRates } = useCompany();
+  const { company, hourlyRates } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
+  const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
+  const formatMoney = (amount: number) => formatCurrency(
+    amount,
+    company.locale,
+    company.numberFormat,
+    company.currency
+  );
+
+  const sectionSelectClass = 'h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:w-48 sm:flex-none';
+  const sectionIconButtonClass = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
+  const sectionActionButtonClass = 'btn-secondary inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs transition-colors sm:text-sm';
 
   const { getHourlyRatesForCustomer, getCombinedHourlyRatesForCustomer, getCombinedMaterialTemplatesForCustomer } = useDocumentHelpers();
 
 
   const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [entryType, setEntryType] = useState<'job' | 'vacation'>('job');
+  const [vacationForm, setVacationForm] = useState({
+    title: 'Urlaub',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
 
   const [showRatesRedirectModal, setShowRatesRedirectModal] = useState<{
     isOpen: boolean;
@@ -38,6 +63,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     isOpen: false,
     type: 'hourlyRates'
   });
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
 
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -116,8 +142,9 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     } else {
       // Für neue Aufträge: keine Standard-Zeiteinträge, Nutzer muss explizit hinzufügen
       // Note: For new jobs, we can't use customer-specific rates yet since customer isn't selected
-      const defaultRate = getHourlyRates().find((rate: any) => rate.isDefault);
-      const initialFormData: any = {
+      const defaultRate = hourlyRates.find(rate => rate.isDefault);
+      const initialDate = defaultDate || new Date();
+      const initialFormData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'> = {
         jobNumber: '', // Will be auto-generated
         externalJobNumber: '',
         customerId: '',
@@ -125,7 +152,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
         customerAddress: '',
         title: '',
         description: '',
-        date: defaultDate || new Date(), // Use defaultDate if provided
+        date: initialDate,
         startTime: '',
         endTime: '',
         hoursWorked: 0,
@@ -144,9 +171,12 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       }
       
       setFormData(initialFormData);
+      const initialDateValue = initialDate.toISOString().split('T')[0];
+      setVacationForm((previous) => ({ ...previous, startDate: initialDateValue, endDate: initialDateValue }));
     }
     setIsDirty(false);
-  }, [job, company.hourlyRates, defaultDate]);
+    setEntryType('job');
+  }, [job, hourlyRates, defaultDate]);
 
   // Filter customers based on search term
   const filteredCustomers = customers.filter(customer =>
@@ -159,7 +189,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   const selectedCustomerDisplayName = selectedCustomer ? selectedCustomer.name : '';
     
   // Handle customer selection
-  const handleCustomerSelectDropdown = (customer: any) => {
+  const handleCustomerSelectDropdown = (customer: Customer) => {
     handleCustomerChange(customer.id);
     setCustomerSearchTerm(customer.name);
     setIsCustomerDropdownOpen(false);
@@ -185,7 +215,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
   const handleCustomerChange = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
-    setFormData((prev: any) => ({
+    setFormData((prev) => ({
       ...prev,
       customerId,
       customerName: customer?.name || ''
@@ -194,14 +224,14 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
   const addTimeEntry = () => {
     const availableRates = getHourlyRatesForCustomer(formData.customerId);
-    const defaultRate = availableRates.find((rate: any) => rate.isDefault);
+    const defaultRate = availableRates.find((rate) => rate.isDefault);
     const newTimeEntry = createDefaultTimeEntry(
       defaultRate ? defaultRate.rate : 0,
       defaultRate ? defaultRate.id : '',
       defaultRate?.taxRate != null ? defaultRate.taxRate : 19 // Use hourly rate tax rate or default to 19%
     );
     
-    setFormData((prev: any) => ({
+    setFormData((prev) => ({
       ...prev,
       timeEntries: [...(prev.timeEntries || []), newTimeEntry]
     }));
@@ -209,11 +239,11 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
   const addTimeEntryFromTemplate = (hourlyRateId: string) => {
     // Search in combined templates (both general and customer-specific)
-    const template = getCombinedHourlyRatesForCustomer(formData.customerId).find((rate: any) => rate.id === hourlyRateId);
+    const template = getCombinedHourlyRatesForCustomer(formData.customerId).find((rate) => rate.id === hourlyRateId);
     if (!template) return;
     
     const newTimeEntry = createDefaultTimeEntry(
-      parseFloat(template.rate || 0),
+      Number(template.rate || 0),
       template.id,
       template.taxRate != null ? template.taxRate : 19
     );
@@ -221,21 +251,21 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     // Set description to template name
     newTimeEntry.description = template.name;
     
-    setFormData((prev: any) => ({
+    setFormData((prev) => ({
       ...prev,
       timeEntries: [...(prev.timeEntries || []), newTimeEntry]
     }));
   };
 
   const updateTimeEntry = (index: number, field: keyof JobTimeEntry, value: string | number) => {
-    setFormData((prev: any) => {
+    setFormData((prev) => {
       const timeEntries = [...(prev.timeEntries || [])];
       timeEntries[index] = { ...timeEntries[index], [field]: value };
       
       // Auto-calculate total for hoursWorked and hourlyRate changes
       if (field === 'hoursWorked' || field === 'hourlyRate') {
-        const hours = parseFloat(timeEntries[index].hoursWorked) || 0;
-        const rate = parseFloat(timeEntries[index].hourlyRate) || 0;
+        const hours = Number(timeEntries[index].hoursWorked) || 0;
+        const rate = Number(timeEntries[index].hourlyRate) || 0;
         timeEntries[index].total = hours * rate;
       }
       
@@ -251,15 +281,15 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
           if (diffHours > 0) {
             const minutes = Math.round(diffHours * 60);
             timeEntries[index].hoursWorked = Math.round((minutes / 60) * 100) / 100;
-            const hours = parseFloat(timeEntries[index].hoursWorked) || 0;
-            const rate = parseFloat(timeEntries[index].hourlyRate) || 0;
+            const hours = Number(timeEntries[index].hoursWorked) || 0;
+            const rate = Number(timeEntries[index].hourlyRate) || 0;
             timeEntries[index].total = hours * rate;
           }
         }
       }
       
       // Update total hours in main job data for backward compatibility
-      const totalHours = timeEntries.reduce((sum, entry) => sum + (parseFloat(entry.hoursWorked) || 0), 0);
+      const totalHours = timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0);
       
       return { 
         ...prev, 
@@ -270,9 +300,9 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const removeTimeEntry = (index: number) => {
-    setFormData((prev: any) => {
-      const timeEntries = (prev.timeEntries || []).filter((_: any, i: number) => i !== index);
-      const totalHours = timeEntries.reduce((sum: number, entry: any) => sum + (parseFloat(entry.hoursWorked) || 0), 0);
+    setFormData((prev) => {
+      const timeEntries = (prev.timeEntries || []).filter((_, i) => i !== index);
+      const totalHours = timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0);
       
       return { 
         ...prev, 
@@ -285,7 +315,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
 
   const handleTimeChange = (field: 'startTime' | 'endTime', value: string) => {
-    setFormData((prev: any) => {
+    setFormData((prev) => {
       const updated = { ...prev, [field]: value };
       
       // Auto-calculate hours if both times are set
@@ -313,7 +343,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       // Use template data - safely handle potential errors
       try {
         const templates = getCombinedMaterialTemplatesForCustomer(formData.customerId) || [];
-        const template = templates.find((t: any) => t.id === templateId);
+        const template = templates.find((t) => t.id === templateId);
         
         if (template) {
           // Ensure unitPrice is a number - handle both string and number formats
@@ -382,8 +412,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       
       // Auto-calculate total for quantity and unitPrice changes
       if (field === 'quantity' || field === 'unitPrice') {
-        const quantity = parseFloat(materials[index].quantity) || 0;
-        const unitPrice = parseFloat(materials[index].unitPrice) || 0;
+        const quantity = Number(materials[index].quantity) || 0;
+        const unitPrice = Number(materials[index].unitPrice) || 0;
         materials[index].total = quantity * unitPrice;
       }
       
@@ -442,10 +472,33 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     // Convert date to string format for backend
     const submitData = {
       ...formData,
-      date: formData.date instanceof Date ? formData.date.toISOString().split('T')[0] : formData.date
+      date: formData.date
     };
     
     onSubmit(submitData);
+  };
+
+  const handleVacationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!onSubmitVacation || !vacationForm.title.trim() || vacationForm.endDate < vacationForm.startDate) {
+      alert('Bitte geben Sie eine Bezeichnung und einen gültigen Zeitraum an.');
+      return;
+    }
+
+    try {
+      await onSubmitVacation({
+        eventType: 'vacation',
+        title: vacationForm.title.trim(),
+        startDate: vacationForm.startDate,
+        endDate: vacationForm.endDate,
+        notes: vacationForm.notes.trim() || undefined,
+        allDay: true,
+      });
+      onCancel();
+    } catch {
+      // The parent handles and logs the API error; keep the form open for another attempt.
+    }
   };
 
   const handleSubmitAsDraft = (e: React.FormEvent) => {
@@ -460,7 +513,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     const submitData = {
       ...formData,
       status: 'draft' as const,
-      date: formData.date instanceof Date ? formData.date.toISOString().split('T')[0] : formData.date
+      date: formData.date
     };
     
     onSubmit(submitData);
@@ -471,7 +524,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const requestClose = () => {
-    if (isDirty && !window.confirm('Es gibt ungespeicherte Änderungen. Änderungen verwerfen?')) {
+    if (isDirty) {
+      setShowDiscardModal(true);
       return;
     }
     onCancel();
@@ -487,24 +541,97 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[95vh] md:max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
           <h3 className="text-base md:text-lg font-semibold text-gray-900">
-            {job ? 'Auftrag bearbeiten' : 'Neuer Auftrag'}
+            {job ? terminology.work.editLabel : entryType === 'vacation' ? 'Neuer Urlaubseintrag' : terminology.work.newLabel}
           </h3>
-          <button
-            onClick={requestClose}
-            className="text-gray-400 hover:text-gray-600 p-1"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!job && onSubmitVacation && (
+              <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setEntryType('job')}
+                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${entryType === 'job' ? 'bg-primary-custom font-medium text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+                >
+                  {terminology.work.singular}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEntryType('vacation')}
+                  className={`rounded-md px-3 py-1.5 text-sm ${entryType === 'vacation' ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-500'}`}
+                >
+                  Urlaub
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={requestClose}
+              className="text-gray-400 hover:text-gray-600 p-1"
+              aria-label="Dialog schließen"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} onChange={() => setIsDirty(true)} className="flex-1 flex flex-col overflow-hidden">
+        <form onSubmit={entryType === 'vacation' ? handleVacationSubmit : handleSubmit} onChange={() => setIsDirty(true)} className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-3 md:p-4">
+            {entryType === 'vacation' ? (
+              <div className="mx-auto max-w-xl space-y-4 py-2">
+                <p className="text-sm text-gray-500">
+                  Der Zeitraum wird im Kalender als Abwesenheit angezeigt.
+                </p>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Bezeichnung</label>
+                  <input
+                    type="text"
+                    required
+                    value={vacationForm.title}
+                    onChange={(event) => setVacationForm((previous) => ({ ...previous, title: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    placeholder="z. B. Sommerurlaub"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Von</label>
+                    <input
+                      type="date"
+                      required
+                      value={vacationForm.startDate}
+                      onChange={(event) => setVacationForm((previous) => ({ ...previous, startDate: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Bis</label>
+                    <input
+                      type="date"
+                      required
+                      min={vacationForm.startDate}
+                      value={vacationForm.endDate}
+                      onChange={(event) => setVacationForm((previous) => ({ ...previous, endDate: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Notiz (optional)</label>
+                  <textarea
+                    value={vacationForm.notes}
+                    onChange={(event) => setVacationForm((previous) => ({ ...previous, notes: event.target.value }))}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    placeholder="Weitere Informationen"
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="space-y-4 md:space-y-6">
               {/* Basic Information */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Kunde *
+                {terminology.entity.singular} *
               </label>
               <div className="flex gap-2">
                 <div className="w-full max-w-sm relative">
@@ -514,7 +641,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                     onChange={handleCustomerSearchChange}
                     onFocus={() => setIsCustomerDropdownOpen(true)}
                     onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
-                    placeholder="Kunde suchen oder auswählen..."
+                    placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                     required
                   />
@@ -530,7 +657,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                           >
                             <div className="font-medium">{customer.name}</div>
                             {customer.customerNumber && (
-                              <div className="text-xs text-gray-500">Nr: {formatCustomerNumber(customer.customerNumber)}</div>
+                              <div className="text-xs text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>
                             )}
                             {customer.email && (
                               <div className="text-xs text-gray-500">{customer.email}</div>
@@ -539,7 +666,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                         ))
                       ) : (
                         <div className="px-3 py-2 text-gray-500 text-xs">
-                          Keine Kunden gefunden
+                          {terminology.entity.noResults}
                         </div>
                       )}
                     </div>
@@ -552,8 +679,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                       logger.debug('Plus button clicked in JobEntryForm');
                       setShowCustomerForm(true);
                     }}
-                    className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center text-sm"
-                    title="Neuen Kunden anlegen"
+                    className="min-h-0 inline-flex h-[38px] w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 p-0 text-sm text-white transition-colors hover:bg-blue-600"
+                          title={terminology.entity.newLabel}
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -595,7 +722,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
           {/* Customer Address - Full width under customer selection */}
           <div className="col-span-1 md:col-span-2 lg:col-span-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Kundenanschrift (Ausführungsort)
+              {terminology.entity.addressLabel} (Ausführungsort)
               <span className="text-gray-500 text-xs ml-1">
                 - Optional, falls abweichend vom Rechnungsempfänger
               </span>
@@ -616,7 +743,7 @@ Musterstraße 123
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Auftragsnummer
+                  {terminology.work.numberLabel}
                 </label>
                 <input
                   type="text"
@@ -629,7 +756,7 @@ Musterstraße 123
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Externe Auftragsnummer
+                  Externe {terminology.work.numberLabel}
                 </label>
                 <input
                   type="text"
@@ -641,7 +768,8 @@ Musterstraße 123
               </div>
             </div>
 
-            <div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="md:col-span-2 lg:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Datum *
               </label>
@@ -655,9 +783,7 @@ Musterstraße 123
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                 />
               </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Beginn
@@ -700,49 +826,51 @@ Musterstraße 123
 
           {/* Time Tracking */}
           <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h4 className="text-sm font-medium text-gray-900 flex items-center">
                 <Clock className="h-4 w-4 mr-2" />
                 Zeiterfassung
               </h4>
-              <div className="flex items-center space-x-2">
-                <div className="flex items-center space-x-1">
-                  <label className="text-xs text-gray-600">Aus Vorlage:</label>
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        addTimeEntryFromTemplate(e.target.value);
-                        e.target.value = ''; // Reset dropdown
-                      }
-                    }}
-                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
-                    defaultValue=""
-                  >
-                    <option value="">Stundensatz wählen...</option>
-                    {getCombinedHourlyRatesForCustomer(formData.customerId).map((rate: any) => (
-                      <option key={rate.id} value={rate.id}>
-                        {rate.displayName} - {parseFloat(rate.rate || 0).toFixed(2)}€/h
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setShowRatesRedirectModal({
-                      isOpen: true,
-                      type: 'hourlyRates'
-                    })}
-                    className="p-1 text-blue-600 hover:text-blue-800 border border-gray-300 rounded hover:bg-blue-50 transition-colors"
-                    title="Stundensätze verwalten"
-                  >
-                    <Edit className="h-3 w-3" />
-                  </button>
-                </div>
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+                <label className="hidden shrink-0 text-xs text-gray-600 sm:inline" htmlFor="time-entry-template">
+                  Aus Vorlage:
+                </label>
+                <select
+                  id="time-entry-template"
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      addTimeEntryFromTemplate(e.target.value);
+                      e.target.value = ''; // Reset dropdown
+                    }
+                  }}
+                  className={sectionSelectClass}
+                  defaultValue=""
+                >
+                  <option value="">Stundensatz wählen...</option>
+                  {getCombinedHourlyRatesForCustomer(formData.customerId).map((rate) => (
+                    <option key={rate.id} value={rate.id}>
+                      {rate.displayName} - {formatMoney(Number(rate.rate) || 0)}/h
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowRatesRedirectModal({
+                    isOpen: true,
+                    type: 'hourlyRates'
+                  })}
+                  className={sectionIconButtonClass}
+                  title="Stundensätze verwalten"
+                  aria-label="Stundensätze verwalten"
+                >
+                  <Edit className="h-4 w-4" />
+                </button>
                 <button
                   type="button"
                   onClick={addTimeEntry}
-                  className="btn-secondary px-2 md:px-3 py-1 rounded text-xs md:text-sm flex items-center space-x-1"
+                  className={sectionActionButtonClass}
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-4 w-4" />
                   <span className="hidden sm:inline">Manuell</span>
                   <span className="sm:hidden">+</span>
                 </button>
@@ -761,8 +889,9 @@ Musterstraße 123
                         <button
                           type="button"
                           onClick={() => removeTimeEntry(index)}
-                          className="text-red-600 hover:text-red-800 p-1"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
                           title="Zeiteintrag entfernen"
+                          aria-label={`Zeiteintrag ${index + 1} entfernen`}
                         >
                           <Trash2 className="h-3 w-3 md:h-4 md:w-4" />
                         </button>
@@ -789,17 +918,13 @@ Musterstraße 123
                           <label className="block text-xs font-medium text-gray-700 mb-1">
                             Stunden *
                           </label>
-                          <input
-                            type="number"
+                          <LocalizedNumberInput
                             step="0.01"
                             min="0"
                             value={timeEntry.hoursWorked}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '' || !isNaN(parseFloat(value))) {
-                                updateTimeEntry(index, 'hoursWorked', value === '' ? '' : parseFloat(value));
-                              }
-                            }}
+                            locale={company.locale}
+                            numberFormat={company.numberFormat}
+                            onValueChange={(value) => updateTimeEntry(index, 'hoursWorked', value)}
                             onBlur={(e) => {
                               if (e.target.value === '') {
                                 updateTimeEntry(index, 'hoursWorked', 0);
@@ -811,11 +936,11 @@ Musterstraße 123
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Gesamt (€)
+                            Gesamt ({currencySymbol})
                           </label>
                           <input
                             type="text"
-                            value={(parseFloat(timeEntry.total) || 0).toFixed(2)}
+                            value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
                             className="w-full px-1 py-1 border border-gray-300 rounded text-xs bg-gray-100"
                           />
@@ -843,17 +968,13 @@ Musterstraße 123
                           <label className="block text-xs font-medium text-gray-700 mb-1">
                             Stunden *
                           </label>
-                          <input
-                            type="number"
+                          <LocalizedNumberInput
                             step="0.01"
                             min="0"
                             value={timeEntry.hoursWorked}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '' || !isNaN(parseFloat(value))) {
-                                updateTimeEntry(index, 'hoursWorked', value === '' ? '' : parseFloat(value));
-                              }
-                            }}
+                            locale={company.locale}
+                            numberFormat={company.numberFormat}
+                            onValueChange={(value) => updateTimeEntry(index, 'hoursWorked', value)}
                             onBlur={(e) => {
                               if (e.target.value === '') {
                                 updateTimeEntry(index, 'hoursWorked', 0);
@@ -866,11 +987,11 @@ Musterstraße 123
 
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Stundensatz (€)
+                            Stundensatz ({currencySymbol})
                           </label>
                           <input
                             type="text"
-                            value={`${parseFloat(timeEntry.hourlyRate || 0).toFixed(2)}€`}
+                            value={formatMoney(Number(timeEntry.hourlyRate || 0))}
                             readOnly
                             className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
                           />
@@ -901,11 +1022,11 @@ Musterstraße 123
 
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Gesamt (€)
+                            Gesamt ({currencySymbol})
                           </label>
                           <input
                             type="text"
-                            value={(parseFloat(timeEntry.total) || 0).toFixed(2)}
+                            value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
                             className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
                           />
@@ -919,13 +1040,18 @@ Musterstraße 123
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-blue-900">Gesamtstunden:</span>
                     <span className="font-bold text-blue-900">
-                      {(formData.timeEntries.reduce((sum, entry) => sum + (parseFloat(entry.hoursWorked) || 0), 0)).toFixed(2)}h
+                      {formatNumber(
+                        formData.timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0),
+                        company.locale,
+                        company.numberFormat,
+                        2
+                      )}h
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm mt-1">
                     <span className="font-medium text-blue-900">Gesamtkosten:</span>
                     <span className="font-bold text-blue-900">
-                      {(formData.timeEntries.reduce((sum, entry) => sum + (parseFloat(entry.total) || 0), 0)).toFixed(2)}€
+                      {formatMoney(formData.timeEntries.reduce((sum, entry) => sum + (Number(entry.total) || 0), 0))}
                     </span>
                   </div>
                 </div>
@@ -942,29 +1068,31 @@ Musterstraße 123
 
           {/* Materials */}
           <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-3">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h4 className="text-sm font-medium text-gray-900 flex items-center">
                 <DollarSign className="h-4 w-4 mr-2" />
                 Materialien & Zusatzkosten
               </h4>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+                <label className="sr-only" htmlFor="material-template">Materialvorlage</label>
                 <select
+                  id="material-template"
                   onChange={(e) => {
                     if (e.target.value) {
                       addMaterial(e.target.value);
                       e.target.value = ''; // Reset dropdown
                     }
                   }}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                  className={sectionSelectClass}
                   defaultValue=""
                 >
                   <option value="">Vorlage wählen...</option>
                   {(() => {
                     try {
                       const templates = getCombinedMaterialTemplatesForCustomer(formData.customerId) || [];
-                      return templates.map((template: any) => (
+                      return templates.map((template) => (
                         <option key={template.id} value={template.id}>
-                          {template.displayName} - {parseFloat(template.unitPrice || 0).toFixed(2)}€/{template.unit || 'Stück'}
+                          {template.displayName} - {formatMoney(Number(template.unitPrice) || 0)}/{template.unit || 'Stück'}
                         </option>
                       ));
                     } catch (error) {
@@ -979,19 +1107,21 @@ Musterstraße 123
                     isOpen: true,
                     type: 'materials'
                   })}
-                  className="btn-secondary px-2 py-1 rounded text-xs flex items-center space-x-1"
+                  className={sectionIconButtonClass}
                   title="Materialien verwalten"
+                  aria-label="Materialien verwalten"
                 >
-                  <Edit className="h-3 w-3" />
+                  <Edit className="h-4 w-4" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => addMaterial()}
-                  className="btn-secondary px-2 py-1 rounded text-xs flex items-center space-x-1"
+                  className={sectionActionButtonClass}
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-4 w-4" />
                   <span className="hidden sm:inline">Manuell</span>
+                  <span className="sm:hidden">+</span>
                 </button>
               </div>
             </div>
@@ -1017,17 +1147,13 @@ Musterstraße 123
 
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Menge</label>
-                        <input
-                          type="number"
+                        <LocalizedNumberInput
                           step="0.01"
                           min="0"
                           value={material.quantity}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || !isNaN(parseFloat(value))) {
-                              updateMaterial(index, 'quantity', value === '' ? '' : parseFloat(value));
-                            }
-                          }}
+                          locale={company.locale}
+                          numberFormat={company.numberFormat}
+                          onValueChange={(value) => updateMaterial(index, 'quantity', value)}
                           onBlur={(e) => {
                             if (e.target.value === '') {
                               updateMaterial(index, 'quantity', 0);
@@ -1038,18 +1164,14 @@ Musterstraße 123
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Preis €</label>
-                        <input
-                          type="number"
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Preis {currencySymbol}</label>
+                        <LocalizedNumberInput
                           step="0.01"
                           min="0"
                           value={material.unitPrice}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || !isNaN(parseFloat(value))) {
-                              updateMaterial(index, 'unitPrice', value === '' ? '' : parseFloat(value));
-                            }
-                          }}
+                          locale={company.locale}
+                          numberFormat={company.numberFormat}
+                          onValueChange={(value) => updateMaterial(index, 'unitPrice', value)}
                           onBlur={(e) => {
                             if (e.target.value === '') {
                               updateMaterial(index, 'unitPrice', 0);
@@ -1082,20 +1204,21 @@ Musterstraße 123
 
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Gesamt €</label>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Gesamt {currencySymbol}</label>
                           <input
                             type="text"
-                            value={(parseFloat(material.total) || 0).toFixed(2)}
+                            value={formatMoney(Number(material.total) || 0)}
                             readOnly
                             className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
                           />
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeMaterial(index)}
-                          className="text-red-600 hover:text-red-800 p-1 ml-2"
-                          title="Entfernen"
-                        >
+                          <button
+                            type="button"
+                            onClick={() => removeMaterial(index)}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
+                            title="Entfernen"
+                            aria-label={`Material ${index + 1} entfernen`}
+                          >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -1107,7 +1230,7 @@ Musterstraße 123
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-blue-900">Gesamtkosten Materialien:</span>
                     <span className="font-bold text-blue-900">
-                      {(formData.materials.reduce((sum, material) => sum + (parseFloat(material.total) || 0), 0)).toFixed(2)}€
+                      {formatMoney(formData.materials.reduce((sum, material) => sum + (Number(material.total) || 0), 0))}
                     </span>
                   </div>
                 </div>
@@ -1144,11 +1267,12 @@ Musterstraße 123
                   allowUpload={true}
                   allowPreview={true}
                   onPreview={handlePreview}
-                  title="Auftrag-Anhänge"
+                  title={`${terminology.work.singular}-Anhänge`}
                 />
               </div>
 
             </div>
+            )}
           </div>
 
           {/* Action Buttons - Fixed at bottom */}
@@ -1161,23 +1285,35 @@ Musterstraße 123
               >
                 Abbrechen
               </button>
-              {!job && (
+              {entryType === 'vacation' ? (
                 <button
-                  type="button"
-                  onClick={handleSubmitAsDraft}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center space-x-2"
+                  type="submit"
+                  className="btn-primary text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 text-sm"
                 >
-                  <Save className="h-4 w-4" />
-                  <span>Als Entwurf speichern</span>
+                  <Calendar className="h-4 w-4" />
+                  <span>Eintragen</span>
                 </button>
+              ) : (
+                <>
+                  {!job && (
+                    <button
+                      type="button"
+                      onClick={handleSubmitAsDraft}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center space-x-2"
+                    >
+                      <Save className="h-4 w-4" />
+                      <span>Als Entwurf speichern</span>
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn-primary text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 text-sm"
+                  >
+                    <Save className="h-4 w-4" />
+                    <span>{job ? 'Aktualisieren' : 'Erstellen'}</span>
+                  </button>
+                </>
               )}
-              <button
-                type="submit"
-                className="btn-primary text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 text-sm"
-              >
-                <Save className="h-4 w-4" />
-                <span>{job ? 'Aktualisieren' : 'Erstellen'}</span>
-              </button>
             </div>
           </div>
         </form>
@@ -1188,7 +1324,7 @@ Musterstraße 123
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
           <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Neuer Kunde
+              {terminology.entity.newLabel}
             </h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -1197,7 +1333,7 @@ Musterstraße 123
               const existingCustomer = findDuplicateCustomer(customers, newCustomerData);
               
               if (existingCustomer) {
-                showDuplicateCustomerAlert(existingCustomer);
+                showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
                 return;
               }
               
@@ -1225,7 +1361,7 @@ Musterstraße 123
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Error creating customer:', error);
-                alert('Fehler beim Erstellen des Kunden. Bitte versuchen Sie es erneut.');
+                alert(`Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
               }
             }} className="space-y-4">
               <div>
@@ -1329,7 +1465,7 @@ Musterstraße 123
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
                 >
-                  Kunde erstellen
+                  {terminology.entity.createLabel}
                 </button>
                 <button
                   type="button"
@@ -1359,6 +1495,20 @@ Musterstraße 123
         onNavigateToCustomers={() => onNavigateToCustomers && onNavigateToCustomers()}
         onNavigateToSettings={() => onNavigateToSettings && onNavigateToSettings()}
         type={showRatesRedirectModal.type}
+      />
+
+      <ConfirmationModal
+        isOpen={showDiscardModal}
+        onClose={() => setShowDiscardModal(false)}
+        onConfirm={() => {
+          setShowDiscardModal(false);
+          onCancel();
+        }}
+        title="Änderungen verwerfen?"
+        message="Es gibt ungespeicherte Änderungen. Möchten Sie diese wirklich verwerfen?"
+        confirmText="Änderungen verwerfen"
+        cancelText="Weiter bearbeiten"
+        isDestructive
       />
     </div>
   );

@@ -29,8 +29,12 @@ export function findDuplicateCustomer(
   }) || null;
 }
 
-export function showDuplicateCustomerAlert(duplicateCustomer: Customer): boolean {
-  const message = `Ein Kunde mit identischen Daten existiert bereits:\n\nName: ${duplicateCustomer.name}\nAdresse: ${duplicateCustomer.address}, ${duplicateCustomer.postalCode} ${duplicateCustomer.city}\nE-Mail: ${duplicateCustomer.email || 'Nicht angegeben'}\nKunden-Nr: ${formatCustomerNumber(duplicateCustomer.customerNumber)}\n\nMöchten Sie trotzdem fortfahren?`;
+export function showDuplicateCustomerAlert(
+  duplicateCustomer: Customer,
+  entityLabel: string,
+  numberLabel: string
+): boolean {
+  const message = `Ein ${entityLabel} mit identischen Daten existiert bereits:\n\nName: ${duplicateCustomer.name}\nAdresse: ${duplicateCustomer.address}, ${duplicateCustomer.postalCode} ${duplicateCustomer.city}\nE-Mail: ${duplicateCustomer.email || 'Nicht angegeben'}\n${numberLabel}: ${formatCustomerNumber(duplicateCustomer.customerNumber)}\n\nMöchten Sie trotzdem fortfahren?`;
   return window.confirm(message);
 }
 

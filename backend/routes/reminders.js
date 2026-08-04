@@ -33,7 +33,8 @@ router.get('/eligible', async (req, res) => {
         c.email as customer_email
       FROM invoices i
       JOIN customers c ON i.customer_id = c.id
-      WHERE i.status IN ('sent', 'overdue', 'reminded_1x', 'reminded_2x')
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND i.status IN ('sent', 'overdue', 'reminded_1x', 'reminded_2x')
       ORDER BY i.due_date ASC
     `);
     
@@ -143,7 +144,8 @@ router.get('/history', async (req, res) => {
       FROM invoices i
       JOIN customers c ON i.customer_id = c.id
       LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-      WHERE i.last_reminder_date IS NOT NULL
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND i.last_reminder_date IS NOT NULL
       GROUP BY i.id, c.name, c.email
       ORDER BY i.last_reminder_sent_at DESC NULLS LAST, i.created_at DESC
     `);
@@ -191,7 +193,7 @@ router.post('/send/:invoiceId', async (req, res) => {
     }
     
     // Get the invoice
-    const invoiceResult = await client.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+    const invoiceResult = await client.query("SELECT * FROM invoices WHERE id = $1 AND COALESCE(document_type, 'invoice') = 'invoice'", [invoiceId]);
     
     if (invoiceResult.rows.length === 0) {
       return res.status(404).json({ error: 'Invoice not found' });

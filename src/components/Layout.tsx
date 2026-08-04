@@ -1,11 +1,13 @@
-import { ReactNode, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, Bell, Search } from 'lucide-react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
+import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useQuotes } from '../context/QuoteContext';
 import { useJobs } from '../context/JobContext';
+import { getTerminology } from '../utils/terminology';
 
 interface LayoutProps {
   children: ReactNode;
@@ -20,39 +22,99 @@ interface SearchResult {
   page: string;
 }
 
+interface NavItem {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  children?: Array<{ id: string; label: string }>;
+}
+
+const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
+const taxSubPageIds = ['tax-overview', 'euer'];
+
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const { customers } = useCustomers();
   const { invoices } = useInvoices();
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const invoiceAreaActive = currentPage === 'invoices' || invoiceSubPageIds.includes(currentPage);
+  const [isInvoiceMenuOpen, setIsInvoiceMenuOpen] = useState(() => invoiceAreaActive);
+  const invoiceAreaWasActive = useRef(invoiceAreaActive);
+  const taxAreaActive = currentPage === 'taxes' || taxSubPageIds.includes(currentPage);
+  const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
+  const taxAreaWasActive = useRef(taxAreaActive);
 
-  const baseNavItems = [
+  useEffect(() => {
+    if (!invoiceAreaActive) {
+      setIsInvoiceMenuOpen(false);
+    } else if (!invoiceAreaWasActive.current) {
+      setIsInvoiceMenuOpen(true);
+    }
+    invoiceAreaWasActive.current = invoiceAreaActive;
+  }, [invoiceAreaActive]);
+
+  useEffect(() => {
+    if (!taxAreaActive) {
+      setIsTaxMenuOpen(false);
+    } else if (!taxAreaWasActive.current) {
+      setIsTaxMenuOpen(true);
+    }
+    taxAreaWasActive.current = taxAreaActive;
+  }, [taxAreaActive]);
+
+  const baseNavItems: NavItem[] = [
     { id: 'dashboard', label: 'Übersicht', icon: Home },
-    { id: 'invoices', label: 'Rechnungen', icon: FileText },
   ];
 
+  const invoiceNavItem: NavItem = {
+    id: 'invoices',
+    label: 'Rechnungen',
+    icon: FileText,
+    children: [
+      { id: 'recurring-invoices', label: 'Wiederkehrend' },
+      ...(company.remindersEnabled ? [{ id: 'reminders', label: 'Mahnungen' }] : []),
+      { id: 'credit-notes', label: 'Gutschriften' },
+    ],
+  };
+
+  const taxNavItem: NavItem = {
+    id: 'taxes',
+    label: 'Steuern',
+    icon: Calculator,
+    children: [
+      { id: 'tax-overview', label: 'Übersicht' },
+      { id: 'euer', label: 'EÜR' },
+    ],
+  };
+
   const quotesNavItem = { id: 'quotes', label: 'Angebote', icon: FileCheck };
-  const jobNavItem = { id: 'jobs', label: 'Aufträge', icon: Briefcase };
+  const jobNavItem = { id: 'jobs', label: terminology.work.navLabel, icon: Briefcase };
   const calendarNavItem = { id: 'calendar', label: 'Kalender', icon: Calendar };
   const reportingNavItem = { id: 'reporting', label: 'Auswertung', icon: BarChart3 };
-  const remindersNavItem = { id: 'reminders', label: 'Mahnungen', icon: Bell };
   const settingsNavItem = { id: 'settings', label: 'Einstellungen', icon: Settings };
+  const templatesNavItem = { id: 'templates', label: 'Vorlagen', icon: Copy };
   const bottomNavItems = [
-    { id: 'customers', label: 'Kunden', icon: Users },
+    { id: 'customers', label: terminology.entity.navLabel, icon: Users },
+    templatesNavItem,
     settingsNavItem,
   ];
 
-  const navItems = [
+  const navItems: NavItem[] = [
     ...baseNavItems,
+    invoiceNavItem,
+    taxNavItem,
     ...(company.quotesEnabled ? [quotesNavItem] : []),
     ...(company.jobTrackingEnabled ? [jobNavItem, calendarNavItem] : []),
-    ...(company.remindersEnabled ? [remindersNavItem] : []),
     ...(company.reportingEnabled ? [reportingNavItem] : []),
   ];
-  const allNavItems = [...navItems, ...bottomNavItems];
+  const allNavItems = [
+    ...navItems.flatMap((item) => [item, ...(item.children || []).map(child => ({ ...child, icon: item.icon }))]),
+    ...bottomNavItems,
+  ];
 
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('de-DE');
   const searchResults: SearchResult[] = normalizedSearchQuery
@@ -62,7 +124,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           .map((item) => ({ id: item.id, title: item.label, subtitle: 'Bereich öffnen', page: item.id })),
         ...customers
           .filter((customer) => [customer.name, customer.customerNumber, customer.email].some((value) => value?.toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((customer) => ({ id: customer.id, title: customer.name, subtitle: `Kunde ${customer.customerNumber}`, page: 'customers' })),
+          .map((customer) => ({ id: customer.id, title: customer.name, subtitle: `${terminology.entity.singular} ${customer.customerNumber}`, page: 'customers' })),
         ...invoices
           .filter((invoice) => [invoice.invoiceNumber, invoice.customerName, invoice.notes].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
           .map((invoice) => ({ id: invoice.id, title: invoice.invoiceNumber || 'Rechnung', subtitle: `Rechnung · ${invoice.customerName}`, page: 'invoices' })),
@@ -71,11 +133,27 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           .map((quote) => ({ id: quote.id, title: quote.quoteNumber || 'Angebot', subtitle: `Angebot · ${quote.customerName}`, page: 'quotes' })),
         ...jobEntries
           .filter((job) => [job.jobNumber, job.title, job.customerName, job.description].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((job) => ({ id: job.id, title: job.title || job.jobNumber || 'Auftrag', subtitle: `Auftrag · ${job.customerName}`, page: 'jobs' })),
+          .map((job) => ({ id: job.id, title: job.title || job.jobNumber || terminology.work.singular, subtitle: `${terminology.work.singular} · ${job.customerName}`, page: 'jobs' })),
       ].slice(0, 10)
     : [];
 
   const handlePageChange = (page: string) => {
+    if (page === 'invoices') {
+      setIsInvoiceMenuOpen(open => !open);
+      setIsTaxMenuOpen(false);
+    } else if (invoiceSubPageIds.includes(page)) {
+      setIsInvoiceMenuOpen(true);
+      setIsTaxMenuOpen(false);
+    } else if (page === 'taxes') {
+      setIsTaxMenuOpen(open => !open);
+      setIsInvoiceMenuOpen(false);
+    } else if (taxSubPageIds.includes(page)) {
+      setIsTaxMenuOpen(true);
+      setIsInvoiceMenuOpen(false);
+    } else {
+      setIsInvoiceMenuOpen(false);
+      setIsTaxMenuOpen(false);
+    }
     onPageChange(page);
     setIsMobileMenuOpen(false);
   };
@@ -83,11 +161,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   return (
     <>
       <DynamicColors />
-      <div className="min-h-screen bg-gray-50">
+      <div id="app-shell" className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="fixed top-3 left-3 z-30 lg:hidden p-2 rounded-md text-gray-500 bg-white shadow-sm hover:text-gray-700 hover:bg-gray-100 transition-colors touch-target"
+            className="fixed left-3 top-2 z-50 inline-flex h-12 w-12 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700 lg:hidden"
             aria-label={isMobileMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
           >
             {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -95,13 +173,13 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
 
           {isMobileMenuOpen && (
             <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
+              className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
               onClick={() => setIsMobileMenuOpen(false)}
             />
           )}
 
           <nav className={`
-            fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-20
+            fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-40
             w-64 flex-shrink-0 bg-white shadow-sm transform transition-transform duration-300 ease-in-out
             lg:transform-none lg:shadow-none lg:h-screen lg:self-start
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -161,19 +239,45 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               <ul className="space-y-1">
                 {navItems.map((item) => {
                   const Icon = item.icon;
+                  const isParentActive = currentPage === item.id || item.children?.some(child => child.id === currentPage);
+                  const isExpanded = item.id === 'invoices' ? isInvoiceMenuOpen : item.id === 'taxes' ? isTaxMenuOpen : isParentActive;
                   return (
                     <li key={item.id}>
                       <button
                         onClick={() => handlePageChange(item.id)}
                         className={`w-full flex items-center px-4 py-2 text-left rounded-lg transition-colors ${
-                          currentPage === item.id
+                          isParentActive
                             ? 'nav-active'
                             : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
                         <Icon className="h-5 w-5 mr-3 flex-shrink-0" />
                         <span className="truncate">{item.label}</span>
+                        {item.children && (
+                          isExpanded
+                            ? <ChevronDown className="ml-auto h-4 w-4" />
+                            : <ChevronRight className="ml-auto h-4 w-4" />
+                        )}
                       </button>
+                      {item.children && isExpanded && (
+                        <ul className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                          {item.children.map((child) => (
+                            <li key={child.id}>
+                              <button
+                                type="button"
+                                onClick={() => handlePageChange(child.id)}
+                                className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                  currentPage === child.id
+                                    ? 'font-medium text-primary-custom'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                }`}
+                              >
+                                {child.label}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   );
                 })}

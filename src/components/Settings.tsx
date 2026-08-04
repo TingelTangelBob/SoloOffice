@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon } from 'lucide-react';
 import { defaultCompany, useCompany } from '../context/CompanyContext';
 import { ColorPicker } from './ColorPicker';
 import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';
 import { apiService } from '../services/api';
-import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
-import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate } from '../types';
+import { updateFavicon } from '../utils/faviconUtils';
+import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode } from '../types';
 import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
+import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
+import { getTerminology, terminologyProfiles } from '../utils/terminology';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
+
+interface SettingsProps {
+  initialTab?: SettingsTab;
+  embedded?: boolean;
+  onNavigate?: (page: string, filter?: string) => void;
+}
+
+const colorPresets = [
+  { name: 'Klassisch Blau', primary: '#2563eb', secondary: '#64748b' },
+  { name: 'Waldgrün', primary: '#15803d', secondary: '#475569' },
+  { name: 'Violett', primary: '#7c3aed', secondary: '#64748b' },
+  { name: 'Koralle', primary: '#ea580c', secondary: '#475569' },
+] as const;
 
 const reminderTemplates = {
   stage1: [
@@ -31,26 +47,40 @@ const reminderTemplates = {
   ],
 } as const;
 
-export function Settings() {
-  const { company, updateCompany } = useCompany();
+export function Settings({ initialTab = 'app', embedded = false, onNavigate }: SettingsProps) {
+  const {
+    company,
+    updateCompany,
+    hourlyRates,
+    materialTemplates,
+    addHourlyRate,
+    updateHourlyRate,
+    deleteHourlyRate,
+    addMaterialTemplate,
+    updateMaterialTemplate,
+    deleteMaterialTemplate,
+  } = useCompany();
   const [formData, setFormData] = useState(company);
   const [isSaving, setIsSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [yearlyStartNumbers, setYearlyStartNumbers] = useState<YearlyInvoiceStartNumber[]>([]);
   const [newYear, setNewYear] = useState<number>(new Date().getFullYear());
   const [newStartNumber, setNewStartNumber] = useState<number>(1);
   const [showBackupManagement, setShowBackupManagement] = useState(false);
   const [showEmailManagement, setShowEmailManagement] = useState(false);
   
-  // Material Templates State
-  const [materialTemplates, setMaterialTemplates] = useState<MaterialTemplate[]>([]);
   const [editingMaterial, setEditingMaterial] = useState<MaterialTemplate | null>(null);
   const [isAddingMaterial, setIsAddingMaterial] = useState(false);
   
-  // Hourly Rates State
-  const [hourlyRates, setHourlyRates] = useState<HourlyRate[]>([]);
   const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
   const [isAddingRate, setIsAddingRate] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('app');
+  const currencySymbol = getCurrencySymbol(formData.locale || 'de-DE', formData.numberFormat, formData.currency);
+  const terminology = getTerminology(formData.terminologyProfile);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const handleResetToDefaults = () => {
     if (!window.confirm('Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.')) {
@@ -59,9 +89,9 @@ export function Settings() {
 
     setFormData({
       ...defaultCompany,
-      quotesEnabled: true,
+      quotesEnabled: false,
       discountsEnabled: true,
-      remindersEnabled: true,
+      remindersEnabled: false,
       reminderDaysAfterDue: 7,
       reminderDaysBetween: 7,
       reminderFeeStage1: 0,
@@ -71,6 +101,7 @@ export function Settings() {
       reminderTextStage2: reminderTemplates.stage2[0].text,
       reminderTextStage3: reminderTemplates.stage3[0].text,
     });
+    setFeedback({ type: 'success', text: 'Standardeinstellungen wurden im Formular gesetzt. Mit „Speichern“ übernehmen.' });
   };
 
   useEffect(() => {
@@ -79,8 +110,6 @@ export function Settings() {
 
   useEffect(() => {
     loadYearlyStartNumbers();
-    loadMaterialTemplates();
-    loadHourlyRates();
   }, []);
 
   const loadYearlyStartNumbers = async () => {
@@ -88,7 +117,7 @@ export function Settings() {
       const numbers = await apiService.getYearlyInvoiceStartNumbers();
       setYearlyStartNumbers(numbers);
     } catch (error) {
-      logger.error('Error loading yearly start numbers:', error);
+      logger.error('Error loading yearly start numbers:', { error: error instanceof Error ? error.message : String(error) });
     }
   };
 
@@ -98,8 +127,10 @@ export function Settings() {
       await loadYearlyStartNumbers();
       setNewYear(new Date().getFullYear() + 1);
       setNewStartNumber(1);
+      setFeedback({ type: 'success', text: 'Jahresnummer wurde gespeichert.' });
     } catch (error) {
-      logger.error('Error adding yearly start number:', error);
+      logger.error('Error adding yearly start number:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Die Jahresnummer konnte nicht gespeichert werden.' });
     }
   };
 
@@ -107,76 +138,62 @@ export function Settings() {
     try {
       await apiService.deleteYearlyInvoiceStartNumber(year);
       await loadYearlyStartNumbers();
+      setFeedback({ type: 'success', text: 'Jahresnummer wurde gelöscht.' });
     } catch (error) {
-      logger.error('Error deleting yearly start number:', error);
-    }
-  };
-
-  // Material Templates Functions
-  const loadMaterialTemplates = async () => {
-    try {
-      const templates = await apiService.getMaterialTemplates();
-      setMaterialTemplates(templates);
-    } catch (error) {
-      logger.error('Error loading material templates:', error);
+      logger.error('Error deleting yearly start number:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Die Jahresnummer konnte nicht gelöscht werden.' });
     }
   };
 
   const handleSaveMaterial = async (material: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       if (editingMaterial) {
-        await apiService.updateMaterialTemplate(editingMaterial.id, material);
+        await updateMaterialTemplate(editingMaterial.id, material);
       } else {
-        await apiService.createMaterialTemplate(material);
+        await addMaterialTemplate(material);
       }
-      await loadMaterialTemplates();
       setEditingMaterial(null);
       setIsAddingMaterial(false);
+      setFeedback({ type: 'success', text: 'Materialvorlage wurde gespeichert.' });
     } catch (error) {
-      logger.error('Error saving material template:', error);
+      logger.error('Error saving material template:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Die Materialvorlage konnte nicht gespeichert werden.' });
     }
   };
 
   const handleDeleteMaterial = async (id: string) => {
     try {
-      await apiService.deleteMaterialTemplate(id);
-      await loadMaterialTemplates();
+      await deleteMaterialTemplate(id);
+      setFeedback({ type: 'success', text: 'Materialvorlage wurde gelöscht.' });
     } catch (error) {
-      logger.error('Error deleting material template:', error);
-    }
-  };
-
-  // Hourly Rates Functions
-  const loadHourlyRates = async () => {
-    try {
-      const rates = await apiService.getHourlyRates();
-      setHourlyRates(rates);
-    } catch (error) {
-      logger.error('Error loading hourly rates:', error);
+      logger.error('Error deleting material template:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Die Materialvorlage konnte nicht gelöscht werden.' });
     }
   };
 
   const handleSaveRate = async (rate: Omit<HourlyRate, 'id'>) => {
     try {
       if (editingRate) {
-        await apiService.updateHourlyRate(editingRate.id, rate);
+        await updateHourlyRate(editingRate.id, rate);
       } else {
-        await apiService.createHourlyRate(rate);
+        await addHourlyRate(rate);
       }
-      await loadHourlyRates();
       setEditingRate(null);
       setIsAddingRate(false);
+      setFeedback({ type: 'success', text: 'Stundensatz wurde gespeichert.' });
     } catch (error) {
-      logger.error('Error saving hourly rate:', error);
+      logger.error('Error saving hourly rate:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Der Stundensatz konnte nicht gespeichert werden.' });
     }
   };
 
   const handleDeleteRate = async (id: string) => {
     try {
-      await apiService.deleteHourlyRate(id);
-      await loadHourlyRates();
+      await deleteHourlyRate(id);
+      setFeedback({ type: 'success', text: 'Stundensatz wurde gelöscht.' });
     } catch (error) {
-      logger.error('Error deleting hourly rate:', error);
+      logger.error('Error deleting hourly rate:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Der Stundensatz konnte nicht gelöscht werden.' });
     }
   };
 
@@ -185,23 +202,14 @@ export function Settings() {
     setIsSaving(true);
     
     try {
-      await updateCompany(formData);
-      
-      // Update CSS custom properties
-      const root = document.documentElement;
-      if (formData.primaryColor) {
-        root.style.setProperty('--color-primary', formData.primaryColor);
-      }
-      if (formData.secondaryColor) {
-        root.style.setProperty('--color-secondary', formData.secondaryColor);
-      }
-      
-      // Update page title if company name changed
-      if (formData.name && formData.name !== company.name) {
-        updatePageTitle(formData.name);
-      }
+      const companySettings = { ...formData };
+      delete companySettings.invoiceTemplates;
+      delete companySettings.documentTemplates;
+      await updateCompany(companySettings);
+      setFeedback({ type: 'success', text: 'Einstellungen wurden gespeichert.' });
     } catch (error) {
-      logger.error('Error saving settings:', error);
+      logger.error('Error saving settings:', { error: error instanceof Error ? error.message : String(error) });
+      setFeedback({ type: 'error', text: 'Die Einstellungen konnten nicht gespeichert werden.' });
     } finally {
       setIsSaving(false);
     }
@@ -248,29 +256,22 @@ export function Settings() {
     updateFavicon(null);
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // Handle file upload logic here
-    }
-  };
-
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8">
       {/* Header */}
-      <div>
-        <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle="Verwalten Sie Ihre Firmendaten und Anwendungseinstellungen" />
+      <div className={`${embedded ? 'hidden' : ''} order-1`}>
+        <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
       </div>
 
       {isDemoMode && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 lg:p-5">
+        <div className={`${embedded ? 'hidden' : ''} order-3 rounded-lg border border-blue-200 bg-blue-50 p-3`}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-blue-600" />
-                <h3 className="font-semibold text-blue-900">Lokaler Demo-Modus</h3>
+                <h3 className="text-sm font-semibold text-blue-900">Lokaler Demo-Modus</h3>
               </div>
-              <p className="text-sm text-blue-800 mt-1">
+              <p className="mt-1 text-xs text-blue-800">
                 Testdaten und Änderungen werden nur in diesem Browser gespeichert.
               </p>
             </div>
@@ -299,7 +300,7 @@ export function Settings() {
         </div>
       )}
 
-      <div className="sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6`}>
         <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
           {[
             { id: 'app' as const, label: 'App-Einstellungen' },
@@ -324,9 +325,49 @@ export function Settings() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form onSubmit={handleSubmit} className="order-4 space-y-8">
         {activeTab === 'app' && (
           <div className="space-y-8">
+        {/* Terminology Settings */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <SettingsIcon className="h-5 w-5 text-primary-custom" />
+                <h3 className="text-lg font-semibold text-gray-900">Begriffe &amp; Fachsprache</h3>
+              </div>
+              <p className="mt-1 max-w-3xl text-sm text-gray-500">
+                Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert.
+              </p>
+            </div>
+            <span className="hidden rounded-full bg-primary-custom/10 px-3 py-1 text-xs font-medium text-primary-custom sm:inline-flex">Aktiv: {terminology.label}</span>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {terminologyProfiles.map(profile => {
+              const selected = (formData.terminologyProfile || 'customers') === profile.id;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setFormData(previous => ({ ...previous, terminologyProfile: profile.id }))}
+                  className={`min-h-0 rounded-xl border p-4 text-left transition ${selected
+                    ? 'border-primary-custom bg-primary-custom/5 ring-2 ring-primary-custom/20'
+                    : 'border-gray-200 bg-gray-50 hover:border-primary-custom/50 hover:bg-white'}`}
+                >
+                  <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
+                  <span className="mt-1 block min-h-10 text-xs leading-5 text-gray-500">{profile.description}</span>
+                  <span className={`mt-3 block text-xs font-medium ${selected ? 'text-primary-custom' : 'text-gray-600'}`}>
+                    {profile.entity.navLabel} · {profile.work.navLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs text-gray-500">Aktives Profil: {terminology.label}. Die Standardauswahl bleibt Kunden / Auftraggeber. Änderungen werden mit „Speichern“ übernommen.</p>
+        </div>
+
         {/* Module Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -338,10 +379,10 @@ export function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <label className="text-sm font-medium text-gray-700">
-                  Auftragsmanagement
+                  {terminology.work.managementLabel}
                 </label>
                 <p className="text-xs text-gray-500 mt-1">
-                  Aktiviert das Tracking von Aufträgen und Arbeitszeiten
+                  Aktiviert das Tracking von {terminology.work.plural} und Arbeitszeiten
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -401,7 +442,7 @@ export function Settings() {
                   Rabatt-Funktion
                 </label>
                 <p className="text-xs text-gray-500 mt-1">
-                  Ermöglicht Rabatte auf Positions- und Gesamt-Ebene in Rechnungen, Angeboten und Aufträgen
+                  Ermöglicht Rabatte auf Positions- und Gesamt-Ebene in Rechnungen, Angeboten und {terminology.work.plural}
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -509,51 +550,45 @@ export function Settings() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      1. Mahnstufe (€)
+                      1. Mahnstufe ({currencySymbol})
                     </label>
-                    <input
-                      type="number"
+                    <LocalizedNumberInput
                       min="0"
                       step="0.01"
                       value={formData.reminderFeeStage1 ?? 0}
-                      onChange={(e) => {
-                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                        setFormData(prev => ({ ...prev, reminderFeeStage1: isNaN(value) ? 0 : value }));
-                      }}
+                      locale={formData.locale || 'de-DE'}
+                      numberFormat={formData.numberFormat}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage1: value === '' ? 0 : value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      2. Mahnstufe (€)
+                      2. Mahnstufe ({currencySymbol})
                     </label>
-                    <input
-                      type="number"
+                    <LocalizedNumberInput
                       min="0"
                       step="0.01"
                       value={formData.reminderFeeStage2 ?? 0}
-                      onChange={(e) => {
-                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                        setFormData(prev => ({ ...prev, reminderFeeStage2: isNaN(value) ? 0 : value }));
-                      }}
+                      locale={formData.locale || 'de-DE'}
+                      numberFormat={formData.numberFormat}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage2: value === '' ? 0 : value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      3. Mahnstufe (€)
+                      3. Mahnstufe ({currencySymbol})
                     </label>
-                    <input
-                      type="number"
+                    <LocalizedNumberInput
                       min="0"
                       step="0.01"
                       value={formData.reminderFeeStage3 ?? 0}
-                      onChange={(e) => {
-                        const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                        setFormData(prev => ({ ...prev, reminderFeeStage3: isNaN(value) ? 0 : value }));
-                      }}
+                      locale={formData.locale || 'de-DE'}
+                      numberFormat={formData.numberFormat}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage3: value === '' ? 0 : value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
                     />
                   </div>
@@ -653,11 +688,12 @@ export function Settings() {
 
         {activeTab === 'general' && (
           <div className="space-y-8">
+        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
         {/* Logo Upload */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Firmenlogo</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
           </div>
           
           <div className="space-y-4">
@@ -706,10 +742,10 @@ export function Settings() {
         </div>
 
         {/* Icon Upload */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Firmen-Icon</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
           </div>
           
           <div className="space-y-4">
@@ -757,17 +793,34 @@ export function Settings() {
           </div>
         </div>
 
+        </div>
+
+        {onNavigate && (
+          <div className="flex flex-col gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between lg:p-5">
+            <div>
+              <h3 className="text-base font-semibold text-blue-900">Dokumentvorlagen</h3>
+              <p className="mt-1 text-sm text-blue-800">
+                PDF-Layouts, Farben, Logos und Dokumenttexte werden separat in den Vorlagen verwaltet.
+              </p>
+            </div>
+            <button type="button" onClick={() => onNavigate('templates')} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-800">
+              Vorlagen öffnen
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Company Information */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Building2 className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Firmendaten</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.dataLabel}</h3>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Firmenname *
+                {terminology.organization.nameLabel} *
               </label>
               <input
                 type="text"
@@ -785,7 +838,7 @@ export function Settings() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <label className="text-sm font-medium text-blue-800">
-                      Zweizeilige Darstellung der Firmeninformationen im PDF-Header
+                      Zweizeilige Darstellung der {terminology.organization.dataLabel} im PDF-Header
                     </label>
                     <p className="text-xs text-blue-600 mt-1">
                       Ermöglicht eine strukturiertere Darstellung im PDF-Kopfbereich
@@ -806,7 +859,7 @@ export function Settings() {
                   <div className="space-y-3 ml-0 mt-4">
                     <div>
                       <label className="block text-sm font-medium text-blue-700 mb-1">
-                        Erste Zeile (z.B. Firmenbezeichnung/Service)
+                        Erste Zeile (z. B. {terminology.organization.nameLabel}/Service)
                       </label>
                       <input
                         type="text"
@@ -974,11 +1027,29 @@ export function Settings() {
           </div>
           
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">💡 Getrennte Verwaltung</h4>
+            <h4 className="font-medium text-blue-900 mb-2">💡 Verwaltung der Zahlungsdaten</h4>
             <p className="text-sm text-blue-800">
-              Zahlungsinformationen werden jetzt getrennt von den allgemeinen Firmendaten verwaltet. 
-              So können Kontoinhaber und Bankdaten unabhängig vom Firmennamen konfiguriert werden.
+              Wählen Sie, ob der Kontoinhaber automatisch dem {terminology.organization.nameInDativeLabel} folgen oder unabhängig davon gepflegt werden soll.
             </p>
+          </div>
+
+          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {[
+              { id: 'separate', title: 'Getrennt verwalten', text: `Kontoinhaber kann vom ${terminology.organization.nameInDativeLabel} abweichen.` },
+              { id: 'company', title: `Mit ${terminology.organization.dataLabel} verknüpfen`, text: `Kontoinhaber wird aus dem ${terminology.organization.nameInDativeLabel} übernommen.` },
+            ].map(option => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, paymentInformationMode: option.id as 'separate' | 'company' }))}
+                className={`rounded-lg border p-3 text-left transition ${formData.paymentInformationMode === option.id
+                  ? 'border-primary-custom bg-primary-custom/5 ring-1 ring-primary-custom/30'
+                  : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <span className="block text-sm font-medium text-gray-900">{option.title}</span>
+                <span className="mt-1 block text-xs text-gray-500">{option.text}</span>
+              </button>
+            ))}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -988,7 +1059,9 @@ export function Settings() {
               </label>
               <input
                 type="text"
-                value={formData.paymentInformation?.accountHolder || formData.name}
+                value={formData.paymentInformationMode === 'company'
+                  ? formData.name
+                  : (formData.paymentInformation?.accountHolder || formData.name)}
                 onChange={(e) => setFormData(prev => ({ 
                   ...prev, 
                   paymentInformation: { 
@@ -996,11 +1069,14 @@ export function Settings() {
                     accountHolder: e.target.value 
                   }
                 }))}
-                placeholder={`${formData.name} (Firmenname als Standard)`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={formData.paymentInformationMode === 'company'}
+                placeholder={`${formData.name} (${terminology.organization.nameLabel} als Standard)`}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Kann unterschiedlich zum Firmennamen sein (z.B. Geschäftsführer, Inhaber)
+                {formData.paymentInformationMode === 'company'
+                  ? `Der Kontoinhaber wird automatisch aus dem aktuellen ${terminology.organization.nameInDativeLabel} gebildet.`
+                  : `Kann vom ${terminology.organization.nameInDativeLabel} abweichen (z. B. Geschäftsführer oder Inhaber).`}
               </p>
             </div>
             
@@ -1082,6 +1158,26 @@ export function Settings() {
                 Diese Bedingungen werden in Rechnungen und Angeboten angezeigt
               </p>
             </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Zahlungsarten
+              </label>
+              <input
+                type="text"
+                value={(formData.paymentInformation?.paymentMethods || []).join(', ')}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  paymentInformation: {
+                    ...prev.paymentInformation,
+                    paymentMethods: e.target.value.split(',').map(method => method.trim()).filter(Boolean),
+                  }
+                }))}
+                placeholder="z.B. Überweisung, PayPal, Barzahlung"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Mehrere Zahlungsarten durch Komma trennen.</p>
+            </div>
           </div>
         </div>
 
@@ -1127,6 +1223,21 @@ export function Settings() {
                 Anzahl der Tage, nach denen eine Rechnung fällig wird. Bei 0 Tagen ist die Rechnung sofort fällig.
               </p>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Fallback-Startnummer *
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                max="999999"
+                value={formData.invoiceStartNumber ?? 1}
+                onChange={(e) => setFormData(prev => ({ ...prev, invoiceStartNumber: parseInt(e.target.value, 10) || 1 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Wird verwendet, wenn für das Rechnungsjahr keine eigene Startnummer hinterlegt ist.</p>
+            </div>
           </div>
 
           {/* Immediate Payment Clause Settings */}
@@ -1147,6 +1258,14 @@ export function Settings() {
           </div>
         </div>
 
+        <div className="rounded-lg border border-primary-custom/30 bg-primary-custom/10 p-4">
+          <h4 className="mb-1 text-sm font-semibold text-primary-custom">eRechnung</h4>
+          <p className="text-sm text-primary-custom">
+            ZUGFeRD und XRechnung stehen beim Export zur Verfügung. Prüfen Sie vor dem Versand Ihre {terminology.organization.dataLabel},
+            Zahlungsinformationen und die Leitweg-ID des Empfängers.
+          </p>
+        </div>
+
         {/* Position Management */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
@@ -1162,7 +1281,7 @@ export function Settings() {
                   Erweiterte Dropdown-Anzeige
                 </h4>
                 <p className="text-sm text-blue-800 mb-3">
-                  Wenn aktiviert, werden in den Dropdowns für Stundensätze und Materialien sowohl allgemeine als auch kundenspezifische Einträge angezeigt. Dies ermöglicht eine bessere Übersicht aller verfügbaren Optionen.
+                  Wenn aktiviert, werden in den Dropdowns für Stundensätze und Materialien sowohl allgemeine als auch {terminology.entity.specificLabel} Einträge angezeigt. Dies ermöglicht eine bessere Übersicht aller verfügbaren Optionen.
                 </p>
                 <div className="flex items-center">
                   <input
@@ -1173,7 +1292,7 @@ export function Settings() {
                     className="custom-checkbox"
                   />
                   <label htmlFor="showCombinedDropdowns" className="ml-2 text-sm font-medium text-blue-900">
-                    Allgemeine und kundenspezifische Daten in Dropdowns kombinieren
+                    Allgemeine und {terminology.entity.specificLabel} Daten in Dropdowns kombinieren
                   </label>
                 </div>
               </div>
@@ -1216,7 +1335,7 @@ export function Settings() {
                           <p className="text-sm text-gray-600 mt-1">{rate.description}</p>
                         )}
                         <p className="text-sm font-semibold text-primary-custom mt-1">
-                          {rate.rate.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} / Stunde
+                          {formatCurrency(rate.rate, formData.locale || 'de-DE', formData.numberFormat, formData.currency)} / Stunde
                         </p>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -1276,7 +1395,7 @@ export function Settings() {
                           <p className="text-sm text-gray-600 mt-1">{template.description}</p>
                         )}
                         <p className="text-sm font-semibold text-primary-custom mt-1">
-                          {template.unitPrice.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} / {template.unit}
+                          {formatCurrency(template.unitPrice, formData.locale || 'de-DE', formData.numberFormat, formData.currency)} / {template.unit}
                         </p>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -1379,9 +1498,9 @@ export function Settings() {
         )}
 
         {activeTab === 'appearance' && (
-          <div className="space-y-8">
+          <div className="flex flex-col gap-8">
         {/* Color Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="order-3 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Palette className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Farbschema</h3>
@@ -1400,6 +1519,26 @@ export function Settings() {
               onChange={(color) => setFormData(prev => ({ ...prev, secondaryColor: color }))}
               defaultColor="#64748b"
             />
+          </div>
+
+          <div className="mt-6">
+            <h4 className="mb-2 text-sm font-medium text-gray-700">Vorlagen für das Farbschema</h4>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {colorPresets.map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, primaryColor: preset.primary, secondaryColor: preset.secondary }))}
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition hover:border-primary-custom hover:shadow-sm"
+                >
+                  <span className="mb-2 block text-xs font-medium text-gray-700">{preset.name}</span>
+                  <span className="flex gap-2">
+                    <span className="h-6 w-6 rounded-full" style={{ backgroundColor: preset.primary }} />
+                    <span className="h-6 w-6 rounded-full" style={{ backgroundColor: preset.secondary }} />
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
           
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -1421,13 +1560,13 @@ export function Settings() {
               </button>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Diese Farben werden in der gesamten Anwendung, in PDFs und E-Mails verwendet.
+              Diese Farben gelten nur für die App-Oberfläche. Dokumente und E-Mails behalten ihre eigene Darstellung.
             </p>
           </div>
         </div>
 
         {/* Locale Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="order-1 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Globe className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Sprache und Formatierung</h3>
@@ -1436,48 +1575,111 @@ export function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Locale (Zahlenformat)
+                Sprache
               </label>
               <select
                 value={formData.locale || 'de-DE'}
                 onChange={(e) => setFormData(prev => ({ ...prev, locale: e.target.value as 'de-DE' | 'en-US' | 'fr-FR' | 'es-ES' }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="de-DE">Deutsch (Deutschland) - 1.234,56 €</option>
+                <option value="de-DE">Deutsch (Deutschland) - 1.234,56 {currencySymbol}</option>
                 <option value="en-US">English (United States) - $1,234.56</option>
-                <option value="fr-FR">Français (France) - 1 234,56 €</option>
-                <option value="es-ES">Español (España) - 1.234,56 €</option>
+                <option value="fr-FR">Français (France) - 1 234,56 {currencySymbol}</option>
+                <option value="es-ES">Español (España) - 1.234,56 {currencySymbol}</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Bestimmt das Format für Zahlen und Währungen
+                Bestimmt die Sprache der Benutzeroberfläche
               </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Zahlenformat
+              </label>
+              <select
+                value={formData.numberFormat || 'european'}
+                onChange={(e) => setFormData(prev => ({ ...prev, numberFormat: e.target.value as NumberFormat }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="european">Europäisch – 1.234,56</option>
+                <option value="american">Amerikanisch – 1,234.56</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Legt Dezimal- und Tausendertrennzeichen in der Anwendung fest
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Währung
+              </label>
+              <select
+                value={formData.currency || 'EUR'}
+                onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="EUR">Euro (EUR)</option>
+                <option value="USD">US-Dollar (USD)</option>
+                <option value="CHF">Schweizer Franken (CHF)</option>
+                <option value="GBP">Pfund Sterling (GBP)</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Wird in Beträgen, PDFs und eRechnungen verwendet.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Datumsformat
+              </label>
+              <select
+                value={formData.dateFormat || 'DD.MM.YYYY'}
+                onChange={(e) => setFormData(prev => ({ ...prev, dateFormat: e.target.value as DateFormat }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="DD.MM.YYYY">31.12.2025</option>
+                <option value="DD/MM/YYYY">31/12/2025</option>
+                <option value="MM/DD/YYYY">12/31/2025</option>
+                <option value="YYYY-MM-DD">2025-12-31</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Zeitformat
+              </label>
+              <select
+                value={formData.timeFormat || '24h'}
+                onChange={(e) => setFormData(prev => ({ ...prev, timeFormat: e.target.value as TimeFormat }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="24h">24-Stunden-Format</option>
+                <option value="12h">12-Stunden-Format</option>
+              </select>
             </div>
           </div>
         </div>
 
-        {/* eRechnung Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
-          <div className="flex items-center mb-4">
-            <Globe className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">eRechnung Einstellungen</h3>
+        <div className="order-2 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+          <div className="mb-4 flex items-center">
+            <Palette className="mr-2 h-5 w-5 text-primary-custom" />
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Dunkelmodus</h3>
+              <p className="text-xs text-gray-500">Die Einstellung betrifft nur die App-Oberfläche.</p>
+            </div>
           </div>
-          
-          <div className="space-y-4">
-            <div className="bg-primary-custom/10 border border-primary-custom/30 rounded-lg p-4">
-              <h4 className="font-medium text-primary-custom mb-2">Unterstützte Formate</h4>
-              <ul className="text-sm text-primary-custom space-y-1">
-                <li>• <strong>PDF:</strong> Standard PDF-Format für beste Kompatibilität</li>
-                <li>• <strong>XRechnung:</strong> Strukturierte XML-Rechnung</li>
-              </ul>
-            </div>
-            
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h4 className="font-medium text-yellow-900 mb-2">Hinweise</h4>
-              <p className="text-sm text-yellow-800">
-                Die eRechnung wird ab dem 1. Januar 2025 für alle B2B-Transaktionen in Deutschland Pflicht. 
-                Stellen Sie sicher, dass Ihre Firmendaten vollständig und korrekt sind.
-              </p>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {([
+              { id: 'system', label: 'System', description: 'Betriebssystem übernehmen' },
+              { id: 'light', label: 'Hell', description: 'Helles Design verwenden' },
+              { id: 'dark', label: 'Dunkel', description: 'Dunkles Design verwenden' },
+            ] as const).map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, themeMode: mode.id as ThemeMode }))}
+                className={`rounded-lg border p-3 text-left transition ${formData.themeMode === mode.id
+                  ? 'border-primary-custom bg-primary-custom/10 text-primary-custom'
+                  : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-custom'}`}
+              >
+                <span className="block text-sm font-medium">{mode.label}</span>
+                <span className="mt-1 block text-xs opacity-80">{mode.description}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1503,11 +1705,13 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setShowEmailManagement(true)}
-                className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all duration-300 hover:scale-105"
+                disabled={isDemoMode}
+                className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Mail className="h-4 w-4 mr-2" />
                 E-Mail-Verwaltung öffnen
               </button>
+              {isDemoMode && <p className="text-xs text-green-800 mt-2">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>}
             </div>
             
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -1534,17 +1738,19 @@ export function Settings() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h4 className="font-medium text-blue-900 mb-2">Datensicherung</h4>
               <p className="text-sm text-blue-800 mb-4">
-                Erstellen Sie regelmäßig Backups Ihrer Daten, um Datenverlust zu vermeiden. 
-                Ein Backup enthält alle Kunden, Rechnungen, Aufträge und Einstellungen.
+                Erstellen Sie regelmäßig Backups Ihrer Daten, um Datenverlust zu vermeiden.
+                Ein Backup enthält {terminology.entity.plural}, Rechnungen, {terminology.work.plural} und Einstellungen; SMTP-Passwörter werden aus Sicherheitsgründen nicht exportiert.
               </p>
               <button
                 type="button"
                 onClick={() => setShowBackupManagement(true)}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-300 hover:scale-105"
+                disabled={isDemoMode}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Database className="h-4 w-4 mr-2" />
                 Backup-Verwaltung öffnen
               </button>
+              {isDemoMode && <p className="text-xs text-blue-800 mt-2">Im Demo-Modus ist die Backup-Verwaltung deaktiviert.</p>}
             </div>
             
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -1563,13 +1769,18 @@ export function Settings() {
         )}
 
         {/* Save Button */}
-        <div className="sticky bottom-0 z-10 -mx-3 flex justify-end gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+        <div className="sticky bottom-0 z-10 -mx-3 flex flex-col gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:flex-row sm:items-center sm:justify-end sm:px-4 lg:-mx-6 lg:px-6">
+          {feedback && (
+            <div className={`text-sm sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+              {feedback.text}
+            </div>
+          )}
           <button
             type="button"
             onClick={handleResetToDefaults}
             className="px-4 lg:px-6 py-2 rounded-xl border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-300"
           >
-            Standardeinstellungen
+            Zurücksetzen
           </button>
           <button
             type="submit"
@@ -1596,6 +1807,9 @@ export function Settings() {
       {(isAddingRate || editingRate) && (
         <HourlyRateModal
           rate={editingRate}
+          currencySymbol={currencySymbol}
+          locale={formData.locale || 'de-DE'}
+          numberFormat={formData.numberFormat}
           onSave={handleSaveRate}
           onClose={() => {
             setIsAddingRate(false);
@@ -1608,6 +1822,9 @@ export function Settings() {
       {(isAddingMaterial || editingMaterial) && (
         <MaterialTemplateModal
           template={editingMaterial}
+          currencySymbol={currencySymbol}
+          locale={formData.locale || 'de-DE'}
+          numberFormat={formData.numberFormat}
           onSave={handleSaveMaterial}
           onClose={() => {
             setIsAddingMaterial(false);
@@ -1622,15 +1839,19 @@ export function Settings() {
 // Hourly Rate Modal Component
 interface HourlyRateModalProps {
   rate: HourlyRate | null;
+  currencySymbol: string;
+  locale: string;
+  numberFormat?: NumberFormat;
   onSave: (rate: Omit<HourlyRate, 'id'>) => void;
   onClose: () => void;
 }
 
-function HourlyRateModal({ rate, onSave, onClose }: HourlyRateModalProps) {
+function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, onClose }: HourlyRateModalProps) {
   const [formData, setFormData] = useState({
     name: rate?.name || '',
     description: rate?.description || '',
     rate: rate?.rate || 0,
+    taxRate: rate?.taxRate ?? 19,
     isDefault: rate?.isDefault || false,
   });
 
@@ -1687,18 +1908,32 @@ function HourlyRateModal({ rate, onSave, onClose }: HourlyRateModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Stundensatz (€) *
+              Stundensatz ({currencySymbol}) *
             </label>
-            <input
-              type="number"
+            <LocalizedNumberInput
               required
               min="0"
               step="0.01"
               value={formData.rate}
-              onChange={(e) => setFormData(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
+              locale={locale}
+              numberFormat={numberFormat}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, rate: value === '' ? 0 : value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="0,00"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">MwSt.-Satz</label>
+            <select
+              value={formData.taxRate}
+              onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={0}>0%</option>
+              <option value={7}>7%</option>
+              <option value={19}>19%</option>
+            </select>
           </div>
 
           <div className="flex items-center">
@@ -1738,16 +1973,20 @@ function HourlyRateModal({ rate, onSave, onClose }: HourlyRateModalProps) {
 // Material Template Modal Component
 interface MaterialTemplateModalProps {
   template: MaterialTemplate | null;
+  currencySymbol: string;
+  locale: string;
+  numberFormat?: NumberFormat;
   onSave: (template: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onClose: () => void;
 }
 
-function MaterialTemplateModal({ template, onSave, onClose }: MaterialTemplateModalProps) {
+function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat, onSave, onClose }: MaterialTemplateModalProps) {
   const [formData, setFormData] = useState({
     name: template?.name || '',
     description: template?.description || '',
     unitPrice: template?.unitPrice || 0,
     unit: template?.unit || 'Stück',
+    taxRate: template?.taxRate ?? 19,
     isDefault: template?.isDefault || false,
   });
 
@@ -1805,15 +2044,16 @@ function MaterialTemplateModal({ template, onSave, onClose }: MaterialTemplateMo
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Preis (€) *
+                Preis ({currencySymbol}) *
               </label>
-              <input
-                type="number"
+              <LocalizedNumberInput
                 required
                 min="0"
                 step="0.01"
                 value={formData.unitPrice}
-                onChange={(e) => setFormData(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                locale={locale}
+                numberFormat={numberFormat}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, unitPrice: value === '' ? 0 : value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0,00"
               />
@@ -1844,6 +2084,19 @@ function MaterialTemplateModal({ template, onSave, onClose }: MaterialTemplateMo
             <label htmlFor="isDefaultMaterial" className="ml-2 text-sm text-gray-700">
               Als Standard-Materialvorlage festlegen
             </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">MwSt.-Satz</label>
+            <select
+              value={formData.taxRate}
+              onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={0}>0%</option>
+              <option value={7}>7%</option>
+              <option value={19}>19%</option>
+            </select>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">

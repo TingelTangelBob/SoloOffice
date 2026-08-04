@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { Clock, CheckCircle, Send, Check, Home, MoreVertical } from 'lucide-react';
+import { Clock, CheckCircle, Send, Check, Home } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { useLoading } from '../context/AppContext';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
 import { EmailSendModal } from './EmailSendModal';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
+import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
 import { Invoice } from '../types';
 import { PageHeader } from './PageHeader';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { getTerminology } from '../utils/terminology';
 
 interface DashboardProps {
   onNavigate: (page: string, filter?: string, searchTerm?: string) => void;
@@ -21,6 +24,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { customers } = useCustomers();
   const { invoices, updateInvoice } = useInvoices();
   const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
 
   // Email modal state
@@ -38,15 +42,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   // Get locale from company settings, default to 'de-DE'
   const locale = company?.locale || 'de-DE';
 
-  const handleSendEmail = async (invoice) => {
+  const handleSendEmail = async (invoice: Invoice) => {
     const customer = customers.find(c => c.id === invoice.customerId);
     if (!customer) {
-      alert('Kundendaten nicht gefunden.');
+      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
       return;
     }
 
     if (!customer.email) {
-      alert('Kunde hat keine E-Mail-Adresse hinterlegt.');
+      alert(terminology.entity.emailMissingMessage);
       return;
     }
 
@@ -78,7 +82,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       // Generate PDFs for each format and send emails
       const customer = customers.find(c => c.id === emailModal.invoice!.customerId);
       if (!customer) {
-        alert('Kundendaten nicht gefunden.');
+      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
         return;
       }
 
@@ -86,7 +90,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       let processedAttachments: { name: string; content: string; contentType: string }[] = [];
       if (attachments && attachments.length > 0) {
         try {
-          const { processAttachments } = await import('../utils/fileUtils');
           processedAttachments = await processAttachments(attachments);
         } catch (error) {
           logger.error('Fehler beim Verarbeiten der Anhänge:', error);
@@ -234,7 +237,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + invoice.total;
   });
   const monthlyRevenueSorted = Object.entries(monthlyRevenue)
-    .sort((a, b) => b[0].localeCompare(a[0]));
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const maxMonthlyRevenue = monthlyRevenueSorted.reduce(
+    (maxRevenue, [, revenue]) => Math.max(maxRevenue, revenue),
+    0,
+  );
+  const formatMonthLabel = (monthKey: string) => {
+    const [year, month] = monthKey.split('-').map(Number);
+    return new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' }).format(new Date(year, month - 1, 1));
+  };
 
   const stats = {
     totalInvoices: invoices.length,
@@ -249,16 +260,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid': return 'bg-green-100 text-green-800';
-      case 'sent': return 'bg-primary-custom/10 text-primary-custom';
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'overdue': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'paid': return 'Bezahlt';
@@ -269,52 +270,62 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'paid': return 'bg-green-500';
+      case 'sent': return 'bg-blue-500';
+      case 'draft': return 'bg-gray-400';
+      case 'overdue': return 'bg-red-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <PageHeader icon={Home} title="Dashboard" subtitle="Übersicht über Ihre Rechnungen und Kunden" />
+      <PageHeader icon={Home} title="Dashboard" subtitle={`Übersicht über Ihre Rechnungen und ${terminology.entity.plural}`} />
 
       {/* Action Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div 
-          className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl shadow-sm p-6 border border-orange-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl shadow-sm p-4 sm:p-3 border border-orange-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
           onClick={() => onNavigate('invoices', 'draft')}
         >
-          <div className="flex items-center mb-4">
-            <div className="p-3 bg-orange-500 rounded-lg group-hover:bg-orange-600 transition-colors">
-              <Clock className="h-6 w-6 text-white" />
+          <div className="flex items-center mb-3 sm:mb-2">
+            <div className="p-2 bg-orange-500 rounded-lg group-hover:bg-orange-600 transition-colors">
+              <Clock className="h-5 w-5 text-white" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 ml-4">Entwürfe</h3>
           </div>
-          <p className="text-3xl font-bold text-orange-600 mb-1">{stats.draftInvoices}</p>
-          <p className="text-sm text-orange-700/70">Noch nicht versendet</p>
+          <p className="text-2xl sm:text-xl font-bold text-orange-600 mb-1">{stats.draftInvoices}</p>
+          <p className="text-xs sm:text-[11px] text-orange-700/70 truncate">Noch nicht versendet</p>
         </div>
 
         <div 
-          className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl shadow-sm p-6 border border-green-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl shadow-sm p-4 sm:p-3 border border-green-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
           onClick={() => onNavigate('invoices', 'paid')}
         >
-          <div className="flex items-center mb-4">
-            <div className="p-3 bg-green-500 rounded-lg group-hover:bg-green-600 transition-colors">
-              <CheckCircle className="h-6 w-6 text-white" />
+          <div className="flex items-center mb-3 sm:mb-2">
+            <div className="p-2 bg-green-500 rounded-lg group-hover:bg-green-600 transition-colors">
+              <CheckCircle className="h-5 w-5 text-white" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 ml-4">Bezahlt</h3>
           </div>
-          <p className="text-3xl font-bold text-green-600 mb-1">{stats.paidInvoices}</p>
-          <p className="text-sm text-green-700/70">Erfolgreich abgeschlossen</p>
+          <p className="text-2xl sm:text-xl font-bold text-green-600 mb-1">{stats.paidInvoices}</p>
+          <p className="text-xs sm:text-[11px] text-green-700/70 truncate">Erfolgreich abgeschlossen</p>
         </div>
 
         <div 
-          className="bg-gradient-to-r from-red-50 to-red-100 rounded-xl shadow-sm p-6 border border-red-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="bg-gradient-to-r from-red-50 to-red-100 rounded-xl shadow-sm p-4 sm:p-3 border border-red-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
           onClick={() => onNavigate('invoices', 'overdue')}
         >
-          <div className="flex items-center mb-4">
-            <div className="p-3 bg-red-500 rounded-lg group-hover:bg-red-600 transition-colors">
-              <Clock className="h-6 w-6 text-white" />
+          <div className="flex items-center mb-3 sm:mb-2">
+            <div className="p-2 bg-red-500 rounded-lg group-hover:bg-red-600 transition-colors">
+              <Clock className="h-5 w-5 text-white" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 ml-4">Überfällig</h3>
           </div>
-          <p className="text-3xl font-bold text-red-600 mb-1">{stats.overdueInvoices}</p>
+          <p className="text-2xl sm:text-xl font-bold text-red-600 mb-1">{stats.overdueInvoices}</p>
           <p className="text-sm text-red-700/70">Benötigt Aufmerksamkeit</p>
         </div>
       </div>
@@ -336,22 +347,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <table className="w-full min-w-[700px]">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rechnungsnummer
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Kunde
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Betrag
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Datum
                 </th>
-                <th className="w-14 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-44 2xl:px-3">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rechnungsnummer
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{terminology.entity.singular}</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Betrag</th>
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-44 2xl:px-3">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
@@ -364,45 +368,42 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
                   title={`Zur Rechnung ${invoice.invoiceNumber}`}
                 >
-                  <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-primary-custom hover:text-primary-custom/80">
-                    {invoice.invoiceNumber}
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {formatDate(invoice.issueDate, locale, company?.dateFormat)}
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {invoice.customerName}
-                  </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(invoice.total, locale)}
-                  </td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
-                      {getStatusLabel(invoice.status)}
+                  <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-primary-custom hover:text-primary-custom/80">
+                    <span className="inline-flex items-center gap-2">
+                      {invoice.invoiceNumber}
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(invoice.status)}`}
+                        title={getStatusLabel(invoice.status)}
+                        aria-label={getStatusLabel(invoice.status)}
+                      />
                     </span>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(invoice.issueDate).toLocaleDateString('de-DE')}
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                    {invoice.customerName}
                   </td>
-                  <td className="w-14 px-2 py-3 whitespace-nowrap 2xl:w-44 2xl:px-3">
+                  <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-900">
+                    {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
+                  </td>
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap 2xl:w-44 2xl:px-3">
                     <div
                       className="flex items-center gap-1"
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
-                      <details className="relative 2xl:hidden">
-                        <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
-                          <MoreVertical className="h-4 w-4" />
-                        </summary>
-                        <div className="absolute right-0 top-9 z-20 min-w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                      <ActionMenu containerClassName="2xl:hidden" triggerClassName="action-icon-button action-icon-indigo">
                           {invoice.status === 'draft' && (
-                            <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => handleSendEmail(invoice)}>
+                            <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
                               Versenden
-                            </button>
+                            </ActionMenuItem>
                           )}
                           {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                            <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
+                            <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
                               Als bezahlt markieren
-                            </button>
+                            </ActionMenuItem>
                           )}
-                        </div>
-                      </details>
+                      </ActionMenu>
                       <div className="hidden 2xl:flex space-x-1">
                       {invoice.status === 'draft' && (
                         <button
@@ -442,40 +443,37 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h4 className="text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
-                  <p className="text-sm text-gray-900 truncate">{invoice.customerName}</p>
-                  <p className="text-sm font-medium text-gray-900">{formatCurrency(invoice.total, locale)}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h4 className="truncate text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotColor(invoice.status)}`}
+                      title={getStatusLabel(invoice.status)}
+                      aria-label={getStatusLabel(invoice.status)}
+                    />
+                  </div>
+                  <p className="truncate text-sm text-gray-900">{invoice.customerName}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
-                    {getStatusLabel(invoice.status)}
+                <div
+                  className="grid min-w-[9.5rem] grid-cols-[minmax(0,1fr)_2rem] items-center gap-2"
+                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                >
+                  <span className="min-w-0 text-right text-sm font-medium text-gray-900">
+                    {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                   </span>
-                  <p className="text-xs text-gray-500">
-                    {new Date(invoice.issueDate).toLocaleDateString('de-DE')}
-                  </p>
-                  <div
-                    className="mt-1"
-                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                  >
-                    <details className="relative">
-                      <summary className="action-icon-button action-icon-indigo list-none cursor-pointer" aria-label="Aktionen" title="Aktionen">
-                        <MoreVertical className="h-4 w-4" />
-                      </summary>
-                      <div className="absolute right-0 top-9 z-20 min-w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                  <ActionMenu containerClassName="relative justify-self-end" triggerClassName="action-icon-button action-icon-indigo h-7 w-7">
                         {invoice.status === 'draft' && (
-                          <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => handleSendEmail(invoice)}>
+                          <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
                             Versenden
-                          </button>
+                          </ActionMenuItem>
                         )}
                         {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                          <button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
+                          <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
                             Als bezahlt markieren
-                          </button>
+                          </ActionMenuItem>
                         )}
-                      </div>
-                    </details>
-                  </div>
+                    </ActionMenu>
                 </div>
               </div>
             </div>
@@ -494,39 +492,39 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <div className="px-4 lg:px-6 py-4 border-b border-gray-200">
           <h3 className="text-base lg:text-lg font-semibold text-gray-900">Gesamtumsatz pro Monat</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Monat
-                </th>
-                <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Umsatz
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {monthlyRevenueSorted.map(([month, revenue]) => (
-                <tr key={month}>
-                  <td className="px-4 lg:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {month}
-                  </td>
-                  <td className="px-4 lg:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(revenue, locale)}
-                  </td>
-                </tr>
-              ))}
-              {monthlyRevenueSorted.length === 0 && (
-                <tr>
-                  <td colSpan={2} className="text-center py-8 text-gray-500">
-                    Keine Umsätze vorhanden
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {monthlyRevenueSorted.length > 0 ? (
+          <div className="space-y-3 p-4 lg:p-6">
+            {monthlyRevenueSorted.map(([month, revenue]) => {
+              const percentage = maxMonthlyRevenue > 0 ? (revenue / maxMonthlyRevenue) * 100 : 0;
+
+              return (
+                <div key={month} className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3">
+                  <span className="text-xs text-gray-600 sm:text-sm">{formatMonthLabel(month)}</span>
+                  <div
+                    className="h-6 min-w-0 overflow-hidden rounded-full bg-gray-100"
+                    role="progressbar"
+                    aria-label={`${formatMonthLabel(month)}: ${formatCurrency(revenue, locale, company?.numberFormat, company?.currency)}`}
+                    aria-valuemin={0}
+                    aria-valuemax={maxMonthlyRevenue}
+                    aria-valuenow={revenue}
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary-custom transition-all duration-500"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                  <span className="whitespace-nowrap text-right text-xs font-medium text-gray-900 sm:text-sm">
+                    {formatCurrency(revenue, locale, company?.numberFormat, company?.currency)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-gray-500">
+            Keine Umsätze vorhanden
+          </div>
+        )}
       </div>
 
       {/* Email Send Modal */}

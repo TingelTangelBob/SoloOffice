@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { JobEntry, Customer, Company, Invoice } from '../types';
+import { JobEntry, Customer, Company, Invoice, InvoiceItem } from '../types';
 import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import logger from '../utils/logger';
+import { formatDate } from '../utils/formatters';
+import { getTerminology } from '../utils/terminology';
 
 // ============================================================================
 // Types
@@ -151,6 +153,7 @@ export async function generateInvoiceFromJobs(
   updateJobEntry: (id: string, jobEntry: Partial<JobEntry>) => Promise<void>,
   date?: Date
 ): Promise<void> {
+  const terminology = getTerminology(company.terminologyProfile);
   const selectedJobs = jobEntries.filter(job => jobIds.includes(job.id));
   if (selectedJobs.length === 0) return;
 
@@ -169,7 +172,7 @@ export async function generateInvoiceFromJobs(
     if (!customer) continue;
 
     // Create invoice items from jobs
-    const items = [];
+    const items: InvoiceItem[] = [];
 
     // Add job items (use time entries if available, otherwise use legacy fields)
     let itemOrder = 1;
@@ -227,11 +230,11 @@ export async function generateInvoiceFromJobs(
     // Generate invoice title
     let invoiceTitle = '';
     if (type === 'daily' && date) {
-      invoiceTitle = `Tagesrechnung vom ${date.toLocaleDateString('de-DE')}`;
+      invoiceTitle = `Tagesrechnung vom ${formatDate(date, company.locale, company.dateFormat)}`;
     } else if (type === 'monthly' && date) {
       invoiceTitle = `Monatsrechnung ${date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}`;
     } else {
-      invoiceTitle = `Rechnung für Auftrag${customerJobs.length > 1 ? 'e' : ''}: ${customerJobs.map(j => j.title).join(', ')}`;
+      invoiceTitle = `Rechnung für ${customerJobs.length > 1 ? terminology.work.plural : terminology.work.singular}: ${customerJobs.map(j => j.title).join(', ')}`;
     }
 
     const paymentDays = company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30;

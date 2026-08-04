@@ -1,4 +1,4 @@
-import { Customer, Invoice, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility } from '../types';
+import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -218,6 +218,83 @@ class ApiService {
 
   async deleteInvoice(id: string): Promise<void> {
     await this.request(`/invoices/${id}`, { method: 'DELETE' });
+  }
+
+  // --------------------------------------------------------------------------
+  // Recurring invoices and credit notes
+  // --------------------------------------------------------------------------
+
+  async getRecurringInvoices(): Promise<RecurringInvoice[]> {
+    return this.request<RecurringInvoice[]>('/recurring-invoices');
+  }
+
+  async createRecurringInvoice(payload: RecurringInvoicePayload): Promise<RecurringInvoice> {
+    return this.request<RecurringInvoice>('/recurring-invoices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateRecurringInvoice(id: string, payload: Partial<RecurringInvoicePayload>): Promise<RecurringInvoice> {
+    return this.request<RecurringInvoice>(`/recurring-invoices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteRecurringInvoice(id: string): Promise<void> {
+    await this.request(`/recurring-invoices/${id}`, { method: 'DELETE' });
+  }
+
+  async generateRecurringInvoice(id: string, scheduledDate?: string): Promise<Invoice> {
+    return this.request<Invoice>(`/recurring-invoices/${id}/generate`, {
+      method: 'POST',
+      body: JSON.stringify(scheduledDate ? { scheduledDate } : {}),
+    });
+  }
+
+  async getRecurringInvoiceRuns(id: string): Promise<RecurringInvoiceRun[]> {
+    const runs = await this.request<Array<{
+      id: string;
+      status: 'success' | 'failure';
+      scheduledDate: string;
+      generatedInvoiceId?: string;
+      invoiceNumber?: string;
+      error?: string;
+      createdAt: string;
+    }>>(`/recurring-invoices/${id}/runs`);
+    return runs.map(run => ({
+      id: run.id,
+      recurringInvoiceId: id,
+      invoiceId: run.generatedInvoiceId,
+      invoiceNumber: run.invoiceNumber,
+      scheduledDate: new Date(run.scheduledDate),
+      status: run.status === 'failure' ? 'failed' : 'success',
+      errorMessage: run.error,
+      createdAt: new Date(run.createdAt),
+    }));
+  }
+
+  async getCreditNotes(): Promise<CreditNote[]> {
+    return this.request<CreditNote[]>('/credit-notes');
+  }
+
+  async createCreditNote(payload: CreditNotePayload): Promise<CreditNote> {
+    return this.request<CreditNote>('/credit-notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateCreditNote(id: string, payload: Partial<CreditNotePayload> & { status?: Invoice['status'] }): Promise<CreditNote> {
+    return this.request<CreditNote>(`/credit-notes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteCreditNote(id: string): Promise<void> {
+    await this.request(`/credit-notes/${id}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------
@@ -520,7 +597,7 @@ class ApiService {
 
   async testSmtpConnection(
     useDatabaseSettings = true,
-    settings: Record<string, unknown> | null = null
+    settings: object | null = null
   ): Promise<{ success: boolean; message: string }> {
     return this.request('/email-management/test-smtp', {
       method: 'POST',
@@ -706,6 +783,34 @@ class ApiService {
     if (year) queryParams.append('year', year.toString());
 
     return this.request<ReportingStatistics>(`/reporting/statistics?${queryParams}`);
+  }
+
+  // --------------------------------------------------------------------------
+  // EÜR API
+  // --------------------------------------------------------------------------
+
+  async getEuerEntries(year?: number): Promise<EuerEntry[]> {
+    const queryParams = new URLSearchParams();
+    if (year) queryParams.append('year', year.toString());
+    return this.request<EuerEntry[]>(`/euer-entries?${queryParams}`);
+  }
+
+  async createEuerEntry(payload: EuerEntryPayload): Promise<EuerEntry> {
+    return this.request<EuerEntry>('/euer-entries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateEuerEntry(id: string, payload: Partial<EuerEntryPayload>): Promise<EuerEntry> {
+    return this.request<EuerEntry>(`/euer-entries/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteEuerEntry(id: string): Promise<void> {
+    await this.request(`/euer-entries/${id}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------

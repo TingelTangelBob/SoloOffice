@@ -8,12 +8,14 @@ import {
 import { useCompany } from '../context/CompanyContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs, generateInvoiceFromJobs } from '../context/JobContext';
+import { getTerminology } from '../utils/terminology';
 
 export function useDocumentHelpers() {
   const { customers } = useCustomers();
   const companyCtx = useCompany();
   const { addInvoice } = useInvoices();
   const { jobEntries, updateJobEntry } = useJobs();
+  const terminology = getTerminology(companyCtx.company.terminologyProfile);
 
   return {
     getHourlyRatesForCustomer: (customerId?: string) =>
@@ -27,7 +29,8 @@ export function useDocumentHelpers() {
         customers,
         companyCtx.hourlyRates,
         companyCtx.company.showCombinedDropdowns ?? false,
-        customerId
+        customerId,
+        terminology.entity.specificOptionLabel
       ),
 
     getCombinedMaterialTemplatesForCustomer: (customerId?: string) =>
@@ -35,7 +38,8 @@ export function useDocumentHelpers() {
         customers,
         companyCtx.materialTemplates,
         companyCtx.company.showCombinedDropdowns ?? false,
-        customerId
+        customerId,
+        terminology.entity.specificOptionLabel
       ),
 
     generateInvoiceFromJobs: async (

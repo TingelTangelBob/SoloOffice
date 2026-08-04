@@ -3,6 +3,9 @@ import { X, Mail, FileText, Send, Plus, Trash2, Upload, CheckCircle } from 'luci
 import { Invoice, Quote } from '../types';
 import { AttachmentFile, formatFileSize, getFileIcon, validateFile } from '../utils/fileUtils';
 import { generateUUID } from '../utils/uuid';
+import { useCompany } from '../context/CompanyContext';
+import { formatCurrency } from '../utils/formatters';
+import { getTerminology } from '../utils/terminology';
 
 interface EmailSendModalProps {
   isOpen: boolean;
@@ -27,6 +30,8 @@ export function EmailSendModal({
   isBulkMode = false,
   bulkCount = 0
 }: EmailSendModalProps) {
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const [selectedFormats, setSelectedFormats] = useState<('zugferd' | 'xrechnung')[]>(['zugferd']);
   const [customText, setCustomText] = useState<string>('');
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
@@ -108,7 +113,7 @@ export function EmailSendModal({
       const hasAdditionalEmails = customer.additionalEmails && customer.additionalEmails.filter(e => e.isActive).length > 0;
       
       if (!hasCustomerEmail && !hasAdditionalEmails) {
-        alert('⚠️ Keine E-Mail-Adresse vorhanden!\n\nFügen Sie zuerst mindestens eine E-Mail-Adresse in der Kundenverwaltung hinzu oder verwenden Sie die manuelle E-Mail-Eingabe.');
+        alert(`⚠️ Keine E-Mail-Adresse vorhanden!\n\nFügen Sie zuerst mindestens eine E-Mail-Adresse in der ${terminology.entity.managementLabel} hinzu oder verwenden Sie die manuelle E-Mail-Eingabe.`);
         return;
       } else {
         alert('⚠️ Bitte wählen Sie mindestens eine E-Mail-Adresse aus oder geben Sie eine E-Mail-Adresse manuell ein.');
@@ -123,24 +128,27 @@ export function EmailSendModal({
   const documentLabel = isQuote ? 'Angebot' : 'Rechnung';
   const documentNumber = isQuote ? (document as Quote).quoteNumber : (document as Invoice).invoiceNumber;
 
-  const formatOptions = [
-    {
-      value: 'zugferd' as const,
-      label: 'PDF',
-      description: 'eRechnungskonforme PDF-Rechnung (ZUGFeRD)',
-      icon: FileText
-    },
-    {
-      value: 'xrechnung' as const,
-      label: 'XRechnung (XML)',
-      description: 'Strukturierte XML-Rechnung (eRechnungskonform)',
-      icon: FileText
-    }
-  ];
-
-  const isFormatDisabled = (format: 'zugferd' | 'xrechnung') => {
-    return false; // Keine Beschränkungen mehr
-  };
+  const formatOptions = isQuote
+    ? [{
+        value: 'zugferd' as const,
+        label: 'PDF',
+        description: 'PDF-Angebot',
+        icon: FileText,
+      }]
+    : [
+        {
+          value: 'zugferd' as const,
+          label: 'PDF',
+          description: 'eRechnungskonforme PDF-Rechnung (ZUGFeRD)',
+          icon: FileText,
+        },
+        {
+          value: 'xrechnung' as const,
+          label: 'XRechnung (XML)',
+          description: 'Strukturierte XML-Rechnung (eRechnungskonform)',
+          icon: FileText,
+        },
+      ];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -171,7 +179,7 @@ export function EmailSendModal({
             </h4>
             <p className="text-sm text-primary-custom">
               <strong>{documentLabel}:</strong> {documentNumber}<br/>
-              <strong>Betrag:</strong> €{document.total.toFixed(2)}
+              <strong>Betrag:</strong> {formatCurrency(document.total, company.locale, company.numberFormat, company.currency)}
             </p>
           </div>
 
@@ -215,7 +223,7 @@ export function EmailSendModal({
                       <Mail className="h-4 w-4 text-orange-500 flex-shrink-0" />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-orange-800">Keine Haupt-E-Mail-Adresse hinterlegt</p>
-                        <p className="text-xs text-orange-600">Fügen Sie eine E-Mail-Adresse in der Kundenverwaltung hinzu oder nutzen Sie die manuelle Eingabe unten.</p>
+                        <p className="text-xs text-orange-600">Fügen Sie eine E-Mail-Adresse in der {terminology.entity.managementLabel} hinzu oder nutzen Sie die manuelle Eingabe unten.</p>
                       </div>
                     </div>
                   </div>
@@ -336,7 +344,7 @@ export function EmailSendModal({
               {formatOptions.map((option) => {
                 const IconComponent = option.icon;
                 const isSelected = selectedFormats.includes(option.value);
-                const isDisabled = isFormatDisabled(option.value);
+                const isDisabled = false;
                 
                 return (
                   <label

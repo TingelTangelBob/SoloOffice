@@ -548,24 +548,33 @@ router.post('/test-smtp', async (req, res) => {
     if (use_database_settings) {
       // Use settings from database
       const result = await query('SELECT * FROM smtp_settings WHERE id = 1');
-      
-      if (result.rows.length === 0 || !result.rows[0].is_enabled) {
+      const dbSettings = result.rows[0];
+      if (dbSettings?.is_enabled) {
+        smtpConfig = {
+          host: dbSettings.smtp_host,
+          port: dbSettings.smtp_port,
+          secure: dbSettings.smtp_secure,
+          auth: {
+            user: dbSettings.smtp_user,
+            pass: dbSettings.smtp_pass,
+          },
+        };
+      } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        smtpConfig = {
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        };
+      } else {
         return res.status(400).json({
           success: false,
-          message: 'Keine aktiven SMTP-Einstellungen in der Datenbank gefunden'
+          message: 'Keine aktiven SMTP-Einstellungen in Datenbank oder Umgebungsvariablen gefunden'
         });
       }
-
-      const dbSettings = result.rows[0];
-      smtpConfig = {
-        host: dbSettings.smtp_host,
-        port: dbSettings.smtp_port,
-        secure: dbSettings.smtp_secure,
-        auth: {
-          user: dbSettings.smtp_user,
-          pass: dbSettings.smtp_pass,
-        },
-      };
     } else if (settings) {
       // Use provided settings for testing
       smtpConfig = {

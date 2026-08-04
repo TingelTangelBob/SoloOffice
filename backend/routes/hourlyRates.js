@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
         name,
         description,
         rate,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
@@ -29,7 +30,7 @@ router.get('/', async (req, res) => {
 // Create a new hourly rate
 router.post('/', async (req, res) => {
   try {
-    const { name, description, rate, isDefault } = req.body;
+    const { name, description, rate, taxRate, isDefault } = req.body;
     
     if (!name || rate === undefined) {
       return res.status(400).json({ error: 'Name und Stundensatz sind erforderlich' });
@@ -43,17 +44,18 @@ router.post('/', async (req, res) => {
     }
     
     const result = await query(`
-      INSERT INTO hourly_rates (name, description, rate, is_default)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING 
         id,
         name,
         description,
         rate,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
-    `, [name, description || '', rate, isDefault || false]);
+    `, [name, description || '', rate, taxRate ?? 19, isDefault || false]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -66,7 +68,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, rate, isDefault } = req.body;
+    const { name, description, rate, taxRate, isDefault } = req.body;
     
     if (!name || rate === undefined) {
       return res.status(400).json({ error: 'Name und Stundensatz sind erforderlich' });
@@ -81,17 +83,18 @@ router.put('/:id', async (req, res) => {
     
     const result = await query(`
       UPDATE hourly_rates 
-      SET name = $1, description = $2, rate = $3, is_default = $4, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5
+      SET name = $1, description = $2, rate = $3, tax_rate = $4, is_default = $5, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $6
       RETURNING 
         id,
         name,
         description,
         rate,
+        tax_rate as "taxRate",
         is_default as "isDefault",
         created_at as "createdAt",
         updated_at as "updatedAt"
-    `, [name, description || '', rate, isDefault || false, id]);
+    `, [name, description || '', rate, taxRate ?? 19, isDefault || false, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Stundensatz nicht gefunden' });

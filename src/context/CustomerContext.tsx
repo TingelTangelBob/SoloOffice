@@ -185,7 +185,8 @@ export function getCombinedHourlyRatesForCustomer(
   customers: Customer[],
   hourlyRates: HourlyRate[],
   showCombinedDropdowns: boolean,
-  customerId?: string
+  customerId: string | undefined,
+  specificLabel: string
 ): CombinedRate[] {
   // If combined dropdowns are disabled, return the original behavior
   if (!showCombinedDropdowns) {
@@ -218,7 +219,7 @@ export function getCombinedHourlyRatesForCustomer(
       customer.hourlyRates.forEach(rate => {
         rates.push({
           ...rate,
-          displayName: `${rate.name} (Kundenspezifisch)`,
+          displayName: `${rate.name} (${specificLabel})`,
           isGeneral: false,
           isCustomerSpecific: true,
         });
@@ -233,7 +234,8 @@ export function getCombinedMaterialTemplatesForCustomer(
   customers: Customer[],
   materialTemplates: MaterialTemplate[],
   showCombinedDropdowns: boolean,
-  customerId?: string
+  customerId: string | undefined,
+  specificLabel: string
 ): CombinedMaterial[] {
   // If combined dropdowns are disabled, return the original behavior
   if (!showCombinedDropdowns) {
@@ -266,7 +268,7 @@ export function getCombinedMaterialTemplatesForCustomer(
       customer.materials.forEach(material => {
         materials.push({
           ...material,
-          displayName: `${material.name} (Kundenspezifisch)`,
+          displayName: `${material.name} (${specificLabel})`,
           isGeneral: false,
           isCustomerSpecific: true,
         });

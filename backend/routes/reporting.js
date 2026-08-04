@@ -5,12 +5,34 @@ import PDFDocument from 'pdfkit';
 
 const router = express.Router();
 
+function formatReportDate(value, company) {
+  const date = new Date(value);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  switch (company.date_format) {
+    case 'DD/MM/YYYY': return `${day}/${month}/${year}`;
+    case 'MM/DD/YYYY': return `${month}/${day}/${year}`;
+    case 'YYYY-MM-DD': return `${year}-${month}-${day}`;
+    case 'DD.MM.YYYY': return `${day}.${month}.${year}`;
+    default: return date.toLocaleDateString(company.locale || 'de-DE');
+  }
+}
+
+function formatReportAmount(amount, company) {
+  const locale = company.number_format === 'american' ? 'en-US' : company.locale || 'de-DE';
+  return Number(amount).toLocaleString(locale, {
+    style: 'currency',
+    currency: company.currency || 'EUR'
+  });
+}
+
 // Get invoice journal data for reporting
 router.get('/invoice-journal', async (req, res) => {
   try {
     const { startDate, endDate, customerId } = req.query;
 
-    let whereClause = '1=1';
+    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice'";
     let params = [];
     let paramIndex = 1;
 
@@ -136,7 +158,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
     const company = companyResult.rows[0] || {};
 
     // Get invoice journal data (reuse the logic from GET endpoint)
-    let whereClause = '1=1';
+    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice'";
     let params = [];
     let paramIndex = 1;
 
@@ -227,7 +249,8 @@ router.post('/invoice-journal/pdf', async (req, res) => {
     doc.pipe(res);
 
     // Company header
-    const primaryColor = company.primary_color || '#2563eb';
+    const primaryColor = '#2563eb';
+    const formatAmount = (amount) => formatReportAmount(amount, company);
     
     // Title and company info positioning
     const titleY = 70;
@@ -262,7 +285,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
     }
 
     // Date range info
-    const today = new Date().toLocaleDateString('de-DE');
+    const today = formatReportDate(new Date(), company);
     doc.fontSize(10)
        .text(`Erstellt am: ${today}`, 600, 70);
 
@@ -281,9 +304,9 @@ router.post('/invoice-journal/pdf', async (req, res) => {
     doc.fontSize(10)
        .fillColor('black')
        .text(`Anzahl Rechnungen: ${summary.totalInvoices}`, 50, yPosition)
-       .text(`Nettosumme: ${summary.subtotalSum.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`, 200, yPosition)
-       .text(`MwSt.: ${summary.taxSum.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`, 350, yPosition)
-       .text(`Bruttosumme: ${summary.totalAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`, 500, yPosition);
+       .text(`Nettosumme: ${formatAmount(summary.subtotalSum)}`, 200, yPosition)
+       .text(`MwSt.: ${formatAmount(summary.taxSum)}`, 350, yPosition)
+       .text(`Bruttosumme: ${formatAmount(summary.totalAmount)}`, 500, yPosition);
 
     // Table header
     yPosition += 40;
@@ -295,7 +318,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
        .fillColor('white')
        .text('Rech.-Nr.', 55, yPosition)
        .text('Datum', 130, yPosition)
-       .text('Kunde', 200, yPosition)
+       .text('Empfänger', 200, yPosition)
        .text('Netto', 320, yPosition)
        .text('MwSt.', 380, yPosition)
        .text('Brutto', 440, yPosition)
@@ -318,7 +341,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
            .fillColor('white')
            .text('Rech.-Nr.', 55, yPosition)
            .text('Datum', 130, yPosition)
-           .text('Kunde', 200, yPosition)
+           .text('Empfänger', 200, yPosition)
            .text('Netto', 320, yPosition)
            .text('MwSt.', 380, yPosition)
            .text('Brutto', 440, yPosition)
@@ -333,7 +356,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
         doc.rect(50, yPosition - 3, 500, 15).fill('#f8f9fa');
       }
 
-      const issueDate = new Date(invoice.issue_date).toLocaleDateString('de-DE');
+      const issueDate = formatReportDate(invoice.issue_date, company);
       
       // Status translation
       const statusMap = {
@@ -354,9 +377,9 @@ router.post('/invoice-journal/pdf', async (req, res) => {
          .text(invoice.invoice_number, 55, yPosition)
          .text(issueDate, 130, yPosition)
          .text(invoice.customer_name?.substring(0, 25) || '', 200, yPosition)
-         .text(discountedSubtotal.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 320, yPosition)
-         .text(parseFloat(invoice.tax_amount).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 380, yPosition)
-         .text(parseFloat(invoice.total).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 440, yPosition)
+         .text(formatAmount(discountedSubtotal), 320, yPosition)
+         .text(formatAmount(invoice.tax_amount), 380, yPosition)
+         .text(formatAmount(invoice.total), 440, yPosition)
          .text(statusMap[invoice.status] || invoice.status, 500, yPosition);
 
       yPosition += 15;
@@ -369,9 +392,9 @@ router.post('/invoice-journal/pdf', async (req, res) => {
        .fillColor('black')
        .font('Helvetica-Bold')
        .text('SUMME:', 55, yPosition)
-       .text(summary.subtotalSum.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 320, yPosition)
-       .text(summary.taxSum.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 380, yPosition)
-       .text(summary.totalAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }), 440, yPosition);
+       .text(formatAmount(summary.subtotalSum), 320, yPosition)
+       .text(formatAmount(summary.taxSum), 380, yPosition)
+       .text(formatAmount(summary.totalAmount), 440, yPosition);
 
     // Finalize PDF
     doc.end();
@@ -406,7 +429,8 @@ router.get('/statistics', async (req, res) => {
         SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END) as paid_sum,
         SUM(CASE WHEN i.status = 'overdue' THEN i.total ELSE 0 END) as overdue_sum
       FROM invoices i
-      WHERE EXTRACT(YEAR FROM i.issue_date) = $1
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND EXTRACT(YEAR FROM i.issue_date) = $1
       GROUP BY EXTRACT(MONTH FROM i.issue_date)
       ORDER BY month
     `, [year]);
@@ -420,7 +444,8 @@ router.get('/statistics', async (req, res) => {
         SUM(i.total) as total_revenue,
         AVG(i.total) as avg_invoice_amount
       FROM invoices i
-      WHERE EXTRACT(YEAR FROM i.issue_date) = $1
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND EXTRACT(YEAR FROM i.issue_date) = $1
       GROUP BY i.customer_id, i.customer_name
       ORDER BY total_revenue DESC
       LIMIT 10
@@ -433,7 +458,8 @@ router.get('/statistics', async (req, res) => {
         COUNT(*) as count,
         SUM(total) as total_amount
       FROM invoices
-      WHERE EXTRACT(YEAR FROM issue_date) = $1
+      WHERE COALESCE(document_type, 'invoice') = 'invoice'
+        AND EXTRACT(YEAR FROM issue_date) = $1
       GROUP BY status
     `, [year]);
 
@@ -456,7 +482,8 @@ router.get('/statistics', async (req, res) => {
         SUM(CASE WHEN i.status = 'overdue' THEN i.total ELSE 0 END) as overdue_amount,
         AVG(i.total) as avg_invoice_amount
       FROM invoices i
-      WHERE EXTRACT(YEAR FROM i.issue_date) = $1
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND EXTRACT(YEAR FROM i.issue_date) = $1
     `, [year]);
 
     res.json({

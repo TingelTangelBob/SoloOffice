@@ -24,13 +24,13 @@ export function ColorPicker({ label, value, onChange, defaultColor }: ColorPicke
         {label}
       </label>
       <div className="flex items-center space-x-3">
-        <div className="relative">
+        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-gray-300" style={{ backgroundColor: value }}>
           <input
             type="color"
             value={value}
             onChange={handleColorChange}
-            className="h-10 w-20 rounded-lg border border-gray-300 cursor-pointer"
-            style={{ backgroundColor: value }}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label={`${label} auswählen`}
           />
         </div>
         <div className="flex-1">
@@ -56,7 +56,7 @@ export function ColorPicker({ label, value, onChange, defaultColor }: ColorPicke
       </div>
       <div className="flex items-center space-x-2">
         <div 
-          className="w-6 h-6 rounded border border-gray-300"
+          className="w-6 h-6 rounded-full border border-gray-300"
           style={{ backgroundColor: value }}
         ></div>
         <span className="text-sm text-gray-600">Vorschau</span>

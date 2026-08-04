@@ -7,6 +7,10 @@ import logger from '../utils/logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// E-Mail colors are intentionally independent from the in-app color scheme.
+const EMAIL_PRIMARY_COLOR = '#2563eb';
+const EMAIL_SECONDARY_COLOR = '#64748b';
+
 // Function to sanitize filename for email attachments
 const sanitizeFilename = (filename) => {
   if (!filename) return 'attachment';
@@ -32,6 +36,48 @@ const sanitizeFilename = (filename) => {
   }
   
   return sanitized || 'attachment';
+};
+
+const getCompanyLocale = (companySettings = {}) => companySettings.locale || 'de-DE';
+
+const getCompanyNumberLocale = (companySettings = {}) => {
+  const numberFormat = companySettings.numberFormat || companySettings.number_format;
+  return numberFormat === 'american' ? 'en-US' : getCompanyLocale(companySettings);
+};
+
+const getCompanyCurrency = (companySettings = {}) => {
+  const currency = companySettings.currency || 'EUR';
+  return /^[A-Z]{3}$/.test(currency) ? currency : 'EUR';
+};
+
+const formatCompanyAmount = (amount, companySettings = {}) => {
+  try {
+    return new Intl.NumberFormat(getCompanyNumberLocale(companySettings), {
+      style: 'currency',
+      currency: getCompanyCurrency(companySettings),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(amount) || 0);
+  } catch {
+    return `${(Number(amount) || 0).toFixed(2)} ${getCompanyCurrency(companySettings)}`;
+  }
+};
+
+const formatCompanyDate = (value, companySettings = {}) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+
+  switch (companySettings.dateFormat || companySettings.date_format) {
+    case 'DD/MM/YYYY': return `${day}/${month}/${year}`;
+    case 'MM/DD/YYYY': return `${month}/${day}/${year}`;
+    case 'YYYY-MM-DD': return `${year}-${month}-${day}`;
+    case 'DD.MM.YYYY': return `${day}.${month}.${year}`;
+    default: return date.toLocaleDateString(getCompanyLocale(companySettings));
+  }
 };
 
 // SMTP Configuration
@@ -272,11 +318,13 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
     const issueDate = new Date(invoiceData.issueDate);
     const dueDate = new Date(invoiceData.dueDate);
     const daysDifference = Math.ceil((dueDate.getTime() - issueDate.getTime()) / (1000 * 3600 * 24));
-    const dueDateDisplay = daysDifference <= 0 ? 'sofort' : dueDate.toLocaleDateString('de-DE');
+    const issueDateDisplay = formatCompanyDate(issueDate, companySettings);
+    const dueDateDisplay = daysDifference <= 0 ? 'sofort' : formatCompanyDate(dueDate, companySettings);
+    const totalDisplay = formatCompanyAmount(invoiceData.total, companySettings);
     
     // Get colors
-    const primaryColor = companySettings.primary_color || '#2563eb';
-    const secondaryColor = companySettings.secondary_color || '#64748b';
+    const primaryColor = EMAIL_PRIMARY_COLOR;
+    const secondaryColor = EMAIL_SECONDARY_COLOR;
     
     // Build email HTML content with modern layout
     let emailHTML = `
@@ -391,7 +439,7 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
     ` : ''}
     
     <p style="margin: 25px 0;">
-      anbei erhalten Sie die Rechnung <strong>${invoiceData.invoiceNumber}</strong> über einen Betrag von <strong>${invoiceData.total.toFixed(2).replace('.', ',')} €</strong>.
+      anbei erhalten Sie die Rechnung <strong>${invoiceData.invoiceNumber}</strong> über einen Betrag von <strong>${totalDisplay}</strong>.
     </p>
     
     <div class="invoice-details">
@@ -402,7 +450,7 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
         </tr>
         <tr>
           <td>Rechnungsdatum:</td>
-          <td>${issueDate.toLocaleDateString('de-DE')}</td>
+          <td>${issueDateDisplay}</td>
         </tr>
         <tr>
           <td>Fälligkeitsdatum:</td>
@@ -417,7 +465,7 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
     
     <div class="total-amount">
       <div class="label">Rechnungsbetrag:</div>
-      <div class="amount">${invoiceData.total.toFixed(2).replace('.', ',')} €</div>
+      <div class="amount">${totalDisplay}</div>
     </div>
     
     <p style="margin: 25px 0;">
@@ -587,6 +635,12 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
       'zugferd': 'als PDF',
       'xrechnung': 'als XRechnung (strukturierte XML-Datei)'
     };
+    const issueDate = new Date(invoiceData.issueDate);
+    const dueDate = new Date(invoiceData.dueDate);
+    const daysDifference = Math.ceil((dueDate.getTime() - issueDate.getTime()) / (1000 * 3600 * 24));
+    const issueDateDisplay = formatCompanyDate(issueDate, companySettings);
+    const dueDateDisplay = daysDifference <= 0 ? 'sofort' : formatCompanyDate(dueDate, companySettings);
+    const totalDisplay = formatCompanyAmount(invoiceData.total, companySettings);
     
     // Build email HTML content
     let emailHTML = `
@@ -598,25 +652,20 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
     // Add custom text if provided
     if (customText && customText.trim()) {
       emailHTML += `
-        <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${companySettings.primary_color || '#2196f3'};">
+        <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${EMAIL_PRIMARY_COLOR};">
           <p style="margin: 0; white-space: pre-line;">${customText.replace(/\n/g, '<br>')}</p>
         </div>`;
     }
     
     emailHTML += `
-        <p>anbei erhalten Sie die Rechnung ${invoiceData.invoiceNumber} über einen Betrag von <strong>€${invoiceData.total.toFixed(2)}</strong>.</p>
+        <p>anbei erhalten Sie die Rechnung ${invoiceData.invoiceNumber} über einen Betrag von <strong>${totalDisplay}</strong>.</p>
         
         <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
           <h3 style="margin-top: 0;">Rechnungsdetails:</h3>
           <p><strong>Rechnungsnummer:</strong> ${invoiceData.invoiceNumber}</p>
-          <p><strong>Rechnungsdatum:</strong> ${new Date(invoiceData.issueDate).toLocaleDateString('de-DE')}</p>
-          <p><strong>Fälligkeitsdatum:</strong> ${(() => {
-            const issueDate = new Date(invoiceData.issueDate);
-            const dueDate = new Date(invoiceData.dueDate);
-            const daysDifference = Math.ceil((dueDate.getTime() - issueDate.getTime()) / (1000 * 3600 * 24));
-            return daysDifference <= 0 ? 'sofort' : dueDate.toLocaleDateString('de-DE');
-          })()}</p>
-          <p><strong>Betrag:</strong> €${invoiceData.total.toFixed(2)}</p>
+          <p><strong>Rechnungsdatum:</strong> ${issueDateDisplay}</p>
+          <p><strong>Fälligkeitsdatum:</strong> ${dueDateDisplay}</p>
+          <p><strong>Betrag:</strong> ${totalDisplay}</p>
           <p><strong>Format:</strong> ${formatDescription[format] || formatDescription['standard']}</p>
         </div>
         
@@ -625,8 +674,8 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
     // Add format-specific information
     if (format === 'zugferd') {
       emailHTML += `
-        <div style="background-color: #e6f3ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${companySettings.primary_color || '#0066cc'};">
-          <p style="margin: 0; font-size: 14px; color: ${companySettings.primary_color || '#0066cc'};">
+        <div style="background-color: #e6f3ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${EMAIL_PRIMARY_COLOR};">
+          <p style="margin: 0; font-size: 14px; color: ${EMAIL_PRIMARY_COLOR};">
             <strong>📄 PDF-Format:</strong> Diese Rechnung ist als PDF-Datei für die beste Kompatibilität bereitgestellt.
           </p>
         </div>`;
@@ -634,8 +683,8 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
     
     if (format === 'xrechnung') {
       emailHTML += `
-        <div style="background-color: #f0f8e6; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${companySettings.secondary_color || '#4caf50'};">
-          <p style="margin: 0; font-size: 14px; color: ${companySettings.secondary_color || '#2e7d32'};">
+        <div style="background-color: #f0f8e6; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${EMAIL_SECONDARY_COLOR};">
+          <p style="margin: 0; font-size: 14px; color: ${EMAIL_SECONDARY_COLOR};">
             <strong>🗂️ XRechnung-Format:</strong> Diese strukturierte XML-Rechnung entspricht dem Standard für die eRechnungs-konforme elektronische Rechnungsstellung.
           </p>
         </div>`;
@@ -644,8 +693,8 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
     // Add information about additional attachments if any
     if (attachments && attachments.length > 0) {
       emailHTML += `
-        <div style="background-color: #fff3e0; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${companySettings.secondary_color || '#ff9800'};">
-          <p style="margin: 0; font-size: 14px; color: ${companySettings.secondary_color || '#e65100'};">
+        <div style="background-color: #fff3e0; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${EMAIL_SECONDARY_COLOR};">
+          <p style="margin: 0; font-size: 14px; color: ${EMAIL_SECONDARY_COLOR};">
             <strong>📎 Zusätzliche Anhänge:</strong> Diese E-Mail enthält ${attachments.length} weitere Dokument${attachments.length > 1 ? 'e' : ''}.
           </p>
         </div>`;
@@ -787,6 +836,9 @@ export const sendQuoteEmail = async (customerEmails, quoteData, companySettings,
     }
 
     const pdfBuffer = Buffer.from(quoteData.pdfBuffer, 'base64');
+    const issueDateDisplay = formatCompanyDate(quoteData.issueDate, companySettings);
+    const validUntilDisplay = formatCompanyDate(quoteData.validUntil, companySettings);
+    const totalDisplay = formatCompanyAmount(quoteData.total, companySettings);
 
     // Generate email content
     const defaultText = customText || `
@@ -794,15 +846,15 @@ Sehr geehrte Damen und Herren,
 
 anbei erhalten Sie unser Angebot ${quoteData.quoteNumber}.
 
-Das Angebot ist gültig bis zum ${new Date(quoteData.validUntil).toLocaleDateString('de-DE')}.
+Das Angebot ist gültig bis zum ${validUntilDisplay}.
 
 Mit freundlichen Grüßen
 ${companySettings.name}
     `.trim();
 
     // Get colors
-    const primaryColor = companySettings.primaryColor || companySettings.primary_color || '#2563eb';
-    const secondaryColor = companySettings.secondaryColor || companySettings.secondary_color || '#64748b';
+    const primaryColor = EMAIL_PRIMARY_COLOR;
+    const secondaryColor = EMAIL_SECONDARY_COLOR;
     
     const htmlContent = `
 <!DOCTYPE html>
@@ -916,7 +968,7 @@ ${companySettings.name}
     ` : ''}
     
     <p style="margin: 25px 0;">
-      anbei erhalten Sie unser Angebot <strong>${quoteData.quoteNumber}</strong> über einen Betrag von <strong>${quoteData.total.toFixed(2).replace('.', ',')} €</strong>.
+      anbei erhalten Sie unser Angebot <strong>${quoteData.quoteNumber}</strong> über einen Betrag von <strong>${totalDisplay}</strong>.
     </p>
     
     <div class="quote-details">
@@ -927,18 +979,18 @@ ${companySettings.name}
         </tr>
         <tr>
           <td>Angebotsdatum:</td>
-          <td>${new Date(quoteData.issueDate).toLocaleDateString('de-DE')}</td>
+          <td>${issueDateDisplay}</td>
         </tr>
         <tr>
           <td>Gültig bis:</td>
-          <td>${new Date(quoteData.validUntil).toLocaleDateString('de-DE')}</td>
+          <td>${validUntilDisplay}</td>
         </tr>
       </table>
     </div>
     
     <div class="total-amount">
       <div class="label">Angebotssumme:</div>
-      <div class="amount">${quoteData.total.toFixed(2).replace('.', ',')} €</div>
+      <div class="amount">${totalDisplay}</div>
     </div>
     
     ${additionalAttachments && additionalAttachments.length > 0 ? `
@@ -1077,10 +1129,15 @@ export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData
     // Calculate total with fee
     const originalTotal = invoiceData.total;
     const totalWithFee = originalTotal + (fee || 0);
+    const issueDateDisplay = formatCompanyDate(invoiceData.issueDate, companySettings);
+    const dueDateDisplay = formatCompanyDate(invoiceData.dueDate, companySettings);
+    const originalTotalDisplay = formatCompanyAmount(originalTotal, companySettings);
+    const feeDisplay = formatCompanyAmount(fee || 0, companySettings);
+    const totalWithFeeDisplay = formatCompanyAmount(totalWithFee, companySettings);
 
     // Create HTML email body
-    const primaryColor = companySettings.primary_color || '#2563eb';
-    const secondaryColor = companySettings.secondary_color || '#64748b';
+    const primaryColor = EMAIL_PRIMARY_COLOR;
+    const secondaryColor = EMAIL_SECONDARY_COLOR;
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -1202,20 +1259,20 @@ export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData
         </tr>
         <tr>
           <td>Rechnungsdatum:</td>
-          <td>${new Date(invoiceData.issueDate).toLocaleDateString('de-DE')}</td>
+          <td>${issueDateDisplay}</td>
         </tr>
         <tr>
           <td>Fälligkeitsdatum:</td>
-          <td>${new Date(invoiceData.dueDate).toLocaleDateString('de-DE')}</td>
+          <td>${dueDateDisplay}</td>
         </tr>
         <tr>
           <td>Ursprünglicher Betrag:</td>
-          <td>${originalTotal.toFixed(2).replace('.', ',')} €</td>
+          <td>${originalTotalDisplay}</td>
         </tr>
         ${fee > 0 ? `
         <tr>
           <td>Mahngebühr:</td>
-          <td style="color: #dc2626;">${fee.toFixed(2).replace('.', ',')} €</td>
+          <td style="color: #dc2626;">${feeDisplay}</td>
         </tr>
         ` : ''}
       </table>
@@ -1223,7 +1280,7 @@ export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData
     
     <div class="total-amount">
       <div class="label">Zu zahlender Gesamtbetrag:</div>
-      <div class="amount">${totalWithFee.toFixed(2).replace('.', ',')} €</div>
+      <div class="amount">${totalWithFeeDisplay}</div>
     </div>
     
     <p style="margin: 25px 0;">
@@ -1251,12 +1308,12 @@ ${stageText}
 ${customText ? customText + '\n\n' : ''}
 
 Rechnungsnummer: ${invoiceData.invoiceNumber}
-Rechnungsdatum: ${new Date(invoiceData.issueDate).toLocaleDateString('de-DE')}
-Fälligkeitsdatum: ${new Date(invoiceData.dueDate).toLocaleDateString('de-DE')}
-Ursprünglicher Betrag: ${originalTotal.toFixed(2).replace('.', ',')} €
-${fee > 0 ? `Mahngebühr: ${fee.toFixed(2).replace('.', ',')} €\n` : ''}
+Rechnungsdatum: ${issueDateDisplay}
+Fälligkeitsdatum: ${dueDateDisplay}
+Ursprünglicher Betrag: ${originalTotalDisplay}
+${fee > 0 ? `Mahngebühr: ${feeDisplay}\n` : ''}
 
-Zu zahlender Gesamtbetrag: ${totalWithFee.toFixed(2).replace('.', ',')} €
+Zu zahlender Gesamtbetrag: ${totalWithFeeDisplay}
 
 Bitte überweisen Sie den Betrag unter Angabe der Rechnungsnummer ${invoiceData.invoiceNumber} auf unser Konto.
 

@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import logger from '../utils/logger';
 import { X, RotateCcw, Check } from 'lucide-react';
+import { useCompany } from '../context/CompanyContext';
+import { getTerminology } from '../utils/terminology';
 
 interface SignaturePadProps {
   isOpen: boolean;
@@ -11,6 +13,8 @@ interface SignaturePadProps {
 }
 
 export function SignaturePad({ isOpen, onClose, onSave, title = "Unterschrift", initialCustomerName = "" }: SignaturePadProps) {
+  const { company } = useCompany();
+  const terminology = getTerminology(company.terminologyProfile);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [customerName, setCustomerName] = useState(initialCustomerName);
@@ -157,7 +161,7 @@ export function SignaturePad({ isOpen, onClose, onSave, title = "Unterschrift", 
     }
 
     if (!customerName.trim()) {
-      alert('Bitte geben Sie den Namen des Kunden ein.');
+      alert(`Bitte geben Sie den Namen des ${terminology.entity.genitive} ein.`);
       return;
     }
 
@@ -245,13 +249,13 @@ export function SignaturePad({ isOpen, onClose, onSave, title = "Unterschrift", 
           {/* Customer Name Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Name des Kunden *
+              Name des {terminology.entity.genitive} *
             </label>
             <input
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Name des Kunden eingeben..."
+              placeholder={`Name des ${terminology.entity.genitive} eingeben...`}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               required
             />
