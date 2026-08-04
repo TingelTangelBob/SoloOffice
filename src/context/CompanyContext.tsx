@@ -228,9 +228,13 @@ export const defaultCompany: Company = {
   website: 'www.meinefirma.de',
   taxId: 'DE123456789',
   taxIdentificationNumber: '',
+  taxBusinessType: 'commercial',
+  legalForm: 'other',
   logo: null,
   icon: null,
   terminologyProfile: 'customers',
+  terminologyColorSource: 'profile',
+  receiptLabel: 'Belege',
   bankAccount: 'DE89 3704 0044 0532 0130 00',
   paymentInformation: {
     accountHolder: 'Meine Firma GmbH',
@@ -350,6 +354,9 @@ export function CompanyProvider({
         ...updatedCompany,
         themeMode: updatedCompany.themeMode || previousCompany.themeMode || 'system',
         terminologyProfile: updatedCompany.terminologyProfile || previousCompany.terminologyProfile || 'customers',
+        receiptLabel: updatedCompany.receiptLabel || previousCompany.receiptLabel || 'Belege',
+        taxBusinessType: updatedCompany.taxBusinessType || previousCompany.taxBusinessType || 'commercial',
+        legalForm: updatedCompany.legalForm || previousCompany.legalForm || 'other',
         paymentInformationMode: updatedCompany.paymentInformationMode || previousCompany.paymentInformationMode || 'separate',
         documentTemplates: updatedCompany.documentTemplates?.length
           ? updatedCompany.documentTemplates

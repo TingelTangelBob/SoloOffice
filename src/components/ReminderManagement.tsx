@@ -315,7 +315,7 @@ export function ReminderManagement() {
 
       {/* Configuration Warning */}
       {!company.remindersEnabled && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+        <div className="guidance-panel mb-6 border-l-4 border-l-amber-500 p-4">
           <div className="flex items-start">
             <AlertCircle className="h-5 w-5 text-yellow-600 mr-3 mt-0.5" />
             <div>

@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -30,7 +30,7 @@ interface NavItem {
 }
 
 const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
-const taxSubPageIds = ['tax-overview', 'euer'];
+const taxSubPageIds = ['tax-overview', 'euer', 'fixed-assets'];
 
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
@@ -88,13 +88,20 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     children: [
       { id: 'tax-overview', label: 'Übersicht' },
       { id: 'euer', label: 'EÜR' },
+      { id: 'fixed-assets', label: 'Anlagenverzeichnis' },
     ],
+  };
+
+  const receiptNavItem: NavItem = {
+    id: 'receipts',
+    label: 'Belege',
+    icon: FileScan,
   };
 
   const quotesNavItem = { id: 'quotes', label: 'Angebote', icon: FileCheck };
   const jobNavItem = { id: 'jobs', label: terminology.work.navLabel, icon: Briefcase };
   const calendarNavItem = { id: 'calendar', label: 'Kalender', icon: Calendar };
-  const reportingNavItem = { id: 'reporting', label: 'Auswertung', icon: BarChart3 };
+  const reportingNavItem = { id: 'reporting', label: 'Auswertungen', icon: BarChart3 };
   const settingsNavItem = { id: 'settings', label: 'Einstellungen', icon: Settings };
   const templatesNavItem = { id: 'templates', label: 'Vorlagen', icon: Copy };
   const bottomNavItems = [
@@ -107,6 +114,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     ...baseNavItems,
     invoiceNavItem,
     taxNavItem,
+    receiptNavItem,
     ...(company.quotesEnabled ? [quotesNavItem] : []),
     ...(company.jobTrackingEnabled ? [jobNavItem, calendarNavItem] : []),
     ...(company.reportingEnabled ? [reportingNavItem] : []),

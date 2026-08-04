@@ -838,8 +838,9 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
               </button>
             </BulkSelectionHeader>
             {invoiceCreationNotice && (
-              <div className="flex items-start gap-2 border-b border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 sm:px-4" role="alert">
+              <div className="flex items-start justify-between gap-2 border-b border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 sm:px-4" role="alert">
                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
+                <button type="button" onClick={() => setInvoiceCreationNotice(false)} className="order-last shrink-0 rounded p-1 text-yellow-700 hover:bg-yellow-100" aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button>
                 <span>Nur abgeschlossene {terminology.work.plural} können für die Rechnungserstellung ausgewählt werden.</span>
               </div>
             )}

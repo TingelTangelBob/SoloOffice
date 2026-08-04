@@ -16,7 +16,7 @@ export function FilterSelect({ className = '', children, ...props }: SelectHTMLA
     <div className="relative min-w-0">
       <select
         {...props}
-        className={`w-full appearance-none pr-9 ${className}`}
+        className={`w-full appearance-none !pr-10 ${className}`}
       >
         {children}
       </select>
@@ -52,7 +52,7 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
             <span className="hidden sm:inline">Filter</span>
           </button>
           <div className="order-2 hidden shrink-0 items-center gap-2 lg:flex">{filters}</div>
-          <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-md">{search}</div>
+          <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem]">{search}</div>
         </div>
 
         {isFilterOpen && <div className="mt-3 grid gap-2 border-t border-gray-100 pt-3 lg:hidden">{filters}</div>}

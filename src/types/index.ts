@@ -5,6 +5,7 @@
 export type UUID = string;
 export type ISODateString = string;
 export type TerminologyProfile = 'customers' | 'mandants' | 'patients' | 'students' | 'clients';
+export type TerminologyColorSource = 'appearance' | 'profile';
 
 export interface Timestamps {
   createdAt: Date;
@@ -323,6 +324,8 @@ export type DateFormat = 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-D
 export type TimeFormat = '24h' | '12h';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type PaymentInformationMode = 'separate' | 'company';
+export type TaxBusinessType = 'freelance' | 'commercial' | 'agriculture' | 'nonprofit' | 'other';
+export type LegalForm = 'sole_proprietorship' | 'partnership' | 'gbr' | 'ug' | 'gmbh' | 'ag' | 'eg' | 'nonprofit' | 'other';
 
 export interface PaymentInformation {
   accountHolder?: string;
@@ -362,9 +365,14 @@ export interface Company extends ReminderSettings, CompanyHeader {
   website?: string;
   taxId: string; // USt-IdNr.
   taxIdentificationNumber?: string; // Steuernummer
+  taxBusinessType?: TaxBusinessType;
+  legalForm?: LegalForm;
   logo?: string | null;
   icon?: string | null;
   terminologyProfile?: TerminologyProfile;
+  terminologyColorSource?: TerminologyColorSource;
+  /** Custom label for the receipt/document area in navigation and copy. */
+  receiptLabel?: string;
   locale?: Locale;
   numberFormat?: NumberFormat;
   currency?: string;
@@ -604,6 +612,22 @@ export interface EuerEntry extends Timestamps {
   amount: number;
   taxRate: number;
   notes?: string;
+  sourceType?: EuerEntrySourceType;
+  sourceId?: UUID;
+  status?: 'active' | 'voided';
+  correctionReason?: string;
+}
+
+export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction';
+
+export interface EuerEntryHistory {
+  id: UUID;
+  euerEntryId?: UUID;
+  action: 'created' | 'updated' | 'voided';
+  reason?: string;
+  oldData?: Record<string, unknown>;
+  newData?: Record<string, unknown>;
+  changedAt: Date;
 }
 
 export interface EuerEntryPayload {
@@ -614,6 +638,84 @@ export interface EuerEntryPayload {
   amount: number;
   taxRate?: number;
   notes?: string;
+  sourceType?: EuerEntrySourceType;
+  sourceId?: UUID;
+  correctionReason?: string;
+}
+
+// ============================================================================
+// Fixed asset register types
+// ============================================================================
+
+export type FixedAssetStatus = 'active' | 'disposed';
+
+export interface FixedAsset extends Timestamps {
+  id: UUID;
+  name: string;
+  category: string;
+  acquisitionDate: string;
+  acquisitionCost: number;
+  usefulLifeYears: number;
+  status: FixedAssetStatus;
+  disposalDate?: string;
+  notes?: string;
+}
+
+export interface FixedAssetPayload {
+  name: string;
+  category: string;
+  acquisitionDate: string;
+  acquisitionCost: number;
+  usefulLifeYears: number;
+  status?: FixedAssetStatus;
+  disposalDate?: string;
+  notes?: string;
+}
+
+// ============================================================================
+// Receipt and local OCR Types
+// ============================================================================
+
+export type ReceiptOcrStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface ReceiptExtractedData {
+  vendorName?: string;
+  documentDate?: string;
+  documentNumber?: string;
+  netAmount?: number;
+  taxAmount?: number;
+  grossAmount?: number;
+  taxRate?: number;
+  currency?: string;
+  suggestedCategory?: EuerEntryCategory;
+}
+
+export interface Receipt extends Timestamps {
+  id: UUID;
+  name: string;
+  contentType: string;
+  size: number;
+  ocrStatus: ReceiptOcrStatus;
+  ocrText?: string;
+  ocrConfidence?: number;
+  ocrError?: string;
+  extractedData: ReceiptExtractedData;
+  linkedEuerEntryId?: UUID | null;
+  /** Only present when a receipt detail is requested. */
+  content?: string;
+}
+
+export interface ReceiptPayload {
+  name: string;
+  content: string;
+  contentType: string;
+  size: number;
+}
+
+export interface ReceiptUpdatePayload {
+  extractedData?: ReceiptExtractedData;
+  ocrText?: string;
+  linkedEuerEntryId?: UUID | null;
 }
 
 // ============================================================================

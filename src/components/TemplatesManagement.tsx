@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { getDocumentTemplateFallback, ResolvedDocumentTemplate } from '../utils/documentTemplateProfiles';
 import { getTerminology } from '../utils/terminology';
+import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
 
 type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
 
@@ -28,6 +29,8 @@ const templateTabs: Array<{ id: TemplateTab; label: string; icon: typeof FileTex
   { id: 'orderConfirmation', label: 'Bestätigungen', icon: FileCheck },
   { id: 'positions', label: 'Positionen', icon: Package },
 ];
+
+const TEMPLATE_SETUP_NOTICE_ID = 'templates-organization-data';
 
 interface LayoutDefinition {
   id: DocumentLayout;
@@ -545,6 +548,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   const [selectedPreview, setSelectedPreview] = useState<DocumentTemplate | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [setupNoticeDismissed, setSetupNoticeDismissed] = useState(() => isNoticeDismissed(TEMPLATE_SETUP_NOTICE_ID));
 
   const templates = useMemo(() => {
     if (activeTab === 'general' || activeTab === 'positions') return [];
@@ -714,7 +718,8 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             ))}
           </div>
 
-          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 lg:p-5">
+          {!setupNoticeDismissed && <section className="relative rounded-xl border border-blue-200 bg-blue-50 p-4 pr-14 lg:p-5">
+            <button type="button" onClick={() => { dismissNotice(TEMPLATE_SETUP_NOTICE_ID); setSetupNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis ausblenden"><X className="h-5 w-5" /></button>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
@@ -732,7 +737,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
                 </button>
               )}
             </div>
-          </section>
+          </section>}
         </div>
       ) : activeTab === 'positions' ? (
         <div className="space-y-6">
@@ -776,7 +781,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             </button>
           </div>
 
-          {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+          {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {templates.map(template => (
@@ -839,7 +844,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             />
           )}
 
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          <div className="guidance-panel p-4 text-sm">
             Eigene Layouts basieren auf neun professionellen Grundlayouts. So bleiben PDFs technisch stabil, während Branding, Logo, Farben, Tabelle und Informationsblöcke angepasst werden können.
           </div>
         </div>

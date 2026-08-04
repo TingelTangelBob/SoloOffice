@@ -20,6 +20,8 @@ import calendarEventsRouter from './routes/calendarEvents.js';
 import recurringInvoicesRouter from './routes/recurringInvoices.js';
 import creditNotesRouter from './routes/creditNotes.js';
 import euerEntriesRouter from './routes/euerEntries.js';
+import receiptsRouter from './routes/receipts.js';
+import fixedAssetsRouter from './routes/fixedAssets.js';
 
 dotenv.config();
 
@@ -63,6 +65,8 @@ app.use('/api/invoices', invoicesRouter);
 app.use('/api/recurring-invoices', recurringInvoicesRouter);
 app.use('/api/credit-notes', creditNotesRouter);
 app.use('/api/euer-entries', euerEntriesRouter);
+app.use('/api/receipts', receiptsRouter);
+app.use('/api/fixed-assets', fixedAssetsRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/company', companyRouter);
 app.use('/api/email', emailRouter);

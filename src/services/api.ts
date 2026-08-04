@@ -1,4 +1,4 @@
-import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload } from '../types';
+import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -67,6 +67,7 @@ class ApiService {
         throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
       }
 
+      if (response.status === 204) return undefined as T;
       return response.json();
     } catch (error) {
       if (!skipErrorLogging) {
@@ -809,8 +810,82 @@ class ApiService {
     });
   }
 
-  async deleteEuerEntry(id: string): Promise<void> {
-    await this.request(`/euer-entries/${id}`, { method: 'DELETE' });
+  async deleteEuerEntry(id: string, correctionReason?: string): Promise<void> {
+    await this.request(`/euer-entries/${id}`, {
+      method: 'DELETE',
+      body: correctionReason ? JSON.stringify({ correctionReason }) : undefined,
+    });
+  }
+
+  async getEuerEntryHistory(id: string): Promise<EuerEntryHistory[]> {
+    return this.request<EuerEntryHistory[]>(`/euer-entries/${id}/history`);
+  }
+
+  // --------------------------------------------------------------------------
+  // Anlagenverzeichnis API
+  // --------------------------------------------------------------------------
+
+  async getFixedAssets(): Promise<FixedAsset[]> {
+    return this.request<FixedAsset[]>('/fixed-assets');
+  }
+
+  async createFixedAsset(payload: FixedAssetPayload): Promise<FixedAsset> {
+    return this.request<FixedAsset>('/fixed-assets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateFixedAsset(id: string, payload: Partial<FixedAssetPayload>): Promise<FixedAsset> {
+    return this.request<FixedAsset>(`/fixed-assets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteFixedAsset(id: string): Promise<void> {
+    await this.request(`/fixed-assets/${id}`, { method: 'DELETE' });
+  }
+
+  // --------------------------------------------------------------------------
+  // Belege and local OCR API
+  // --------------------------------------------------------------------------
+
+  async getReceipts(): Promise<Receipt[]> {
+    return this.request<Receipt[]>('/receipts');
+  }
+
+  async getReceipt(id: string): Promise<Receipt> {
+    return this.request<Receipt>(`/receipts/${id}`);
+  }
+
+  async createReceipt(payload: ReceiptPayload): Promise<Receipt> {
+    return this.request<Receipt>('/receipts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async retryReceiptOcr(id: string): Promise<Receipt> {
+    return this.request<Receipt>(`/receipts/${id}/ocr`, { method: 'POST' });
+  }
+
+  async updateReceipt(id: string, payload: ReceiptUpdatePayload): Promise<Receipt> {
+    return this.request<Receipt>(`/receipts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async linkReceiptToEuerEntry(receiptId: string, euerEntryId: string): Promise<Receipt> {
+    return this.request<Receipt>(`/receipts/${receiptId}/link-euer`, {
+      method: 'POST',
+      body: JSON.stringify({ euerEntryId }),
+    });
+  }
+
+  async deleteReceipt(id: string): Promise<void> {
+    await this.request(`/receipts/${id}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Calculator, CheckCircle2, FileSpreadsheet, ReceiptText, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Boxes, Calculator, CheckCircle2, FileSpreadsheet, ReceiptText, ShieldCheck, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
 import type { CreditNote } from '../types';
 import { PageHeader } from './PageHeader';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
 
 interface TaxOverviewProps {
   onNavigate: (page: string) => void;
@@ -17,6 +18,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
+  const [noticeDismissed, setNoticeDismissed] = useState(() => isNoticeDismissed('tax-euer-preparation'));
   const locale = company?.locale || 'de-DE';
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
 
@@ -43,9 +45,13 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
       <button onClick={() => onNavigate('euer')} className="btn-primary flex items-center gap-2 rounded-xl px-4 py-2 text-white transition-all duration-300 hover:brightness-90">
         EÜR öffnen <ArrowRight className="h-4 w-4" />
       </button>
+      <button onClick={() => onNavigate('fixed-assets')} className="action-button flex items-center gap-2">
+        Anlagenverzeichnis <Boxes className="h-4 w-4" />
+      </button>
     </PageHeader>
 
-    <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
+    {!noticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
+      <button type="button" onClick={() => { dismissNotice('tax-euer-preparation'); setNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis ausblenden"><X className="h-5 w-5" /></button>
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-blue-700" />
         <div>
@@ -56,7 +62,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
           <p className="mt-2 text-xs text-blue-800">Die ELSTER-Übertragung ist bewusst noch nicht aktiv und wird separat geprüft.</p>
         </div>
       </div>
-    </section>
+    </section>}
 
     <div className="grid gap-4 md:grid-cols-3">
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

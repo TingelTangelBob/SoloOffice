@@ -29,6 +29,7 @@ export function JobInvoiceGenerator({
   const terminology = getTerminology(company?.terminologyProfile);
   const [generationType, setGenerationType] = useState<'single' | 'daily' | 'weekly' | 'monthly'>('single');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [nonCompletedNoticeDismissed, setNonCompletedNoticeDismissed] = useState(false);
 
   const selectedJobs = jobs.filter((job: JobEntry) => selectedJobIds.includes(job.id));
   
@@ -419,9 +420,9 @@ export function JobInvoiceGenerator({
 
         <div className="p-4 space-y-6">
           {/* Warning for non-completed jobs */}
-          {nonCompletedJobs.length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-start space-x-2">
+          {nonCompletedJobs.length > 0 && !nonCompletedNoticeDismissed && (
+            <div className="notice notice-warning">
+              <div className="flex min-w-0 items-start space-x-2">
                 <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
                 <div>
                   <h4 className="text-sm font-medium text-yellow-900">Hinweis</h4>
@@ -431,6 +432,7 @@ export function JobInvoiceGenerator({
                   </p>
                 </div>
               </div>
+              <button type="button" onClick={() => setNonCompletedNoticeDismissed(true)} className="notice-dismiss" aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button>
             </div>
           )}
 
@@ -568,7 +570,7 @@ export function JobInvoiceGenerator({
           </div>
 
           {/* Important Notes */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
             <h4 className="text-sm font-medium text-yellow-900 mb-2">Wichtige Hinweise</h4>
             <ul className="text-sm text-yellow-800 space-y-1">
               <li>• Die Rechnungen werden im Entwurfsstatus erstellt</li>

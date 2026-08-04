@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import logger from '../utils/logger';
 import { 
   BarChart3, 
@@ -14,19 +14,27 @@ import {
 } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
+import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import {
   InvoiceJournalResponse, 
   ReportingStatistics,
   InvoiceJournalEntry,
-  CustomerStats 
+  CustomerStats,
+  CreditNote,
+  EuerEntry,
 } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 
-export function ReportingManagement() {
+interface ReportingManagementProps {
+  onNavigate?: (page: string) => void;
+}
+
+export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const { customers } = useCustomers();
+  const { invoices } = useInvoices();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const formatAmount = (amount: number) => formatCurrency(amount, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
@@ -42,6 +50,8 @@ export function ReportingManagement() {
   const [statistics, setStatistics] = useState<ReportingStatistics | null>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   
   // State for PDF generation
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -81,11 +91,23 @@ export function ReportingManagement() {
     }
   }, [selectedYear]);
 
+  const loadEuerData = useCallback(async () => {
+    try {
+      const [entries, notes] = await Promise.all([apiService.getEuerEntries(selectedYear), apiService.getCreditNotes()]);
+      setEuerEntries(entries);
+      setCreditNotes(notes);
+    } catch (err) {
+      logger.error('Error loading EÜR data:', err);
+      setError('Fehler beim Laden der EÜR-Auswertung');
+    }
+  }, [selectedYear]);
+
   // Load initial data and refresh when the selected filters change.
   useEffect(() => {
     void loadJournalData();
     void loadStatistics();
-  }, [loadJournalData, loadStatistics]);
+    void loadEuerData();
+  }, [loadEuerData, loadJournalData, loadStatistics]);
 
   const handleGeneratePDF = async () => {
     setGeneratingPDF(true);
@@ -121,7 +143,6 @@ export function ReportingManagement() {
     setStartDate('');
     setEndDate('');
     setSelectedCustomer('');
-    setTimeout(() => loadJournalData(), 100);
   };
 
   const setTimePreset = (preset: string) => {
@@ -183,7 +204,7 @@ export function ReportingManagement() {
     setEndDate(formatDate(end));
     
     // Automatisch filtern nach Preset-Auswahl
-    setTimeout(() => loadJournalData(), 100);
+
   };
 
   const getStatusColor = (status: string) => {
@@ -211,13 +232,45 @@ export function ReportingManagement() {
     'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'
   ];
 
+  const euerRows = useMemo(() => {
+    const linkedInvoiceIds = new Set(euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId).map(entry => entry.sourceId));
+    const automatic = [...invoices, ...creditNotes]
+      .filter(invoice => invoice.status === 'paid' && new Date(invoice.issueDate).getFullYear() === selectedYear && !linkedInvoiceIds.has(invoice.id))
+      .map(invoice => ({
+        entryType: 'income' as const,
+        date: String(invoice.issueDate).slice(0, 10),
+        description: invoice.documentType === 'credit_note' ? `Gutschrift ${invoice.invoiceNumber}` : `Rechnung ${invoice.invoiceNumber}`,
+        amount: invoice.documentType === 'credit_note' ? -Math.abs(Number(invoice.total || 0)) : Math.abs(Number(invoice.total || 0)),
+      }));
+    const manual = euerEntries.map(entry => ({
+      entryType: entry.entryType,
+      date: String(entry.entryDate).slice(0, 10),
+      description: entry.description,
+      amount: Number(entry.amount || 0),
+    }));
+    return [...automatic, ...manual];
+  }, [creditNotes, euerEntries, invoices, selectedYear]);
+
+  const euerSummary = useMemo(() => {
+    const income = euerRows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
+    const expenses = euerRows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
+    return { income, expenses, profit: income - expenses };
+  }, [euerRows]);
+
+  const euerMonthly = useMemo(() => Array.from({ length: 12 }, (_, month) => {
+    const rows = euerRows.filter(row => new Date(`${row.date}T00:00:00`).getMonth() === month);
+    const income = rows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
+    const expenses = rows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
+    return { month, income, expenses, profit: income - expenses };
+  }), [euerRows]);
+
   return (
     <div className="space-y-8">
       {/* Header */}
       <div>
         <PageHeader
           icon={BarChart3}
-          title="Reporting & Auswertungen"
+          title="Auswertungen"
           subtitle="Rechnungsjournale, Statistiken und Auswertungen"
         />
       </div>
@@ -557,7 +610,6 @@ export function ReportingManagement() {
                   value={selectedYear}
                   onChange={(e) => {
                     setSelectedYear(parseInt(e.target.value));
-                    setTimeout(() => loadStatistics(), 100);
                   }}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 >
@@ -664,6 +716,16 @@ export function ReportingManagement() {
           </div>
         </div>
       </div>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-lg font-semibold text-gray-900">EÜR-Auswertung {selectedYear}</h2><p className="mt-1 text-sm text-gray-500">Einnahmen, Ausgaben und Überschuss aus dem EÜR-Journal an einem Ort.</p></div>
+          <button type="button" onClick={() => onNavigate?.('euer')} className="action-button flex items-center gap-2">EÜR öffnen <TrendingUp className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Einnahmen</p><p className="mt-1 font-semibold text-emerald-900">{formatAmount(euerSummary.income)}</p></div><div className="rounded-lg bg-rose-50 p-3"><p className="text-xs text-rose-700">Ausgaben</p><p className="mt-1 font-semibold text-rose-900">{formatAmount(euerSummary.expenses)}</p></div><div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">Überschuss</p><p className="mt-1 font-semibold text-blue-900">{formatAmount(euerSummary.profit)}</p></div></div>
+        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"><th className="px-3 py-3">Monat</th><th className="px-3 py-3 text-right">Einnahmen</th><th className="px-3 py-3 text-right">Ausgaben</th><th className="px-3 py-3 text-right">Überschuss</th></tr></thead><tbody>{euerMonthly.map(item => <tr key={item.month} className="border-b border-gray-100"><td className="px-3 py-2 font-medium text-gray-700">{monthNames[item.month]}</td><td className="px-3 py-2 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-3 py-2 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className="px-3 py-2 text-right font-medium text-gray-900">{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
+        <p className="mt-4 text-xs text-gray-500">Die EÜR-Auswertung ist eine vorbereitende Arbeitsunterlage. Zahlungseingangsdaten und Teilzahlungen sollten geprüft werden.</p>
+      </section>
     </div>
   );
 }

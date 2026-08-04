@@ -149,7 +149,7 @@ export function ActionMenu({
         ref={triggerRef}
         type="button"
         onClick={toggleMenu}
-        className={triggerClassName}
+        className={`action-menu-trigger ${triggerClassName}`}
         aria-label={ariaLabel}
         aria-expanded={isOpen}
         title={title}

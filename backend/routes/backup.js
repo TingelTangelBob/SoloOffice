@@ -12,7 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JSONB_COLUMNS = {
   'email_history': ['attachments', 'smtp_response'],
   'job_entries': ['materials', 'signature'],
-  'company': ['payment_methods', 'invoice_templates', 'document_templates']
+  'company': ['payment_methods', 'invoice_templates', 'document_templates'],
+  'receipts': ['extracted_data'],
+  'euer_entry_history': ['old_data', 'new_data']
 };
 
 const BACKUP_TABLES = [
@@ -33,6 +35,9 @@ const BACKUP_TABLES = [
   'material_templates',
   'yearly_invoice_start_numbers',
   'euer_entries',
+  'euer_entry_history',
+  'fixed_assets',
+  'receipts',
   'email_history',
   'smtp_settings',
   'customer_hourly_rates',
@@ -48,7 +53,7 @@ const RESTORE_CLEAR_TABLES = [
   'quote_attachments', 'quote_items', 'quotes',
   'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
   'hourly_rates', 'material_templates', 'customers', 'company',
-  'yearly_invoice_start_numbers', 'euer_entries', 'migrations'
+  'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entry_history', 'euer_entries', 'migrations'
 ];
 
 const RESTORE_ORDER = [
@@ -57,6 +62,9 @@ const RESTORE_ORDER = [
   'customers',
   'yearly_invoice_start_numbers',
   'euer_entries',
+  'euer_entry_history',
+  'fixed_assets',
+  'receipts',
   'hourly_rates',
   'material_templates',
   'customer_hourly_rates',

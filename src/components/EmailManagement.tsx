@@ -881,7 +881,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                     </button>
                   </div>
 
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="guidance-panel p-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Hinweise:</h4>
                     <ul className="text-xs text-gray-600 space-y-1">
                       <li>• Die Test-E-Mail wird mit der aktuellen SMTP-Konfiguration versendet</li>

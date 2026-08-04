@@ -1,22 +1,13 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
 import { 
   ChevronLeft, 
   ChevronRight, 
   ChevronDown,
-  Calendar as CalendarIcon,
-  Clock,
-  User,
-  AlertTriangle,
-  FileText,
-  Hash,
-  ExternalLink,
   Search,
-  Share2,
   X,
-  Plus,
-  Trash2,
   Edit,
+  Trash2,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -46,6 +37,8 @@ const toDateKey = (date: Date) => toDateInputValue(date);
 const CALENDAR_START_HOUR = 0;
 const CALENDAR_END_HOUR = 24;
 const CALENDAR_HOUR_HEIGHT = 56;
+const MONTH_WEEK_COLUMN_WIDTH = 32;
+const MONTH_HEADER_HEIGHT = 45;
 
 type CalendarDensity = 'spacious' | 'compact' | 'minimal' | 'indicator';
 
@@ -104,6 +97,87 @@ const formatMinutesToTime = (minutes: number, locale = 'de-DE', timeFormat?: '24
   const value = `${String(Math.floor(normalizedMinutes / 60)).padStart(2, '0')}:${String(normalizedMinutes % 60).padStart(2, '0')}`;
   return formatTime(value, locale, timeFormat);
 };
+
+interface CalendarDayScrollProps {
+  enabled: boolean;
+  children: React.ReactNode;
+}
+
+function CalendarDayScroll({ enabled, children }: CalendarDayScrollProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollbar, setScrollbar] = useState({
+    visible: false,
+    top: 0,
+    height: 0,
+  });
+
+  const updateScrollbar = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element || !enabled) {
+      setScrollbar({ visible: false, top: 0, height: 0 });
+      return;
+    }
+
+    const hasOverflow = element.scrollHeight > element.clientHeight + 1;
+    if (!hasOverflow) {
+      setScrollbar({ visible: false, top: 0, height: 0 });
+      return;
+    }
+
+    const trackHeight = Math.max(0, element.clientHeight - 4);
+    const thumbHeight = Math.max(18, trackHeight * (element.clientHeight / element.scrollHeight));
+    const maxTop = Math.max(0, trackHeight - thumbHeight);
+    const scrollRange = element.scrollHeight - element.clientHeight;
+
+    setScrollbar({
+      visible: true,
+      top: scrollRange > 0 ? (element.scrollTop / scrollRange) * maxTop : 0,
+      height: Math.min(trackHeight, thumbHeight),
+    });
+  }, [enabled]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    updateScrollbar();
+    element.addEventListener('scroll', updateScrollbar, { passive: true });
+
+    if (typeof ResizeObserver === 'undefined') {
+      return () => element.removeEventListener('scroll', updateScrollbar);
+    }
+
+    const observer = new ResizeObserver(updateScrollbar);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+
+    return () => {
+      element.removeEventListener('scroll', updateScrollbar);
+      observer.disconnect();
+    };
+  }, [updateScrollbar]);
+
+  return (
+    <div className="group relative min-h-0 flex-1 overflow-hidden p-1.5">
+      <div
+        ref={scrollRef}
+        tabIndex={enabled ? 0 : undefined}
+        aria-label={enabled ? 'Aufträge des Tages scrollen' : undefined}
+        className={`h-full min-h-0 space-y-1 ${enabled ? 'calendar-day-scroll' : 'overflow-hidden'}`}
+      >
+        {children}
+      </div>
+      {enabled && scrollbar.visible && (
+        <div className="pointer-events-none absolute inset-y-1 right-0.5 w-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <div
+            className="absolute left-0 w-1.5 rounded-full bg-slate-300/90"
+            style={{ top: `${scrollbar.top}px`, height: `${scrollbar.height}px` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { customers, addCustomer, refreshCustomers } = useCustomers();
@@ -456,8 +530,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       const { width, height } = grid.getBoundingClientRect();
       const weekCount = calendarDays.length / 7;
       setMonthCellSize({
-        width: Math.max(0, (width - 40) / 7),
-        height: Math.max(0, (height - 56) / weekCount),
+        width: Math.max(0, (width - MONTH_WEEK_COLUMN_WIDTH) / 7),
+        height: Math.max(0, (height - MONTH_HEADER_HEIGHT) / weekCount),
       });
     };
 
@@ -654,16 +728,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       case 'completed': return 'bg-green-500';
       case 'invoiced': return 'bg-blue-500';
       default: return 'bg-gray-400';
-    }
-  };
-
-  // Get priority color
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'high': return 'text-red-600';
-      case 'medium': return 'text-yellow-600';
-      case 'low': return 'text-green-600';
-      default: return 'text-gray-600';
     }
   };
 
@@ -1006,7 +1070,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       <button
         type="button"
         onClick={openDatePicker}
-        className="min-h-0 inline-flex h-11 w-fit max-w-full min-w-0 items-center justify-center gap-1 rounded-lg px-3 text-center text-lg font-semibold capitalize text-gray-900 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-primary-custom lg:text-xl"
+        className="min-h-0 inline-flex h-9 w-fit max-w-full min-w-0 items-center justify-center gap-1 rounded-lg px-3 text-center text-lg font-semibold capitalize text-gray-900 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-primary-custom lg:text-xl"
         aria-label="Monat und Jahr auswählen"
         aria-expanded={showDatePicker}
       >
@@ -1091,7 +1155,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     <div className="space-y-3 lg:space-y-0">
       {/* Header */}
       <div className="p-1 lg:p-2">
-        <PageHeader icon={CalendarIcon} title="Kalender" singleRow>
+        <PageHeader title="Kalender" singleRow>
         <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
         <button
           type="button"
@@ -1100,7 +1164,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           aria-label="Neuen Eintrag erstellen"
           title="Neuen Eintrag erstellen"
         >
-          <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Neu</span>
         </button>
         <button
@@ -1110,7 +1173,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           aria-label="Kalender teilen"
           title="Kalender teilen"
         >
-          <Share2 className="h-4 w-4" />
           <span className="hidden sm:inline">Teilen</span>
         </button>
         <div className="relative order-1 search-container">
@@ -1178,32 +1240,17 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center">
-                          {job.priority && (
-                            <AlertTriangle className={`h-4 w-4 mr-2 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
-                          )}
                           <span className="font-medium text-gray-900 truncate">
                             {job.title}
                           </span>
-                          {job.attachments && job.attachments.length > 0 && (
-                            <FileText className="h-4 w-4 ml-2 flex-shrink-0 text-gray-400" />
-                          )}
                         </div>
                         <div className="mt-1 text-sm text-gray-600">
-                          <div className="flex items-center">
-                            <User className="h-3 w-3 mr-1" />
-                            <span className="truncate">{customer?.name || job.customerName}</span>
-                          </div>
-                          <div className="flex items-center mt-1">
-                            <CalendarIcon className="h-3 w-3 mr-1" />
-                            <span>{formatDate(jobDate, locale, company?.dateFormat)}</span>
-                            <Clock className="h-3 w-3 ml-3 mr-1" />
-                            <span>{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
+                          <div className="truncate">{customer?.name || job.customerName}</div>
+                          <div className="mt-1 truncate">
+                            {formatDate(jobDate, locale, company?.dateFormat)} · {formatNumber(totalHours, locale, company?.numberFormat, 1)}h
                           </div>
                           {job.jobNumber && (
-                            <div className="flex items-center mt-1">
-                              <Hash className="h-3 w-3 mr-1" />
-                              <span className="truncate">{job.jobNumber}</span>
-                            </div>
+                            <div className="mt-1 truncate">{job.jobNumber}</div>
                           )}
                         </div>
                       </div>
@@ -1229,13 +1276,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       </div>
 
       {/* Calendar Controls */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="grid min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
             <button
               type="button"
               onClick={navigatePrevious}
-              className="min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              className="min-h-0 inline-flex h-8 w-8 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
               title="Vorheriger Zeitraum"
             >
               <ChevronLeft className="h-4 w-4 text-gray-600" />
@@ -1254,7 +1301,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={navigateNext}
-              className="min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1.5 hover:bg-gray-50 rounded-lg transition-colors"
+              className="min-h-0 inline-flex h-8 w-8 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
               title="Nächster Zeitraum"
             >
               <ChevronRight className="h-4 w-4 text-gray-600" />
@@ -1262,8 +1309,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
           </div>
 
-          <div className="flex h-11 w-full min-w-0 items-center justify-end gap-1 sm:w-auto">
-            <div className="flex h-11 min-w-0 flex-1 items-stretch rounded-lg border border-gray-200 bg-gray-50 sm:flex-none" role="group" aria-label="Kalenderansicht">
+          <div className="flex h-9 w-full min-w-0 items-center justify-end gap-1 sm:w-auto">
+            <div className="flex h-9 min-w-0 flex-1 items-stretch rounded-lg border border-gray-200 bg-gray-50 sm:flex-none" role="group" aria-label="Kalenderansicht">
               {([
                 ['day', 'Tag'],
                 ['week', 'Kalenderwoche'],
@@ -1285,7 +1332,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={goToToday}
-              className="min-h-0 h-11 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
+              className="min-h-0 h-9 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
             >
               Heute
             </button>
@@ -1293,20 +1340,20 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         </div>
 
         {/* Desktop Calendar Grid */}
-        {viewMode === 'month' && <div className="mt-3 overflow-x-auto">
+        {viewMode === 'month' && <div className="mt-3 overflow-hidden">
           <div
             ref={monthGridRef}
-            className="grid h-[calc(100vh-270px)] min-h-[24rem] w-full min-w-0 grid-cols-[40px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-h-0"
-            style={{ gridTemplateRows: `56px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
+            className="grid h-[calc(100vh-180px)] min-h-[24rem] w-full min-w-0 grid-cols-[32px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-h-0"
+            style={{ gridTemplateRows: `${MONTH_HEADER_HEIGHT}px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
           >
             {/* Week day headers */}
-            <div className="border-b border-r border-slate-200 bg-slate-50 p-1 text-center text-xs font-semibold text-slate-600">
+            <div className="flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 p-1 text-center text-xs font-semibold text-slate-600">
               KW
             </div>
             {weekDays.map((day) => (
               <div
                 key={day.short}
-                className="border-b border-r border-slate-200 bg-slate-50 p-2 text-center text-sm font-semibold text-slate-600 lg:p-3 lg:text-base"
+                className="flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1 text-center text-sm font-semibold text-slate-600 lg:px-2 lg:py-1.5 lg:text-base"
               >
                 <span className="lg:hidden">{day.short}</span>
                 <span className="hidden lg:inline">{day.long}</span>
@@ -1316,6 +1363,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             {/* Calendar days */}
             {calendarDays.map((date, index) => {
               const dayJobs = getJobsForDate(date);
+              const dayEvents = getEventsForDate(date);
+              const totalEntries = dayJobs.length + dayEvents.length;
               const isDayToday = isToday(date);
               const isInCurrentMonth = isCurrentMonth(date);
               const isDragOver = dragOverDate && date.toDateString() === dragOverDate.toDateString();
@@ -1335,9 +1384,11 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   onDrop={(e) => handleDrop(e, date)}
                   className={`
                     h-full min-w-0 min-h-0 overflow-hidden border-b border-r border-slate-200
-                    ${isSelectedDate(date) ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'}
-                    ${!isInCurrentMonth ? 'bg-slate-50 text-slate-400' : ''}
-                    ${isSelectedDate(date) ? 'z-10 bg-blue-50' : ''}
+                    ${isSelectedDate(date)
+                      ? 'z-10 bg-primary-light-custom'
+                      : !isInCurrentMonth
+                        ? 'bg-slate-50 text-slate-400'
+                        : 'bg-white hover:bg-slate-50'}
                     ${isDragOver ? 'bg-blue-100 border-blue-400 border-2 shadow-md' : ''}
                     transition-all duration-200 relative flex flex-col
                   `}
@@ -1345,7 +1396,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   {/* Date header - clickable area for creating new jobs */}
                   <div 
                     className={`
-                      px-1 py-1.5 sm:px-3
+                      px-1 py-0.5
                     `}
                     title={`Doppelklick zum Erstellen eines neuen ${terminology.work.singular}`}
                   >
@@ -1361,18 +1412,23 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   </div>
                   
                   {/* Jobs area */}
-                  <div className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-transparent p-2">
+                  <CalendarDayScroll enabled={totalEntries > 1}>
                     {(() => {
                       const isExpanded = isDateExpanded(date);
-                      const dayEvents = getEventsForDate(date);
-                      const totalEntries = dayJobs.length + dayEvents.length;
+                      const compactEntries = totalEntries > 1;
                       const density = getCalendarDensity(monthCellSize.width, monthCellSize.height, totalEntries);
                       const maxVisibleEntries = isExpanded ? totalEntries : getMaxVisibleEntries(density, monthCellSize.height);
                       const hasMoreEntries = !isExpanded && totalEntries > maxVisibleEntries;
                       const visibleEntryLimit = hasMoreEntries ? Math.max(1, maxVisibleEntries - 1) : maxVisibleEntries;
-                      const eventsToShow = dayEvents.slice(0, Math.min(dayEvents.length, visibleEntryLimit));
-                      const jobsToShow = dayJobs.slice(0, Math.max(0, visibleEntryLimit - eventsToShow.length));
-                      const hiddenEntryCount = totalEntries - eventsToShow.length - jobsToShow.length;
+                      const eventsToShow = compactEntries
+                        ? dayEvents
+                        : dayEvents.slice(0, Math.min(dayEvents.length, visibleEntryLimit));
+                      const jobsToShow = compactEntries
+                        ? dayJobs
+                        : dayJobs.slice(0, Math.max(0, visibleEntryLimit - eventsToShow.length));
+                      const hiddenEntryCount = compactEntries
+                        ? 0
+                        : totalEntries - eventsToShow.length - jobsToShow.length;
                       
                       return (
                         <>
@@ -1381,7 +1437,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             const isEventStart = calendarEvent.startDate === toDateKey(date);
                             const isEventEnd = calendarEvent.endDate === toDateKey(date);
 
-                            return density === 'indicator' || (density === 'minimal' && isMultiDayEvent) ? (
+                            return !compactEntries && (density === 'indicator' || (density === 'minimal' && isMultiDayEvent)) ? (
                               <div
                                 key={calendarEvent.id}
                                 className={`-mx-2 h-2 bg-purple-400 ${isEventStart ? 'rounded-l-full' : ''} ${isEventEnd ? 'rounded-r-full' : ''}`}
@@ -1394,7 +1450,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
                               >
                                 <div className="flex min-w-0 items-center gap-1">
-                                  <CalendarIcon className="h-3 w-3 shrink-0" />
                                   <span className="truncate font-medium">{calendarEvent.title}</span>
                                 </div>
                                 <button
@@ -1451,10 +1506,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   onDrop={(e) => handleJobDrop(e, date, job.id)}
                                   className={`
                                     cursor-move transition-all duration-150
-                                    ${density === 'indicator'
+                                    ${!compactEntries && density === 'indicator'
                                       ? `h-2 w-2 rounded-full ${getStatusIndicatorColor(job.status)}`
                                       : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
-                                    ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : density !== 'indicator' ? 'hover:shadow-sm' : ''}
+                                    ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : (!compactEntries && density !== 'indicator') ? 'hover:shadow-sm' : ''}
                                     ${draggedJob && draggedJob.id !== job.id && 
                                       new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                       'border-blue-300 border-dashed' : ''}
@@ -1462,40 +1517,23 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   `}
                                   title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                                 >
-                                {density !== 'indicator' && (
+                                {(compactEntries || density !== 'indicator') && (
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center">
-                                      {density !== 'minimal' && job.priority && (
-                                        <AlertTriangle className={`h-3 w-3 mr-1 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
-                                      )}
-                                      <span className="truncate font-medium">
-                                        {job.title}
-                                      </span>
-                                      {density === 'spacious' && job.attachments && job.attachments.length > 0 && (
-                                      <span title="Anhänge vorhanden"><FileText className="h-3 w-3 ml-1 flex-shrink-0 text-gray-400" /></span>
-                                      )}
-                                    </div>
-                                    {density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
-                                      <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                                  <span className="truncate font-medium">
+                                    {job.title}
+                                  </span>
+                                </div>
+                                {!compactEntries && density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
                                       <span className="truncate">{customer?.name || job.customerName}</span>
                                     </div>}
-                                    {density === 'spacious' && job.jobNumber && (
-                                      <div className="flex items-center mt-1 text-xs opacity-75">
-                                        <Hash className="h-3 w-3 mr-1 flex-shrink-0" />
-                                        <span className="truncate">{job.jobNumber}</span>
-                                      </div>
+                                    {!compactEntries && density === 'spacious' && job.jobNumber && (
+                                      <div className="mt-1 truncate text-xs opacity-75">{job.jobNumber}</div>
                                     )}
-                                    {density === 'spacious' && job.externalJobNumber && (
-                                      <div className="flex items-center mt-1 text-xs opacity-75">
-                                        <ExternalLink className="h-3 w-3 mr-1 flex-shrink-0" />
-                                        <span className="truncate">{job.externalJobNumber}</span>
-                                      </div>
+                                    {!compactEntries && density === 'spacious' && job.externalJobNumber && (
+                                      <div className="mt-1 truncate text-xs opacity-75">{job.externalJobNumber}</div>
                                     )}
-                                    {density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
-                                      <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
-                                      <span>{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
-                                    </div>}
                                   </div>
                                 </div>
                                 )}
@@ -1523,7 +1561,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         </>
                       );
                     })()}
-                  </div>
+                  </CalendarDayScroll>
                   {isSelectedDate(date) && (
                     <div
                       aria-hidden="true"
@@ -1618,7 +1656,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         onDrop={(event) => handleTimeGridDrop(event, date, dayStartMinutes)}
                         className={`relative border-b border-r border-gray-300 ${
                           isToday(date) ? 'bg-primary-custom/5' : 'bg-white'
-                        } ${isSelectedDate(date) ? 'bg-blue-50/30' : ''} ${
+                        } ${isSelectedDate(date) ? 'bg-primary-light-custom' : ''} ${
                           dragOverDate && date.toDateString() === dragOverDate.toDateString()
                             ? 'bg-blue-100'
                             : ''
@@ -1649,7 +1687,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             style={{ top: `${4 + eventIndex * 30}px` }}
                             title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
                           >
-                            <CalendarIcon className="h-3 w-3 shrink-0" />
                             <span className="truncate font-medium">{calendarEvent.title}</span>
                           </div>
                         ))}
@@ -1684,10 +1721,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             >
                               <div className="truncate font-semibold">{job.title}</div>
                               <div className="truncate opacity-80">{customer?.name || job.customerName}</div>
-                              <div className="mt-0.5 flex items-center gap-1 opacity-80">
-                                <Clock className="h-3 w-3 shrink-0" />
-                                <span>{jobTimeLabel}</span>
-                              </div>
+                              <div className="mt-0.5 truncate opacity-80">{jobTimeLabel}</div>
                             </div>
                           );
                         })}
@@ -1728,7 +1762,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 <div 
                   className={`
                     p-3 border-b border-gray-300 cursor-pointer hover:bg-gray-100
-                    ${isDayToday ? 'bg-primary-custom/20' : isSelectedDate(date) ? 'bg-primary-custom/10' : 'bg-gray-100'}
+                    ${isDayToday ? 'bg-primary-custom/20' : isSelectedDate(date) ? 'bg-primary-light-custom' : 'bg-gray-100'}
                     transition-colors duration-200
                   `}
                   onDoubleClick={() => handleDateDoubleClick(date)}
@@ -1760,7 +1794,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       className="flex items-center justify-between gap-2 rounded-lg border border-purple-200 bg-purple-100 p-2 text-sm text-purple-800"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <CalendarIcon className="h-4 w-4 shrink-0" />
                         <span className="truncate font-medium">{calendarEvent.title}</span>
                       </div>
                       <button
@@ -1829,34 +1862,24 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center mb-1">
-                                {job.priority && (
-                                  <AlertTriangle className={`h-4 w-4 mr-2 flex-shrink-0 ${getPriorityColor(job.priority)}`} />
-                                )}
                                 <span className="font-medium truncate">
                                   {job.title}
                                 </span>
-                                {job.attachments && job.attachments.length > 0 && (
-                                  <span title="Anhänge vorhanden"><FileText className="h-4 w-4 ml-2 flex-shrink-0 text-gray-400" /></span>
-                                )}
                               </div>
                               <div className="flex items-center text-sm text-gray-600 mb-1">
-                                <User className="h-4 w-4 mr-2 flex-shrink-0" />
                                 <span className="truncate">{customer?.name || job.customerName}</span>
                               </div>
                               {job.jobNumber && (
                                 <div className="flex items-center text-sm text-gray-600 mb-1">
-                                  <Hash className="h-4 w-4 mr-2 flex-shrink-0" />
                                   <span className="truncate">{job.jobNumber}</span>
                                 </div>
                               )}
                               {job.externalJobNumber && (
                                 <div className="flex items-center text-sm text-gray-600 mb-1">
-                                  <ExternalLink className="h-4 w-4 mr-2 flex-shrink-0" />
                                   <span className="truncate">{job.externalJobNumber}</span>
                                 </div>
                               )}
                               <div className="flex items-center text-sm text-gray-600">
-                                <Clock className="h-4 w-4 mr-2 flex-shrink-0" />
                                 <span>{jobTimeLabel ? `${jobTimeLabel} · ` : ''}{formatNumber(totalHours, locale, company?.numberFormat, 1)}h</span>
                               </div>
                             </div>
@@ -2067,7 +2090,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Share2 className="h-5 w-5 text-primary-custom" />
                 <h3 id="calendar-share-title" className="text-lg font-semibold text-gray-900">
                   Kalender teilen
                 </h3>

@@ -1,12 +1,41 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Calculator, Download, FileJson, Info, Pencil, Plus, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import {
+  AlertTriangle,
+  Calculator,
+  CheckCircle2,
+  Download,
+  FileJson,
+  FileScan,
+  FileText,
+  History,
+  Info,
+  Pencil,
+  Plus,
+  ReceiptText,
+  RotateCcw,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+  X,
+} from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
-import type { CreditNote, EuerEntry, EuerEntryCategory, EuerEntryPayload, EuerEntryType } from '../types';
+import type {
+  CreditNote,
+  EuerEntry,
+  EuerEntryCategory,
+  EuerEntryHistory,
+  EuerEntryPayload,
+  EuerEntrySourceType,
+  EuerEntryType,
+} from '../types';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { PageHeader } from './PageHeader';
+import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
+import { Notice } from './Notice';
 
 type EntryDraft = {
   entryType: EuerEntryType;
@@ -16,6 +45,9 @@ type EntryDraft = {
   amount: string;
   taxRate: string;
   notes: string;
+  sourceType: EuerEntrySourceType;
+  sourceId: string;
+  correctionReason: string;
 };
 
 interface EuerRow {
@@ -29,6 +61,7 @@ interface EuerRow {
   notes?: string;
   automatic: boolean;
   sourceLabel?: string;
+  sourceId?: string;
 }
 
 const categoryLabels: Record<EuerEntryCategory, string> = {
@@ -51,19 +84,51 @@ const expenseCategories: EuerEntryCategory[] = [
   'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense',
 ];
 
-const emptyDraft = (): EntryDraft => ({
-  entryType: 'expense',
+const categorySuggestions: Array<{ category: EuerEntryCategory; words: string[] }> = [
+  { category: 'software', words: ['software', 'cloud', 'hosting', 'lizenz', 'saas'] },
+  { category: 'telecommunications', words: ['telefon', 'internet', 'mobilfunk', 'telekommunikation'] },
+  { category: 'office', words: ['büro', 'papier', 'drucker', 'schreibwaren', 'toner'] },
+  { category: 'materials', words: ['material', 'ware', 'rohstoff', 'ersatzteil'] },
+  { category: 'travel', words: ['bahn', 'hotel', 'reise', 'flug', 'taxi', 'übernacht'] },
+  { category: 'vehicle', words: ['tank', 'diesel', 'benzin', 'park', 'fahrzeug', 'kfz'] },
+  { category: 'marketing', words: ['werbung', 'anzeige', 'marketing', 'druck'] },
+  { category: 'professional_services', words: ['beratung', 'steuerberater', 'anwalt', 'fremdleistung'] },
+  { category: 'insurance', words: ['versicherung', 'beitrag'] },
+  { category: 'bank_fees', words: ['bank', 'gebühr', 'konto', 'transaktion'] },
+];
+
+const suggestCategory = (description: string): EuerEntryCategory => {
+  const normalized = description.toLocaleLowerCase('de-DE');
+  return categorySuggestions.find(item => item.words.some(word => normalized.includes(word)))?.category || 'other_expense';
+};
+
+const emptyDraft = (sourceType: EuerEntrySourceType = 'manual'): EntryDraft => ({
+  entryType: sourceType === 'invoice_payment' ? 'income' : 'expense',
   entryDate: new Date().toISOString().slice(0, 10),
   description: '',
-  category: 'office',
+  category: sourceType === 'invoice_payment' ? 'other_income' : 'office',
   amount: '',
-  taxRate: '19',
+  taxRate: sourceType === 'invoice_payment' ? '0' : '19',
   notes: '',
+  sourceType,
+  sourceId: '',
+  correctionReason: '',
 });
 
 const dateKey = (value: Date | string) => String(value).slice(0, 10);
+const getEuerInfoNoticeId = (year: number) => `euer-automatic-documents-${year}`;
+const sourceLabels: Record<EuerEntrySourceType, string> = {
+  manual: 'Manuell',
+  invoice_payment: 'Teilzahlung',
+  receipt: 'Beleg',
+  correction: 'Korrektur',
+};
 
-export function EuerManagement() {
+interface EuerManagementProps {
+  onNavigate?: (page: string) => void;
+}
+
+export function EuerManagement({ onNavigate }: EuerManagementProps) {
   const { invoices } = useInvoices();
   const { company } = useCompany();
   const currentYear = new Date().getFullYear();
@@ -75,11 +140,16 @@ export function EuerManagement() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [infoNoticeDismissed, setInfoNoticeDismissed] = useState(() => isNoticeDismissed(getEuerInfoNoticeId(currentYear)));
   const [dialogEntry, setDialogEntry] = useState<EuerEntry | null | undefined>(undefined);
   const [draft, setDraft] = useState<EntryDraft>(emptyDraft());
+  const [historyEntry, setHistoryEntry] = useState<EuerEntry | null>(null);
+  const [history, setHistory] = useState<EuerEntryHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
   const years = Array.from({ length: 6 }, (_, index) => currentYear - index);
+  const invoiceOptions = useMemo(() => invoices.filter(invoice => invoice.documentType !== 'credit_note'), [invoices]);
 
   const loadEntries = useCallback(async () => {
     setLoading(true);
@@ -99,13 +169,19 @@ export function EuerManagement() {
   }, [year]);
 
   useEffect(() => { void loadEntries(); }, [loadEntries]);
+  useEffect(() => { setInfoNoticeDismissed(isNoticeDismissed(getEuerInfoNoticeId(year))); }, [year]);
 
   const rows = useMemo<EuerRow[]>(() => {
+    const linkedInvoiceIds = new Set(entries
+      .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId)
+      .map(entry => entry.sourceId));
     const automaticRows = [...invoices, ...creditNotes]
       .filter(invoice => invoice.status === 'paid' && new Date(invoice.issueDate).getFullYear() === year)
+      .filter(invoice => !linkedInvoiceIds.has(invoice.id))
       .map(invoice => {
         const isCreditNote = invoice.documentType === 'credit_note';
         const amount = isCreditNote ? -Math.abs(Number(invoice.total || 0)) : Math.abs(Number(invoice.total || 0));
+        const taxRate = Number(invoice.subtotal) > 0 ? Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2)) : 0;
         return {
           id: `invoice-${invoice.id}`,
           entryType: 'income' as const,
@@ -113,24 +189,30 @@ export function EuerManagement() {
           description: isCreditNote ? `Gutschrift ${invoice.invoiceNumber}` : `Rechnung ${invoice.invoiceNumber}`,
           category: 'other_income' as const,
           amount,
-          taxRate: 0,
+          taxRate,
           automatic: true,
           sourceLabel: isCreditNote ? 'Automatisch · Gutschrift' : 'Automatisch · Bezahlt',
+          sourceId: invoice.id,
         };
       });
-    const manualRows = entries.map(entry => ({
-      id: entry.id,
-      entryType: entry.entryType,
-      entryDate: dateKey(entry.entryDate),
-      description: entry.description,
-      category: entry.category,
-      amount: Number(entry.amount || 0),
-      taxRate: Number(entry.taxRate || 0),
-      notes: entry.notes,
-      automatic: false,
-    }));
+    const manualRows = entries.map(entry => {
+      const sourceInvoice = entry.sourceType === 'invoice_payment' ? invoiceOptions.find(invoice => invoice.id === entry.sourceId) : undefined;
+      return {
+        id: entry.id,
+        entryType: entry.entryType,
+        entryDate: dateKey(entry.entryDate),
+        description: entry.description,
+        category: entry.category,
+        amount: Number(entry.amount || 0),
+        taxRate: Number(entry.taxRate || 0),
+        notes: entry.notes,
+        automatic: false,
+        sourceLabel: sourceInvoice ? `${sourceLabels.invoice_payment} · ${sourceInvoice.invoiceNumber}` : sourceLabels[entry.sourceType || 'manual'],
+        sourceId: entry.sourceId,
+      };
+    });
     return [...automaticRows, ...manualRows].sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-  }, [creditNotes, entries, invoices, year]);
+  }, [creditNotes, entries, invoiceOptions, invoices, year]);
 
   const summary = useMemo(() => {
     const income = rows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
@@ -145,12 +227,42 @@ export function EuerManagement() {
     return { month, income, expenses, profit: income - expenses };
   }), [rows]);
 
-  const openNew = () => {
-    setDraft(emptyDraft());
+  const checkHints = useMemo(() => {
+    const hints: string[] = [];
+    entries.forEach(entry => {
+      if (!entry.notes?.trim() && entry.sourceType !== 'invoice_payment') hints.push(`„${entry.description}“ hat noch keinen Beleg- oder Notizhinweis.`);
+      if (entry.entryType === 'expense' && entry.category === 'other_expense') hints.push(`„${entry.description}“ nutzt noch die allgemeine Kategorie.`);
+      if (entry.sourceType === 'invoice_payment' && !entry.sourceId) hints.push(`„${entry.description}“ ist als Teilzahlung erfasst, aber keiner Rechnung zugeordnet.`);
+    });
+    invoiceOptions.forEach(invoice => {
+      const payments = entries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id);
+      if (!payments.length) return;
+      const paidAmount = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+      if (paidAmount > Number(invoice.total || 0) + 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} überschreiten den Rechnungsbetrag.`);
+      if (invoice.status === 'paid' && Math.abs(paidAmount - Number(invoice.total || 0)) > 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} stimmen nicht mit dem Status „Bezahlt“ überein.`);
+    });
+    return hints;
+  }, [entries, invoiceOptions]);
+
+  const openNew = () => { setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
+  const openPayment = () => { setDraft(emptyDraft('invoice_payment')); setDialogEntry(null); setError(''); };
+  const openCorrection = (entry: EuerEntry) => {
+    const correctionType: EuerEntryType = entry.entryType === 'income' ? 'expense' : 'income';
+    setDraft({
+      entryType: correctionType,
+      entryDate: dateKey(entry.entryDate),
+      description: `Korrektur zu: ${entry.description}`,
+      category: correctionType === 'income' ? 'other_income' : entry.category,
+      amount: String(Math.abs(Number(entry.amount || 0))),
+      taxRate: String(entry.taxRate ?? 0),
+      notes: `Gegenbuchung zu EÜR-Buchung ${entry.id}`,
+      sourceType: 'correction',
+      sourceId: entry.id,
+      correctionReason: '',
+    });
     setDialogEntry(null);
     setError('');
   };
-
   const openEdit = (entry: EuerEntry) => {
     setDraft({
       entryType: entry.entryType,
@@ -160,11 +272,13 @@ export function EuerManagement() {
       amount: String(entry.amount),
       taxRate: String(entry.taxRate ?? 0),
       notes: entry.notes || '',
+      sourceType: entry.sourceType || 'manual',
+      sourceId: entry.sourceId || '',
+      correctionReason: entry.correctionReason || '',
     });
     setDialogEntry(entry);
     setError('');
   };
-
   const closeDialog = () => setDialogEntry(undefined);
 
   const submit = async (event: FormEvent) => {
@@ -175,7 +289,10 @@ export function EuerManagement() {
       setError('Bitte Datum, Beschreibung, Betrag und MwSt.-Satz prüfen.');
       return;
     }
-
+    if (draft.sourceType === 'correction' && !draft.correctionReason.trim()) {
+      setError('Für eine Korrektur ist ein Korrekturgrund erforderlich.');
+      return;
+    }
     const payload: EuerEntryPayload = {
       entryType: draft.entryType,
       entryDate: draft.entryDate,
@@ -184,6 +301,9 @@ export function EuerManagement() {
       amount,
       taxRate,
       notes: draft.notes.trim() || undefined,
+      sourceType: draft.sourceType,
+      sourceId: draft.sourceId || undefined,
+      correctionReason: draft.correctionReason.trim() || undefined,
     };
     setBusy(true);
     setError('');
@@ -191,11 +311,11 @@ export function EuerManagement() {
       if (dialogEntry) {
         const updated = await apiService.updateEuerEntry(dialogEntry.id, payload);
         setEntries(current => current.map(entry => entry.id === updated.id ? updated : entry));
-        setNotice('EÜR-Buchung wurde aktualisiert.');
+        setNotice('EÜR-Buchung wurde aktualisiert und protokolliert.');
       } else {
         const created = await apiService.createEuerEntry(payload);
         if (new Date(created.entryDate).getFullYear() === year) setEntries(current => [created, ...current]);
-        setNotice('EÜR-Buchung wurde gespeichert.');
+        setNotice(payload.sourceType === 'invoice_payment' ? 'Teilzahlung wurde gespeichert.' : 'EÜR-Buchung wurde gespeichert.');
       }
       closeDialog();
     } catch (saveError) {
@@ -206,21 +326,34 @@ export function EuerManagement() {
   };
 
   const remove = async (entry: EuerRow) => {
-    if (entry.automatic || !window.confirm(`„${entry.description}“ wirklich löschen?`)) return;
+    if (entry.automatic || !window.confirm(`„${entry.description}“ stornieren? Die Buchung bleibt in der Historie erhalten.`)) return;
     setBusy(true);
     try {
-      await apiService.deleteEuerEntry(entry.id);
+      await apiService.deleteEuerEntry(entry.id, 'Stornierung durch Benutzer');
       setEntries(current => current.filter(item => item.id !== entry.id));
-      setNotice('EÜR-Buchung wurde gelöscht.');
+      setNotice('EÜR-Buchung wurde storniert und bleibt im Änderungsverlauf erhalten.');
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'EÜR-Buchung konnte nicht gelöscht werden.');
+      setError(deleteError instanceof Error ? deleteError.message : 'EÜR-Buchung konnte nicht storniert werden.');
     } finally {
       setBusy(false);
     }
   };
 
-  const download = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type });
+  const openHistory = async (entry: EuerEntry) => {
+    setHistoryEntry(entry);
+    setHistoryLoading(true);
+    try {
+      setHistory(await apiService.getEuerEntryHistory(entry.id));
+    } catch (historyError) {
+      setError(historyError instanceof Error ? historyError.message : 'Der Änderungsverlauf konnte nicht geladen werden.');
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const download = (content: string | Blob, filename: string, type?: string) => {
+    const blob = content instanceof Blob ? content : new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -232,7 +365,7 @@ export function EuerManagement() {
   };
 
   const exportCsv = () => {
-    const header = ['Datum', 'Typ', 'Beschreibung', 'Kategorie', 'Betrag', 'MwSt.-Satz', 'Quelle', 'Notiz'];
+    const header = ['Datum', 'Typ', 'Beschreibung', 'Kategorie', 'Betrag brutto', 'MwSt.-Satz', 'Quelle', 'Quell-ID', 'Notiz'];
     const csvRows = rows.map(row => [
       row.entryDate,
       row.entryType === 'income' ? 'Einnahme' : 'Ausgabe',
@@ -241,23 +374,80 @@ export function EuerManagement() {
       row.amount.toFixed(2).replace('.', ','),
       `${row.taxRate}`,
       row.sourceLabel || 'Manuell',
+      row.sourceId || '',
       row.notes || '',
     ]);
     const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    download([header, ...csvRows].map(row => row.map(escape).join(';')).join('\r\n'), `euer_${year}.csv`, 'text/csv;charset=utf-8');
-    setNotice('CSV-Export wurde erstellt.');
+    const content = '\uFEFF' + [header, ...csvRows].map(row => row.map(escape).join(';')).join('\r\n');
+    download(content, `euer_${year}_steuerberater.csv`, 'text/csv;charset=utf-8');
+    setNotice('CSV-Export für den Steuerberater wurde erstellt.');
   };
 
   const exportJson = () => {
     download(JSON.stringify({
+      schemaVersion: '1.0',
       exportType: 'EÜR-Arbeitsstand',
-      year,
+      period: { year },
       createdAt: new Date().toISOString(),
+      company: company ? { name: company.name, taxId: company.taxId, taxNumber: company.taxIdentificationNumber, taxBusinessType: company.taxBusinessType, legalForm: company.legalForm } : undefined,
       summary,
+      monthly,
+      checkHints,
       entries: rows,
       note: 'Kein amtlicher ELSTER-Datensatz. Vor der Abgabe steuerlich prüfen.',
-    }, null, 2), `euer_${year}.json`, 'application/json;charset=utf-8');
-    setNotice('JSON-Export wurde erstellt.');
+    }, null, 2), `euer_${year}_steuerberater.json`, 'application/json;charset=utf-8');
+    setNotice('JSON-Export für den Steuerberater wurde erstellt.');
+  };
+
+  const exportPdf = () => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let cursor = 16;
+    doc.setFontSize(18);
+    doc.text('Einnahmenüberschussrechnung', 14, cursor);
+    cursor += 8;
+    doc.setFontSize(10);
+    doc.text(`${company?.name || 'Unternehmen'} · Geschäftsjahr ${year}`, 14, cursor);
+    cursor += 6;
+    doc.text(`Steuernummer: ${company?.taxIdentificationNumber || 'nicht hinterlegt'} · Betriebsart: ${company?.taxBusinessType || 'nicht hinterlegt'} · Rechtsform: ${company?.legalForm || 'nicht hinterlegt'}`, 14, cursor);
+    cursor += 10;
+    doc.setFontSize(11);
+    doc.text(`Einnahmen: ${formatAmount(summary.income)}   Ausgaben: ${formatAmount(summary.expenses)}   Überschuss: ${formatAmount(summary.profit)}`, 14, cursor);
+    cursor += 10;
+    doc.setFontSize(9);
+    doc.text('Datum', 14, cursor);
+    doc.text('Beschreibung', 42, cursor);
+    doc.text('Kategorie', 115, cursor);
+    doc.text('Quelle', 175, cursor);
+    doc.text('Betrag', pageWidth - 42, cursor, { align: 'right' });
+    cursor += 5;
+    doc.line(14, cursor, pageWidth - 14, cursor);
+    cursor += 6;
+    rows.forEach(row => {
+      if (cursor > 190) {
+        doc.addPage();
+        cursor = 16;
+      }
+      doc.text(row.entryDate, 14, cursor);
+      doc.text(doc.splitTextToSize(row.description, 68)[0], 42, cursor);
+      doc.text(doc.splitTextToSize(categoryLabels[row.category], 54)[0], 115, cursor);
+      doc.text(doc.splitTextToSize(row.sourceLabel || 'Manuell', 45)[0], 175, cursor);
+      doc.text(`${row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}${formatAmount(Math.abs(row.amount))}`, pageWidth - 14, cursor, { align: 'right' });
+      cursor += 5;
+    });
+    if (checkHints.length) {
+      if (cursor > 175) { doc.addPage(); cursor = 16; }
+      cursor += 4;
+      doc.setFontSize(10);
+      doc.text('Prüfhinweise', 14, cursor);
+      cursor += 5;
+      doc.setFontSize(8);
+      checkHints.slice(0, 8).forEach(hint => { doc.text(`• ${doc.splitTextToSize(hint, pageWidth - 30)[0]}`, 16, cursor); cursor += 4; });
+    }
+    doc.setFontSize(8);
+    doc.text('Arbeitsstand, kein amtlicher ELSTER-Datensatz. Vor Abgabe steuerlich prüfen.', 14, 202);
+    doc.save(`euer_${year}_steuerberater.pdf`);
+    setNotice('PDF-Export für den Steuerberater wurde erstellt.');
   };
 
   return <div className="space-y-6">
@@ -265,15 +455,18 @@ export function EuerManagement() {
       <select value={year} onChange={event => setYear(Number(event.target.value))} className="form-input w-auto">
         {years.map(option => <option key={option} value={option}>{option}</option>)}
       </select>
-      <button onClick={openNew} className="btn-primary flex items-center gap-2 rounded-xl px-4 py-2 text-white transition-all duration-300 hover:brightness-90"><Plus className="h-4 w-4" />Buchung</button>
+      <button type="button" onClick={() => onNavigate?.('receipts')} className="action-button flex items-center gap-2"><FileScan className="h-4 w-4" />Beleg hinzufügen</button>
+      <button type="button" onClick={openPayment} className="action-button flex items-center gap-2"><ReceiptText className="h-4 w-4" />Teilzahlung</button>
+      <button type="button" onClick={openNew} className="btn-primary flex items-center gap-2 rounded-xl px-4 py-2 text-white transition-all duration-300 hover:brightness-90"><Plus className="h-4 w-4" />Buchung</button>
     </PageHeader>
 
-    <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
-      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Bezahlte Rechnungen und bezahlte Gutschriften werden automatisch übernommen. Ergänze Ausgaben und sonstige Einnahmen, damit dein Ergebnis vollständig wird.</p><p className="mt-2 text-xs text-blue-800">Hinweis: Im aktuellen Rechnungsmodell ist kein Zahlungseingangsdatum hinterlegt. Automatische Belege werden deshalb zunächst über das Rechnungsdatum zugeordnet und sollten vor der Abgabe geprüft werden.</p></div></div>
-    </section>
+    {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
+      <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
+      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Das Einnahmen-/Ausgabenjournal ist der Kern deiner EÜR. Bezahlte Rechnungen und Gutschriften werden automatisch übernommen; Teilzahlungen, Belege und weitere Geschäftsvorfälle kannst du ergänzen.</p><p className="mt-2 text-xs text-blue-800">Hinweis: Im aktuellen Rechnungsmodell ist kein Zahlungseingangsdatum hinterlegt. Automatische Rechnungszeilen werden deshalb zunächst über das Rechnungsdatum zugeordnet und sollten vor der Abgabe geprüft werden.</p></div></div>
+    </section>}
 
-    {notice && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{notice}</div>}
-    {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button onClick={() => setError('')} aria-label="Fehler schließen"><X className="h-4 w-4" /></button></div>}
+    {notice && <Notice variant="success" onDismiss={() => setNotice('')}>{notice}</Notice>}
+    {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Fehler schließen"><X className="h-4 w-4" /></button></div>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-bold text-emerald-700">{formatAmount(summary.income)}</p></article>
@@ -282,16 +475,20 @@ export function EuerManagement() {
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-bold text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">automatisch und manuell</p></article>
     </div>
 
+    {checkHints.length > 0 && <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><h2 className="font-semibold text-amber-950">Prüfhinweise ({checkHints.length})</h2><p className="mt-1 text-sm text-amber-900">Diese Hinweise helfen bei der Vorbereitung und ersetzen keine steuerliche Prüfung.</p><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{checkHints.slice(0, 6).map(hint => <li key={hint}>{hint}</li>)}</ul>{checkHints.length > 6 && <p className="mt-2 text-xs text-amber-800">Weitere Hinweise sind im Steuerberater-Export enthalten.</p>}</div></div></section>}
+
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2><p className="mt-1 text-sm text-gray-500">Schneller Überblick über Einnahmen, Ausgaben und Überschuss.</p></div><div className="flex gap-2"><button onClick={exportCsv} className="action-button"><Download className="h-4 w-4" />CSV für Steuerberater</button><button onClick={exportJson} className="action-button"><FileJson className="h-4 w-4" />JSON exportieren</button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2><p className="mt-1 text-sm text-gray-500">Schneller Überblick über Einnahmen, Ausgaben und Überschuss.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={exportCsv} className="action-button"><Download className="h-4 w-4" />CSV Steuerberater</button><button type="button" onClick={exportJson} className="action-button"><FileJson className="h-4 w-4" />JSON Steuerberater</button><button type="button" onClick={exportPdf} className="action-button"><FileText className="h-4 w-4" />PDF Steuerberater</button></div></div>
       <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[640px] text-sm"><thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"><th className="px-3 py-3">Monat</th><th className="px-3 py-3 text-right">Einnahmen</th><th className="px-3 py-3 text-right">Ausgaben</th><th className="px-3 py-3 text-right">Überschuss</th></tr></thead><tbody>{monthly.map(item => <tr key={item.month} className="border-b border-gray-100"><td className="px-3 py-3 font-medium text-gray-700">{new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(year, item.month, 1))}</td><td className="px-3 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-3 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className={`px-3 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
     </section>
 
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p></div><span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">ELSTER-Übertragung in Prüfung</span></div>
-      {loading ? <div className="py-10 text-center text-sm text-gray-500">EÜR-Buchungen werden geladen …</div> : rows.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Für {year} sind noch keine Buchungen vorhanden.</div> : <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"><th className="px-3 py-3">Datum</th><th className="px-3 py-3">Beschreibung</th><th className="px-3 py-3">Kategorie</th><th className="px-3 py-3">Quelle</th><th className="px-3 py-3 text-right">Betrag</th><th className="px-3 py-3 text-right">Aktionen</th></tr></thead><tbody>{rows.map(row => <tr key={row.id} className="border-b border-gray-100"><td className="px-3 py-3 whitespace-nowrap text-gray-600">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="px-3 py-3"><div className="font-medium text-gray-900">{row.description}</div>{row.notes && <div className="mt-1 text-xs text-gray-500">{row.notes}</div>}</td><td className="px-3 py-3 text-gray-600">{categoryLabels[row.category]}</td><td className="px-3 py-3 text-xs text-gray-500">{row.sourceLabel || 'Manuell'}</td><td className={`px-3 py-3 text-right font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td className="px-3 py-3"><div className="flex justify-end gap-2">{!row.automatic && <><button onClick={() => openEdit(entries.find(entry => entry.id === row.id)!)} className="action-button" disabled={busy}><Pencil className="h-4 w-4" />Bearbeiten</button><button onClick={() => void remove(row)} className="action-button text-rose-700" disabled={busy}><Trash2 className="h-4 w-4" />Löschen</button></>}</div></td></tr>)}</tbody></table></div>}
+      {loading ? <div className="py-10 text-center text-sm text-gray-500">EÜR-Buchungen werden geladen …</div> : rows.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Für {year} sind noch keine Buchungen vorhanden.</div> : <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500"><th className="px-3 py-3">Datum</th><th className="px-3 py-3">Beschreibung</th><th className="px-3 py-3">Kategorie</th><th className="px-3 py-3">Quelle</th><th className="px-3 py-3 text-right">Betrag</th><th className="px-3 py-3 text-right">Aktionen</th></tr></thead><tbody>{rows.map(row => <tr key={row.id} className="border-b border-gray-100"><td className="whitespace-nowrap px-3 py-3 text-gray-600">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="px-3 py-3"><div className="font-medium text-gray-900">{row.description}</div>{row.notes && <div className="mt-1 text-xs text-gray-500">{row.notes}</div>}</td><td className="px-3 py-3 text-gray-600">{categoryLabels[row.category]}</td><td className="px-3 py-3 text-xs text-gray-500">{row.sourceLabel || 'Manuell'}</td><td className={`px-3 py-3 text-right font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td className="px-3 py-3"><div className="flex justify-end gap-2">{!row.automatic && <>{(() => { const entry = entries.find(item => item.id === row.id); return entry ? <><button type="button" onClick={() => openEdit(entry)} className="action-button" disabled={busy}><Pencil className="h-4 w-4" />Bearbeiten</button><button type="button" onClick={() => openCorrection(entry)} className="action-button" disabled={busy}><RotateCcw className="h-4 w-4" />Korrektur</button><button type="button" onClick={() => void openHistory(entry)} className="action-button" disabled={busy} aria-label="Änderungsverlauf öffnen"><History className="h-4 w-4" />Historie</button><button type="button" onClick={() => void remove(row)} className="action-button text-rose-700" disabled={busy}><Trash2 className="h-4 w-4" />Stornieren</button></> : null; })()}</>}</div></td></tr>)}</tbody></table></div>}
     </section>
 
-    {dialogEntry !== undefined && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><form onSubmit={submit} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><div><h2 className="text-xl font-semibold text-gray-900">{dialogEntry ? 'EÜR-Buchung bearbeiten' : 'EÜR-Buchung erfassen'}</h2><p className="mt-1 text-sm text-gray-500">Beträge werden als Bruttobeträge erfasst.</p></div><button type="button" onClick={closeDialog} aria-label="Dialog schließen"><X className="h-5 w-5 text-gray-500" /></button></div><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-medium text-gray-700">Art<select value={draft.entryType} onChange={event => { const entryType = event.target.value as EuerEntryType; setDraft(current => ({ ...current, entryType, category: entryType === 'income' ? 'other_income' : current.category === 'other_income' ? 'office' : current.category })); }} className="form-input mt-1 w-full"><option value="expense">Ausgabe</option><option value="income">Einnahme</option></select></label><label className="text-sm font-medium text-gray-700">Datum<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700 md:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label><label className="text-sm font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label><label className="text-sm font-medium text-gray-700">Betrag<LocalizedNumberInput required min="0" step="0.01" value={draft.amount} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, amount: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700">MwSt.-Satz in %<LocalizedNumberInput required min="0" max="100" step="0.01" value={draft.taxRate} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, taxRate: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700 md:col-span-2">Notiz / Beleghinweis<textarea value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} className="form-input mt-1 w-full" rows={3} placeholder="Optional: Belegnummer oder kurze Erläuterung" /></label></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeDialog} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Abbrechen</button><button type="submit" disabled={busy} className="btn-primary rounded-lg px-4 py-2 text-white transition-colors hover:brightness-90">{busy ? 'Speichern …' : 'Speichern'}</button></div></form></div>}
+    {dialogEntry !== undefined && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><form onSubmit={submit} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><div><h2 className="text-xl font-semibold text-gray-900">{dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Teilzahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}</h2><p className="mt-1 text-sm text-gray-500">Beträge werden als Bruttobeträge erfasst. Änderungen werden protokolliert.</p></div><button type="button" onClick={closeDialog} aria-label="Dialog schließen"><X className="h-5 w-5 text-gray-500" /></button></div><div className="grid gap-4 md:grid-cols-2"><label className="text-sm font-medium text-gray-700">Art<select value={draft.entryType} onChange={event => { const entryType = event.target.value as EuerEntryType; setDraft(current => ({ ...current, entryType, category: entryType === 'income' ? 'other_income' : current.category === 'other_income' ? 'office' : current.category })); }} className="form-input mt-1 w-full"><option value="expense">Ausgabe</option><option value="income">Einnahme</option></select></label><label className="text-sm font-medium text-gray-700">Datum<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700 md:col-span-2">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Teilzahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>{draft.sourceType === 'invoice_payment' && <label className="text-sm font-medium text-gray-700 md:col-span-2">Rechnung<select value={draft.sourceId} onChange={event => { const sourceId = event.target.value; const invoice = invoiceOptions.find(item => item.id === sourceId); setDraft(current => ({ ...current, sourceId, description: invoice ? `Teilzahlung Rechnung ${invoice.invoiceNumber}` : current.description, taxRate: invoice && Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : current.taxRate })); }} className="form-input mt-1 w-full"><option value="">Noch keine Rechnung zuordnen</option>{invoiceOptions.map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · {formatAmount(Number(invoice.total || 0))}</option>)}</select></label>}<label className="text-sm font-medium text-gray-700 md:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value, category: current.entryType === 'expense' && (current.category === 'office' || current.category === 'other_expense') ? suggestCategory(event.target.value) : current.category }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label><label className="text-sm font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label><label className="text-sm font-medium text-gray-700">Betrag<LocalizedNumberInput required min="0" step="0.01" value={draft.amount} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, amount: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700">MwSt.-Satz in %<LocalizedNumberInput required min="0" max="100" step="0.01" value={draft.taxRate} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, taxRate: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label><label className="text-sm font-medium text-gray-700 md:col-span-2">Notiz / Beleghinweis<textarea value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} className="form-input mt-1 w-full" rows={3} placeholder="Optional: Belegnummer oder kurze Erläuterung" /></label>{draft.sourceType === 'correction' && <label className="text-sm font-medium text-gray-700 md:col-span-2">Korrekturgrund<textarea required value={draft.correctionReason} onChange={event => setDraft(current => ({ ...current, correctionReason: event.target.value }))} className="form-input mt-1 w-full" rows={2} placeholder="Warum wird dieser Geschäftsvorfall korrigiert?" /></label>}</div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeDialog} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Abbrechen</button><button type="submit" disabled={busy} className="btn-primary rounded-lg px-4 py-2 text-white transition-colors hover:brightness-90">{busy ? 'Speichern …' : 'Speichern'}</button></div></form></div>}
+
+    {historyEntry && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-gray-900">Änderungsverlauf</h2><p className="mt-1 text-sm text-gray-500">{historyEntry.description}</p></div><button type="button" onClick={() => setHistoryEntry(null)} aria-label="Historie schließen"><X className="h-5 w-5 text-gray-500" /></button></div>{historyLoading ? <div className="py-10 text-center text-sm text-gray-500">Historie wird geladen …</div> : history.length === 0 ? <div className="py-10 text-center text-sm text-gray-500">Noch keine Historieneinträge vorhanden.</div> : <div className="mt-5 space-y-3">{history.map(item => <article key={item.id} className="rounded-lg border border-gray-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2 font-medium text-gray-900"><CheckCircle2 className="h-4 w-4 text-primary-custom" />{item.action === 'created' ? 'Erstellt' : item.action === 'updated' ? 'Geändert' : 'Storniert'}</span><span className="text-xs text-gray-500">{formatDate(item.changedAt, locale, company?.dateFormat)}</span></div>{item.reason && <p className="mt-2 text-sm text-gray-700">Grund: {item.reason}</p>}{(item.oldData || item.newData) && <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-gray-500">Technische Werte anzeigen</summary><pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">{JSON.stringify({ vorher: item.oldData, nachher: item.newData }, null, 2)}</pre></details>}</article>)}</div>}</section></div>}
   </div>;
 }

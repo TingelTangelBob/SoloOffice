@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
-import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users } from 'lucide-react';
 import { defaultCompany, useCompany } from '../context/CompanyContext';
 import { ColorPicker } from './ColorPicker';
 import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';
 import { apiService } from '../services/api';
 import { updateFavicon } from '../utils/faviconUtils';
-import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode } from '../types';
+import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm } from '../types';
 import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { getTerminology, terminologyProfiles } from '../utils/terminology';
+import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
@@ -47,6 +48,62 @@ const reminderTemplates = {
   ],
 } as const;
 
+function TerminologyPreview({ profile }: { profile: TerminologyDefinition }) {
+  const preview = profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
+  const menuItems = [
+    { label: 'Übersicht', icon: Home },
+    { label: profile.work.navLabel, icon: Briefcase, active: true },
+    { label: 'Rechnungen', icon: FileText },
+    { label: 'Belege', icon: FileText },
+    { label: 'Bank', icon: CreditCard },
+    { label: 'Steuern', icon: Calculator },
+    { label: 'Auswertungen', icon: BarChart3 },
+    { label: profile.entity.navLabel, icon: Users, section: 'Verwalten' },
+    { label: 'Leistungen', icon: Package },
+    { label: 'Erweiterungen', icon: Palette },
+    { label: 'Einstellungen', icon: SettingsIcon },
+  ];
+
+  return (
+    <div
+      className="terminology-preview mt-2 overflow-hidden rounded-lg border bg-white text-left shadow-sm"
+      style={{ borderColor: preview.accentSoft }}
+    >
+      <div className="terminology-preview-header flex items-center gap-1.5 border-b px-2 py-1.5" style={{ backgroundColor: preview.accentWash, borderColor: preview.accentSoft }}>
+        <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: preview.accentSoft, color: preview.accent }}>
+          <Building2 className="h-3 w-3" />
+        </span>
+        <span className="truncate text-[9px] font-bold tracking-wide text-gray-800">SoloOffice</span>
+      </div>
+      <div className="space-y-0.5 p-1.5">
+        <div className="terminology-preview-search mb-1 flex items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5 py-1 text-[8px] text-gray-400">
+          <Search className="h-2.5 w-2.5 shrink-0" />
+          <span>Suchen...</span>
+        </div>
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <React.Fragment key={`${profile.id}-${item.label}`}>
+              {item.section && (
+                <div className="px-1 pb-0.5 pt-1.5 text-[7px] font-bold uppercase tracking-[0.12em]" style={{ color: preview.accent }}>
+                  {item.section}
+                </div>
+              )}
+              <div
+                className={`flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[8px] font-medium ${item.active ? 'terminology-preview-active' : 'text-gray-700'}`}
+                style={item.active ? { backgroundColor: preview.accentWash, color: preview.accent } : undefined}
+              >
+                <Icon className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function Settings({ initialTab = 'app', embedded = false, onNavigate }: SettingsProps) {
   const {
     company,
@@ -75,8 +132,86 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
   const [isAddingRate, setIsAddingRate] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('app');
+  const terminologyScrollerRef = useRef<HTMLDivElement>(null);
+  const terminologyDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false, pointerId: -1 });
+  const [isDraggingTerminology, setIsDraggingTerminology] = useState(false);
   const currencySymbol = getCurrencySymbol(formData.locale || 'de-DE', formData.numberFormat, formData.currency);
   const terminology = getTerminology(formData.terminologyProfile);
+  const hasUnsavedChanges = JSON.stringify(formData) !== JSON.stringify(company);
+  const terminologyColorSource = formData.terminologyColorSource || 'profile';
+
+  const handleTerminologyProfileSelect = (profile: typeof terminologyProfiles[number]) => {
+    setFormData(previous => {
+      const next = { ...previous, terminologyProfile: profile.id };
+      if ((previous.terminologyColorSource || 'profile') === 'profile' && profile.preview) {
+        next.primaryColor = profile.preview.accent;
+        next.secondaryColor = profile.preview.secondary;
+      }
+      return next;
+    });
+  };
+
+  const handleTerminologyColorSourceChange = (source: 'appearance' | 'profile') => {
+    setFormData(previous => {
+      const next = { ...previous, terminologyColorSource: source };
+      if (source === 'profile') {
+        const profile = terminologyProfiles.find(item => item.id === (previous.terminologyProfile || 'customers')) || terminologyProfiles[0];
+        if (profile.preview) {
+          next.primaryColor = profile.preview.accent;
+          next.secondaryColor = profile.preview.secondary;
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleTerminologyPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const scroller = terminologyScrollerRef.current;
+    if (!scroller) return;
+
+    terminologyDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: scroller.scrollLeft,
+      moved: false,
+      pointerId: event.pointerId,
+    };
+  };
+
+  const handleTerminologyPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = terminologyDragRef.current;
+    const scroller = terminologyScrollerRef.current;
+    if (!drag.active || !scroller) return;
+
+    const delta = event.clientX - drag.startX;
+    if (Math.abs(delta) > 8) {
+      if (!drag.moved) {
+        drag.moved = true;
+        setIsDraggingTerminology(true);
+        event.currentTarget.setPointerCapture(drag.pointerId);
+      }
+      event.preventDefault();
+    }
+    if (!drag.moved) return;
+    scroller.scrollLeft = drag.startScrollLeft - delta;
+  };
+
+  const handleTerminologyPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = terminologyDragRef.current;
+    drag.active = false;
+    setIsDraggingTerminology(false);
+    if (event.currentTarget.hasPointerCapture(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId);
+    }
+  };
+
+  const handleTerminologyClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!terminologyDragRef.current.moved) return;
+    event.preventDefault();
+    event.stopPropagation();
+    terminologyDragRef.current.moved = false;
+  };
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -203,6 +338,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     
     try {
       const companySettings = { ...formData };
+      delete companySettings.receiptLabel;
       delete companySettings.invoiceTemplates;
       delete companySettings.documentTemplates;
       await updateCompany(companySettings);
@@ -300,7 +436,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6`}>
+      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 pl-14 backdrop-blur sm:-mx-4 sm:px-4 sm:pl-4 lg:-mx-6 lg:px-6 lg:pl-6`}>
         <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
           {[
             { id: 'app' as const, label: 'App-Einstellungen' },
@@ -330,7 +466,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           <div className="space-y-8">
         {/* Terminology Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <SettingsIcon className="h-5 w-5 text-primary-custom" />
@@ -340,32 +476,111 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert.
               </p>
             </div>
-            <span className="hidden rounded-full bg-primary-custom/10 px-3 py-1 text-xs font-medium text-primary-custom sm:inline-flex">Aktiv: {terminology.label}</span>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div
+            ref={terminologyScrollerRef}
+            onPointerDown={handleTerminologyPointerDown}
+            onPointerMove={handleTerminologyPointerMove}
+            onPointerUp={handleTerminologyPointerUp}
+            onPointerCancel={handleTerminologyPointerUp}
+            onClickCapture={handleTerminologyClickCapture}
+            className={`mt-4 overflow-x-auto px-1 pb-2 pt-3 touch-pan-x ${isDraggingTerminology ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+          >
+            <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:min-w-[920px] md:grid-cols-5 xl:min-w-0">
             {terminologyProfiles.map(profile => {
               const selected = (formData.terminologyProfile || 'customers') === profile.id;
+              const preview = profile.preview;
               return (
                 <button
                   key={profile.id}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => setFormData(previous => ({ ...previous, terminologyProfile: profile.id }))}
-                  className={`min-h-0 rounded-xl border p-4 text-left transition ${selected
-                    ? 'border-primary-custom bg-primary-custom/5 ring-2 ring-primary-custom/20'
-                    : 'border-gray-200 bg-gray-50 hover:border-primary-custom/50 hover:bg-white'}`}
+                  onClick={() => handleTerminologyProfileSelect(profile)}
+                  className={`terminology-profile-card group relative flex h-full min-h-0 flex-col rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${selected ? 'terminology-profile-card-selected' : ''}`}
+                  style={{
+                    borderColor: selected ? preview.accent : '#e5e7eb',
+                    backgroundColor: selected ? preview.accentWash : '#f9fafb',
+                    boxShadow: selected ? `0 0 0 3px ${preview.accentSoft}` : undefined,
+                  }}
                 >
-                  <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
-                  <span className="mt-1 block min-h-10 text-xs leading-5 text-gray-500">{profile.description}</span>
-                  <span className={`mt-3 block text-xs font-medium ${selected ? 'text-primary-custom' : 'text-gray-600'}`}>
-                    {profile.entity.navLabel} · {profile.work.navLabel}
+                  {selected && (
+                    <span
+                      className="terminology-profile-selected-label absolute -top-2 left-1/2 z-10 -translate-x-1/2 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+                      style={{ backgroundColor: preview.accentSoft, color: preview.accent }}
+                    >
+                      Ausgewählt
+                    </span>
+                  )}
+                  <span className="flex min-h-[2.75rem] items-start justify-center pt-1 text-center">
+                    <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
                   </span>
+                  <TerminologyPreview profile={profile} />
                 </button>
               );
             })}
+            </div>
           </div>
-          <p className="mt-3 text-xs text-gray-500">Aktives Profil: {terminology.label}. Die Standardauswahl bleibt Kunden / Auftraggeber. Änderungen werden mit „Speichern“ übernommen.</p>
+
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-start gap-3">
+              <Palette className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" />
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Farbschema für Fachbegriffe</h4>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  Entscheiden Sie, ob die gewählte Fachsprache eigene App-Farben verwenden oder das Farbschema aus „Darstellung“ übernehmen soll.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 grid items-stretch gap-3 min-[480px]:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => handleTerminologyColorSourceChange('appearance')}
+                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'appearance'
+                  ? 'border-primary-custom bg-primary-custom/10'
+                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Aus Darstellung übernehmen</span>
+                <span className="mt-1 block text-xs text-gray-500">Die Farben werden im Tab „Darstellung“ gepflegt.</span>
+                <span className="mt-0 block h-7">
+                  {terminologyColorSource === 'appearance' && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setActiveTab('appearance');
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setActiveTab('appearance');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary-custom underline"
+                    >
+                      Darstellung öffnen <ArrowRight className="h-3 w-3" />
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTerminologyColorSourceChange('profile')}
+                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'profile'
+                  ? 'border-primary-custom bg-primary-custom/10'
+                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Profilfarben verwenden</span>
+                <span className="mt-1 block text-xs text-gray-500">Die Auswahl übernimmt die passende Akzent- und Sekundärfarbe.</span>
+                <span className="mt-0 flex h-7 items-center gap-2" aria-hidden="true">
+                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.accent }} />
+                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.secondary }} />
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Module Settings */}
@@ -958,7 +1173,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Steuer-ID
+                Steuernummer
               </label>
               <input
                 type="text"
@@ -967,6 +1182,36 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="z.B. 123/456/78910"
               />
+            </div>
+          </div>
+          <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <h4 className="font-medium text-blue-900">Steuerprofil</h4>
+            <p className="mt-1 text-xs leading-5 text-blue-800">Betriebsart und Rechtsform werden in Prüfhinweisen und Exporten verwendet. Sie blenden keine Kernmenüpunkte aus.</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block text-sm font-medium text-blue-900">
+                Betriebsart
+                <select value={formData.taxBusinessType || 'commercial'} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value as TaxBusinessType }))} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="freelance">Freiberuflich</option>
+                  <option value="commercial">Gewerblich</option>
+                  <option value="agriculture">Land- und Forstwirtschaft</option>
+                  <option value="nonprofit">Gemeinnützig</option>
+                  <option value="other">Sonstige</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-blue-900">
+                Rechtsform
+                <select value={formData.legalForm || 'other'} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value as LegalForm }))} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="sole_proprietorship">Einzelunternehmen</option>
+                  <option value="partnership">Personengesellschaft</option>
+                  <option value="gbr">GbR</option>
+                  <option value="ug">UG (haftungsbeschränkt)</option>
+                  <option value="gmbh">GmbH</option>
+                  <option value="ag">AG</option>
+                  <option value="eg">eG</option>
+                  <option value="nonprofit">Verein / gemeinnützige Organisation</option>
+                  <option value="other">Sonstige</option>
+                </select>
+              </label>
             </div>
           </div>
         </div>
@@ -1696,7 +1941,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
           
           <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="guidance-panel border-l-4 border-l-green-500 p-4">
               <h4 className="font-medium text-green-900 mb-2">E-Mail-Historie und SMTP-Konfiguration</h4>
               <p className="text-sm text-green-800 mb-4">
                 Verwalten Sie alle gesendeten E-Mails, konfigurieren Sie SMTP-Einstellungen und 
@@ -1714,7 +1959,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               {isDemoMode && <p className="text-xs text-green-800 mt-2">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>}
             </div>
             
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
               <h4 className="font-medium text-yellow-900 mb-2">Features</h4>
               <ul className="text-sm text-yellow-800 space-y-1">
                 <li>• Alle gesendeten E-Mails werden automatisch archiviert</li>
@@ -1735,7 +1980,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
           
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="guidance-panel border-l-4 border-l-blue-500 p-4">
               <h4 className="font-medium text-blue-900 mb-2">Datensicherung</h4>
               <p className="text-sm text-blue-800 mb-4">
                 Erstellen Sie regelmäßig Backups Ihrer Daten, um Datenverlust zu vermeiden.
@@ -1753,7 +1998,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               {isDemoMode && <p className="text-xs text-blue-800 mt-2">Im Demo-Modus ist die Backup-Verwaltung deaktiviert.</p>}
             </div>
             
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
               <h4 className="font-medium text-amber-900 mb-2">Wichtige Hinweise</h4>
               <ul className="text-sm text-amber-800 space-y-1">
                 <li>• Erstellen Sie vor wichtigen Änderungen immer ein Backup</li>
@@ -1784,8 +2029,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </button>
           <button
             type="submit"
-            disabled={isSaving}
-            className="btn-primary text-white px-4 lg:px-6 py-2 rounded-xl hover:brightness-90 transition-all duration-300 hover:scale-105 flex items-center space-x-2 disabled:opacity-50"
+            disabled={isSaving || !hasUnsavedChanges}
+            className="btn-primary text-white px-4 lg:px-6 py-2 rounded-xl hover:brightness-90 transition-all duration-300 hover:scale-105 flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
           >
             <Save className="h-4 w-4" />
             <span>{isSaving ? 'Speichert...' : 'Speichern'}</span>

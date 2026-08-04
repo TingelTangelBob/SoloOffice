@@ -19,6 +19,8 @@ const RecurringInvoiceManagement = lazy(() => import('./components/RecurringInvo
 const CreditNoteManagement = lazy(() => import('./components/CreditNoteManagement').then(({ CreditNoteManagement: page }) => ({ default: page })));
 const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOverview: page }) => ({ default: page })));
 const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
+const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
+const ReceiptsManagement = lazy(() => import('./components/ReceiptsManagement').then(({ ReceiptsManagement: page }) => ({ default: page })));
 
 interface PageState {
   page: string;
@@ -83,7 +85,11 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'tax-overview':
         return <TaxOverview onNavigate={onPageChange} />;
       case 'euer':
-        return <EuerManagement />;
+        return <EuerManagement onNavigate={onPageChange} />;
+      case 'fixed-assets':
+        return <FixedAssetManagement />;
+      case 'receipts':
+        return <ReceiptsManagement onNavigate={onPageChange} />;
       case 'quotes':
         // Redirect to settings if quotes module is not enabled
         if (!company.quotesEnabled) {
@@ -113,7 +119,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
           onPageChange('settings');
           return <Settings />;
         }
-        return <ReportingManagement />;
+        return <ReportingManagement onNavigate={onPageChange} />;
       case 'reminders':
         // Redirect to settings if reminders module is not enabled
         if (!company.remindersEnabled) {

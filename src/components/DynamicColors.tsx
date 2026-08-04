@@ -1,12 +1,19 @@
 import { useEffect } from 'react';
 import { useCompany } from '../context/CompanyContext';
+import { terminologyProfiles } from '../utils/terminology';
 
 export function DynamicColors() {
   const { company } = useCompany();
   
   // Default colors if not set
-  const primaryColor = company.primaryColor || '#2563eb';
-  const secondaryColor = company.secondaryColor || '#64748b';
+  const terminologyProfile = terminologyProfiles.find(profile => profile.id === company.terminologyProfile) || terminologyProfiles[0];
+  const useTerminologyColors = company.terminologyColorSource === 'profile';
+  const primaryColor = useTerminologyColors
+    ? terminologyProfile.preview.accent
+    : company.primaryColor || '#2563eb';
+  const secondaryColor = useTerminologyColors
+    ? terminologyProfile.preview.secondary
+    : company.secondaryColor || '#64748b';
 
   // Function to calculate luminance of a color
   const getLuminance = (color: string) => {
@@ -187,6 +194,25 @@ export function DynamicColors() {
           filter: brightness(0.8) !important;
         }
 
+        #app-shell .action-menu-trigger {
+          background-color: var(--primary-light) !important;
+          color: var(--primary-color) !important;
+        }
+        #app-shell .action-menu-trigger:hover {
+          background-color: var(--primary-medium) !important;
+          color: var(--primary-color) !important;
+        }
+
+        /* Selection controls follow the configured application color. */
+        #app-shell .custom-checkbox:checked {
+          background-color: var(--primary-color) !important;
+          border-color: var(--primary-color) !important;
+        }
+        #app-shell .custom-checkbox:focus-visible {
+          border-color: var(--primary-color) !important;
+          box-shadow: 0 0 0 2px var(--primary-light) !important;
+        }
+
         /* Theme overrides stay inside the app shell. */
         #app-shell[data-theme="dark"] {
           background-color: #111827 !important;
@@ -200,6 +226,12 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .bg-gray-100 {
           background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-gray-200 {
+          background-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-gray-300 {
+          background-color: #6b7280 !important;
         }
         #app-shell[data-theme="dark"] .text-gray-900,
         #app-shell[data-theme="dark"] .text-gray-800,
@@ -216,6 +248,98 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .border-gray-300 {
           border-color: #4b5563 !important;
         }
+        #app-shell[data-theme="dark"] .notice-info {
+          background-color: #172554 !important;
+          border-color: #2563eb !important;
+          color: #dbeafe !important;
+        }
+        #app-shell[data-theme="dark"] .notice-success {
+          background-color: #052e16 !important;
+          border-color: #16a34a !important;
+          color: #bbf7d0 !important;
+        }
+        #app-shell[data-theme="dark"] .notice-warning {
+          background-color: #451a03 !important;
+          border-color: #d97706 !important;
+          color: #fde68a !important;
+        }
+        #app-shell[data-theme="dark"] .notice-error {
+          background-color: #450a0a !important;
+          border-color: #dc2626 !important;
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .guidance-panel {
+          background-color: #1f2937 !important;
+          border-color: #4b5563 !important;
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .bg-blue-50 {
+          background-color: #172554 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-blue-100 {
+          background-color: #1e3a8a !important;
+        }
+        #app-shell[data-theme="dark"] .bg-green-50 {
+          background-color: #052e16 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-green-100 {
+          background-color: #14532d !important;
+        }
+        #app-shell[data-theme="dark"] .bg-red-50 {
+          background-color: #450a0a !important;
+        }
+        #app-shell[data-theme="dark"] .bg-red-100 {
+          background-color: #7f1d1d !important;
+        }
+        #app-shell[data-theme="dark"] .bg-yellow-50,
+        #app-shell[data-theme="dark"] .bg-amber-50 {
+          background-color: #451a03 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-yellow-100,
+        #app-shell[data-theme="dark"] .bg-amber-100 {
+          background-color: #78350f !important;
+        }
+        #app-shell[data-theme="dark"] .border-blue-100,
+        #app-shell[data-theme="dark"] .border-blue-200,
+        #app-shell[data-theme="dark"] .border-blue-300 {
+          border-color: #2563eb !important;
+        }
+        #app-shell[data-theme="dark"] .border-green-100,
+        #app-shell[data-theme="dark"] .border-green-200 {
+          border-color: #16a34a !important;
+        }
+        #app-shell[data-theme="dark"] .border-red-100,
+        #app-shell[data-theme="dark"] .border-red-200 {
+          border-color: #dc2626 !important;
+        }
+        #app-shell[data-theme="dark"] .border-yellow-200,
+        #app-shell[data-theme="dark"] .border-amber-200 {
+          border-color: #d97706 !important;
+        }
+        #app-shell[data-theme="dark"] .text-blue-950,
+        #app-shell[data-theme="dark"] .text-blue-900,
+        #app-shell[data-theme="dark"] .text-blue-800,
+        #app-shell[data-theme="dark"] .text-blue-700 {
+          color: #dbeafe !important;
+        }
+        #app-shell[data-theme="dark"] .text-green-900,
+        #app-shell[data-theme="dark"] .text-green-800,
+        #app-shell[data-theme="dark"] .text-green-700 {
+          color: #bbf7d0 !important;
+        }
+        #app-shell[data-theme="dark"] .text-red-900,
+        #app-shell[data-theme="dark"] .text-red-800,
+        #app-shell[data-theme="dark"] .text-red-700,
+        #app-shell[data-theme="dark"] .text-red-600 {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .text-yellow-900,
+        #app-shell[data-theme="dark"] .text-yellow-800,
+        #app-shell[data-theme="dark"] .text-yellow-700,
+        #app-shell[data-theme="dark"] .text-amber-900,
+        #app-shell[data-theme="dark"] .text-amber-800 {
+          color: #fde68a !important;
+        }
         #app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
         #app-shell[data-theme="dark"] textarea,
         #app-shell[data-theme="dark"] select {
@@ -224,6 +348,30 @@ export function DynamicColors() {
           border-color: #4b5563 !important;
         }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
+          background-color: #374151 !important;
+        }
+
+        /* Terminologie previews use the app theme without losing their profile accent. */
+        #app-shell[data-theme="dark"] .terminology-profile-card,
+        #app-shell[data-theme="dark"] .terminology-preview {
+          background-color: #1f2937 !important;
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .terminology-profile-card-selected {
+          background-color: #111827 !important;
+        }
+        #app-shell[data-theme="dark"] .terminology-preview-header {
+          background-color: #111827 !important;
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .terminology-preview-search {
+          background-color: #111827 !important;
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .terminology-preview-active {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .terminology-profile-selected-label {
           background-color: #374151 !important;
         }
       `}

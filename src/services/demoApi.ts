@@ -13,6 +13,9 @@ interface DemoState {
   yearlyInvoiceStartNumbers: DemoRecord[];
   calendarEvents: DemoRecord[];
   euerEntries: DemoRecord[];
+  euerEntryHistory: DemoRecord[];
+  fixedAssets: DemoRecord[];
+  receipts: DemoRecord[];
   company: DemoRecord;
 }
 
@@ -74,11 +77,14 @@ function createInitialState(): DemoState {
     yearlyInvoiceStartNumbers: [],
     calendarEvents: [],
     euerEntries: [],
+    euerEntryHistory: [],
+    fixedAssets: [],
+    receipts: [],
     company: {
       id: 'demo-company', name: 'Demo-Firma', address: 'Beispielstraße 1', city: 'Berlin', postalCode: '10115', country: 'Deutschland',
       email: 'demo@example.com', primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
       reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
-      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', themeMode: 'system', terminologyProfile: 'customers',
+      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
       invoiceTemplates: [], createdAt: isoDate(),
     },
   };
@@ -99,6 +105,9 @@ function readState(): DemoState {
       calendarEvents: parsed.calendarEvents || [],
       recurringInvoices: parsed.recurringInvoices || [],
       euerEntries: parsed.euerEntries || [],
+      euerEntryHistory: parsed.euerEntryHistory || [],
+      fixedAssets: parsed.fixedAssets || [],
+      receipts: parsed.receipts || [],
     } as DemoState;
   } catch {
     const initial = createInitialState();
@@ -155,22 +164,30 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const data = payload(options);
 
   if (resource === 'reporting') {
+    const inDateRange = (invoice: DemoRecord, start?: string, end?: string) => {
+      const date = dateOnly(invoice.issueDate);
+      return (!start || date >= start) && (!end || date <= end);
+    };
+    const reportableInvoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note');
     if (path.includes('invoice-journal')) {
-      const reportableInvoices = state.invoices.filter((invoice) => invoice.documentType !== 'credit_note');
-      const invoices = reportableInvoices.map((invoice) => ({
+      const startDate = queryParams.get('startDate') || undefined;
+      const endDate = queryParams.get('endDate') || undefined;
+      const customerId = queryParams.get('customerId') || undefined;
+      const filteredInvoices = reportableInvoices.filter(invoice => inDateRange(invoice, startDate, endDate) && (!customerId || invoice.customerId === customerId));
+      const invoices = filteredInvoices.map((invoice) => ({
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         customerName: invoice.customerName,
         customerNumber: state.customers.find((customer) => customer.id === invoice.customerId)?.customerNumber,
         issueDate: invoice.issueDate,
         dueDate: invoice.dueDate,
-        subtotal: invoice.subtotal,
-        taxAmount: invoice.taxAmount,
-        total: invoice.total,
+        subtotal: Number(invoice.subtotal || 0),
+        taxAmount: Number(invoice.taxAmount || 0),
+        total: Number(invoice.total || 0),
         status: invoice.status,
-        paidAmount: invoice.status === 'paid' ? invoice.total : 0,
-        overdueAmount: invoice.status === 'overdue' ? invoice.total : 0,
-        outstandingAmount: ['draft', 'sent'].includes(String(invoice.status)) ? invoice.total : 0,
+        paidAmount: invoice.status === 'paid' ? Number(invoice.total || 0) : 0,
+        overdueAmount: invoice.status === 'overdue' ? Number(invoice.total || 0) : 0,
+        outstandingAmount: ['draft', 'sent'].includes(String(invoice.status)) ? Number(invoice.total || 0) : 0,
         createdAt: invoice.createdAt,
       }));
 
@@ -185,23 +202,57 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           subtotalSum: invoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
           taxSum: invoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
         },
-        dateRange: { startDate: null, endDate: null },
+        dateRange: { startDate: startDate || null, endDate: endDate || null },
       } as T;
     }
-
+    const selectedYear = Number(queryParams.get('year') || new Date().getFullYear());
+    const yearInvoices = reportableInvoices.filter(invoice => new Date(String(invoice.issueDate)).getFullYear() === selectedYear);
+    const monthlyRevenue = Array.from({ length: 12 }, (_, index) => {
+      const monthInvoices = yearInvoices.filter(invoice => new Date(String(invoice.issueDate)).getMonth() === index);
+      return {
+        month: index + 1,
+        invoiceCount: monthInvoices.length,
+        subtotalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
+        taxSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
+        totalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        paidSum: monthInvoices.filter(invoice => invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        overdueSum: monthInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+      };
+    });
+    const customerTotals = new Map<string, DemoRecord[]>();
+    yearInvoices.forEach(invoice => {
+      const customerInvoices = customerTotals.get(String(invoice.customerId)) || [];
+      customerInvoices.push(invoice);
+      customerTotals.set(String(invoice.customerId), customerInvoices);
+    });
+    const topCustomers = Array.from(customerTotals.entries()).map(([customerId, customerInvoices]) => ({
+      customerId,
+      customerName: customerInvoices[0].customerName,
+      invoiceCount: customerInvoices.length,
+      totalRevenue: customerInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+      avgInvoiceAmount: customerInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) / customerInvoices.length,
+    })).sort((a, b) => b.totalRevenue - a.totalRevenue);
+    const statuses = ['draft', 'sent', 'paid', 'overdue'] as const;
+    const statusDistribution = statuses.map(status => {
+      const statusInvoices = yearInvoices.filter(invoice => invoice.status === status);
+      return { status, count: statusInvoices.length, totalAmount: statusInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) };
+    });
+    const totalSubtotal = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0);
+    const totalTax = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0);
+    const totalAmount = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
     return {
-      year: new Date().getFullYear(),
-      monthlyRevenue: [],
-      topCustomers: [],
-      statusDistribution: [],
+      year: selectedYear,
+      monthlyRevenue,
+      topCustomers,
+      statusDistribution,
       yearOverview: {
-        totalInvoices: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').length,
-        totalSubtotal: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
-        totalTax: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
-        totalAmount: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        paidAmount: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note' && invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        overdueAmount: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note' && invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        avgInvoiceAmount: state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').length ? state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) / state.invoices.filter((invoice) => invoice.documentType !== 'credit_note').length : 0,
+        totalInvoices: yearInvoices.length,
+        totalSubtotal,
+        totalTax,
+        totalAmount,
+        paidAmount: yearInvoices.filter(invoice => invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        overdueAmount: yearInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        avgInvoiceAmount: yearInvoices.length ? totalAmount / yearInvoices.length : 0,
       },
     } as T;
   }
@@ -214,9 +265,27 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'euer-entries') {
     const entries = state.euerEntries;
+    const history = state.euerEntryHistory;
+    const addHistory = (entry: DemoRecord, action: 'created' | 'updated' | 'voided', reason?: string, oldData?: DemoRecord) => {
+      history.push({
+        id: generateUUID(),
+        euerEntryId: entry.id,
+        action,
+        reason: reason || '',
+        oldData: oldData || null,
+        newData: action === 'voided' ? null : { ...entry },
+        changedAt: isoDate(),
+      });
+    };
+
+    if (parts[2] === 'history' && id && method === 'GET') {
+      return history.filter(item => item.euerEntryId === id).sort((a, b) => String(b.changedAt).localeCompare(String(a.changedAt))) as unknown as T;
+    }
+
     if (method === 'GET' && !id) {
       const year = queryParams.get('year');
-      return (year ? entries.filter(entry => String(entry.entryDate).startsWith(`${year}-`)) : entries) as unknown as T;
+      const activeEntries = entries.filter(entry => entry.status !== 'voided');
+      return (year ? activeEntries.filter(entry => String(entry.entryDate).startsWith(`${year}-`)) : activeEntries) as unknown as T;
     }
     if (method === 'POST' && !id) {
       const amount = Number(data.amount);
@@ -234,10 +303,15 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         amount,
         taxRate,
         notes: data.notes || '',
+        sourceType: data.sourceType || 'manual',
+        sourceId: data.sourceId || undefined,
+        status: 'active',
+        correctionReason: data.correctionReason || undefined,
         createdAt: isoDate(),
         updatedAt: isoDate(),
       };
       entries.push(record);
+      addHistory(record, 'created', record.correctionReason as string | undefined, undefined);
       saveState(state);
       return record as unknown as T;
     }
@@ -246,13 +320,128 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (index < 0) throw new Error('EÜR-Buchung nicht gefunden.');
       if (method === 'GET') return entries[index] as unknown as T;
       if (method === 'PUT') {
+        if (entries[index].status === 'voided') throw new Error('Eine stornierte Buchung kann nicht bearbeitet werden.');
+        const oldData = { ...entries[index] };
         const updated = { ...entries[index], ...data, id, updatedAt: isoDate() };
+        updated.entryDate = dateOnly(updated.entryDate);
+        updated.status = 'active';
         entries[index] = updated;
+        addHistory(updated, 'updated', String(data.correctionReason || ''), oldData);
         saveState(state);
         return updated as unknown as T;
       }
       if (method === 'DELETE') {
-        state.euerEntries = entries.filter(entry => entry.id !== id);
+        if (entries[index].status === 'voided') throw new Error('Die Buchung wurde bereits storniert.');
+        const oldData = { ...entries[index] };
+        const updated = { ...entries[index], status: 'voided', correctionReason: String(data.correctionReason || 'Stornierung'), updatedAt: isoDate() };
+        entries[index] = updated;
+        addHistory(updated, 'voided', updated.correctionReason as string, oldData);
+        saveState(state);
+        return undefined as T;
+      }
+    }
+  }
+
+  if (resource === 'receipts') {
+    const receipts = state.receipts;
+
+    if (parts[2] === 'ocr' && id && method === 'POST') {
+      const index = receipts.findIndex(receipt => receipt.id === id);
+      if (index < 0) throw new Error('Beleg nicht gefunden.');
+      receipts[index] = {
+        ...receipts[index],
+        ocrStatus: 'completed',
+        ocrText: 'Demo-Modus: Das lokale OCR wird im Backend-Container ausgeführt.',
+        ocrConfidence: 0,
+        ocrError: undefined,
+        extractedData: receipts[index].extractedData || {},
+        updatedAt: isoDate(),
+      };
+      saveState(state);
+      return receipts[index] as unknown as T;
+    }
+
+    if (parts[2] === 'link-euer' && id && method === 'POST') {
+      const receipt = receipts.find(item => item.id === id);
+      const entry = state.euerEntries.find(item => item.id === data.euerEntryId);
+      if (!receipt || !entry) throw new Error('Beleg oder EÜR-Buchung nicht gefunden.');
+      receipt.linkedEuerEntryId = String(data.euerEntryId);
+      receipt.updatedAt = isoDate();
+      saveState(state);
+      return receipt as unknown as T;
+    }
+
+    if (method === 'GET' && !id) return collectionResponse<T>(receipts);
+    if (method === 'POST' && !id) {
+      const record: DemoRecord = {
+        ...data,
+        id: generateUUID(),
+        ocrStatus: 'completed',
+        ocrText: 'Demo-Modus: Das lokale OCR wird im Backend-Container ausgeführt.',
+        ocrConfidence: 0,
+        extractedData: {},
+        linkedEuerEntryId: null,
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      receipts.push(record);
+      saveState(state);
+      return record as unknown as T;
+    }
+    if (id) {
+      const index = receipts.findIndex(receipt => receipt.id === id);
+      if (index < 0) throw new Error('Beleg nicht gefunden.');
+      if (method === 'GET') return receipts[index] as unknown as T;
+      if (method === 'PUT') {
+        receipts[index] = { ...receipts[index], ...data, id, updatedAt: isoDate() };
+        saveState(state);
+        return receipts[index] as unknown as T;
+      }
+      if (method === 'DELETE') {
+        state.receipts = receipts.filter(receipt => receipt.id !== id);
+        saveState(state);
+        return undefined as T;
+      }
+    }
+  }
+
+  if (resource === 'fixed-assets') {
+    const assets = state.fixedAssets;
+    if (method === 'GET' && !id) return collectionResponse<T>(assets);
+    if (method === 'POST' && !id) {
+      const record: DemoRecord = {
+        ...data,
+        id: generateUUID(),
+        name: String(data.name || '').trim(),
+        category: String(data.category || '').trim(),
+        acquisitionDate: dateOnly(data.acquisitionDate || isoDate()),
+        acquisitionCost: Number(data.acquisitionCost || 0),
+        usefulLifeYears: Number(data.usefulLifeYears || 1),
+        status: data.status || 'active',
+        disposalDate: data.disposalDate ? dateOnly(data.disposalDate) : undefined,
+        notes: data.notes || '',
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      if (!record.name || !record.category || Number(record.acquisitionCost) < 0 || Number(record.usefulLifeYears) <= 0) throw new Error('Bitte die Anlagendaten prüfen.');
+      assets.push(record);
+      saveState(state);
+      return record as unknown as T;
+    }
+    if (id) {
+      const index = assets.findIndex(asset => asset.id === id);
+      if (index < 0) throw new Error('Anlage nicht gefunden.');
+      if (method === 'GET') return assets[index] as unknown as T;
+      if (method === 'PUT') {
+        const updated = { ...assets[index], ...data, id, updatedAt: isoDate() };
+        if (updated.acquisitionDate) updated.acquisitionDate = dateOnly(updated.acquisitionDate);
+        if (updated.disposalDate) updated.disposalDate = dateOnly(updated.disposalDate);
+        assets[index] = updated;
+        saveState(state);
+        return updated as unknown as T;
+      }
+      if (method === 'DELETE') {
+        state.fixedAssets = assets.filter(asset => asset.id !== id);
         saveState(state);
         return undefined as T;
       }

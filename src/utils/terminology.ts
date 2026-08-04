@@ -4,6 +4,12 @@ export interface TerminologyDefinition {
   id: TerminologyProfile;
   label: string;
   description: string;
+  preview?: {
+    accent: string;
+    secondary: string;
+    accentSoft: string;
+    accentWash: string;
+  };
   entity: {
     navLabel: string;
     singular: string;
@@ -55,7 +61,7 @@ export interface TerminologyDefinition {
 const profileDefinitions: Record<TerminologyProfile, TerminologyDefinition> = {
   customers: {
     id: 'customers',
-    label: 'Kunden / Auftraggeber',
+    label: 'Kunden',
     description: 'Klassische Kunden- und Auftraggeberbeziehungen',
     entity: {
       navLabel: 'Kunden', singular: 'Kunde', plural: 'Kunden', genitive: 'Kunden', accusative: 'Kunden', dative: 'Kunden', numberLabel: 'Kundennummer', numberShortLabel: 'Kunden-Nr.',
@@ -140,7 +146,18 @@ const profileDefinitions: Record<TerminologyProfile, TerminologyDefinition> = {
   },
 };
 
-export const terminologyProfiles = Object.values(profileDefinitions);
+const profilePreviewColors: Record<TerminologyProfile, NonNullable<TerminologyDefinition['preview']>> = {
+  customers: { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' },
+  mandants: { accent: '#7c3aed', secondary: '#6d5bbd', accentSoft: '#ede9fe', accentWash: '#f5f3ff' },
+  patients: { accent: '#0f9f9a', secondary: '#4b7f7b', accentSoft: '#ccfbf1', accentWash: '#f0fdfa' },
+  students: { accent: '#f97316', secondary: '#b45309', accentSoft: '#ffedd5', accentWash: '#fff7ed' },
+  clients: { accent: '#db3764', secondary: '#9f365c', accentSoft: '#fce7f3', accentWash: '#fff1f2' },
+};
+
+export const terminologyProfiles = Object.values(profileDefinitions).map(profile => ({
+  ...profile,
+  preview: profilePreviewColors[profile.id],
+}));
 
 export function getTerminology(profile?: string | null): TerminologyDefinition {
   if (profile && profile in profileDefinitions) {

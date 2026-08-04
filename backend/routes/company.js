@@ -10,6 +10,9 @@ const TIME_FORMATS = new Set(['24h', '12h']);
 const THEME_MODES = new Set(['system', 'light', 'dark']);
 const PAYMENT_INFORMATION_MODES = new Set(['separate', 'company']);
 const TERMINOLOGY_PROFILES = new Set(['customers', 'mandants', 'patients', 'students', 'clients']);
+const TERMINOLOGY_COLOR_SOURCES = new Set(['appearance', 'profile']);
+const TAX_BUSINESS_TYPES = new Set(['freelance', 'commercial', 'agriculture', 'nonprofit', 'other']);
+const LEGAL_FORMS = new Set(['sole_proprietorship', 'partnership', 'gbr', 'ug', 'gmbh', 'ag', 'eg', 'nonprofit', 'other']);
 const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
 
 function jsonArray(value) {
@@ -37,9 +40,13 @@ function mapCompanyRow(row) {
     website: row.website,
     taxId: row.tax_id,
     taxIdentificationNumber: row.tax_identification_number,
+    taxBusinessType: row.tax_business_type || 'commercial',
+    legalForm: row.legal_form || 'other',
     logo: row.logo,
     icon: row.icon,
     terminologyProfile: row.terminology_profile || 'customers',
+    terminologyColorSource: row.terminology_color_source || 'profile',
+    receiptLabel: row.receipt_label || 'Belege',
     locale: row.locale,
     numberFormat: row.number_format || (row.locale === 'en-US' ? 'american' : 'european'),
     currency: row.currency || 'EUR',
@@ -152,6 +159,20 @@ router.put('/', async (req, res) => {
       updates.push(`tax_identification_number = $${paramIndex++}`);
       values.push(req.body.taxIdentificationNumber);
     }
+    if (req.body.taxBusinessType !== undefined) {
+      if (!TAX_BUSINESS_TYPES.has(req.body.taxBusinessType)) {
+        return res.status(400).json({ error: 'Ungültige Betriebsart.' });
+      }
+      updates.push(`tax_business_type = $${paramIndex++}`);
+      values.push(req.body.taxBusinessType);
+    }
+    if (req.body.legalForm !== undefined) {
+      if (!LEGAL_FORMS.has(req.body.legalForm)) {
+        return res.status(400).json({ error: 'Ungültige Rechtsform.' });
+      }
+      updates.push(`legal_form = $${paramIndex++}`);
+      values.push(req.body.legalForm);
+    }
     const paymentInfo = req.body.paymentInformation;
     if (paymentInfo?.bankAccount !== undefined) {
       updates.push(`bank_account = $${paramIndex++}`);
@@ -243,6 +264,20 @@ router.put('/', async (req, res) => {
       }
       updates.push(`terminology_profile = $${paramIndex++}`);
       values.push(req.body.terminologyProfile);
+    }
+    if (req.body.terminologyColorSource !== undefined) {
+      if (!TERMINOLOGY_COLOR_SOURCES.has(req.body.terminologyColorSource)) {
+        return res.status(400).json({ error: 'terminologyColorSource must be appearance or profile' });
+      }
+      updates.push(`terminology_color_source = $${paramIndex++}`);
+      values.push(req.body.terminologyColorSource);
+    }
+    if (req.body.receiptLabel !== undefined) {
+      if (typeof req.body.receiptLabel !== 'string' || !req.body.receiptLabel.trim() || req.body.receiptLabel.trim().length > 40) {
+        return res.status(400).json({ error: 'Die Bezeichnung für Belege muss zwischen 1 und 40 Zeichen enthalten.' });
+      }
+      updates.push(`receipt_label = $${paramIndex++}`);
+      values.push(req.body.receiptLabel.trim());
     }
     if (req.body.paymentInformationMode !== undefined) {
       if (!PAYMENT_INFORMATION_MODES.has(req.body.paymentInformationMode)) {

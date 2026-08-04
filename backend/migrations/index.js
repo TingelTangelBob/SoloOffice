@@ -19,6 +19,12 @@ import * as migration010 from './010_payment_information_mode.js';
 import * as migration011 from './011_recurring_and_credit_documents.js';
 import * as migration012 from './012_terminology_profile.js';
 import * as migration013 from './013_euer_entries.js';
+import * as migration014 from './014_receipt_label.js';
+import * as migration015 from './015_receipts.js';
+import * as migration016 from './016_tax_profile.js';
+import * as migration017 from './017_euer_audit.js';
+import * as migration018 from './018_fixed_assets.js';
+import * as migration019 from './019_terminology_color_source.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -35,6 +41,12 @@ const migrations = [
   migration011,
   migration012,
   migration013,
+  migration014,
+  migration015,
+  migration016,
+  migration017,
+  migration018,
+  migration019,
 ];
 
 /**
