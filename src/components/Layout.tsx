@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react';
+import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, CircleUserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -8,6 +8,7 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useQuotes } from '../context/QuoteContext';
 import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
+import { useAuth } from '../context/AuthContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -31,6 +32,32 @@ interface NavItem {
 
 const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
 const taxSubPageIds = ['euer', 'fixed-assets'];
+const SIDEBAR_DEFAULT_WIDTH = 256;
+const SIDEBAR_COMPACT_WIDTH = 72;
+const SIDEBAR_MIN_WIDTH = 72;
+const SIDEBAR_MAX_WIDTH = 360;
+const SIDEBAR_COMPACT_BREAKPOINT = 176;
+const SIDEBAR_STORAGE_KEY = 'solooffice-sidebar-settings';
+
+interface SidebarSettings {
+  width: number;
+  collapsed: boolean;
+}
+
+function readSidebarSettings(): SidebarSettings {
+  if (typeof window === 'undefined') return { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false };
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (!stored) return { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false };
+    const parsed = JSON.parse(stored) as Partial<SidebarSettings>;
+    const width = typeof parsed.width === 'number'
+      ? Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, parsed.width))
+      : SIDEBAR_DEFAULT_WIDTH;
+    return { width, collapsed: parsed.collapsed === true };
+  } catch {
+    return { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false };
+  }
+}
 
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
@@ -39,7 +66,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { invoices } = useInvoices();
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
+  const { user, workspace } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const invoiceAreaActive = currentPage === 'invoices' || invoiceSubPageIds.includes(currentPage);
   const [isInvoiceMenuOpen, setIsInvoiceMenuOpen] = useState(() => invoiceAreaActive);
@@ -47,6 +77,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const taxAreaActive = currentPage === 'taxes' || taxSubPageIds.includes(currentPage);
   const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
   const taxAreaWasActive = useRef(taxAreaActive);
+  const isSidebarCompact = sidebarSettings.collapsed || sidebarSettings.width <= SIDEBAR_COMPACT_BREAKPOINT;
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -65,6 +96,52 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     }
     taxAreaWasActive.current = taxAreaActive;
   }, [taxAreaActive]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(sidebarSettings));
+    } catch {
+      // Sidebar preferences are optional and must not block navigation.
+    }
+  }, [sidebarSettings]);
+
+  useEffect(() => {
+    if (!isResizingSidebar) return undefined;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, event.clientX));
+      setSidebarSettings(previous => ({
+        width: nextWidth,
+        collapsed: nextWidth > SIDEBAR_COMPACT_BREAKPOINT ? false : previous.collapsed,
+      }));
+    };
+    const handleMouseUp = () => setIsResizingSidebar(false);
+
+    document.body.classList.add('sidebar-resizing');
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.body.classList.remove('sidebar-resizing');
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSidebar]);
+
+  const toggleSidebar = () => {
+    setSidebarSettings(previous => previous.collapsed || previous.width <= SIDEBAR_COMPACT_BREAKPOINT
+      ? { width: Math.max(SIDEBAR_DEFAULT_WIDTH, previous.width), collapsed: false }
+      : { ...previous, collapsed: true });
+  };
+
+  const sidebarStyle = {
+    '--sidebar-width': `${isSidebarCompact ? SIDEBAR_COMPACT_WIDTH : sidebarSettings.width}px`,
+  } as CSSProperties;
+  const wideContentPages = ['invoices', 'quotes', 'jobs', 'calendar', 'customers', 'reporting'];
+  const contentWidthClass = currentPage === 'templates'
+    ? 'max-w-[1440px]'
+    : wideContentPages.includes(currentPage)
+      ? 'max-w-[1600px]'
+      : 'max-w-7xl';
 
   const baseNavItems: NavItem[] = [
     { id: 'dashboard', label: 'Übersicht', icon: Home },
@@ -185,26 +262,41 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             />
           )}
 
-          <nav className={`
+          <nav
+            style={sidebarStyle}
+            className={`
             fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-40
-            w-64 flex-shrink-0 bg-white shadow-sm transform transition-transform duration-300 ease-in-out
+            w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 bg-white shadow-sm transform transition-[width,transform] duration-300 ease-in-out
             lg:transform-none lg:shadow-none lg:h-screen lg:self-start
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          `}>
+          `}
+          >
             <div className="flex h-full flex-col p-4">
-              <button
-                onClick={() => handlePageChange('dashboard')}
-                className="w-full flex items-center px-2 py-2 mb-4 border-b border-gray-200 hover:opacity-80 transition-opacity pl-12 lg:pl-2"
-              >
-                {company.icon ? (
-                  <img src={company.icon} alt="Company Icon" className="h-8 w-8 mr-3 rounded" />
-                ) : (
-                  <Building2 className="h-8 w-8 text-primary-custom mr-3" />
-                )}
-                <span className="text-xl font-bold text-gray-900">SoloOffice</span>
-              </button>
+              <div className={`sidebar-brand relative mb-4 flex items-center border-b border-gray-200 pb-2 ${isSidebarCompact ? 'justify-center' : 'justify-between'}`}>
+                <button
+                  onClick={() => handlePageChange('dashboard')}
+                  className={`flex items-center py-2 hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0' : 'min-w-0 flex-1 pl-12 lg:pl-2'}`}
+                  aria-label="Übersicht öffnen"
+                >
+                  {company.icon ? (
+                    <img src={company.icon} alt="Company Icon" className={`h-8 w-8 rounded ${isSidebarCompact ? '' : 'mr-3'}`} />
+                  ) : (
+                    <Building2 className={`h-8 w-8 text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
+                  )}
+                  <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="sidebar-toggle hidden h-9 w-9 min-h-0 min-w-0 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm transition hover:bg-gray-100 hover:text-gray-900 focus-visible:opacity-100 lg:inline-flex"
+                  aria-label={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+                  title={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+                >
+                  {isSidebarCompact ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                </button>
+              </div>
 
-              <div className="relative mb-4">
+              <div className={`${isSidebarCompact ? 'hidden' : 'relative mb-4'}`}>
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -252,21 +344,21 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     <li key={item.id}>
                       <button
                         onClick={() => handlePageChange(item.id)}
-                        className={`w-full flex items-center px-4 py-2 text-left rounded-lg transition-colors ${
+                        className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
                           isParentActive
                             ? 'nav-active'
                             : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        <Icon className="h-5 w-5 mr-3 flex-shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                        {item.children && (
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                        <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
+                        {item.children && !isSidebarCompact && (
                           isExpanded
                             ? <ChevronDown className="ml-auto h-4 w-4" />
                             : <ChevronRight className="ml-auto h-4 w-4" />
                         )}
                       </button>
-                      {item.children && isExpanded && (
+                      {item.children && isExpanded && !isSidebarCompact && (
                         <ul className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
                           {item.children.map((child) => (
                             <li key={child.id}>
@@ -298,25 +390,48 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       <li key={item.id}>
                         <button
                           onClick={() => handlePageChange(item.id)}
-                          className={`w-full flex items-center px-4 py-2 text-left rounded-lg transition-colors ${
+                          className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
                             currentPage === item.id
                               ? 'nav-active'
                               : 'text-gray-700 hover:bg-gray-50'
                           }`}
                         >
-                          <Icon className="h-5 w-5 mr-3 flex-shrink-0" />
-                          <span className="truncate">{item.label}</span>
+                          <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                          <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
                         </button>
                       </li>
                     );
                   })}
                 </ul>
+                <div className="mt-3 border-t border-gray-200 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange('profile')}
+                    className={`flex w-full items-center rounded-lg py-2 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-3'} ${currentPage === 'profile' ? 'nav-active' : 'text-gray-700 hover:bg-gray-50'}`}
+                    title={isSidebarCompact ? user?.displayName : undefined}
+                  >
+                    <CircleUserRound className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} min-w-0 truncate`}>
+                      <span className="block truncate text-sm font-medium">{user?.displayName || 'Profil'}</span>
+                      <span className="block truncate text-xs text-gray-500">{workspace?.name || 'Workspace'}</span>
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
+            <div
+              className="absolute right-0 top-0 hidden h-full w-1 cursor-col-resize transition-colors hover:bg-primary-custom/40 lg:block"
+              onMouseDown={() => setIsResizingSidebar(true)}
+              onDoubleClick={() => setSidebarSettings({ width: SIDEBAR_DEFAULT_WIDTH, collapsed: false })}
+              title="Seitenleistenbreite ändern"
+              aria-hidden="true"
+            />
           </nav>
 
-          <main className="flex-1 min-w-0 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 min-h-screen safe-area-bottom">
-            {children}
+          <main className="min-h-screen min-w-0 flex-1 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 safe-area-bottom">
+            <div className={`mx-auto w-full ${contentWidthClass}`}>
+              {children}
+            </div>
           </main>
         </div>
       </div>

@@ -41,7 +41,7 @@ const fallbackProfiles: Record<DocumentTemplateType, Omit<ResolvedDocumentTempla
     showFooter: true,
   },
   reminder: {
-    description: 'Mahnungs-Layout für alle drei Mahnstufen',
+    description: 'PDF-Layout für Mahnungen; Mahntexte werden in den App-Einstellungen gepflegt.',
     layout: 'editorial',
     accentColor: '#b0894f',
     logoMode: 'company',
@@ -100,7 +100,7 @@ export function getReminderTemplateText(
   fallbackText: string,
 ): string {
   const stageKey = `stage${stage}` as keyof NonNullable<ResolvedDocumentTemplate['reminderTexts']>;
-  return template.reminderTexts?.[stageKey]?.trim() || template.introText?.trim() || fallbackText;
+  return fallbackText.trim() || template.reminderTexts?.[stageKey]?.trim() || template.introText?.trim() || '';
 }
 
 export function getDocumentTemplateFallback(type: DocumentTemplateType): ResolvedDocumentTemplate {

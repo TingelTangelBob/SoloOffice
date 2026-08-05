@@ -3,6 +3,8 @@ import { AppProvider, useLoading } from './context/AppContext';
 import { Layout } from './components/Layout';
 import { useCompany } from './context/CompanyContext';
 import { useQuotes } from './context/QuoteContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthPage } from './components/AuthPage';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
 const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
@@ -21,6 +23,7 @@ const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOve
 const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
 const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
 const ReceiptsManagement = lazy(() => import('./components/ReceiptsManagement').then(({ ReceiptsManagement: page }) => ({ default: page })));
+const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
 
 interface PageState {
   page: string;
@@ -128,7 +131,9 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         }
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : undefined} onNavigate={onPageChange} />;
+        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : undefined} onNavigate={onPageChange} />;
+      case 'profile':
+        return <ProfileManagement />;
       case 'templates':
         return <TemplatesManagement onNavigate={onPageChange} />;
       default:
@@ -142,6 +147,19 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         {renderPage()}
       </Suspense>
     </Layout>
+  );
+}
+
+function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps) {
+  const { loading, isAuthenticated, workspace } = useAuth();
+
+  if (loading) return <PageLoading fullScreen />;
+  if (!isAuthenticated || !workspace) return <AuthPage />;
+
+  return (
+    <AppProvider key={workspace.id}>
+      <AppContent currentPageState={currentPageState} onPageChange={onPageChange} />
+    </AppProvider>
   );
 }
 
@@ -189,9 +207,9 @@ function App() {
   }, []);
 
   return (
-    <AppProvider>
-      <AppContent currentPageState={currentPageState} onPageChange={handlePageChange} />
-    </AppProvider>
+    <AuthProvider>
+      <AuthenticatedShell currentPageState={currentPageState} onPageChange={handlePageChange} />
+    </AuthProvider>
   );
 }
 

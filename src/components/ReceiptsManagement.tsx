@@ -361,13 +361,11 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
           <div className="flex min-h-full items-center justify-center">
             <section role="dialog" aria-modal="true" aria-labelledby="receipt-review-title" className="relative flex max-h-[calc(100vh-1rem)] w-full max-w-[880px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:max-h-[calc(100vh-2rem)]" onMouseDown={event => event.stopPropagation()}>
               <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-5">
-                <div className="min-w-0"><h2 id="receipt-review-title" className="text-lg font-semibold text-gray-900">Beleg prüfen</h2><p className="mt-1 text-sm text-gray-500">· OCR-Vorschläge vor der Übernahme kontrollieren</p></div>
+                <div className="min-w-0"><h2 id="receipt-review-title" className="text-lg font-semibold text-gray-900">Beleg prüfen</h2><p className="mt-1 text-sm text-gray-500">Erkannte Belegdaten prüfen und bei Bedarf korrigieren</p></div>
                 <button type="button" onClick={() => setSelectedReceipt(null)} className="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800" aria-label="Belegprüfung schließen"><X className="h-5 w-5" /></button>
               </header>
               <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1fr)]">
-                  <div className="self-start rounded-lg bg-gray-50 p-4 text-sm text-gray-600"><h3 className="font-semibold text-gray-900">So funktioniert die Zuordnung</h3><p className="mt-2 leading-6">Speichere die korrigierten Felder und lege danach eine EÜR-Ausgabe an. Die Anwendung verknüpft die neue Buchung mit diesem Beleg.</p></div>
-                  <div className="min-w-0">
+                <div className="min-w-0">
                     <label htmlFor="receipt-vendor" className="block text-sm font-medium text-gray-700">Lieferant / Aussteller<input id="receipt-vendor" value={inputValue(reviewData.vendorName)} onChange={event => updateReviewField('vendorName', event.target.value)} className={fieldClassName('vendorName')} /></label>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -387,7 +385,6 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
                     {selectedReceipt.ocrError && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><p className="font-medium">Lokale OCR konnte nicht ausgeführt werden</p><p className="mt-1">{selectedReceipt.ocrError}</p><button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-2 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}><RefreshCw className="h-3.5 w-3.5" />Erneut versuchen</button></div>}
                     {selectedReceipt.ocrText && <details className="mt-4 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Erkannten OCR-Text anzeigen</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap border-t border-gray-200 bg-gray-50 p-3 text-xs leading-5 text-gray-600">{selectedReceipt.ocrText}</pre></details>}
                     {selectedReceipt.content && <details className="mt-3 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Originalbeleg anzeigen</summary><div className="flex min-h-48 items-center justify-center border-t border-gray-200 bg-gray-50 p-3"><img src={`data:${selectedReceipt.contentType};base64,${selectedReceipt.content}`} alt={`Originalbeleg ${selectedReceipt.name}`} className="max-h-[28rem] w-full object-contain" /></div></details>}
-                  </div>
                 </div>
               </div>
             </section>

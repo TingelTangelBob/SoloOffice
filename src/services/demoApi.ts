@@ -23,8 +23,24 @@ interface DemoState {
 }
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
+const ACTIVE_WORKSPACE_STORAGE_KEY = 'solooffice-demo-active-workspace-v1';
+export const DEMO_DEFAULT_WORKSPACE_ID = 'demo-workspace';
 
 export const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+
+export function getDemoActiveWorkspaceId(): string {
+  if (typeof localStorage === 'undefined') return DEMO_DEFAULT_WORKSPACE_ID;
+  return localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) || DEMO_DEFAULT_WORKSPACE_ID;
+}
+
+export function setDemoActiveWorkspaceId(workspaceId: string): void {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+}
+
+function getDemoDataStorageKey(): string {
+  const workspaceId = getDemoActiveWorkspaceId();
+  return workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`;
+}
 
 const DEMO_SEED_VERSION = 2;
 
@@ -281,10 +297,11 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
 }
 
 function readState(): DemoState {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const storageKey = getDemoDataStorageKey();
+  const saved = localStorage.getItem(storageKey);
   if (!saved) {
     const initial = createInitialState();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+    localStorage.setItem(storageKey, JSON.stringify(initial));
     return initial;
   }
   try {
@@ -295,7 +312,7 @@ function readState(): DemoState {
     if (parsed.seedVersion !== DEMO_SEED_VERSION) {
       const upgraded = createInitialState(storedProfile);
       upgraded.company = { ...upgraded.company, ...(parsed.company || {}), terminologyProfile: storedProfile };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(upgraded));
+      localStorage.setItem(storageKey, JSON.stringify(upgraded));
       return upgraded;
     }
     return {
@@ -310,13 +327,13 @@ function readState(): DemoState {
     } as DemoState;
   } catch {
     const initial = createInitialState();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+    localStorage.setItem(storageKey, JSON.stringify(initial));
     return initial;
   }
 }
 
 function saveState(state: DemoState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(state));
 }
 
 function dateOnly(value: unknown): string {
@@ -352,6 +369,214 @@ function collectionResponse<T>(items: DemoRecord[]): T {
   return items as unknown as T;
 }
 
+function demoImportNumber(value: unknown): number | null {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const source = String(value).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  const number = Number(source);
+  return Number.isFinite(number) ? number : null;
+}
+
+function demoImportText(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function demoImportCustomer(state: DemoState, row: DemoRecord): DemoRecord | undefined {
+  const customerId = demoImportText(row.customerId);
+  const customerNumber = demoImportText(row.customerNumber);
+  const customerEmail = demoImportText(row.customerEmail || row.email).toLocaleLowerCase();
+  const customerName = demoImportText(row.customerName || row.name).toLocaleLowerCase();
+  return state.customers.find(customer =>
+    (customerId && customer.id === customerId)
+    || (customerNumber && String(customer.customerNumber).toLocaleLowerCase() === customerNumber.toLocaleLowerCase())
+    || (customerEmail && String(customer.email || '').toLocaleLowerCase() === customerEmail)
+    || (!customerNumber && !customerEmail && customerName && String(customer.name).toLocaleLowerCase() === customerName)
+  );
+}
+
+function demoImportItems(row: DemoRecord): DemoRecord[] {
+  const structured = Array.isArray(row.items)
+    ? row.items
+    : typeof row.items === 'string'
+      ? (() => { try { const parsed = JSON.parse(row.items as string); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })()
+      : [];
+  const items = structured.map((item, index) => {
+    const record = item as DemoRecord;
+    const quantity = demoImportNumber(record.quantity || record.menge) ?? 1;
+    const unitPrice = demoImportNumber(record.unitPrice || record.unit_price || record.price || record.preis) ?? 0;
+    return {
+      id: generateUUID(),
+      description: demoImportText(record.description || record.name || record.position) || `Position ${index + 1}`,
+      quantity,
+      unitPrice,
+      taxRate: demoImportNumber(record.taxRate || record.tax_rate || record.mwst) ?? 19,
+      total: quantity * unitPrice,
+      order: index + 1,
+    } as DemoRecord;
+  });
+  if (items.length > 0) return items;
+  const description = demoImportText(row.itemDescription || row.description || row.position);
+  const unitPrice = demoImportNumber(row.itemUnitPrice || row.itemUnitPrice || row.price || row.preis);
+  if (!description || unitPrice === null) return [];
+  const quantity = demoImportNumber(row.itemQuantity || row.quantity || row.menge) ?? 1;
+  return [{ id: generateUUID(), description, quantity, unitPrice, taxRate: demoImportNumber(row.itemTaxRate || row.taxRate || row.mwst) ?? 19, total: quantity * unitPrice, order: 1 }];
+}
+
+function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string, state: DemoState, commit: boolean) {
+  const entries: Array<{ rowNumbers: number[]; status: string; message: string; data?: DemoRecord; existingId?: string }> = [];
+  const isUpdateable = ['customers', 'positions', 'hourlyRates', 'materials'].includes(resource);
+  const collection = resource === 'customers'
+    ? state.customers
+    : resource === 'jobs'
+      ? state.jobs
+      : resource === 'quotes'
+        ? state.quotes
+        : resource === 'hourlyRates'
+          ? state.hourlyRates
+          : resource === 'materials'
+            ? state.materialTemplates
+            : ((state.company.invoiceTemplates || []) as DemoRecord[]);
+  const seen = new Set<string>();
+
+  rows.forEach((row, index) => {
+    const rowNumber = Number(row._rowNumber || index + 2);
+    const name = demoImportText(row.name || row.customerName);
+    if ((resource === 'customers' || resource === 'positions' || resource === 'hourlyRates' || resource === 'materials') && !name) {
+      entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Name fehlt.' });
+      return;
+    }
+    const identity = resource === 'customers'
+      ? demoImportText(row.customerNumber || row.email || row.name).toLocaleLowerCase()
+      : demoImportText(row.name).toLocaleLowerCase();
+    if (seen.has(identity)) {
+      entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Doppelte Zeile in der Importdatei.' });
+      return;
+    }
+    seen.add(identity);
+
+    if (resource === 'customers') {
+      const existing = collection.find(item =>
+        (row.customerNumber && String(item.customerNumber).toLocaleLowerCase() === demoImportText(row.customerNumber).toLocaleLowerCase())
+        || (row.email && String(item.email || '').toLocaleLowerCase() === demoImportText(row.email).toLocaleLowerCase())
+        || (!row.customerNumber && !row.email && String(item.name || '').toLocaleLowerCase() === name.toLocaleLowerCase())
+      );
+      const customerData = {
+        name,
+        customerNumber: demoImportText(row.customerNumber) || undefined,
+        email: demoImportText(row.email),
+        address: demoImportText(row.address),
+        addressSupplement: demoImportText(row.addressSupplement),
+        postalCode: demoImportText(row.postalCode),
+        city: demoImportText(row.city),
+        country: demoImportText(row.country) || 'Deutschland',
+        taxId: demoImportText(row.taxId),
+        phone: demoImportText(row.phone),
+      } as unknown as DemoRecord;
+      if (existing && duplicateMode === 'update') entries.push({ rowNumbers: [rowNumber], status: 'update', message: 'Bestehender Kunde wird aktualisiert.', data: customerData, existingId: existing.id });
+      else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Kunde bereits vorhanden.' });
+      else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Kunde kann angelegt werden.', data: customerData });
+      return;
+    }
+
+    if (resource === 'jobs') {
+      const customer = demoImportCustomer(state, row);
+      if (!customer || !demoImportText(row.title)) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? 'Kunde konnte nicht gefunden werden.' : 'Auftragstitel fehlt.' });
+        return;
+      }
+      const date = dateOnly(row.date || isoDate());
+      const existing = collection.find(item => row.jobNumber && item.jobNumber === row.jobNumber);
+      if (existing) {
+        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Auftrag bereits vorhanden.' });
+        return;
+      }
+      entries.push({ rowNumbers: [rowNumber], status: row.date ? 'valid' : 'warning', message: row.date ? 'Auftrag kann angelegt werden.' : 'Datum wird auf heute gesetzt.', data: { ...row, customerId: customer.id, customerName: customer.name, date, description: demoImportText(row.description) || demoImportText(row.title) } });
+      return;
+    }
+
+    if (resource === 'quotes') {
+      const customer = demoImportCustomer(state, row);
+      const items = demoImportItems(row);
+      if (!customer || items.length === 0) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? 'Kunde konnte nicht gefunden werden.' : 'Keine gültige Position gefunden.' });
+        return;
+      }
+      const existing = collection.find(item => row.quoteNumber && item.quoteNumber === row.quoteNumber);
+      if (existing) {
+        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Angebot bereits vorhanden.' });
+        return;
+      }
+      const totals = calculateItems(items);
+      entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Angebot kann angelegt werden.', data: { ...row, customerId: customer.id, customerName: customer.name, issueDate: dateOnly(row.issueDate || isoDate()), validUntil: dateOnly(row.validUntil || isoDate()), items, ...totals } });
+      return;
+    }
+
+    const priceKey = resource === 'hourlyRates' ? 'rate' : 'unitPrice';
+    const price = demoImportNumber(row[priceKey] || row.price || row.preis);
+    if (price === null || price < 0) {
+      entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Preis ist ungültig oder fehlt.' });
+      return;
+    }
+    const existing = collection.find(item => String(item.name || '').toLocaleLowerCase() === name.toLocaleLowerCase());
+    const data: DemoRecord = { ...row, name, [priceKey]: price, taxRate: demoImportNumber(row.taxRate || row.mwst) ?? 19, unit: resource === 'materials' ? (demoImportText(row.unit) || 'Stück') : undefined };
+    if (existing && duplicateMode === 'update' && isUpdateable) entries.push({ rowNumbers: [rowNumber], status: 'update', message: 'Bestehender Eintrag wird aktualisiert.', data, existingId: existing.id });
+    else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Eintrag bereits vorhanden.' });
+    else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Eintrag kann angelegt werden.', data });
+  });
+
+  const count = (status: string) => entries.reduce((sum, entry) => sum + (entry.status === status ? entry.rowNumbers.length : 0), 0);
+  const summary = {
+    total: rows.length,
+    valid: count('valid') + count('warning'),
+    updated: count('update'),
+    duplicates: count('duplicate'),
+    warnings: count('warning'),
+    errors: count('error'),
+    imported: 0,
+    skipped: count('duplicate') + count('error'),
+  };
+  if (commit) {
+    let imported = 0;
+    entries.forEach(entry => {
+      if (!['valid', 'warning', 'update'].includes(entry.status) || !entry.data) return;
+      if (resource === 'customers') {
+        if (entry.status === 'update') {
+          const target = state.customers.find(item => item.id === entry.existingId);
+          if (target) Object.assign(target, entry.data, { id: target.id, updatedAt: isoDate() });
+        } else {
+          state.customers.push({ ...entry.data, id: generateUUID(), customerNumber: entry.data.customerNumber || String(1001 + state.customers.length), createdAt: isoDate() });
+        }
+      } else if (resource === 'jobs') {
+        state.jobs.push({ ...entry.data, id: generateUUID(), jobNumber: entry.data.jobNumber || `AB-${new Date().getFullYear()}-${String(state.jobs.length + 1).padStart(3, '0')}`, createdAt: isoDate(), updatedAt: isoDate() });
+      } else if (resource === 'quotes') {
+        state.quotes.push({ ...entry.data, id: generateUUID(), quoteNumber: entry.data.quoteNumber || `AN-${new Date().getFullYear()}-${String(state.quotes.length + 1).padStart(3, '0')}`, createdAt: isoDate() });
+      } else if (resource === 'positions') {
+        const templates = (state.company.invoiceTemplates || []) as DemoRecord[];
+        if (entry.status === 'update') {
+          const target = templates.find(item => item.id === entry.existingId);
+          if (target) Object.assign(target, entry.data, { updatedAt: isoDate() });
+        } else templates.push({ ...entry.data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() });
+        state.company.invoiceTemplates = templates;
+      } else {
+        const targetCollection = resource === 'hourlyRates' ? state.hourlyRates : state.materialTemplates;
+        if (entry.status === 'update') {
+          const target = targetCollection.find(item => item.id === entry.existingId);
+          if (target) Object.assign(target, entry.data, { updatedAt: isoDate() });
+        } else targetCollection.push({ ...entry.data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() });
+      }
+      imported += 1;
+    });
+    summary.imported = imported;
+    entries.forEach(entry => { if (['valid', 'warning', 'update'].includes(entry.status)) entry.status = 'imported'; });
+    saveState(state);
+  }
+  return {
+    resource,
+    dryRun: !commit,
+    summary,
+    rows: entries.flatMap(entry => entry.rowNumbers.map(rowNumber => ({ rowNumber, status: entry.status, message: entry.message }))),
+  };
+}
+
 export async function demoRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const state = readState();
   const method = options.method || 'GET';
@@ -361,6 +586,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const resource = parts[0];
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'imports') {
+    const importResource = parts[1];
+    const rows = Array.isArray(data.rows) ? data.rows as DemoRecord[] : [];
+    return demoImport(importResource, rows, String(data.duplicateMode || 'skip'), state, data.dryRun === false) as unknown as T;
+  }
 
   if (resource === 'reporting') {
     const inDateRange = (invoice: DemoRecord, start?: string, end?: string) => {
@@ -933,9 +1164,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 }
 
 export function resetDemoData() {
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(getDemoDataStorageKey());
 }
 
 export function seedDemoData(profile: TerminologyProfile = 'customers') {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(createInitialState(profile)));
+  localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(createInitialState(profile)));
 }

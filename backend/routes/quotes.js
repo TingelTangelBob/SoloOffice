@@ -146,7 +146,7 @@ router.post('/:id/send-email', async (req, res) => {
     const customer = customerResult.rows[0];
 
     // Get company details
-    const companyResult = await query('SELECT * FROM company WHERE id = 1');
+    const companyResult = await query("SELECT * FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const company = companyResult.rows[0];
 
     // Send email (using existing email service)

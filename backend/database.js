@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runMigrations, getMigrationStatus } from './migrations/index.js';
+import { getRequestContext } from './utils/requestContext.js';
 
 dotenv.config();
 
@@ -72,6 +73,40 @@ export const pool = new Pool({
   keepAlive: true, // Enable TCP keep-alive
   keepAliveInitialDelayMillis: 10000, // Start keep-alive after 10 seconds of inactivity
 });
+
+// Every connection receives the active workspace before a query is executed.
+// This keeps legacy route modules behind one central data-isolation seam and
+// lets PostgreSQL row-level security enforce ownership for reads and writes.
+const originalPoolConnect = pool.connect.bind(pool);
+const contextAwareClients = new WeakSet();
+
+function instrumentClient(client) {
+  if (contextAwareClients.has(client)) return client;
+
+  const originalQuery = client.query.bind(client);
+  client.query = (config, values) => {
+    const context = getRequestContext();
+    const workspaceId = context?.workspaceId || '';
+    const userId = context?.userId || '';
+    return originalQuery(
+      'SELECT set_config($1, $2, false), set_config($3, $4, false)',
+      ['app.workspace_id', workspaceId, 'app.user_id', userId]
+    ).then(() => originalQuery(config, values));
+  };
+
+  contextAwareClients.add(client);
+  return client;
+}
+
+pool.connect = (...args) => {
+  if (typeof args[0] === 'function') {
+    return originalPoolConnect((error, client, release) => {
+      if (error) return args[0](error);
+      return args[0](null, instrumentClient(client), release);
+    });
+  }
+  return originalPoolConnect(...args).then(instrumentClient);
+};
 
 // ============================================================================
 // Pool Event Handlers for Monitoring and Error Handling
@@ -154,8 +189,13 @@ export async function createTables() {
       pending: status.pending.length,
     });
 
-    // Insert default data if needed
-    await insertDefaultData(client);
+    // Seed the initial installation inside its own workspace context. This is
+    // also used for legacy databases that predate authentication.
+    const defaultWorkspace = await client.query('SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1');
+    if (defaultWorkspace.rows[0]?.id) {
+      const { runWithRequestContext } = await import('./utils/requestContext.js');
+      await runWithRequestContext({ workspaceId: defaultWorkspace.rows[0].id, system: true }, () => insertDefaultData(client));
+    }
 
     logger.info('Database initialized successfully');
   } finally {

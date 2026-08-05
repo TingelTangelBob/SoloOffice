@@ -1,5 +1,5 @@
 import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Bell, Building2, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bell, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { defaultDocumentTemplates, useCompany } from '../context/CompanyContext';
 import {
@@ -9,11 +9,14 @@ import {
   DocumentTableStyle,
   DocumentTemplate,
   DocumentTemplateType,
+  ImportResource,
   TerminologyProfile,
 } from '../types';
 import { getDocumentTemplateFallback, ResolvedDocumentTemplate } from '../utils/documentTemplateProfiles';
 import { getTerminology } from '../utils/terminology';
 import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
+import { apiService } from '../services/api';
+import { ImportWizard } from './ImportWizard';
 
 type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
 
@@ -78,11 +81,6 @@ interface TemplateFormState {
   tableStyle: DocumentTableStyle;
   showPaymentInformation: boolean;
   showFooter: boolean;
-  reminderTexts: {
-    stage1: string;
-    stage2: string;
-    stage3: string;
-  };
 }
 
 const emptyForm: TemplateFormState = {
@@ -99,7 +97,6 @@ const emptyForm: TemplateFormState = {
   tableStyle: 'light',
   showPaymentInformation: true,
   showFooter: true,
-  reminderTexts: { stage1: '', stage2: '', stage3: '' },
 };
 
 function getLayoutDefinition(layout: DocumentLayout): LayoutDefinition {
@@ -122,7 +119,6 @@ function getEmptyForm(documentType: DocumentTemplateType): TemplateFormState {
 function templateToForm(template: DocumentTemplate): TemplateFormState {
   const fallback = getDocumentTemplateFallback(template.documentType);
   const layout = getLayoutDefinition(template.layout || fallback.layout);
-  const reminderTexts = template.reminderTexts || {};
   const savedHeaderAlignment = template.headerAlignment || fallback.headerAlignment;
   const savedTableStyle = template.tableStyle || fallback.tableStyle;
   return {
@@ -139,11 +135,6 @@ function templateToForm(template: DocumentTemplate): TemplateFormState {
     tableStyle: layout.tableStyles.includes(savedTableStyle) ? savedTableStyle : layout.defaultTableStyle,
     showPaymentInformation: template.showPaymentInformation ?? true,
     showFooter: template.showFooter ?? true,
-    reminderTexts: {
-      stage1: reminderTexts.stage1 || template.introText || '',
-      stage2: reminderTexts.stage2 || template.introText || '',
-      stage3: reminderTexts.stage3 || template.introText || '',
-    },
   };
 }
 
@@ -213,14 +204,26 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
       ]
     : template.documentType === 'orderConfirmation'
       ? [
-          ['Design Discovery', '4.320,00 €'],
-          ['Interface Design', '9.360,00 €'],
-          ['Website Design', '540,00 €'],
+        ['Design Discovery', '4.320,00 €'],
+        ['Interface Design', '9.360,00 €'],
+        ['Website Design', '540,00 €'],
+      ]
+    : resolved.layout === 'modern'
+      ? [
+          ['Monatlicher Support', '1.280,00 €'],
+          ['Konzeption & Beratung', '2.450,00 €'],
+          ['Zusatzaufwand', '380,00 €'],
         ]
+      : resolved.layout === 'editorial'
+        ? [
+            ['Projektphase: Konzeption', '4.320,00 €'],
+            ['Umsetzung & Abstimmung', '9.360,00 €'],
+            ['Übergabe & Dokumentation', '540,00 €'],
+          ]
       : [
-          ['Design Discovery', '4.320,00 €'],
-          ['Interface Design', '9.360,00 €'],
-          ['Website Design', '540,00 €'],
+          ['Beratung und Analyse', '1.850,00 €'],
+          ['Leistungserbringung', '3.420,00 €'],
+          ['Dokumentation', '680,00 €'],
         ];
   const sampleIntro = resolved.introText || 'Vielen Dank für Ihre Anfrage. Hiermit berechnen wir Ihnen folgende Leistungen:';
   const pageBackground = isEditorial ? '#fbf8f5' : isAir ? '#fbfdfe' : '#ffffff';
@@ -270,7 +273,7 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
 
         <div className="mt-[9%] flex min-h-0 flex-1 flex-col">
           <div className={`font-bold ${isEditorial ? 'uppercase tracking-[0.15em]' : ''}`} style={{ color: resolved.accentColor, fontSize: large ? 14 : 7.2 }}>{documentTitle === 'MAHNUNG' ? 'Zahlung offen' : documentTitle.charAt(0) + documentTitle.slice(1).toLowerCase()}</div>
-          <p className="mt-2 max-w-[90%] leading-relaxed" style={{ color: mutedText }}>{sampleIntro}</p>
+          <p className="mt-1 max-w-[90%] leading-tight" style={{ color: mutedText, maxHeight: large ? undefined : 22, overflow: 'hidden' }}>{sampleIntro}</p>
 
           {template.documentType === 'reminder' && (
             <div className="mt-3 rounded-sm px-2 py-1.5" style={{ backgroundColor: `${resolved.accentColor}18`, borderLeft: `2px solid ${resolved.accentColor}` }}>
@@ -280,12 +283,12 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
           )}
 
           <div className="mt-4 overflow-hidden" style={{ border: isEditorial ? `1px solid ${resolved.accentColor}80` : `1px solid ${resolved.accentColor}35`, borderRadius: isEditorial ? 0 : 3 }}>
-            <div className="grid grid-cols-[1fr_auto] gap-2 px-2 py-1.5 font-bold" style={{ backgroundColor: tableColor, color: tableTextColor }}>
+            <div className="grid grid-cols-[1fr_auto] gap-1 px-2 py-1 font-bold leading-tight" style={{ backgroundColor: tableColor, color: tableTextColor }}>
               <span>Leistung</span>
               <span>Gesamt</span>
             </div>
             {sampleRows.map(([description, amount], index) => (
-              <div key={description} className="grid grid-cols-[1fr_auto] gap-2 px-2 py-2" style={{ borderBottom: `1px solid ${isEditorial ? `${resolved.accentColor}35` : '#e5e7eb'}`, backgroundColor: !isEditorial && index % 2 === 1 ? '#fafbfc' : 'transparent' }}>
+              <div key={description} className="grid grid-cols-[1fr_auto] gap-1 px-2 py-1.5 leading-tight" style={{ borderBottom: `1px solid ${isEditorial ? `${resolved.accentColor}35` : '#e5e7eb'}`, backgroundColor: !isEditorial && index % 2 === 1 ? '#fafbfc' : 'transparent' }}>
                 <span className="truncate">{description}</span>
                 <span className="whitespace-nowrap">{amount}</span>
               </div>
@@ -367,7 +370,6 @@ function TemplateEditorOverlay({
     tableStyle: formData.tableStyle,
     showPaymentInformation: formData.showPaymentInformation,
     showFooter: formData.showFooter,
-    reminderTexts: formData.reminderTexts,
   };
 
   const setValue = <K extends keyof TemplateFormState>(key: K, value: TemplateFormState[K]) => {
@@ -486,16 +488,6 @@ function TemplateEditorOverlay({
                     <label className="block text-xs font-medium text-gray-600">Einleitung<textarea value={formData.introText} onChange={event => setValue('introText', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
                     <label className="block text-xs font-medium text-gray-600">Abschlusstext<textarea value={formData.closingText} onChange={event => setValue('closingText', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
                     <label className="block text-xs font-medium text-gray-600">Zahlungs-/Gültigkeitshinweis<textarea value={formData.paymentTerms} onChange={event => setValue('paymentTerms', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
-                    {activeTab === 'reminder' && (
-                      <div className="space-y-3 border-t border-gray-100 pt-3">
-                        <div className="text-xs font-semibold text-gray-800">Drei Mahnstufen</div>
-                        {([
-                          ['stage1', '1. Mahnung'],
-                          ['stage2', '2. Mahnung'],
-                          ['stage3', '3. Mahnung / letzte Mahnung'],
-                        ] as const).map(([stage, label]) => <label key={stage} className="block text-xs font-medium text-gray-600">{label}<textarea value={formData.reminderTexts[stage]} onChange={event => setFormData(previous => ({ ...previous, reminderTexts: { ...previous.reminderTexts, [stage]: event.target.value } }))} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>)}
-                      </div>
-                    )}
                   </div>
                 </div>}
               </section>
@@ -532,9 +524,12 @@ function TemplateEditorOverlay({
 export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   const {
     company,
+    setCompany,
     documentTemplates,
     hourlyRates,
     materialTemplates,
+    setHourlyRates,
+    setMaterialTemplates,
     addDocumentTemplate,
     updateDocumentTemplate,
     deleteDocumentTemplate,
@@ -549,9 +544,10 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupNoticeDismissed, setSetupNoticeDismissed] = useState(() => isNoticeDismissed(TEMPLATE_SETUP_NOTICE_ID));
+  const [importResource, setImportResource] = useState<ImportResource | null>(null);
 
   const templates = useMemo(() => {
-    if (activeTab === 'general' || activeTab === 'positions') return [];
+    if (activeTab === 'general' || activeTab === 'positions' || activeTab === 'reminder') return [];
     const source = documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates;
     return source.filter(template => template.documentType === activeTab);
   }, [activeTab, documentTemplates]);
@@ -621,7 +617,6 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
       tableStyle: formData.tableStyle,
       showPaymentInformation: formData.showPaymentInformation,
       showFooter: formData.showFooter,
-      ...(documentType === 'reminder' ? { reminderTexts: formData.reminderTexts } : {}),
       isDefault: editingTemplate ? editingTemplate.isDefault : templates.length === 0,
     };
 
@@ -654,6 +649,17 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
       await deleteDocumentTemplate(template.id);
     } catch {
       setError('Die Vorlage konnte nicht gelöscht werden.');
+    }
+  };
+
+  const refreshImportedResource = async () => {
+    if (importResource === 'positions') {
+      const updatedCompany = await apiService.getCompany();
+      setCompany(previous => ({ ...previous, ...updatedCompany }));
+    } else if (importResource === 'hourlyRates') {
+      setHourlyRates(await apiService.getHourlyRates());
+    } else if (importResource === 'materials') {
+      setMaterialTemplates(await apiService.getMaterialTemplates());
     }
   };
 
@@ -706,8 +712,8 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[
-              { value: '4', label: 'Dokumentarten', text: `Rechnungen, Angebote, Mahnungen und ${terminology.work.confirmationPluralLabel}` },
-              { value: '3', label: 'Mahnstufen', text: 'Eine Mahnungsvorlage deckt alle drei Stufen ab' },
+              { value: '3', label: 'Gestaltbare Dokumentarten', text: `Rechnungen, Angebote und ${terminology.work.confirmationPluralLabel}` },
+              { value: '3', label: 'Mahnstufen', text: 'Mahntexte werden zentral in den App-Einstellungen gepflegt' },
               { value: '1', label: 'Standardlogo', text: `Wird zentral in ${terminology.organization.dataLabel} gepflegt` },
             ].map(item => (
               <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -759,11 +765,45 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
               <p className="text-sm text-gray-500">allgemeine Vorlagen</p>
             </div>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setImportResource('positions')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
+              <Upload className="h-4 w-4" /> Positionen importieren
+            </button>
+            <button type="button" onClick={() => setImportResource('hourlyRates')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
+              <Upload className="h-4 w-4" /> Stundensätze importieren
+            </button>
+            <button type="button" onClick={() => setImportResource('materials')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
+              <Upload className="h-4 w-4" /> Materialien importieren
+            </button>
+          </div>
           {onNavigate && (
             <button type="button" onClick={() => onNavigate('settings', 'invoices')} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
               Positionsvorlagen in Rechnungen öffnen
             </button>
           )}
+        </div>
+      ) : activeTab === 'reminder' ? (
+        <div className="space-y-6">
+          <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm lg:p-6">
+            <div className="flex items-start gap-3">
+              <Bell className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div>
+                <h2 className="text-lg font-semibold text-amber-950">Mahnungen werden in den App-Einstellungen verwaltet</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900">
+                  Mahntexte, Fristen und Gebühren gehören an eine zentrale Stelle. So gelten die Einstellungen zuverlässig für jede Mahnstufe und für jedes erzeugte PDF.
+                </p>
+              </div>
+            </div>
+            {onNavigate && (
+              <button type="button" onClick={() => onNavigate('settings', 'app')} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-800">
+                Zu den Mahnungseinstellungen
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+          </section>
+          <div className="guidance-panel p-4 text-sm text-gray-600">
+            Das PDF-Layout der Mahnungen bleibt für bestehende Dokumente erhalten. Die maßgeblichen Texte kommen ausschließlich aus den App-Einstellungen.
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -772,7 +812,6 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
               <h2 className="text-lg font-semibold text-gray-900">{getTemplateTypeLabel(activeTab as DocumentTemplateType, company?.terminologyProfile)}</h2>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
                 Diese Vorlagen steuern das fertige PDF-Layout. Texte, Logo, Akzentfarbe, Tabelle und Fußbereich werden gemeinsam gespeichert.
-                {activeTab === 'reminder' && ' Jede Mahnungsvorlage enthält alle drei Mahnstufen.'}
               </p>
             </div>
             <button type="button" onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
@@ -785,7 +824,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {templates.map(template => (
-              <article key={template.id} className={`relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
+              <article key={template.id} className={`template-card relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
                 {template.isDefault && <span className="absolute left-1/2 top-2 z-10 inline-flex -translate-x-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
                 <button type="button" onClick={() => setSelectedPreview(template)} className="group relative block w-full bg-gray-50 p-4" aria-label={`${template.name} in großer Vorschau öffnen`}>
                   <TemplatePreview template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
@@ -793,27 +832,28 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
                     <Maximize2 className="h-3 w-3" /> Große Vorschau
                   </span>
                 </button>
-                <div className="p-4">
-                  <div className="flex min-h-10 items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-left font-semibold text-gray-900">{template.name}</h3>
+                <div className="p-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div className="w-full min-w-0">
+                      <h3 className="truncate text-center font-semibold text-gray-900">{template.name}</h3>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={() => openEdit(template)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
+                    <div className="template-card-actions flex shrink-0 items-center gap-1">
+                      <button type="button" onClick={() => openEdit(template)} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button type="button" onClick={() => handleDelete(template)} className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label={`${template.name} löschen`}>
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary-custom bg-white px-3 py-1.5 text-xs font-medium text-primary-custom transition-colors hover:bg-primary-light-custom disabled:cursor-default disabled:opacity-100" aria-label={template.isDefault ? `${template.name} ist Standard` : `${template.name} als Standard festlegen`}>
+                      {template.isDefault ? <><Check className="h-4 w-4" />Standard</> : 'Als Standard'}
+                    </button>
                   </div>
-                  <p className="mt-3 min-h-10 text-sm text-gray-600">{template.description || 'Keine Beschreibung hinterlegt.'}</p>
-                  <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-gray-500">
+                  <div className="hidden">
                     <span className="rounded-full bg-gray-100 px-2 py-1">{layoutOptions.find(option => option.id === (template.layout || 'classic'))?.label || 'Klassisch'}</span>
                     <span className="rounded-full bg-gray-100 px-2 py-1">{template.logoMode === 'none' ? 'Ohne Logo' : terminology.organization.logoLabel}</span>
-                    {activeTab === 'reminder' && <span className="rounded-full bg-gray-100 px-2 py-1">Mahnstufen 1–3</span>}
                   </div>
-                  <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="mt-4 text-sm font-medium text-primary-custom disabled:cursor-default disabled:opacity-50">
+                  <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="hidden">
                     {template.isDefault ? 'Aktive Standardvorlage' : 'Als Standard auswählen'}
                   </button>
                 </div>
@@ -865,6 +905,14 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             <TemplatePreview template={selectedPreview} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} large />
           </div>
         </div>
+      )}
+      {importResource && (
+        <ImportWizard
+          resource={importResource}
+          isOpen={true}
+          onClose={() => setImportResource(null)}
+          onImported={refreshImportedResource}
+        />
       )}
     </div>
   );

@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
     const result = await client.query(`
       INSERT INTO yearly_invoice_start_numbers (year, start_number)
       VALUES ($1, $2)
-      ON CONFLICT (year) 
+      ON CONFLICT (workspace_id, year)
       DO UPDATE SET 
         start_number = EXCLUDED.start_number,
         updated_at = CURRENT_TIMESTAMP

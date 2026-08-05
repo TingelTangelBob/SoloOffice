@@ -22,6 +22,10 @@ import creditNotesRouter from './routes/creditNotes.js';
 import euerEntriesRouter from './routes/euerEntries.js';
 import receiptsRouter from './routes/receipts.js';
 import fixedAssetsRouter from './routes/fixedAssets.js';
+import importsRouter from './routes/imports.js';
+import authRouter from './routes/auth.js';
+import workspacesRouter from './routes/workspaces.js';
+import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -29,7 +33,17 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:8080,http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '100mb' })); // Increase limit for PDF attachments
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -60,6 +74,16 @@ app.get('/health', async (req, res) => {
 });
 
 // API routes
+// Authentication endpoints that must be reachable without an existing session.
+app.use('/api', csrfProtection);
+app.use('/api/auth', authRouter);
+
+// All business routes share one authentication and authorization seam. The
+// database adapter applies the request's workspace context underneath it.
+app.use('/api', requireAuth);
+app.use('/api', authorizeLegacyRequest);
+
+app.use('/api/workspaces', workspacesRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/recurring-invoices', recurringInvoicesRouter);
@@ -67,6 +91,7 @@ app.use('/api/credit-notes', creditNotesRouter);
 app.use('/api/euer-entries', euerEntriesRouter);
 app.use('/api/receipts', receiptsRouter);
 app.use('/api/fixed-assets', fixedAssetsRouter);
+app.use('/api/imports', importsRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/company', companyRouter);
 app.use('/api/email', emailRouter);

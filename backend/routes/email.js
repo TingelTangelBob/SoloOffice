@@ -32,7 +32,7 @@ router.post('/send-invoice-multi', async (req, res) => {
 
     // Get company settings for styling
     const { query } = await import('../database.js');
-    const companyResult = await query('SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE id = 1');
+    const companyResult = await query("SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const companySettings = companyResult.rows[0] || { primary_color: '#2563eb', secondary_color: '#64748b', locale: 'de-DE', number_format: 'european', currency: 'EUR', date_format: 'DD.MM.YYYY', time_format: '24h' };
 
     // Convert base64 PDFs to buffers
@@ -98,7 +98,7 @@ router.post('/send-invoice', async (req, res) => {
 
     // Get company settings for styling
     const { query } = await import('../database.js');
-    const companyResult = await query('SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE id = 1');
+    const companyResult = await query("SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const companySettings = companyResult.rows[0] || { primary_color: '#2563eb', secondary_color: '#64748b', locale: 'de-DE', number_format: 'european', currency: 'EUR', date_format: 'DD.MM.YYYY', time_format: '24h' };
 
     // Convert base64 PDF to buffer
@@ -146,7 +146,7 @@ router.post('/send-reminder', async (req, res) => {
 
     // Get company settings for styling
     const { query } = await import('../database.js');
-    const companyResult = await query('SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE id = 1');
+    const companyResult = await query("SELECT primary_color, secondary_color, locale, number_format, currency, date_format, time_format FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const companySettings = companyResult.rows[0] || { primary_color: '#2563eb', secondary_color: '#64748b', locale: 'de-DE', number_format: 'european', currency: 'EUR', date_format: 'DD.MM.YYYY', time_format: '24h' };
 
     const result = await sendReminderEmail(

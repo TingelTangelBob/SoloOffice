@@ -84,9 +84,42 @@ const RESTORE_ORDER = [
   'email_history'
 ];
 
+const WORKSPACE_SCOPED_TABLES = new Set([
+  'customers', 'customer_emails', 'invoices', 'invoice_items', 'invoice_attachments',
+  'quotes', 'quote_items', 'quote_attachments', 'job_entries', 'job_attachments',
+  'calendar_events', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
+  'yearly_invoice_start_numbers', 'euer_entries', 'euer_entry_history', 'fixed_assets',
+  'receipts', 'email_history', 'smtp_settings', 'customer_hourly_rates',
+  'customer_specific_hourly_rates', 'customer_specific_materials',
+]);
+
 function prepareBackupRecord(table, record) {
   if (table !== 'smtp_settings') return record;
   return { ...record, smtp_pass: null };
+}
+
+function workspaceBackupPrefix(req, kind) {
+  return `${kind}_${req.auth.workspaceId}_`;
+}
+
+function isOwnedBackup(filename, req, kind, extension) {
+  return filename === path.basename(filename)
+    && !filename.includes('..')
+    && filename.startsWith(workspaceBackupPrefix(req, kind))
+    && filename.endsWith(extension);
+}
+
+async function rejectMultiWorkspaceRestore(client, res) {
+  const workspaceCount = await client.query('SELECT COUNT(*)::integer AS count FROM workspaces');
+  if (workspaceCount.rows[0]?.count > 1) {
+    res.status(409).json({
+      success: false,
+      message: 'Restore ist bei mehreren Workspaces vorübergehend gesperrt, damit keine fremden Workspace-Daten überschrieben werden.',
+      code: 'WORKSPACE_RESTORE_REQUIRES_MIGRATION',
+    });
+    return true;
+  }
+  return false;
 }
 
 // Function to process values for JSONB columns
@@ -156,7 +189,7 @@ router.post('/create', async (req, res) => {
 
     // Save backup to file
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `backup_${timestamp}.json`;
+    const filename = `backup_${req.auth.workspaceId}_${timestamp}.json`;
     const filepath = path.join(backupDir, filename);
     
     await fs.writeFile(filepath, JSON.stringify(backup, null, 2));
@@ -190,7 +223,7 @@ router.get('/download/:filename', async (req, res) => {
     const { filename } = req.params;
     
     // Validate filename for security
-    if (!filename.match(/^backup_[\d-T:Z]+\.json$/)) {
+    if (!isOwnedBackup(filename, req, 'backup', '.json')) {
       return res.status(400).json({
         success: false,
         message: 'Ungültiger Dateiname'
@@ -245,7 +278,7 @@ router.get('/list', async (req, res) => {
     }
 
     const files = await fs.readdir(backupDir);
-    const backupFiles = files.filter(file => file.match(/^backup_[\d-T:Z]+\.json$/));
+    const backupFiles = files.filter(file => isOwnedBackup(file, req, 'backup', '.json'));
     
     const backups = await Promise.all(
       backupFiles.map(async (filename) => {
@@ -309,6 +342,10 @@ router.post('/restore', async (req, res) => {
       });
     }
 
+    if (await rejectMultiWorkspaceRestore(client, res)) {
+      return;
+    }
+
     logger.info('Starting restore process...');
     
     // Begin transaction
@@ -338,12 +375,17 @@ router.post('/restore', async (req, res) => {
           if (backupData.data[table].length > 0) {
             // Get column names from first record
             const columns = Object.keys(backupData.data[table][0]);
+            if (WORKSPACE_SCOPED_TABLES.has(table) && !columns.includes('workspace_id')) {
+              columns.push('workspace_id');
+            }
             const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
             const columnNames = columns.join(', ');
 
             // Insert data
             for (const record of backupData.data[table]) {
-              const values = columns.map(col => processValueForRestore(table, col, record[col]));
+              const values = columns.map(col => col === 'workspace_id'
+                ? req.auth.workspaceId
+                : processValueForRestore(table, col, record[col]));
               await client.query(
                 `INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})`,
                 values
@@ -555,7 +597,7 @@ router.delete('/delete/:filename', async (req, res) => {
     const { filename } = req.params;
     
     // Validate filename for security
-    if (!filename.match(/^backup_[\d-T:Z]+\.json$/)) {
+    if (!isOwnedBackup(filename, req, 'backup', '.json')) {
       return res.status(400).json({
         success: false,
         message: 'Ungültiger Dateiname'
@@ -647,7 +689,7 @@ router.post('/create-zip', async (req, res) => {
 
     // Save ZIP file
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `vollbackup_${timestamp}.zip`;
+    const filename = `vollbackup_${req.auth.workspaceId}_${timestamp}.zip`;
     const filepath = path.join(backupDir, filename);
     
     const zipBuffer = zip.toBuffer();
@@ -692,7 +734,7 @@ router.get('/download-zip/:filename', async (req, res) => {
     const { filename } = req.params;
     
     // Validate filename for security
-    if (!filename.match(/^vollbackup_[\d-T:Z]+\.zip$/)) {
+    if (!isOwnedBackup(filename, req, 'vollbackup', '.zip')) {
       return res.status(400).json({
         success: false,
         message: 'Ungültiger Dateiname'
@@ -755,6 +797,10 @@ router.post('/restore-zip', async (req, res) => {
           success: false,
           message: 'Keine Backup-Datei hochgeladen'
         });
+      }
+
+      if (await rejectMultiWorkspaceRestore(client, res)) {
+        return;
       }
 
       logger.info('Processing ZIP backup restore...');
@@ -1080,7 +1126,7 @@ router.get('/list-all', async (req, res) => {
     logger.info(`Found ${files.length} files in backup directory:`, files);
     
     // JSON Backups
-    const backupFiles = files.filter(file => file.match(/^backup_[\d-T:Z]+\.json$/));
+    const backupFiles = files.filter(file => isOwnedBackup(file, req, 'backup', '.json'));
     logger.info(`Found ${backupFiles.length} JSON backup files:`, backupFiles);
     
     const backups = await Promise.all(
@@ -1111,7 +1157,7 @@ router.get('/list-all', async (req, res) => {
     // ZIP Backups - with error handling for missing AdmZip
     let zipBackups = [];
     try {
-      const zipBackupFiles = files.filter(file => file.match(/^vollbackup_[\d-T:Z]+\.zip$/));
+      const zipBackupFiles = files.filter(file => isOwnedBackup(file, req, 'vollbackup', '.zip'));
       logger.info(`Found ${zipBackupFiles.length} ZIP backup files:`, zipBackupFiles);
       
       if (zipBackupFiles.length > 0) {

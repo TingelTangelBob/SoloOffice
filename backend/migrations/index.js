@@ -26,6 +26,7 @@ import * as migration017 from './017_euer_audit.js';
 import * as migration018 from './018_fixed_assets.js';
 import * as migration019 from './019_terminology_color_source.js';
 import * as migration020 from './020_receipt_ocr_baseline.js';
+import * as migration021 from './021_identity_and_workspace_ownership.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -49,6 +50,7 @@ const migrations = [
   migration018,
   migration019,
   migration020,
+  migration021,
 ];
 
 /**

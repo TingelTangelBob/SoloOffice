@@ -110,7 +110,8 @@ start_instance() {
         DB_NAME=$(grep "POSTGRES_DB=" ".env.${instance_name}" | cut -d'=' -f2)
         DB_USER=$(grep "POSTGRES_USER=" ".env.${instance_name}" | cut -d'=' -f2)
         DB_PASSWORD=$(grep "POSTGRES_PASSWORD=" ".env.${instance_name}" | cut -d'=' -f2)
-        
+        FRONTEND_PORT=$(grep "FRONTEND_PORT=" ".env.${instance_name}" | cut -d'=' -f2)
+
         cat > .env.backend.${instance_name} << EOF
 PORT=3001
 DB_HOST=database
@@ -119,6 +120,9 @@ DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 NODE_ENV=production
+CORS_ORIGIN=http://localhost:${FRONTEND_PORT}
+COOKIE_SECURE=false
+COOKIE_SAME_SITE=lax
 EOF
     fi
     

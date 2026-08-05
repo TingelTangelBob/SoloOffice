@@ -7,13 +7,14 @@ import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';
 import { apiService } from '../services/api';
 import { updateFavicon } from '../utils/faviconUtils';
-import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm } from '../types';
+import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm, ImportResource } from '../types';
 import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { getTerminology, terminologyProfiles } from '../utils/terminology';
 import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { ImportWizard } from './ImportWizard';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
@@ -47,6 +48,15 @@ const reminderTemplates = {
     { id: 'firm', label: 'Kurz und bestimmt', text: 'Wir fordern Sie letztmalig auf, den offenen Rechnungsbetrag unverzüglich zu begleichen. Nach fruchtlosem Ablauf der Zahlungsfrist werden wir die Forderung ohne weitere Ankündigung weiterverfolgen.' },
   ],
 } as const;
+
+type ReminderTemplateStage = keyof typeof reminderTemplates;
+
+function getSelectedReminderTemplate(stage: ReminderTemplateStage, text?: string) {
+  const normalizedText = text?.trim();
+  if (!normalizedText) return undefined;
+  const templates = reminderTemplates[stage] as ReadonlyArray<{ id: string; label: string; text: string }>;
+  return templates.find(template => template.text.trim() === normalizedText);
+}
 
 function TerminologyPreview({ profile }: { profile: TerminologyDefinition }) {
   const preview = profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
@@ -109,7 +119,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     company,
     updateCompany,
     hourlyRates,
+    setHourlyRates,
     materialTemplates,
+    setMaterialTemplates,
     addHourlyRate,
     updateHourlyRate,
     deleteHourlyRate,
@@ -131,6 +143,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   
   const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
   const [isAddingRate, setIsAddingRate] = useState(false);
+  const [importResource, setImportResource] = useState<ImportResource | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>('app');
   const terminologyScrollerRef = useRef<HTMLDivElement>(null);
   const terminologyDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false, pointerId: -1 });
@@ -397,6 +410,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     updateFavicon(null);
   };
 
+  const selectedReminderTemplates = {
+    stage1: getSelectedReminderTemplate('stage1', formData.reminderTextStage1),
+    stage2: getSelectedReminderTemplate('stage2', formData.reminderTextStage2),
+    stage3: getSelectedReminderTemplate('stage3', formData.reminderTextStage3),
+  };
+
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
@@ -441,8 +460,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-0 z-10 -mx-3 border-b border-gray-200 bg-gray-50/95 px-3 py-2 !pl-14 backdrop-blur sm:-mx-4 sm:px-4 sm:!pl-4 lg:-mx-6 lg:px-6 lg:!pl-6`}>
-        <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:-mx-6 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1`}>
+        <div className="flex gap-1 overflow-x-auto">
           {[
             { id: 'app' as const, label: 'App-Einstellungen' },
             { id: 'general' as const, label: 'Allgemein' },
@@ -826,7 +845,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                       1. Mahnung (freundlich)
                     </label>
                     <select
-                      value=""
+                      value={selectedReminderTemplates.stage1?.id || ''}
                       onChange={(e) => {
                         const template = reminderTemplates.stage1.find(item => item.id === e.target.value);
                         if (template) setFormData(prev => ({ ...prev, reminderTextStage1: template.text }));
@@ -838,6 +857,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                         <option key={template.id} value={template.id}>{template.label}</option>
                       ))}
                     </select>
+                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage1 ? 'text-primary-custom' : 'text-gray-500'}`}>
+                      {selectedReminderTemplates.stage1 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage1.label}` : formData.reminderTextStage1?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
+                    </p>
                     <textarea
                       value={formData.reminderTextStage1 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage1: e.target.value }))}
@@ -852,7 +874,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                       2. Mahnung (bestimmt)
                     </label>
                     <select
-                      value=""
+                      value={selectedReminderTemplates.stage2?.id || ''}
                       onChange={(e) => {
                         const template = reminderTemplates.stage2.find(item => item.id === e.target.value);
                         if (template) setFormData(prev => ({ ...prev, reminderTextStage2: template.text }));
@@ -864,6 +886,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                         <option key={template.id} value={template.id}>{template.label}</option>
                       ))}
                     </select>
+                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage2 ? 'text-primary-custom' : 'text-gray-500'}`}>
+                      {selectedReminderTemplates.stage2 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage2.label}` : formData.reminderTextStage2?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
+                    </p>
                     <textarea
                       value={formData.reminderTextStage2 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage2: e.target.value }))}
@@ -878,7 +903,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                       3. Mahnung (letzte Mahnung)
                     </label>
                     <select
-                      value=""
+                      value={selectedReminderTemplates.stage3?.id || ''}
                       onChange={(e) => {
                         const template = reminderTemplates.stage3.find(item => item.id === e.target.value);
                         if (template) setFormData(prev => ({ ...prev, reminderTextStage3: template.text }));
@@ -890,6 +915,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                         <option key={template.id} value={template.id}>{template.label}</option>
                       ))}
                     </select>
+                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage3 ? 'text-primary-custom' : 'text-gray-500'}`}>
+                      {selectedReminderTemplates.stage3 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage3.label}` : formData.reminderTextStage3?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
+                    </p>
                     <textarea
                       value={formData.reminderTextStage3 || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage3: e.target.value }))}
@@ -1557,6 +1585,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <Clock className="h-4 w-4 text-primary-custom mr-2" />
                   <h4 className="text-md font-semibold text-gray-800">Stundensätze</h4>
                 </div>
+                <button type="button" onClick={() => setImportResource('hourlyRates')} className="mr-2 inline-flex items-center rounded-lg border border-primary-custom px-3 py-2 text-sm text-primary-custom hover:bg-primary-light-custom">
+                  <Upload className="mr-2 h-4 w-4" /> Importieren
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsAddingRate(true)}
@@ -1617,6 +1648,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <Package className="h-4 w-4 text-primary-custom mr-2" />
                   <h4 className="text-md font-semibold text-gray-800">Materialvorlagen</h4>
                 </div>
+                <button type="button" onClick={() => setImportResource('materials')} className="mr-2 inline-flex items-center rounded-lg border border-primary-custom px-3 py-2 text-sm text-primary-custom hover:bg-primary-light-custom">
+                  <Upload className="mr-2 h-4 w-4" /> Importieren
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsAddingMaterial(true)}
@@ -2042,6 +2076,18 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </button>
         </div>
       </form>
+
+      {importResource && (
+        <ImportWizard
+          resource={importResource}
+          isOpen={true}
+          onClose={() => setImportResource(null)}
+          onImported={async () => {
+            if (importResource === 'hourlyRates') setHourlyRates(await apiService.getHourlyRates());
+            if (importResource === 'materials') setMaterialTemplates(await apiService.getMaterialTemplates());
+          }}
+        />
+      )}
 
       {/* Email Management Modal */}
       {showEmailManagement && (

@@ -10,7 +10,7 @@ router.get('/eligible', async (req, res) => {
   
   try {
     // Get company reminder settings
-    const companyResult = await client.query('SELECT * FROM company WHERE id = 1');
+    const companyResult = await client.query("SELECT * FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const company = companyResult.rows[0];
     
     if (!company.reminders_enabled) {

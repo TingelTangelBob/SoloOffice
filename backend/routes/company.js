@@ -95,7 +95,7 @@ function mapCompanyRow(row) {
 // Get company information
 router.get('/', async (req, res) => {
   try {
-    const companyResult = await query('SELECT * FROM company WHERE id = 1');
+    const companyResult = await query("SELECT * FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     
     if (companyResult.rows.length === 0) {
       return res.status(404).json({ error: 'Company information not found' });
@@ -409,10 +409,6 @@ router.put('/', async (req, res) => {
       values.push(req.body.reminderTextStage3);
     }
 
-    // Add the ID for the WHERE clause
-    values.push(1);
-    const whereParamIndex = paramIndex;
-
     let result = null;
     
     // Only run UPDATE if there are fields to update
@@ -420,13 +416,13 @@ router.put('/', async (req, res) => {
       const updateQuery = `
         UPDATE company SET
           ${updates.join(', ')}
-        WHERE id = $${whereParamIndex}
+        WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
         RETURNING *
       `;
       result = await query(updateQuery, values);
     } else {
       // If no fields to update, just fetch the current data
-      result = await query('SELECT * FROM company WHERE id = 1');
+      result = await query("SELECT * FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     }
 
     if (result.rows.length === 0) {

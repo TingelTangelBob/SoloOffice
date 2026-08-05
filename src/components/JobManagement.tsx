@@ -17,6 +17,7 @@ import {
   Eye,
   RefreshCw,
   X,
+  Upload,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -36,6 +37,7 @@ import { formatDate, formatNumber } from '../utils/formatters';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
+import { ImportWizard } from './ImportWizard';
 
 interface JobManagementProps {
   onNavigate?: (page: string) => void;
@@ -67,6 +69,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [showAllStats, setShowAllStats] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -531,6 +534,14 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-primary-custom px-3 text-sm text-primary-custom transition hover:bg-primary-light-custom sm:px-4 sm:text-base"
+          >
+            <Upload className="mr-0 h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Importieren</span>
+          </button>
+          <button
             onClick={() => setShowForm(true)}
             className="inline-flex h-10 shrink-0 items-center rounded-xl bg-primary-custom px-3 text-sm text-white transition-all duration-300 hover:scale-105 hover:bg-primary-custom/90 sm:px-4 sm:text-base"
           >
@@ -540,6 +551,13 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         </div>
         </PageHeader>
       </div>
+
+      <ImportWizard
+        resource="jobs"
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={refreshJobEntries}
+      />
 
       {/* Statistics Cards */}
       <div className="hidden min-w-0 grid-cols-5 gap-3 lg:grid lg:gap-4">

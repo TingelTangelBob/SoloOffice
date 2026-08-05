@@ -1,8 +1,14 @@
-import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload } from '../types';
+import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+function readCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const prefix = `${name}=`;
+  return document.cookie.split('; ').find(cookie => cookie.startsWith(prefix))?.slice(prefix.length);
+}
 
 // ============================================================================
 // Helper Types
@@ -53,8 +59,10 @@ class ApiService {
     
     const config: RequestInit = {
       ...fetchOptions,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        ...(readCookie('solooffice_csrf') ? { 'X-CSRF-Token': readCookie('solooffice_csrf') as string } : {}),
         ...fetchOptions.headers,
       },
     };
@@ -63,6 +71,9 @@ class ApiService {
       const response = await fetch(url, config);
 
       if (!response.ok) {
+        if (response.status === 401 && typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('solooffice-auth-expired'));
+        }
         const errorData = await response.json().catch(() => ({ error: 'Network error' }));
         throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
       }
@@ -77,9 +88,81 @@ class ApiService {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Identity and workspace API
+  // --------------------------------------------------------------------------
+
+  async getAuthSession(): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/me', { skipErrorLogging: true });
+  }
+
+  async registerAccount(payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async loginAccount(payload: { email: string; password: string; workspaceId?: string }): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async logoutAccount(): Promise<void> {
+    await this.request('/auth/logout', { method: 'POST' });
+  }
+
+  async logoutAllSessions(): Promise<void> {
+    await this.request('/auth/logout-all', { method: 'POST' });
+  }
+
+  async switchWorkspace(workspaceId: string): Promise<AuthResponse> {
+    return this.request<AuthResponse>(`/auth/switch-workspace/${workspaceId}`, { method: 'POST' });
+  }
+
+  async updateProfile(payload: { firstName: string; lastName: string }): Promise<{ user: AuthResponse['user'] }> {
+    return this.request('/auth/profile', { method: 'PATCH', body: JSON.stringify(payload) });
+  }
+
+  async changePassword(payload: { currentPassword: string; password: string }): Promise<void> {
+    await this.request('/auth/change-password', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async acceptInvitation(payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/accept-invitation', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async getWorkspaces(): Promise<WorkspaceSummary[]> {
+    return this.request<WorkspaceSummary[]>('/workspaces');
+  }
+
+  async createWorkspace(name: string): Promise<WorkspaceSummary> {
+    return this.request<WorkspaceSummary>('/workspaces', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+
+  async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    return this.request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
+  }
+
+  async updateWorkspaceMember(workspaceId: string, userId: string, role: WorkspaceMember['role']): Promise<WorkspaceMember> {
+    return this.request<WorkspaceMember>(`/workspaces/${workspaceId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+  }
+
+  async removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+    await this.request(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' });
+  }
+
+  async getWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
+    return this.request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`);
+  }
+
+  async createWorkspaceInvitation(workspaceId: string, email: string, role: WorkspaceInvitation['role'] = 'member'): Promise<WorkspaceInvitation> {
+    return this.request<WorkspaceInvitation>(`/workspaces/${workspaceId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
+  }
+
+  async revokeWorkspaceInvitation(workspaceId: string, invitationId: string): Promise<void> {
+    await this.request(`/workspaces/${workspaceId}/invitations/${invitationId}`, { method: 'DELETE' });
+  }
+
   // Helper for file downloads
   private async downloadFile(url: string, filename: string): Promise<void> {
-    const response = await fetch(url);
+    const response = await fetch(url, { credentials: 'include' });
     
     if (!response.ok) {
       throw new Error(`Fehler beim Download: ${filename}`);
@@ -418,6 +501,25 @@ class ApiService {
   }
 
   // --------------------------------------------------------------------------
+  // Import API
+  // --------------------------------------------------------------------------
+
+  async importData(
+    resource: ImportResource,
+    rows: Array<Record<string, unknown>>,
+    options: { dryRun?: boolean; duplicateMode?: ImportDuplicateMode } = {}
+  ): Promise<ImportResponse> {
+    return this.request<ImportResponse>(`/imports/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        rows,
+        dryRun: options.dryRun ?? true,
+        duplicateMode: options.duplicateMode ?? 'skip',
+      }),
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Job Entry API
   // --------------------------------------------------------------------------
 
@@ -708,6 +810,8 @@ class ApiService {
 
     const response = await fetch(`${this.baseUrl}/backup/restore-zip`, {
       method: 'POST',
+      credentials: 'include',
+      headers: { ...(readCookie('solooffice_csrf') ? { 'X-CSRF-Token': readCookie('solooffice_csrf') as string } : {}) },
       body: formData,
     });
 
@@ -748,7 +852,8 @@ class ApiService {
   } = {}): Promise<void> {
     const response = await fetch(`${this.baseUrl}/reporting/invoice-journal/pdf`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(readCookie('solooffice_csrf') ? { 'X-CSRF-Token': readCookie('solooffice_csrf') as string } : {}) },
       body: JSON.stringify(params),
     });
 

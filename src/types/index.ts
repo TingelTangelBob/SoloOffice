@@ -502,6 +502,89 @@ export interface YearlyInvoiceStartNumber {
 export type ExportFormat = 'zugferd' | 'xrechnung';
 
 // ============================================================================
+// Import Types
+// ============================================================================
+
+export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials';
+export type ImportDuplicateMode = 'skip' | 'update';
+export type ImportRowStatus = 'valid' | 'update' | 'duplicate' | 'warning' | 'error' | 'imported';
+
+export interface ImportRowResult {
+  rowNumber: number;
+  status: ImportRowStatus;
+  message: string;
+}
+
+export interface ImportSummary {
+  total: number;
+  valid: number;
+  updated: number;
+  duplicates: number;
+  warnings: number;
+  errors: number;
+  imported: number;
+  skipped: number;
+}
+
+export interface ImportResponse {
+  resource: ImportResource;
+  dryRun: boolean;
+  summary: ImportSummary;
+  rows: ImportRowResult[];
+  truncated?: boolean;
+}
+
+// ============================================================================
+// Identity and workspace types
+// ============================================================================
+
+export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
+
+export interface AuthUser {
+  id: UUID;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  createdAt?: string;
+}
+
+export interface WorkspaceSummary {
+  id: UUID;
+  name: string;
+  slug: string;
+  role: WorkspaceRole;
+  permissions?: Record<string, boolean>;
+  createdAt?: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+  workspace: WorkspaceSummary;
+  workspaces: WorkspaceSummary[];
+}
+
+export interface WorkspaceMember {
+  id: UUID;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: WorkspaceRole;
+  permissions?: Record<string, boolean>;
+  joinedAt?: string;
+}
+
+export interface WorkspaceInvitation {
+  id: UUID;
+  email: string;
+  role: Exclude<WorkspaceRole, 'owner'>;
+  expiresAt: string;
+  acceptedAt?: string;
+  createdAt?: string;
+  inviteToken?: string;
+}
+
+// ============================================================================
 // Reporting Types
 // ============================================================================
 

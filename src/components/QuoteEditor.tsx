@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye } from 'lucide-react';
+import { Save, X, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye, FileText, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -687,8 +687,32 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     setItems(currentItems => [...currentItems, createEmptyItem(currentItems.length + 1)]);
   };
 
-  const addItemFromTemplate = () => {
-    addItem();
+  const addItemFromTemplate = (templateType: 'hourly' | 'material', templateId: string) => {
+    let description = '';
+    let unitPrice = 0;
+    let taxRate = company.isSmallBusiness ? 0 : 19;
+    if (templateType === 'hourly') {
+      const template = hourlyRateTemplates.find(item => item.id === templateId);
+      if (!template) return;
+      description = template.name;
+      unitPrice = Number(template.rate) || 0;
+      taxRate = company.isSmallBusiness ? 0 : (template.taxRate ?? 19);
+    } else {
+      const template = materialTemplates.find(item => item.id === templateId);
+      if (!template) return;
+      description = template.name;
+      unitPrice = Number(template.unitPrice) || 0;
+      taxRate = company.isSmallBusiness ? 0 : (template.taxRate ?? 19);
+    }
+    setItems(currentItems => [...currentItems, {
+      id: generateUUID(),
+      description,
+      quantity: 1,
+      unitPrice,
+      taxRate,
+      total: unitPrice,
+      order: currentItems.length + 1,
+    }]);
     setShowTemplateDropdown(false);
   };
 

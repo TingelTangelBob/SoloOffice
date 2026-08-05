@@ -71,6 +71,26 @@
 
 /* Mobile-optimierte Touch-Targets */
 @layer base {
+  body.sidebar-resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  .sidebar-brand .sidebar-toggle {
+    position: absolute;
+    left: calc(100% + 0.25rem);
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar-brand:hover .sidebar-toggle,
+  .sidebar-brand:focus-within .sidebar-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   /* Mindestgröße für Touch-Targets (44px) */
   button, 
   [role="button"], 
@@ -142,6 +162,14 @@
   .action-menu-trigger:hover {
     background-color: var(--primary-medium);
     color: var(--primary-color);
+  }
+
+  .template-card-actions > button {
+    @apply h-8 w-8 min-h-0 min-w-0;
+  }
+
+  .template-card > button.group {
+    padding: 0.5rem;
   }
 
   .bulk-action-icon-button {

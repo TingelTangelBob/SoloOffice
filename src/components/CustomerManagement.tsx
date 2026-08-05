@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
@@ -12,6 +12,7 @@ import { ConfirmationModal } from './ConfirmationModal';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
+import { ImportWizard } from './ImportWizard';
 
 export function CustomerManagement() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, refreshCustomers } = useCustomers();
@@ -41,6 +42,7 @@ export function CustomerManagement() {
   const [isCreateMaterialModalOpen, setIsCreateMaterialModalOpen] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [newMaterialData, setNewMaterialData] = useState({
     name: '',
     description: '',
@@ -642,6 +644,14 @@ export function CustomerManagement() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={Users} title={terminology.entity.navLabel} subtitle={`Verwalten Sie Ihre ${terminology.entity.dataLabel}`}>
         <button
+          type="button"
+          onClick={() => setShowImport(true)}
+          className="inline-flex items-center justify-center space-x-2 rounded-xl border border-primary-custom px-4 py-2 text-primary-custom transition hover:bg-primary-light-custom"
+        >
+          <Upload className="h-4 w-4" />
+          <span className="hidden sm:inline">Importieren</span>
+        </button>
+        <button
           onClick={() => handleOpenModal()}
           className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
         >
@@ -817,6 +827,13 @@ export function CustomerManagement() {
       </div>
 
       {/* Modal */}
+      <ImportWizard
+        resource="customers"
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={refreshCustomers}
+      />
+
       {isModalOpen && (
         <div
           className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center z-[1000] p-4"

@@ -20,7 +20,7 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice')
 
     // Get the year-specific start number, falling back to the company default.
     const yearlyStartResult = await client.query('SELECT start_number FROM yearly_invoice_start_numbers WHERE year = $1', [invoiceYear]);
-    const companyStartResult = await client.query('SELECT invoice_start_number FROM company WHERE id = 1');
+    const companyStartResult = await client.query("SELECT invoice_start_number FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     const companyStartNumber = companyStartResult.rows[0]?.invoice_start_number || 1;
     const yearStartNumber = yearlyStartResult.rows.length > 0 ? yearlyStartResult.rows[0].start_number : companyStartNumber;
 
