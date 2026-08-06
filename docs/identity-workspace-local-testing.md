@@ -24,16 +24,19 @@ Wenn Frontend und Backend auf unterschiedlichen Sites liegen, `COOKIE_SAME_SITE=
 
 1. Frontend öffnen.
 2. Ein Konto registrieren.
-3. Prüfen, dass die vorhandenen Legacy-Daten im initialen Workspace erscheinen.
+3. Prüfen, dass das Firmenprofil leer bzw. onboardingbereit ist und keine Fantasiedaten als echte Firmendaten erscheinen.
 4. Im Profil einen zweiten Workspace anlegen und zwischen beiden Workspaces wechseln.
 5. Einen Mitarbeiter mit Rolle `Mitarbeiter`, `Nur lesen` oder `Admin` einladen.
 6. Mit einem zweiten Browser/Inkognito-Fenster den Einladungslink öffnen und das Konto anlegen.
 7. Mit `Nur lesen` anmelden und prüfen, dass Schreibaktionen abgelehnt werden.
 8. Im ersten Workspace einen Datensatz anlegen und verifizieren, dass er im zweiten Workspace nicht erscheint.
+9. Mit aktivierter SMTP-Testumgebung eine Einladungs-, Verifikations- und Passwort-Reset-Mail auslösen; Token dürfen nicht standardmäßig in der API-Antwort erscheinen.
+10. Einen workspacebezogenen Backup- und Restore-Lauf durchführen und prüfen, dass Daten eines zweiten Workspaces unverändert bleiben.
+11. Konto-/Workspace-Löschung mit falschem und richtigem aktuellem Passwort prüfen.
 
 ## Wichtige Sicherheitsprüfung
 
 - Session-Cookies sind HttpOnly und enthalten nur ein zufälliges Token; in der Datenbank liegt ausschließlich dessen SHA-256-Hash.
 - Passwörter werden mit scrypt und individuellem Salt gespeichert.
 - PostgreSQL erzwingt die aktive Workspace-Zuordnung über Row-Level Security.
-- Restore-Funktionen bleiben gesperrt, sobald mehrere Workspaces existieren, bis der Restore-Prozess vollständig workspacebezogen ist.
+- Restore-Funktionen löschen und schreiben jetzt nur den aktiven Workspace. Dieser Schutz muss mit zwei Workspaces praktisch bestätigt werden.

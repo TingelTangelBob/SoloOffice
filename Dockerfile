@@ -5,13 +5,20 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
+
+# Vite reads these values during the static build; runtime container
+# environment variables cannot change an already generated bundle.
+ARG VITE_DEMO_MODE=false
+ARG VITE_API_URL=/api
+ENV VITE_DEMO_MODE=${VITE_DEMO_MODE}
+ENV VITE_API_URL=${VITE_API_URL}
 
 # Copy the application code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Lint and type-check/build inside the same reproducible container image.
+RUN npm run lint && npm run typecheck && npm run build
 
 # Production stage
 FROM nginx:alpine

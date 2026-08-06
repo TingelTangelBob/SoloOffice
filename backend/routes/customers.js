@@ -7,6 +7,7 @@ const router = express.Router();
 // Get all customers
 router.get('/', async (req, res) => {
   try {
+    const includeArchived = req.query.includeArchived === 'true';
     // Use a single query with LEFT JOINs to get all data at once
     const result = await query(`
       SELECT 
@@ -20,7 +21,9 @@ router.get('/', async (req, res) => {
         c.postal_code,
         c.country,
         c.tax_id,
+        c.leitweg_id,
         c.phone,
+        c.is_active,
         c.created_at,
         -- Additional emails (JSON aggregation)
         COALESCE(
@@ -83,9 +86,10 @@ router.get('/', async (req, res) => {
       LEFT JOIN customer_emails ce ON c.id = ce.customer_id AND ce.is_active = true
       LEFT JOIN customer_specific_hourly_rates chr ON c.id = chr.customer_id
       LEFT JOIN customer_specific_materials cm ON c.id = cm.customer_id
+      WHERE ${includeArchived ? 'TRUE' : 'c.is_active = TRUE'}
       GROUP BY 
         c.id, c.customer_number, c.name, c.email, c.address, c.address_supplement, c.city, 
-        c.postal_code, c.country, c.tax_id, c.phone, c.created_at
+        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.is_active, c.created_at
       ORDER BY c.created_at DESC
     `);
     
@@ -100,7 +104,9 @@ router.get('/', async (req, res) => {
       postalCode: row.postal_code,
       country: row.country,
       taxId: row.tax_id,
+      leitwegId: row.leitweg_id,
       phone: row.phone,
+      isActive: row.is_active,
       additionalEmails: row.additional_emails || [],
       hourlyRates: (row.hourly_rates || []).map(rate => ({
         ...rate,
@@ -144,7 +150,9 @@ router.get('/:id', async (req, res) => {
         c.postal_code,
         c.country,
         c.tax_id,
+        c.leitweg_id,
         c.phone,
+        c.is_active,
         c.created_at,
         -- Additional emails (JSON aggregation)
         COALESCE(
@@ -212,7 +220,7 @@ router.get('/:id', async (req, res) => {
       WHERE c.id = $1
       GROUP BY 
         c.id, c.customer_number, c.name, c.email, c.address, c.address_supplement, c.city, 
-        c.postal_code, c.country, c.tax_id, c.phone, c.created_at
+        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.is_active, c.created_at
     `, [id]);
     
     if (result.rows.length === 0) {
@@ -231,7 +239,9 @@ router.get('/:id', async (req, res) => {
       postalCode: row.postal_code,
       country: row.country,
       taxId: row.tax_id,
+      leitwegId: row.leitweg_id,
       phone: row.phone,
+      isActive: row.is_active,
       additionalEmails: row.additional_emails || [],
       hourlyRates: (row.hourly_rates || [])
         .map(rate => ({
@@ -289,7 +299,7 @@ router.get('/:id', async (req, res) => {
 // Create new customer
 router.post('/', async (req, res) => {
   try {
-    const { name, email, address, addressSupplement, city, postalCode, country, taxId, phone } = req.body;
+    const { name, email, address, addressSupplement, city, postalCode, country, taxId, leitwegId, phone } = req.body;
 
     // Generate customer number - find highest existing number and increment
     // Always format as 4-digit number with leading zeros (e.g., 0001, 0002, etc.)
@@ -309,10 +319,10 @@ router.post('/', async (req, res) => {
     }
 
     const result = await query(`
-      INSERT INTO customers (customer_number, name, email, address, address_supplement, city, postal_code, country, tax_id, phone)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      INSERT INTO customers (customer_number, name, email, address, address_supplement, city, postal_code, country, tax_id, leitweg_id, phone)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
-    `, [customerNumber, name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, phone]);
+    `, [customerNumber, name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, leitwegId || null, phone]);
 
     const row = result.rows[0];
     const customer = {
@@ -326,7 +336,9 @@ router.post('/', async (req, res) => {
       postalCode: row.postal_code,
       country: row.country,
       taxId: row.tax_id,
+      leitwegId: row.leitweg_id,
       phone: row.phone,
+      isActive: row.is_active,
       createdAt: row.created_at
     };
 
@@ -347,15 +359,15 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, address, addressSupplement, city, postalCode, country, taxId, phone } = req.body;
+    const { name, email, address, addressSupplement, city, postalCode, country, taxId, leitwegId, phone } = req.body;
 
     const result = await query(`
       UPDATE customers 
       SET name = $1, email = $2, address = $3, address_supplement = $4, city = $5, postal_code = $6, 
-          country = $7, tax_id = $8, phone = $9
-      WHERE id = $10
+          country = $7, tax_id = $8, leitweg_id = $9, phone = $10
+      WHERE id = $11
       RETURNING *
-    `, [name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, phone, id]);
+    `, [name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, leitwegId || null, phone, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Customer not found' });
@@ -373,7 +385,9 @@ router.put('/:id', async (req, res) => {
       postalCode: row.postal_code,
       country: row.country,
       taxId: row.tax_id,
+      leitwegId: row.leitweg_id,
       phone: row.phone,
+      isActive: row.is_active,
       createdAt: row.created_at
     };
 
@@ -391,27 +405,42 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete customer
-router.delete('/:id', async (req, res) => {
+// Customers are archived so historical documents remain intact.
+router.post('/:id/archive', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM customers WHERE id = $1 RETURNING id', [id]);
+    const result = await query('UPDATE customers SET is_active = FALSE WHERE id = $1 RETURNING id, is_active', [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
-    res.json({ message: 'Customer deleted successfully' });
+    res.json({ id: result.rows[0].id, isActive: result.rows[0].is_active });
   } catch (error) {
-    logger.error('Failed to delete customer', {
+    logger.error('Failed to archive customer', {
       error: error.message,
       stack: error.stack,
       customerId: req.params.id,
-      method: 'DELETE',
-      endpoint: '/customers/:id'
+      method: 'POST',
+      endpoint: '/customers/:id/archive'
     });
-    res.status(500).json({ error: 'Failed to delete customer' });
+    res.status(500).json({ error: 'Failed to archive customer' });
   }
+});
+
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const result = await query('UPDATE customers SET is_active = TRUE WHERE id = $1 RETURNING id, is_active', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json({ id: result.rows[0].id, isActive: result.rows[0].is_active });
+  } catch (error) {
+    logger.error('Failed to restore customer', { error: error.message, customerId: req.params.id });
+    res.status(500).json({ error: 'Failed to restore customer' });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  res.status(405).json({ error: 'Kunden werden archiviert und nicht gelöscht.' });
 });
 
 // Add additional email to customer

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to deploy multiple instances of Belego
+# Script to deploy multiple instances of SoloOffice
 # Interactive deployment with guided configuration
 
 # Colors for better output
@@ -82,9 +82,9 @@ find_available_port() {
 # Function to collect instance configuration
 collect_instance_config() {
     echo
-    print_info "=== Belego Instance Deployment ==="
+    print_info "=== SoloOffice Instance Deployment ==="
     echo
-    print_info "Dieses Skript führt Sie durch die Konfiguration einer neuen Belego-Instanz."
+    print_info "Dieses Skript führt Sie durch die Konfiguration einer neuen SoloOffice-Instanz."
     echo
     
     # Instance name
@@ -136,7 +136,8 @@ collect_instance_config() {
 
     
     # Generate secure random passwords
-    DB_PASSWORD="secure_db_${INSTANCE_NAME}_$(openssl rand -hex 16)"
+    DB_PASSWORD="secure_db_${INSTANCE_NAME}_$(openssl rand -hex 32)"
+    ENCRYPTION_KEY="$(openssl rand -hex 32)"
     
     return 0
 }
@@ -174,6 +175,8 @@ COOKIE_SAME_SITE=lax
 POSTGRES_DB=belego_${INSTANCE_NAME}
 POSTGRES_USER=rm_user_${INSTANCE_NAME}
 POSTGRES_PASSWORD=${DB_PASSWORD}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+REGISTRATION_MODE=closed-after-first
 EOF
 
     # Create Backend environment file
@@ -189,6 +192,8 @@ NODE_ENV=production
 CORS_ORIGIN=http://localhost:${FRONTEND_PORT}
 COOKIE_SECURE=false
 COOKIE_SAME_SITE=lax
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+REGISTRATION_MODE=closed-after-first
 EOF
 
     # Start deployment
@@ -199,8 +204,7 @@ EOF
         echo
         print_info "=== Zugriffsinformationen ==="
         print_success "Frontend:     http://localhost:$FRONTEND_PORT"
-        print_success "Backend API:  http://localhost:$BACKEND_PORT"
-        print_success "Datenbank:    localhost:$DB_PORT"
+        print_info "Backend/Datenbank: nur intern im Compose-Netzwerk (für Debugging docker-compose.debug.yml ergänzen)"
         echo
         print_info "=== Konfigurationsdateien ==="
         print_info "Docker Compose: .env.${INSTANCE_NAME}"
@@ -284,7 +288,7 @@ main() {
 # Function to show help
 show_help() {
     echo
-    print_info "=== Belego Deployment Script ==="
+    print_info "=== SoloOffice Deployment Script ==="
     echo
     echo "Usage:"
     echo "  $0                        # Interaktiver Modus (Standard, empfohlen)"
@@ -339,7 +343,7 @@ legacy_deploy() {
     fi
 
     # Generate secure password
-    DB_PASSWORD="secure_password_${INSTANCE_NAME}_$(date +%s)"
+    DB_PASSWORD="secure_db_${INSTANCE_NAME}_$(openssl rand -hex 32)"
     
     # Create minimal configuration (no SMTP)
     cat > .env.${INSTANCE_NAME} << EOF
@@ -351,6 +355,8 @@ FRONTEND_PORT=${FRONTEND_PORT}
 POSTGRES_DB=belego_${INSTANCE_NAME}
 POSTGRES_USER=rm_user_${INSTANCE_NAME}
 POSTGRES_PASSWORD=${DB_PASSWORD}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+REGISTRATION_MODE=closed-after-first
 EOF
 
     # Create minimal backend config
@@ -362,14 +368,15 @@ DB_NAME=belego_${INSTANCE_NAME}
 DB_USER=rm_user_${INSTANCE_NAME}
 DB_PASSWORD=${DB_PASSWORD}
 NODE_ENV=production
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+REGISTRATION_MODE=closed-after-first
 EOF
 
     # Deploy with specific env file
     if docker compose --env-file .env.${INSTANCE_NAME} -f docker-compose.yml up -d --build; then
         print_success "Instance '$INSTANCE_NAME' deployed successfully!"
         print_info "Frontend available at: http://localhost:$FRONTEND_PORT"
-        print_info "Backend API available at: http://localhost:$BACKEND_PORT"
-        print_info "Database available at: localhost:$DB_PORT"
+        print_info "Backend/Datenbank: nur intern im Compose-Netzwerk (Debug-Override bei Bedarf ergänzen)"
         print_warning "E-Mail-Funktionen sind im Legacy-Modus nicht konfiguriert."
         print_info "Verwenden Sie das Script ohne --legacy Flag für vollständige Konfiguration."
     else

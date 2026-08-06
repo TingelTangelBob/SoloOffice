@@ -470,7 +470,7 @@ function EligibleRemindersTab({
       </BulkSelectionHeader>
 
       {/* Reminders Table */}
-      <div className="hidden w-full max-w-full overflow-x-auto lg:block">
+      <div className="hidden w-full max-w-full overflow-x-auto tablet:block">
         <table className="w-full min-w-[820px] divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -584,7 +584,7 @@ function EligibleRemindersTab({
         </table>
       </div>
 
-      <div className="divide-y divide-gray-200 rounded-xl border border-gray-100 bg-white lg:hidden">
+      <div className="divide-y divide-gray-200 rounded-xl border border-gray-100 bg-white tablet:hidden">
         {reminders.map((reminder) => (
           <div key={reminder.invoiceId} className={`p-4 ${!reminder.isEligible ? 'bg-gray-50' : ''}`}>
             <div className="flex items-start justify-between gap-3">

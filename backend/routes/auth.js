@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { pool, query } from '../database.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
 import { requireAuth, loadSession, clearAuthCookies } from '../middleware/auth.js';
+import { sendSystemEmail } from '../services/emailService.js';
+import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
+import { persistentRateLimit } from '../middleware/rateLimit.js';
+import logger from '../utils/logger.js';
 import {
   CSRF_COOKIE,
   SESSION_COOKIE,
@@ -21,7 +25,13 @@ import {
 } from '../utils/auth.js';
 
 const router = express.Router();
-const failedLoginAttempts = new Map();
+router.use(persistentRateLimit({
+  name: 'auth-ip',
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX || 30),
+  keyGenerator: req => req.ip,
+  failClosed: true,
+}));
 
 function csrfCookieOptions() {
   return {
@@ -97,26 +107,34 @@ function validateIdentityPayload(body) {
   return { email };
 }
 
-function loginKey(req, email) {
-  return `${req.ip || 'unknown'}:${email}`;
+function publicAppUrl(req) {
+  return (process.env.APP_BASE_URL || process.env.CORS_ORIGIN?.split(',')[0] || `${req.protocol}://${req.get('host') || 'localhost:8080'}`).replace(/\/$/, '');
 }
 
-function isLoginBlocked(key) {
-  const entry = failedLoginAttempts.get(key);
-  return entry && entry.until > Date.now();
+function verificationRequired() {
+  return process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
 }
 
-function registerFailedLogin(key) {
-  const current = failedLoginAttempts.get(key) || { count: 0, until: 0 };
-  const count = current.count + 1;
-  failedLoginAttempts.set(key, {
-    count,
-    until: count >= 5 ? Date.now() + 15 * 60 * 1000 : 0,
+async function sendVerificationEmail(req, { workspaceId, email, token }) {
+  const link = `${publicAppUrl(req)}?verifyEmail=${encodeURIComponent(token)}`;
+  await sendSystemEmail({
+    workspaceId,
+    to: email,
+    subject: 'SoloOffice: E-Mail-Adresse bestätigen',
+    text: `Bitte bestätigen Sie Ihre E-Mail-Adresse: ${link}`,
+    html: `<p>Bitte bestätigen Sie Ihre E-Mail-Adresse für SoloOffice.</p><p><a href="${link}">E-Mail-Adresse bestätigen</a></p>`,
   });
 }
 
-function clearFailedLogin(key) {
-  failedLoginAttempts.delete(key);
+async function sendPasswordResetEmail(req, { workspaceId, email, token }) {
+  const link = `${publicAppUrl(req)}?resetPassword=${encodeURIComponent(token)}`;
+  await sendSystemEmail({
+    workspaceId,
+    to: email,
+    subject: 'SoloOffice: Passwort zurücksetzen',
+    text: `Sie können Ihr Passwort hier zurücksetzen: ${link}`,
+    html: `<p>Sie haben das Zurücksetzen Ihres SoloOffice-Passworts angefordert.</p><p><a href="${link}">Passwort zurücksetzen</a></p>`,
+  });
 }
 
 router.post('/register', async (req, res) => {
@@ -133,17 +151,28 @@ router.post('/register', async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    const registrationMode = process.env.REGISTRATION_MODE || 'closed-after-first';
+    const registeredUsers = await client.query('SELECT COUNT(*)::integer AS count FROM users');
+    const isFirstRegistration = registeredUsers.rows[0]?.count === 0;
+    if (registrationMode === 'invite-only' || (registrationMode === 'closed-after-first' && !isFirstRegistration)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Die öffentliche Registrierung ist derzeit geschlossen. Bitte verwenden Sie eine Einladung.' });
+    }
     const existingUser = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [identity.email]);
     if (existingUser.rows.length > 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Für diese E-Mail-Adresse existiert bereits ein Konto.' });
     }
 
+    const emailVerificationToken = verificationRequired() ? createOpaqueToken() : null;
     const userResult = await client.query(`
-      INSERT INTO users (email, password_hash, first_name, last_name)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO users (
+        email, password_hash, first_name, last_name, email_verified_at,
+        email_verification_token_hash, email_verification_expires_at
+      )
+      VALUES ($1, $2, $3, $4, ${verificationRequired() ? 'NULL' : 'NOW()'}, $5, ${verificationRequired() ? "NOW() + INTERVAL '24 hours'" : 'NULL'})
       RETURNING *
-    `, [identity.email, passwordHash, firstName, lastName]);
+    `, [identity.email, passwordHash, firstName, lastName, emailVerificationToken ? hashOpaqueToken(emailVerificationToken) : null]);
     const user = userResult.rows[0];
     const userCount = await client.query('SELECT COUNT(*)::integer AS count FROM users');
     const isFirstUser = userCount.rows[0].count === 1;
@@ -154,6 +183,13 @@ router.post('/register', async (req, res) => {
       workspaceId = workspaceResult.rows[0]?.id;
       if (!workspaceId) throw new Error('Initial workspace is missing');
       await client.query('UPDATE workspaces SET name = $1, updated_at = NOW() WHERE id = $2', [workspaceName, workspaceId]);
+      await runWithRequestContext({ userId: user.id, workspaceId }, async () => {
+        await client.query(`
+          UPDATE company
+          SET name = $1, email = $2, updated_at = NOW()
+          WHERE workspace_id = $3
+        `, [workspaceName, identity.email, workspaceId]);
+      });
     } else {
       workspaceId = randomUUID();
       await client.query(`
@@ -181,8 +217,22 @@ router.post('/register', async (req, res) => {
       INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES ($1, $2, 'owner')
     `, [workspaceId, user.id]);
-    const token = await createSession(client, user.id, workspaceId, req);
+    const token = verificationRequired() ? null : await createSession(client, user.id, workspaceId, req);
     await client.query('COMMIT');
+
+    if (verificationRequired()) {
+      try {
+        await sendVerificationEmail(req, { workspaceId, email: identity.email, token: emailVerificationToken });
+      } catch (emailError) {
+        // Account creation is complete; the operator can configure SMTP and
+        // resend through a future admin flow without exposing a token here.
+        logger.warn('Verifizierungs-E-Mail konnte nicht versendet werden', { error: emailError.message });
+      }
+      return res.status(201).json({
+        verificationRequired: true,
+        message: 'Bitte bestätigen Sie Ihre E-Mail-Adresse. Falls keine Nachricht ankommt, wenden Sie sich an den Administrator.',
+      });
+    }
 
     setAuthCookies(res, token);
     const payload = await getAuthResponse(token);
@@ -198,14 +248,16 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const identity = validateIdentityPayload(req.body || {});
   if (identity.error) return res.status(400).json({ error: identity.error });
-  const key = loginKey(req, identity.email);
-  if (isLoginBlocked(key)) return res.status(429).json({ error: 'Zu viele fehlgeschlagene Versuche. Bitte später erneut versuchen.' });
-
   const userResult = await query('SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND is_active = TRUE', [identity.email]);
   const user = userResult.rows[0];
   if (!user || !(await verifyPassword(req.body.password, user.password_hash))) {
-    registerFailedLogin(key);
     return res.status(401).json({ error: 'E-Mail-Adresse oder Passwort ist nicht korrekt.' });
+  }
+  if (verificationRequired() && !user.email_verified_at) {
+    return res.status(403).json({
+      error: 'Bitte bestätigen Sie zunächst Ihre E-Mail-Adresse.',
+      code: 'EMAIL_NOT_VERIFIED',
+    });
   }
 
   const memberships = await query(`
@@ -221,7 +273,6 @@ router.post('/login', async (req, res) => {
     const token = await createSession(client, user.id, membership.workspace_id, req);
     await client.query('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     await client.query('COMMIT');
-    clearFailedLogin(key);
     setAuthCookies(res, token);
     return res.json(await getAuthResponse(token));
   } catch (error) {
@@ -230,6 +281,78 @@ router.post('/login', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+router.get('/verify-email', async (req, res) => {
+  const token = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+  if (!token) return res.status(400).json({ error: 'Bestätigungstoken fehlt.' });
+  const result = await query(`
+    UPDATE users
+    SET email_verified_at = COALESCE(email_verified_at, NOW()),
+        email_verification_token_hash = NULL,
+        email_verification_expires_at = NULL,
+        updated_at = NOW()
+    WHERE email_verification_token_hash = $1
+      AND email_verification_expires_at > NOW()
+    RETURNING id
+  `, [hashOpaqueToken(token)]);
+  if (result.rows.length === 0) return res.status(400).json({ error: 'Der Bestätigungslink ist ungültig oder abgelaufen.' });
+  res.json({ message: 'E-Mail-Adresse erfolgreich bestätigt.' });
+});
+
+router.post('/forgot-password', async (req, res) => {
+  const email = normaliseEmail(req.body?.email);
+  const genericMessage = 'Wenn ein Konto mit dieser E-Mail-Adresse existiert, wurde eine Nachricht zum Zurücksetzen versendet.';
+  if (!isValidEmail(email)) return res.json({ message: genericMessage });
+
+  try {
+    const userResult = await query('SELECT id, email FROM users WHERE LOWER(email) = LOWER($1) AND is_active = TRUE', [email]);
+    const user = userResult.rows[0];
+    if (user) {
+      const token = createOpaqueToken();
+      const workspaceResult = await query(`
+        SELECT workspace_id FROM workspace_members WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1
+      `, [user.id]);
+      await query(`
+        UPDATE users
+        SET password_reset_token_hash = $1,
+            password_reset_expires_at = NOW() + INTERVAL '1 hour',
+            updated_at = NOW()
+        WHERE id = $2
+      `, [hashOpaqueToken(token), user.id]);
+      try {
+        await sendPasswordResetEmail(req, { workspaceId: workspaceResult.rows[0]?.workspace_id, email: user.email, token });
+      } catch (emailError) {
+        logger.warn('Passwort-Reset-E-Mail konnte nicht versendet werden', { error: emailError.message });
+      }
+    }
+  } catch (error) {
+    // Keep the endpoint indistinguishable for unknown addresses and log only
+    // the operational failure, never the requested address or token.
+    logger.warn('Passwort-Reset-Anfrage konnte nicht verarbeitet werden', { error: error.message });
+  }
+  res.json({ message: genericMessage });
+});
+
+router.post('/reset-password', async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const passwordError = validatePassword(req.body?.password);
+  if (!token || passwordError) return res.status(400).json({ error: passwordError || 'Zurücksetzungstoken fehlt.' });
+  const passwordHash = await hashPassword(req.body.password);
+  const result = await query(`
+    UPDATE users
+    SET password_hash = $1,
+        password_reset_token_hash = NULL,
+        password_reset_expires_at = NULL,
+        updated_at = NOW()
+    WHERE password_reset_token_hash = $2
+      AND password_reset_expires_at > NOW()
+      AND is_active = TRUE
+    RETURNING id
+  `, [passwordHash, hashOpaqueToken(token)]);
+  if (result.rows.length === 0) return res.status(400).json({ error: 'Der Zurücksetzungslink ist ungültig oder abgelaufen.' });
+  await query('UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1', [result.rows[0].id]);
+  res.json({ message: 'Passwort erfolgreich geändert. Bitte melden Sie sich erneut an.' });
 });
 
 router.get('/me', requireAuth, async (req, res) => {
@@ -302,6 +425,43 @@ router.post('/change-password', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+router.delete('/account', requireAuth, async (req, res) => {
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+  const userResult = await query('SELECT password_hash FROM users WHERE id = $1', [req.auth.userId]);
+  if (!userResult.rows[0] || !(await verifyPassword(currentPassword, userResult.rows[0].password_hash))) {
+    return res.status(400).json({ error: 'Das aktuelle Passwort ist nicht korrekt.' });
+  }
+
+  const ownedWorkspaces = await query(`
+    SELECT w.id
+    FROM workspaces w
+    JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $1 AND wm.role = 'owner'
+  `, [req.auth.userId]);
+  for (const workspace of ownedWorkspaces.rows) {
+    const memberCount = await query('SELECT COUNT(*)::integer AS count FROM workspace_members WHERE workspace_id = $1', [workspace.id]);
+    if (memberCount.rows[0]?.count > 1) {
+      return res.status(409).json({ error: 'Ein eigener Workspace hat noch weitere Mitglieder. Entfernen Sie diese zuerst oder übertragen Sie den Workspace.' });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const workspace of ownedWorkspaces.rows) {
+      await runWithRequestContext({ userId: req.auth.userId, workspaceId: workspace.id }, () => deleteWorkspaceData(client, workspace.id));
+    }
+    await client.query('DELETE FROM users WHERE id = $1', [req.auth.userId]);
+    await client.query('COMMIT');
+    clearAuthCookies(res);
+    return res.status(204).send();
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    return res.status(500).json({ error: 'Konto konnte nicht gelöscht werden' });
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/accept-invitation', async (req, res) => {
   const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
   const identity = validateIdentityPayload(req.body || {});
@@ -327,8 +487,8 @@ router.post('/accept-invitation', async (req, res) => {
     } else {
       const passwordHash = await hashPassword(req.body.password);
       userResult = await client.query(`
-        INSERT INTO users (email, password_hash, first_name, last_name)
-        VALUES ($1, $2, $3, $4) RETURNING *
+        INSERT INTO users (email, password_hash, first_name, last_name, email_verified_at)
+        VALUES ($1, $2, $3, $4, NOW()) RETURNING *
       `, [identity.email, passwordHash, req.body.firstName?.trim() || '', req.body.lastName?.trim() || '']);
       user = userResult.rows[0];
     }

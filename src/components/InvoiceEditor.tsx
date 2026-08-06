@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Plus, Trash2, Calculator, Edit, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { Save, X, Plus, Trash2, Calculator, Edit, ChevronUp, ChevronDown, GripVertical, Link2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -35,6 +35,7 @@ import { generateUUID } from '../utils/uuid';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
+import { DialogShell } from './DialogShell';
 
 // Sortable Item Component for Drag & Drop
 interface SortableInvoiceItemProps {
@@ -516,6 +517,19 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     isDefault: false
   });
 
+  const closeInvoiceTemplateForm = () => {
+    setNewInvoiceTemplateData({
+      name: '',
+      description: '',
+      unitPrice: 0,
+      unit: 'Stunde',
+      taxRate: 19,
+      isDefault: false
+    });
+    setEditingInvoiceTemplate(null);
+    setShowInvoiceTemplateForm(false);
+  };
+
   // Customer search states
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
@@ -952,10 +966,19 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 break-words">
               {invoice ? 'Rechnung bearbeiten' : 'Neue Rechnung'}
             </h2>
-            <p className="text-gray-600 mt-1 text-sm sm:text-base break-words">
-              {invoice ? `${invoice.invoiceNumber}` : 'Erstellen Sie eine neue Rechnung'}
-            </p>
-          </div>
+          <p className="text-gray-600 mt-1 text-sm sm:text-base break-words">
+            {invoice ? `${invoice.invoiceNumber}` : 'Erstellen Sie eine neue Rechnung'}
+          </p>
+          {invoice && ((invoice.sourceQuoteNumber || invoice.sourceQuoteId) || (invoice.sourceJobs && invoice.sourceJobs.length > 0)) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              <span className="inline-flex items-center gap-1.5 font-semibold"><Link2 className="h-3.5 w-3.5" />Quelle</span>
+              {invoice.sourceQuoteNumber && <span>Angebot {invoice.sourceQuoteNumber}</span>}
+              {invoice.sourceJobs && invoice.sourceJobs.length > 0 && (
+                <span>Auftragseinheiten: {invoice.sourceJobs.map(source => source.jobNumber).join(', ')}</span>
+              )}
+            </div>
+          )}
+        </div>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 ml-4 flex-shrink-0"
@@ -1201,7 +1224,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           {items.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <Calculator className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <p>Keine Positionen hinzugefügt. Klicken Sie auf "Position hinzufügen" um zu beginnen.</p>
+              <p>Keine Positionen hinzugefügt. Klicken Sie auf "Manuell hinzufügen" um zu beginnen.</p>
             </div>
           )}
         </div>
@@ -1591,13 +1614,15 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
       {/* Invoice Template Form Modal */}
       {showInvoiceTemplateForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingInvoiceTemplate ? 'Rechnungsvorlage bearbeiten' : 'Neue Rechnungsvorlage erstellen'}
-              </h3>
-            </div>
+        <DialogShell
+          titleId="invoice-template-dialog-title"
+          icon={Edit}
+          title={editingInvoiceTemplate ? 'Rechnungsvorlage bearbeiten' : 'Neue Rechnungsvorlage erstellen'}
+          description="Pflegen Sie Name, Preis, Einheit und steuerliche Zuordnung der Vorlage."
+          onClose={closeInvoiceTemplateForm}
+          size="md"
+          zIndexClassName="z-[1000]"
+        >
             <form onSubmit={async (e) => {
               e.preventDefault();
               
@@ -1640,7 +1665,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 console.error('Error saving invoice template:', error);
                 alert('Fehler beim Speichern der Rechnungsvorlage. Bitte versuchen Sie es erneut.');
               }
-            }} className="p-6 space-y-4">
+            }} className="space-y-5 pb-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name *
@@ -1738,25 +1763,15 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 <button
                   type="button"
                   onClick={() => {
-                    setNewInvoiceTemplateData({
-                      name: '',
-                      description: '',
-                      unitPrice: 0,
-                      unit: 'Stunde',
-                      taxRate: 19,
-                      isDefault: false
-                    });
-                    setEditingInvoiceTemplate(null);
-                    setShowInvoiceTemplateForm(false);
+                    closeInvoiceTemplateForm();
                   }}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   Abbrechen
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       {/* Invoice Template Manager Modal */}

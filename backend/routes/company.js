@@ -7,6 +7,11 @@ const LOCALES = new Set(['de-DE', 'en-US', 'fr-FR', 'es-ES']);
 const NUMBER_FORMATS = new Set(['european', 'american']);
 const DATE_FORMATS = new Set(['DD.MM.YYYY', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']);
 const TIME_FORMATS = new Set(['24h', '12h']);
+const TIME_ZONES = new Set([
+  'Europe/Berlin', 'Europe/London', 'Europe/Lisbon', 'Europe/Paris', 'Europe/Madrid', 'Europe/Rome',
+  'Europe/Athens', 'Europe/Helsinki', 'Europe/Bucharest', 'Europe/Istanbul', 'America/New_York',
+  'America/Chicago', 'America/Los_Angeles', 'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+]);
 const THEME_MODES = new Set(['system', 'light', 'dark']);
 const PAYMENT_INFORMATION_MODES = new Set(['separate', 'company']);
 const TERMINOLOGY_PROFILES = new Set(['customers', 'mandants', 'patients', 'students', 'clients']);
@@ -52,6 +57,7 @@ function mapCompanyRow(row) {
     currency: row.currency || 'EUR',
     dateFormat: row.date_format || 'DD.MM.YYYY',
     timeFormat: row.time_format || '24h',
+    timeZone: row.time_zone || 'Europe/Berlin',
     primaryColor: row.primary_color,
     secondaryColor: row.secondary_color,
     themeMode: row.theme_mode || 'system',
@@ -242,6 +248,13 @@ router.put('/', async (req, res) => {
       }
       updates.push(`time_format = $${paramIndex++}`);
       values.push(req.body.timeFormat);
+    }
+    if (req.body.timeZone !== undefined) {
+      if (!TIME_ZONES.has(req.body.timeZone)) {
+        return res.status(400).json({ error: 'Ungültige Workspace-Zeitzone.' });
+      }
+      updates.push(`time_zone = $${paramIndex++}`);
+      values.push(req.body.timeZone);
     }
     if (req.body.primaryColor !== undefined) {
       updates.push(`primary_color = $${paramIndex++}`);

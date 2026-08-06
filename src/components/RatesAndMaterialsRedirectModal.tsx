@@ -22,50 +22,50 @@ export function RatesAndMaterialsRedirectModal({
   if (!isOpen) return null;
 
   const typeLabel = type === 'hourlyRates' ? 'Stundensätze' : 'Materialien';
-  const typeIcon = type === 'hourlyRates' ? 
-    <DollarSign className="h-8 w-8 text-blue-600" /> : 
-    <Package className="h-8 w-8 text-green-600" />;
+  const typeIcon = type === 'hourlyRates' ?
+    <DollarSign className="h-7 w-7 shrink-0 text-primary-custom" /> :
+    <Package className="h-7 w-7 shrink-0 text-primary-custom" />;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center space-x-3">
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+      <div className="max-h-[calc(100vh-1.5rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-4 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:p-5">
+        <div className="mb-4 flex items-start justify-between gap-3 sm:mb-5">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {typeIcon}
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-base font-semibold leading-6 text-gray-900 sm:text-lg">
               {typeLabel} verwalten
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1"
+            className="shrink-0 p-1 text-gray-400 hover:text-gray-600"
             title="Schließen"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="text-center mb-6">
-          <p className="text-gray-600 mb-4">
+        <div className="mb-4 text-center sm:mb-5">
+          <p className="text-sm leading-5 text-gray-600">
             Wo möchten Sie {typeLabel.toLowerCase()} verwalten?
           </p>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           <button
             onClick={() => {
               onNavigateToCustomers();
               onClose();
             }}
-            className="w-full bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg p-4 text-left transition-colors group"
+            className="theme-option-button theme-option-button--primary group w-full rounded-lg border border-primary-custom/30 bg-primary-custom/5 p-3 text-left transition-colors hover:bg-primary-custom/10 sm:p-3.5"
           >
-            <div className="flex items-center space-x-3">
-              <User className="h-6 w-6 text-blue-600" />
+            <div className="flex items-center gap-2.5">
+              <User className="h-5 w-5 shrink-0 text-primary-custom" />
               <div>
-                <h4 className="font-medium text-blue-900 group-hover:text-blue-800">
+                <h4 className="text-sm font-medium text-gray-900 group-hover:text-primary-custom sm:text-base">
                   {terminology.entity.specificLabel.charAt(0).toUpperCase() + terminology.entity.specificLabel.slice(1)}
                 </h4>
-                <p className="text-sm text-blue-700">
+                <p className="text-xs leading-5 text-gray-700 sm:text-sm">
                   {typeLabel} für einzelne {terminology.entity.plural} verwalten
                 </p>
               </div>
@@ -77,15 +77,15 @@ export function RatesAndMaterialsRedirectModal({
               onNavigateToSettings();
               onClose();
             }}
-            className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg p-4 text-left transition-colors group"
+            className="theme-option-button theme-option-button--neutral group w-full rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100 sm:p-3.5"
           >
-            <div className="flex items-center space-x-3">
-              <Settings className="h-6 w-6 text-gray-600" />
+            <div className="flex items-center gap-2.5">
+              <Settings className="h-5 w-5 shrink-0 text-gray-600" />
               <div>
-                <h4 className="font-medium text-gray-900 group-hover:text-gray-800">
+                <h4 className="text-sm font-medium text-gray-900 group-hover:text-gray-800 sm:text-base">
                   {terminology.organization.dataLabel}
                 </h4>
-                <p className="text-sm text-gray-700">
+                <p className="text-xs leading-5 text-gray-700 sm:text-sm">
                   Standard-{typeLabel.toLowerCase()} in den Einstellungen verwalten
                 </p>
               </div>
@@ -93,10 +93,10 @@ export function RatesAndMaterialsRedirectModal({
           </button>
         </div>
 
-        <div className="mt-6 pt-4 border-t border-gray-200">
+        <div className="mt-4 border-t border-gray-200 pt-3 sm:mt-5 sm:pt-4">
           <button
             onClick={onClose}
-            className="w-full px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            className="w-full rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-200"
           >
             Abbrechen
           </button>

@@ -4,4 +4,9 @@
 *.backup
 node_modules
 dist
+Projektordner
 *.tsbuildinfo
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+EXPECTATIONS.md

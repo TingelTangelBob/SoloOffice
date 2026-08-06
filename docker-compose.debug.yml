@@ -1,0 +1,8 @@
+services:
+  database:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+  backend:
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"

@@ -79,6 +79,7 @@ export const pool = new Pool({
 // lets PostgreSQL row-level security enforce ownership for reads and writes.
 const originalPoolConnect = pool.connect.bind(pool);
 const contextAwareClients = new WeakSet();
+const clientContextKeys = new WeakMap();
 
 function instrumentClient(client) {
   if (contextAwareClients.has(client)) return client;
@@ -88,10 +89,22 @@ function instrumentClient(client) {
     const context = getRequestContext();
     const workspaceId = context?.workspaceId || '';
     const userId = context?.userId || '';
+    const contextKey = `${workspaceId}:${userId}`;
+
+    // A pooled connection keeps its session settings until another request
+    // uses it. Avoid issuing two extra SQL round-trips for every query while
+    // still switching the context whenever the connection changes owners.
+    if (clientContextKeys.get(client) === contextKey) {
+      return originalQuery(config, values);
+    }
+
     return originalQuery(
       'SELECT set_config($1, $2, false), set_config($3, $4, false)',
       ['app.workspace_id', workspaceId, 'app.user_id', userId]
-    ).then(() => originalQuery(config, values));
+    ).then(() => {
+      clientContextKeys.set(client, contextKey);
+      return originalQuery(config, values);
+    });
   };
 
   contextAwareClients.add(client);
@@ -222,17 +235,17 @@ async function insertDefaultData(client) {
         logo, icon, reminder_text_stage_1, reminder_text_stage_2, reminder_text_stage_3
       ) VALUES (
         1,
-        'Meine Firma GmbH',
-        'Musterstraße 123',
-        'Berlin',
-        '10115',
+        '',
+        '',
+        '',
+        '',
         'Deutschland',
-        '+49 30 12345678',
-        'info@meinefirma.de',
-        'www.meinefirma.de',
-        'DE123456789',
-        'DE89 3704 0044 0532 0130 00',
-        'COBADEFFXXX',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
         'de-DE',
         1,
         $1,
@@ -303,11 +316,11 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
 export async function query(text, params, timeoutMs = 30000) {
   const client = await pool.connect();
   const startTime = Date.now();
+  // The pool applies the production statement timeout at connection level.
+  // Keep the parameter for route compatibility without resetting it per query.
+  void timeoutMs;
   
   try {
-    // Set statement timeout for this specific query
-    await client.query(`SET statement_timeout = ${timeoutMs}`);
-    
     const result = await client.query(text, params);
     
     const duration = Date.now() - startTime;
@@ -330,13 +343,6 @@ export async function query(text, params, timeoutMs = 30000) {
     });
     throw error;
   } finally {
-    // Reset statement timeout to default
-    try {
-      await client.query('RESET statement_timeout');
-    } catch (resetError) {
-      // Ignore reset errors, connection might be broken
-      logger.debug('Could not reset statement_timeout', { error: resetError.message });
-    }
     client.release();
   }
 }

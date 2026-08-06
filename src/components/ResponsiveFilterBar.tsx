@@ -16,7 +16,7 @@ export function FilterSelect({ className = '', children, ...props }: SelectHTMLA
     <div className="relative min-w-0">
       <select
         {...props}
-        className={`w-full appearance-none !pr-10 ${className}`}
+        className={`select-with-chevron w-full appearance-none !pr-10 ${className}`}
       >
         {children}
       </select>

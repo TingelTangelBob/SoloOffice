@@ -24,6 +24,7 @@ import { apiService } from '../services/api';
 import { useCompany } from '../context/CompanyContext';
 import { formatDate as formatDateValue, formatTime } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 interface EmailAttachment {
   filename: string;
@@ -987,7 +988,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       <label className="text-sm font-medium text-gray-500 mb-2 block">E-Mail-Inhalt:</label>
                       <div 
                         className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto"
-                        dangerouslySetInnerHTML={{ __html: selectedEmail.body_html }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedEmail.body_html) }}
                       />
                     </div>
                   )}

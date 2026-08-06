@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
 import logger from '../utils/logger';
+import { DEFAULT_TIME_ZONE } from '../utils/timeZones';
 
 // ============================================================================
 // Default Values
@@ -218,15 +219,15 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
 ];
 
 export const defaultCompany: Company = {
-  name: 'Meine Firma GmbH',
-  address: 'Musterstraße 123',
-  city: 'Berlin',
-  postalCode: '10115',
+  name: '',
+  address: '',
+  city: '',
+  postalCode: '',
   country: 'Deutschland',
-  phone: '+49 30 12345678',
-  email: 'info@meinefirma.de',
-  website: 'www.meinefirma.de',
-  taxId: 'DE123456789',
+  phone: '',
+  email: '',
+  website: '',
+  taxId: '',
   taxIdentificationNumber: '',
   taxBusinessType: 'commercial',
   legalForm: 'other',
@@ -235,10 +236,10 @@ export const defaultCompany: Company = {
   terminologyProfile: 'customers',
   terminologyColorSource: 'profile',
   receiptLabel: 'Belege',
-  bankAccount: 'DE89 3704 0044 0532 0130 00',
+  bankAccount: '',
   paymentInformation: {
-    accountHolder: 'Meine Firma GmbH',
-    bankAccount: 'DE89 3704 0044 0532 0130 00',
+    accountHolder: '',
+    bankAccount: '',
     bic: '',
     bankName: '',
     paymentTerms: '',
@@ -252,6 +253,7 @@ export const defaultCompany: Company = {
   currency: 'EUR',
   dateFormat: 'DD.MM.YYYY',
   timeFormat: '24h',
+  timeZone: DEFAULT_TIME_ZONE,
   themeMode: 'system',
   jobTrackingEnabled: true,
   reportingEnabled: true,

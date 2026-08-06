@@ -5,11 +5,11 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-solooffice}
       POSTGRES_USER: ${POSTGRES_USER:-solooffice}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solooffice123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in der Instanz-Umgebung gesetzt sein}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    expose:
+      - "5432"
     restart: unless-stopped
     networks:
       - app-network
@@ -36,6 +36,10 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8080}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - COOKIE_SAME_SITE=${COOKIE_SAME_SITE:-lax}
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - REGISTRATION_MODE=${REGISTRATION_MODE:-closed-after-first}
+      - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY muss in der Instanz-Umgebung gesetzt sein}
       # SMTP Configuration
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -44,8 +48,10 @@ services:
       - SMTP_PASS=${SMTP_PASS:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-}
-    ports:
-      - "${BACKEND_PORT:-3001}:3001"
+    expose:
+      - "3001"
+    volumes:
+      - backups_data:/backups
     depends_on:
       database:
         condition: service_healthy
@@ -57,10 +63,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_DEMO_MODE: ${VITE_DEMO_MODE:-false}
     container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-frontend
     environment:
       - NODE_ENV=production
-      - VITE_API_URL=http://localhost:${BACKEND_PORT:-3001}/api
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:
@@ -72,6 +80,8 @@ services:
 volumes:
   postgres_data:
     name: ${COMPOSE_PROJECT_NAME:-solooffice}_postgres_data
+  backups_data:
+    name: ${COMPOSE_PROJECT_NAME:-solooffice}_backups_data
 
 networks:
   app-network:

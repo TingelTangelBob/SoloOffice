@@ -123,6 +123,34 @@ export function DynamicColors() {
           border-color: var(--secondary-color) !important;
           color: var(--secondary-text-color) !important;
         }
+
+        #app-shell[data-theme="dark"] .theme-switch-option:not(.theme-switch-active):hover {
+          background-color: #374151 !important;
+          border-color: #6b7280 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell .theme-control-button:hover {
+          background-color: var(--primary-light) !important;
+          border-color: var(--primary-color) !important;
+          color: var(--primary-color) !important;
+        }
+        #app-shell[data-theme="dark"] .theme-control-button:hover {
+          background-color: #2d3748 !important;
+        }
+        #app-shell .theme-series-panel {
+          border-color: rgba(148, 163, 184, 0.42) !important;
+        }
+        #app-shell[data-theme="dark"] .theme-series-panel {
+          border-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .theme-option-button--primary:hover {
+          background-color: #2d3748 !important;
+          border-color: var(--primary-color) !important;
+        }
+        #app-shell[data-theme="dark"] .theme-option-button--neutral:hover {
+          background-color: #374151 !important;
+          border-color: #6b7280 !important;
+        }
         
         /* Focus styles */
         #app-shell .focus-primary:focus {
@@ -203,6 +231,16 @@ export function DynamicColors() {
           color: var(--primary-color) !important;
         }
 
+        #app-shell .action-menu-trigger-primary {
+          background-color: var(--primary-color) !important;
+          color: var(--primary-text-color) !important;
+        }
+        #app-shell .action-menu-trigger-primary:hover {
+          background-color: var(--primary-color) !important;
+          color: var(--primary-text-color) !important;
+          filter: brightness(0.9) !important;
+        }
+
         /* Selection controls follow the configured application color. */
         #app-shell .custom-checkbox:checked {
           background-color: var(--primary-color) !important;
@@ -217,6 +255,35 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] {
           background-color: #111827 !important;
           color: #e5e7eb;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-bar {
+          background-color: #1f2937 !important;
+          border-color: #4b5563 !important;
+          box-shadow: none !important;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-button:not(.theme-tab-active) {
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-button:not(.theme-tab-active):hover {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell[data-theme="dark"] .settings-save-bar {
+          background-color: rgba(17, 24, 39, 0.95) !important;
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .theme-scrollbar {
+          scrollbar-color: #4b5563 #1f2937 !important;
+          scrollbar-width: thin;
+        }
+        #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-track {
+          background: #1f2937 !important;
+        }
+        #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-thumb {
+          background: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #6b7280 !important;
         }
         #app-shell[data-theme="dark"] .bg-white {
           background-color: #1f2937 !important;
@@ -233,6 +300,46 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-gray-300 {
           background-color: #6b7280 !important;
         }
+        #app-shell[data-theme="dark"] .bg-primary-light-custom {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-medium-custom {
+          background-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-custom\\/5 {
+          background-color: #263244 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-custom\\/10 {
+          background-color: #2d3748 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-custom\\/15 {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-custom\\/20 {
+          background-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-slate-50 {
+          background-color: #1f2937 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-slate-100 {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-slate-200 {
+          background-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .text-slate-600,
+        #app-shell[data-theme="dark"] .text-slate-500 {
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .text-slate-400 {
+          color: #9ca3af !important;
+        }
+        #app-shell[data-theme="dark"] .border-slate-200 {
+          border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .border-slate-300 {
+          border-color: #6b7280 !important;
+        }
         #app-shell[data-theme="dark"] .text-gray-900,
         #app-shell[data-theme="dark"] .text-gray-800,
         #app-shell[data-theme="dark"] .text-gray-700 {
@@ -247,6 +354,33 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .border-gray-200,
         #app-shell[data-theme="dark"] .border-gray-300 {
           border-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .nav-active {
+          background-color: #374151 !important;
+          color: var(--primary-color) !important;
+          border-right-color: var(--primary-color) !important;
+        }
+        #app-shell[data-theme="dark"] .action-button {
+          background-color: #1f2937 !important;
+          border-color: #4b5563 !important;
+          color: #e5e7eb !important;
+        }
+        #app-shell[data-theme="dark"] .action-button:hover {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell[data-theme="dark"] .action-button.text-rose-700 {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .custom-checkbox:not(:checked),
+        #app-shell[data-theme="dark"] .custom-radio:not(:checked) {
+          background-color: #1f2937 !important;
+          border-color: #6b7280 !important;
+        }
+        #app-shell[data-theme="dark"] .custom-checkbox:disabled:not(:checked),
+        #app-shell[data-theme="dark"] .custom-radio:disabled:not(:checked) {
+          background-color: #374151 !important;
+          border-color: #6b7280 !important;
         }
         #app-shell[data-theme="dark"] .notice-info {
           background-color: #172554 !important;
@@ -299,6 +433,27 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-amber-100 {
           background-color: #78350f !important;
         }
+        #app-shell[data-theme="dark"] .bg-orange-50 {
+          background-color: #451a03 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-orange-100 {
+          background-color: #7c2d12 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-orange-200 {
+          background-color: #9a3412 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-emerald-50 {
+          background-color: #052e16 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-emerald-100 {
+          background-color: #14532d !important;
+        }
+        #app-shell[data-theme="dark"] .bg-rose-50 {
+          background-color: #450a0a !important;
+        }
+        #app-shell[data-theme="dark"] .bg-rose-100 {
+          background-color: #7f1d1d !important;
+        }
         #app-shell[data-theme="dark"] .border-blue-100,
         #app-shell[data-theme="dark"] .border-blue-200,
         #app-shell[data-theme="dark"] .border-blue-300 {
@@ -313,6 +468,23 @@ export function DynamicColors() {
           border-color: #dc2626 !important;
         }
         #app-shell[data-theme="dark"] .border-yellow-200,
+        #app-shell[data-theme="dark"] .border-amber-200 {
+          border-color: #d97706 !important;
+        }
+        #app-shell[data-theme="dark"] .border-orange-100,
+        #app-shell[data-theme="dark"] .border-orange-200,
+        #app-shell[data-theme="dark"] .border-orange-300 {
+          border-color: #c2410c !important;
+        }
+        #app-shell[data-theme="dark"] .border-emerald-100,
+        #app-shell[data-theme="dark"] .border-emerald-200 {
+          border-color: #16a34a !important;
+        }
+        #app-shell[data-theme="dark"] .border-rose-100,
+        #app-shell[data-theme="dark"] .border-rose-200 {
+          border-color: #dc2626 !important;
+        }
+        #app-shell[data-theme="dark"] .border-amber-100,
         #app-shell[data-theme="dark"] .border-amber-200 {
           border-color: #d97706 !important;
         }
@@ -340,6 +512,31 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-amber-800 {
           color: #fde68a !important;
         }
+        #app-shell[data-theme="dark"] .text-orange-950,
+        #app-shell[data-theme="dark"] .text-orange-900,
+        #app-shell[data-theme="dark"] .text-orange-800,
+        #app-shell[data-theme="dark"] .text-orange-700,
+        #app-shell[data-theme="dark"] .text-orange-600 {
+          color: #fdba74 !important;
+        }
+        #app-shell[data-theme="dark"] .text-emerald-900,
+        #app-shell[data-theme="dark"] .text-emerald-800,
+        #app-shell[data-theme="dark"] .text-emerald-700,
+        #app-shell[data-theme="dark"] .text-emerald-600 {
+          color: #a7f3d0 !important;
+        }
+        #app-shell[data-theme="dark"] .text-rose-900,
+        #app-shell[data-theme="dark"] .text-rose-800,
+        #app-shell[data-theme="dark"] .text-rose-700,
+        #app-shell[data-theme="dark"] .text-rose-600 {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .text-amber-900,
+        #app-shell[data-theme="dark"] .text-amber-800,
+        #app-shell[data-theme="dark"] .text-amber-700,
+        #app-shell[data-theme="dark"] .text-amber-600 {
+          color: #fde68a !important;
+        }
         #app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
         #app-shell[data-theme="dark"] textarea,
         #app-shell[data-theme="dark"] select {
@@ -347,8 +544,37 @@ export function DynamicColors() {
           color: #f3f4f6 !important;
           border-color: #4b5563 !important;
         }
+        #app-shell[data-theme="dark"] select:not(.select-with-chevron) {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+        }
+        #app-shell[data-theme="dark"] select:not(.select-with-chevron):focus {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fb923c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 5-5 5 5'/%3E%3C/svg%3E");
+        }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
           background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .focus\\:bg-gray-50:focus {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-trigger {
+          background-color: #374151 !important;
+          color: #dbeafe !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-trigger:hover {
+          background-color: #4b5563 !important;
+          color: #eff6ff !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu {
+          background-color: #1f2937 !important;
+          border-color: #4b5563 !important;
+          color: #f3f4f6 !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-item {
+          color: #e5e7eb !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-item:hover {
+          background-color: #374151 !important;
+          color: #ffffff !important;
         }
 
         /* Terminologie previews use the app theme without losing their profile accent. */

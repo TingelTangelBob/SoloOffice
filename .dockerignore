@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+node_modules
+dist
+coverage
+backups
+Projektordner
+.agents
+.codex
+*.log
+*.tmp
+Dockerfile*
+docker-compose*.yml

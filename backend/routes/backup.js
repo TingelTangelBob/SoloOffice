@@ -12,20 +12,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JSONB_COLUMNS = {
   'email_history': ['attachments', 'smtp_response'],
   'job_entries': ['materials', 'signature'],
+  'job_recurrences': ['rule'],
   'company': ['payment_methods', 'invoice_templates', 'document_templates'],
-  'receipts': ['extracted_data'],
-  'euer_entry_history': ['old_data', 'new_data']
+  'receipts': ['extracted_data', 'ocr_extracted_data'],
+  'euer_entry_history': ['old_data', 'new_data'],
+  'incoming_e_invoices': ['extracted_data']
 };
 
 const BACKUP_TABLES = [
   'customers',
   'customer_emails',
+  'recurring_invoices',
+  'recurring_invoice_runs',
   'invoices',
   'invoice_items',
   'invoice_attachments',
+  'invoice_job_sources',
   'quotes',
   'quote_items',
   'quote_attachments',
+  'job_recurrences',
   'job_entries',
   'calendar_events',
   'job_attachments',
@@ -43,21 +49,21 @@ const BACKUP_TABLES = [
   'customer_hourly_rates',
   'customer_specific_hourly_rates',
   'customer_specific_materials',
-  'migrations'
+  'incoming_e_invoices'
 ];
 
 const RESTORE_CLEAR_TABLES = [
   'email_history', 'customer_emails', 'customer_hourly_rates',
   'customer_specific_hourly_rates', 'customer_specific_materials',
+  'recurring_invoice_runs', 'recurring_invoices',
   'job_time_entries', 'job_attachments',
   'quote_attachments', 'quote_items', 'quotes',
-  'invoice_attachments', 'invoice_items', 'calendar_events', 'job_entries', 'invoices',
+  'invoice_attachments', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices',
   'hourly_rates', 'material_templates', 'customers', 'company',
-  'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entry_history', 'euer_entries', 'migrations'
+  'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entry_history', 'euer_entries', 'incoming_e_invoices'
 ];
 
 const RESTORE_ORDER = [
-  'migrations',
   'company',
   'customers',
   'yearly_invoice_start_numbers',
@@ -70,32 +76,37 @@ const RESTORE_ORDER = [
   'customer_hourly_rates',
   'customer_specific_hourly_rates',
   'customer_specific_materials',
+  'recurring_invoices',
   'calendar_events',
   'invoices',
   'invoice_items',
   'invoice_attachments',
+  'recurring_invoice_runs',
   'quotes',
   'quote_items',
   'quote_attachments',
+  'job_recurrences',
   'job_entries',
   'job_attachments',
   'job_time_entries',
+  'invoice_job_sources',
   'customer_emails',
-  'email_history'
+  'email_history',
+  'incoming_e_invoices'
 ];
 
 const WORKSPACE_SCOPED_TABLES = new Set([
-  'customers', 'customer_emails', 'invoices', 'invoice_items', 'invoice_attachments',
-  'quotes', 'quote_items', 'quote_attachments', 'job_entries', 'job_attachments',
+  'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_job_sources',
+  'quotes', 'quote_items', 'quote_attachments', 'job_recurrences', 'job_entries', 'job_attachments',
   'calendar_events', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
   'yearly_invoice_start_numbers', 'euer_entries', 'euer_entry_history', 'fixed_assets',
   'receipts', 'email_history', 'smtp_settings', 'customer_hourly_rates',
-  'customer_specific_hourly_rates', 'customer_specific_materials',
+  'customer_specific_hourly_rates', 'customer_specific_materials', 'incoming_e_invoices',
 ]);
 
 function prepareBackupRecord(table, record) {
   if (table !== 'smtp_settings') return record;
-  return { ...record, smtp_pass: null };
+  return { ...record, smtp_pass: null, smtp_pass_encrypted: null };
 }
 
 function workspaceBackupPrefix(req, kind) {
@@ -109,17 +120,22 @@ function isOwnedBackup(filename, req, kind, extension) {
     && filename.endsWith(extension);
 }
 
-async function rejectMultiWorkspaceRestore(client, res) {
-  const workspaceCount = await client.query('SELECT COUNT(*)::integer AS count FROM workspaces');
-  if (workspaceCount.rows[0]?.count > 1) {
-    res.status(409).json({
-      success: false,
-      message: 'Restore ist bei mehreren Workspaces vorübergehend gesperrt, damit keine fremden Workspace-Daten überschrieben werden.',
-      code: 'WORKSPACE_RESTORE_REQUIRES_MIGRATION',
-    });
-    return true;
+async function getTableColumns(client, table) {
+  if (!BACKUP_TABLES.includes(table)) throw new Error(`Nicht erlaubte Restore-Tabelle: ${table}`);
+  const result = await client.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1
+  `, [table]);
+  return new Set(result.rows.map(row => row.column_name));
+}
+
+async function clearWorkspaceData(client, workspaceId) {
+  for (const table of RESTORE_CLEAR_TABLES) {
+    if (!WORKSPACE_SCOPED_TABLES.has(table)) continue;
+    await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);
+    logger.info(`Workspace-Daten gelöscht: ${table}`);
   }
-  return false;
 }
 
 // Function to process values for JSONB columns
@@ -153,6 +169,71 @@ function processValueForRestore(table, column, value) {
   
   // For non-JSONB columns, return the value as-is
   return value;
+}
+
+async function restoreDeferredInvoiceRelations(client, backupData, workspaceId) {
+  const invoices = backupData?.data?.invoices;
+  if (!Array.isArray(invoices)) return;
+
+  for (const record of invoices) {
+    if (record.reference_invoice_id) {
+      await client.query('UPDATE invoices SET reference_invoice_id = $1 WHERE id = $2 AND workspace_id = $3', [record.reference_invoice_id, record.id, workspaceId]);
+    }
+    if (record.recurring_invoice_id) {
+      await client.query('UPDATE invoices SET recurring_invoice_id = $1 WHERE id = $2 AND workspace_id = $3', [record.recurring_invoice_id, record.id, workspaceId]);
+    }
+    if (record.source_quote_id) {
+      await client.query('UPDATE invoices SET source_quote_id = $1 WHERE id = $2 AND workspace_id = $3', [record.source_quote_id, record.id, workspaceId]);
+    }
+  }
+}
+
+async function restoreBackupTables(client, backupData, workspaceId) {
+  let restoredTables = 0;
+  let restoredRecords = 0;
+  const deferredInvoiceColumns = new Set(['reference_invoice_id', 'recurring_invoice_id', 'source_quote_id']);
+
+  for (const table of RESTORE_ORDER) {
+    const records = backupData.data[table];
+    if (!Array.isArray(records)) continue;
+
+    // Only columns that exist in the current schema can enter the query. The
+    // table name comes from RESTORE_ORDER; the column names come from this
+    // database, never from the uploaded JSON.
+    const schemaColumns = await getTableColumns(client, table);
+    const incomingColumns = new Set(records.flatMap(record => (
+      record && typeof record === 'object' && !Array.isArray(record) ? Object.keys(record) : []
+    )));
+    const columns = [...incomingColumns]
+      .filter(column => schemaColumns.has(column))
+      .filter(column => !(table === 'invoices' && deferredInvoiceColumns.has(column)))
+      .filter(column => column !== 'smtp_pass' && column !== 'smtp_pass_encrypted');
+
+    if (WORKSPACE_SCOPED_TABLES.has(table)) {
+      if (!schemaColumns.has('workspace_id')) throw new Error(`Restore-Tabelle ${table} hat keine Workspace-Spalte.`);
+      if (!columns.includes('workspace_id')) columns.push('workspace_id');
+    }
+    if (records.length > 0 && columns.length === 0) {
+      throw new Error(`Keine zulässigen Spalten für Restore-Tabelle ${table} gefunden.`);
+    }
+
+    if (records.length > 0) {
+      const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+      const columnNames = columns.join(', ');
+      for (const record of records) {
+        if (!record || typeof record !== 'object' || Array.isArray(record)) {
+          throw new Error(`Ungültiger Datensatz in Restore-Tabelle ${table}.`);
+        }
+        const values = columns.map(column => column === 'workspace_id'
+          ? workspaceId
+          : processValueForRestore(table, column, record[column]));
+        await client.query(`INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})`, values);
+      }
+      restoredRecords += records.length;
+    }
+    restoredTables++;
+  }
+  return { restoredTables, restoredRecords };
 }
 
 // Create backup
@@ -342,10 +423,6 @@ router.post('/restore', async (req, res) => {
       });
     }
 
-    if (await rejectMultiWorkspaceRestore(client, res)) {
-      return;
-    }
-
     logger.info('Starting restore process...');
     
     // Begin transaction
@@ -354,55 +431,13 @@ router.post('/restore', async (req, res) => {
     let restoredTables = 0;
     let restoredRecords = 0;
 
-    // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
-    logger.info('Clearing all data for JSON restore...');
-    for (const table of RESTORE_CLEAR_TABLES) {
-      try {
-        await client.query(`TRUNCATE TABLE ${table} CASCADE`);
-        logger.info(`Truncated table ${table}`);
-      } catch (error) {
-        logger.warn(`Could not truncate table ${table}:`, error.message);
-      }
-    }
+    logger.info('Clearing data for the active workspace only...');
+    await clearWorkspaceData(client, req.auth.workspaceId);
 
-    // Step 2: Restore tables in correct dependency order (parent tables first)  
-    logger.info('Restoring JSON data...');
-    for (const table of RESTORE_ORDER) {
-      if (backupData.data[table] && Array.isArray(backupData.data[table])) {
-        try {
-          logger.info(`Restoring table ${table}...`);
+    logger.info('Restoring JSON data with schema allow-list...');
+    ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId));
 
-          if (backupData.data[table].length > 0) {
-            // Get column names from first record
-            const columns = Object.keys(backupData.data[table][0]);
-            if (WORKSPACE_SCOPED_TABLES.has(table) && !columns.includes('workspace_id')) {
-              columns.push('workspace_id');
-            }
-            const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
-            const columnNames = columns.join(', ');
-
-            // Insert data
-            for (const record of backupData.data[table]) {
-              const values = columns.map(col => col === 'workspace_id'
-                ? req.auth.workspaceId
-                : processValueForRestore(table, col, record[col]));
-              await client.query(
-                `INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})`,
-                values
-              );
-            }
-
-            logger.info(`Restored ${backupData.data[table].length} records to ${table}`);
-            restoredRecords += backupData.data[table].length;
-          }
-          
-          restoredTables++;
-        } catch (error) {
-          logger.error(`ERROR: Could not restore table ${table}:`, error.message);
-          // Don't throw here to continue with other tables, but log it prominently
-        }
-      }
-    }
+    await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
 
     // Post-restore fixes for backward compatibility
     logger.info('Running post-restore compatibility fixes...');
@@ -799,10 +834,6 @@ router.post('/restore-zip', async (req, res) => {
         });
       }
 
-      if (await rejectMultiWorkspaceRestore(client, res)) {
-        return;
-      }
-
       logger.info('Processing ZIP backup restore...');
       
       // Read and extract ZIP file
@@ -840,52 +871,12 @@ router.post('/restore-zip', async (req, res) => {
       let restoredRecords = 0;
 
       // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
-      logger.info('Clearing all data...');
-      for (const table of RESTORE_CLEAR_TABLES) {
-        try {
-          await client.query(`TRUNCATE TABLE ${table} CASCADE`);
-          logger.info(`Truncated table ${table}`);
-        } catch (error) {
-          logger.warn(`Could not truncate table ${table}:`, error.message);
-        }
-      }
-      
-      logger.info('Restoring data...');
-      for (const table of RESTORE_ORDER) {
-        if (backupData.data[table] && Array.isArray(backupData.data[table])) {
-          try {
-            logger.info(`Restoring table ${table}...`);
+      logger.info('Clearing data for the active workspace only...');
+      await clearWorkspaceData(client, req.auth.workspaceId);
+      logger.info('Restoring data with schema allow-list...');
+      ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId));
 
-            if (backupData.data[table].length > 0) {
-              // Get column names from first record
-              const columns = Object.keys(backupData.data[table][0]);
-              const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
-              const columnNames = columns.join(', ');
-
-              // Insert data
-              for (const record of backupData.data[table]) {
-                const values = columns.map(col => processValueForRestore(table, col, record[col]));
-                await client.query(
-                  `INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})`,
-                  values
-                );
-              }
-
-              logger.info(`✅ Restored ${backupData.data[table].length} records to ${table}`);
-              restoredRecords += backupData.data[table].length;
-            } else {
-              logger.info(`ℹ️  No data to restore for table ${table}`);
-            }
-            
-            restoredTables++;
-          } catch (error) {
-            logger.error(`❌ ERROR: Could not restore table ${table}:`, error.message);
-            // Don't throw here to continue with other tables, but log it prominently
-          }
-        } else {
-          logger.info(`⏭️  Skipping table ${table} - no data in backup`);
-        }
-      }
+    await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
 
       // Post-restore fixes for backward compatibility
       logger.info('Running post-restore compatibility fixes...');

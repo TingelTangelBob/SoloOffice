@@ -15,6 +15,8 @@ import { getTerminology, terminologyProfiles } from '../utils/terminology';
 import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { ImportWizard } from './ImportWizard';
+import { DialogShell } from './DialogShell';
+import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
@@ -460,7 +462,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <div className={`${embedded ? 'hidden' : ''} order-2 sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:-mx-6 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1`}>
+      <div className={`theme-tab-bar ${embedded ? 'hidden' : ''} order-2 sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:-mx-6 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1`}>
         <div className="flex gap-1 overflow-x-auto">
           {[
             { id: 'app' as const, label: 'App-Einstellungen' },
@@ -473,9 +475,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`theme-tab-button whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-primary-custom text-white shadow-sm'
+                  ? 'theme-tab-active bg-primary-custom text-white shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -509,7 +511,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             onPointerUp={handleTerminologyPointerUp}
             onPointerCancel={handleTerminologyPointerUp}
             onClickCapture={handleTerminologyClickCapture}
-            className={`mt-4 overflow-x-auto px-1 pb-2 pt-3 touch-pan-x ${isDraggingTerminology ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+            className={`theme-scrollbar mt-4 overflow-x-auto px-1 pb-2 pt-3 touch-pan-x ${isDraggingTerminology ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
           >
             <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:min-w-[920px] md:grid-cols-5 xl:min-w-0">
             {terminologyProfiles.map(profile => {
@@ -1935,6 +1937,23 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 <option value="12h">12-Stunden-Format</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Workspace-Zeitzone
+              </label>
+              <select
+                value={formData.timeZone || DEFAULT_TIME_ZONE}
+                onChange={(e) => setFormData(prev => ({ ...prev, timeZone: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {TIME_ZONE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Wird standardmäßig für neue Kurse und Termine verwendet.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -2053,7 +2072,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Save Button */}
-        <div className="sticky bottom-0 z-10 -mx-3 flex flex-col gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:flex-row sm:items-center sm:justify-end sm:px-4 lg:-mx-6 lg:px-6">
+        <div className="settings-save-bar sticky bottom-0 z-10 -mx-3 flex flex-col gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:flex-row sm:items-center sm:justify-end sm:px-4 lg:-mx-6 lg:px-6">
           {feedback && (
             <div className={`text-sm sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
               {feedback.text}
@@ -2159,22 +2178,22 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <DialogShell
+      titleId="hourly-rate-dialog-title"
+      icon={Clock}
+      title={rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
+      description="Definieren Sie einen wiederverwendbaren Stundensatz für Angebote und Rechnungen."
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      size="md"
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
+          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
+        </>
+      )}
+    >
+        <div className="space-y-4 pb-2">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Name *
@@ -2245,24 +2264,8 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
             </label>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-all duration-300"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-primary-custom text-white rounded-xl hover:brightness-90 transition-all duration-300 hover:scale-105"
-            >
-              Speichern
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+    </DialogShell>
   );
 }
 
@@ -2294,22 +2297,22 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {template ? 'Materialvorlage bearbeiten' : 'Neue Materialvorlage'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <DialogShell
+      titleId="material-template-dialog-title"
+      icon={Package}
+      title={template ? 'Materialvorlage bearbeiten' : 'Neue Materialvorlage'}
+      description="Definieren Sie eine wiederverwendbare Position für Angebote und Rechnungen."
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      size="md"
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
+          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
+        </>
+      )}
+    >
+        <div className="space-y-4 pb-2">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Name *
@@ -2395,23 +2398,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
             </select>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-all duration-300"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-primary-custom text-white rounded-xl hover:brightness-90 transition-all duration-300 hover:scale-105"
-            >
-              Speichern
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+    </DialogShell>
   );
 }

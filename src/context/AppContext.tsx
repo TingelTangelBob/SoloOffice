@@ -16,7 +16,9 @@ import { CompanyProvider, useCompany, defaultCompany, defaultDocumentTemplates }
 
 interface LoadingContextType {
   loading: boolean;
+  error: string | null;
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const LoadingContext = createContext<LoadingContextType | undefined>(undefined);
@@ -44,21 +46,23 @@ function DataLoader({ children }: DataLoaderProps) {
   const quoteContext = useQuotes();
   const jobContext = useJobs();
   const companyContext = useCompany();
+  const { setError } = useLoading();
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
+        setError(null);
 
         // Load all data in parallel
         const [customersData, invoicesData, quotesData, jobEntriesData, companyData, materialTemplatesData, hourlyRatesData] = await Promise.all([
-          apiService.getCustomers().catch(() => []),
-          apiService.getInvoices().catch(() => []),
-          apiService.getQuotes().catch(() => []),
-          apiService.getJobEntries().catch(() => []),
-          apiService.getCompany().catch(() => defaultCompany),
-          apiService.getMaterialTemplates().catch(() => []),
-          apiService.getHourlyRates().catch(() => []),
+          apiService.getCustomers(),
+          apiService.getInvoices(),
+          apiService.getQuotes(),
+          apiService.getJobEntries(),
+          apiService.getCompany(),
+          apiService.getMaterialTemplates(),
+          apiService.getHourlyRates(),
         ]);
 
         customerContext.setCustomers(customersData);
@@ -102,6 +106,7 @@ function DataLoader({ children }: DataLoaderProps) {
         companyContext.setHourlyRates(hourlyRatesData);
       } catch (error) {
         logger.error('Error loading data:', { error: error instanceof Error ? error.message : String(error) });
+        setError(error instanceof Error ? error.message : 'Die Daten konnten nicht geladen werden.');
       } finally {
         setLoading(false);
       }
@@ -123,9 +128,10 @@ function DataLoader({ children }: DataLoaderProps) {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   return (
-    <LoadingContext.Provider value={{ loading, setLoading }}>
+    <LoadingContext.Provider value={{ loading, error, setLoading, setError }}>
       <CustomerProvider>
         <InvoiceProvider>
           <QuoteProvider>

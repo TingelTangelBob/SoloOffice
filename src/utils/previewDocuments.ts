@@ -66,7 +66,7 @@ export function createJobAttachmentPreviewDocuments(
   const terminology = getTerminology(terminologyProfile);
   const documents: PreviewDocument[] = [{
     id: `job-pdf-${job.id}`,
-    name: `${terminology.work.singular}_${job.jobNumber || job.id.slice(-8).toUpperCase()}.pdf`,
+    name: `${terminology.work.confirmationLabel}_${job.jobNumber || job.id.slice(-8).toUpperCase()}.pdf`,
     type: 'job-pdf',
     job,
   }];

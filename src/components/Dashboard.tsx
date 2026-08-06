@@ -1,28 +1,108 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { Clock, CheckCircle, Send, Check, Home } from 'lucide-react';
+import { CalendarDays, Check, CheckCircle, ChevronRight, Clock, GraduationCap, Home, Send } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
+import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
 import { useLoading } from '../context/AppContext';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { calculateTotalHours } from '../utils/jobUtils';
+import { formatCurrency, formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
 import { EmailSendModal } from './EmailSendModal';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
-import { Invoice } from '../types';
+import type { Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
 import { PageHeader } from './PageHeader';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { getTerminology } from '../utils/terminology';
 
 interface DashboardProps {
-  onNavigate: (page: string, filter?: string, searchTerm?: string) => void;
+  onNavigate: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
+}
+
+type DashboardCourseSeries = {
+  key: string;
+  job: JobEntry;
+  jobs: JobEntry[];
+};
+
+function parseLocalJobDate(value: Date | string | number): Date {
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  if (typeof value === 'string') {
+    const datePart = value.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return new Date(`${datePart}T00:00:00`);
+    }
+  }
+
+  const parsed = new Date(value);
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function getWeekStart(value: Date): Date {
+  const start = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const isoWeekday = start.getDay() === 0 ? 7 : start.getDay();
+  start.setDate(start.getDate() - isoWeekday + 1);
+  return start;
+}
+
+function getCalendarWeek(value: Date): number {
+  const target = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+  const dayNumber = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - dayNumber);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+function getJobTimeRange(
+  job: JobEntry,
+  locale: string,
+  timeFormat?: TimeFormat,
+  numberFormat?: NumberFormat,
+): string {
+  const firstTimeEntry = job.timeEntries?.find(entry => entry.startTime || entry.endTime);
+  const startTime = job.startTime || firstTimeEntry?.startTime;
+  const endTime = job.endTime || firstTimeEntry?.endTime;
+
+  if (startTime && endTime) {
+    return `${formatTime(startTime, locale, timeFormat)} – ${formatTime(endTime, locale, timeFormat)}`;
+  }
+
+  if (startTime) {
+    return `ab ${formatTime(startTime, locale, timeFormat)}`;
+  }
+
+  const hours = calculateTotalHours(job);
+  return hours > 0 ? `${formatNumber(hours, locale, numberFormat, 1)} Std.` : 'Zeit offen';
+}
+
+function getJobStatusDotColor(status: JobEntry['status']): string {
+  switch (status) {
+    case 'in-progress': return 'bg-yellow-500';
+    case 'completed': return 'bg-green-500';
+    case 'invoiced': return 'bg-blue-500';
+    default: return 'bg-gray-400';
+  }
+}
+
+function getJobStatusLabel(status: JobEntry['status']): string {
+  switch (status) {
+    case 'in-progress': return 'In Bearbeitung';
+    case 'completed': return 'Abgeschlossen';
+    case 'invoiced': return 'Abgerechnet';
+    default: return 'Entwurf';
+  }
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
   const { customers } = useCustomers();
   const { invoices, updateInvoice } = useInvoices();
+  const { jobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
@@ -41,6 +121,58 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // Get locale from company settings, default to 'de-DE'
   const locale = company?.locale || 'de-DE';
+
+  const today = new Date();
+  const todayDate = parseLocalJobDate(today);
+  const currentWeekStart = getWeekStart(today);
+  const currentWeekEnd = new Date(currentWeekStart);
+  currentWeekEnd.setDate(currentWeekEnd.getDate() + 6);
+  const currentWeekNumber = getCalendarWeek(today);
+
+  const currentWeekJobs = jobEntries
+    .map(job => ({ job, date: parseLocalJobDate(job.date) }))
+    .filter(({ date }) => date >= currentWeekStart && date <= currentWeekEnd)
+    .sort((a, b) => {
+      const dateDifference = a.date.getTime() - b.date.getTime();
+      if (dateDifference !== 0) return dateDifference;
+      return (a.job.startTime || '').localeCompare(b.job.startTime || '');
+    });
+
+  const currentWeekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + index);
+
+    return {
+      date,
+      jobs: currentWeekJobs
+        .filter(({ date: jobDate }) => jobDate.getTime() === date.getTime())
+        .map(({ job }) => job),
+    };
+  });
+
+  const recurringJobsBySeries = new Map<string, JobEntry[]>();
+  jobEntries.forEach(job => {
+    const seriesId = job.recurrence?.id;
+    if (!seriesId) return;
+    const seriesJobs = recurringJobsBySeries.get(seriesId) || [];
+    seriesJobs.push(job);
+    recurringJobsBySeries.set(seriesId, seriesJobs);
+  });
+
+  const ongoingCourseSeries: DashboardCourseSeries[] = Array.from(recurringJobsBySeries.entries())
+    .filter(([, jobs]) => jobs.length > 1 && jobs.some(job => job.status === 'draft' || job.status === 'in-progress'))
+    .map(([key, jobs]) => {
+      const sortedJobs = [...jobs].sort(
+        (a, b) => parseLocalJobDate(a.date).getTime() - parseLocalJobDate(b.date).getTime(),
+      );
+      const activeJobs = sortedJobs.filter(job => job.status === 'draft' || job.status === 'in-progress');
+      const representativeJob = activeJobs.find(job => parseLocalJobDate(job.date) >= todayDate)
+        || activeJobs[0]
+        || sortedJobs[0];
+
+      return { key, job: representativeJob, jobs: sortedJobs };
+    })
+    .sort((a, b) => parseLocalJobDate(a.job.date).getTime() - parseLocalJobDate(b.job.date).getTime());
 
   const handleSendEmail = async (invoice: Invoice) => {
     const customer = customers.find(c => c.id === invoice.customerId);
@@ -281,54 +413,134 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pt-20 lg:pt-0">
       {/* Page Header */}
       <PageHeader icon={Home} title="Dashboard" subtitle={`Übersicht über Ihre Rechnungen und ${terminology.entity.plural}`} />
 
       {/* Action Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div 
-          className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl shadow-sm p-4 sm:p-3 border border-orange-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="theme-gradient-surface theme-gradient-surface-orange group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
           onClick={() => onNavigate('invoices', 'draft')}
         >
-          <div className="flex items-center mb-3 sm:mb-2">
-            <div className="p-2 bg-orange-500 rounded-lg group-hover:bg-orange-600 transition-colors">
-              <Clock className="h-5 w-5 text-white" />
+          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
+            <div className="shrink-0 rounded-lg bg-orange-500 p-1.5 transition-colors group-hover:bg-orange-600 sm:p-2">
+              <Clock className="h-4 w-4 text-white sm:h-5 sm:w-5" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 ml-4">Entwürfe</h3>
+            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Entwürfe</h3>
           </div>
-          <p className="text-2xl sm:text-xl font-bold text-orange-600 mb-1">{stats.draftInvoices}</p>
-          <p className="text-xs sm:text-[11px] text-orange-700/70 truncate">Noch nicht versendet</p>
+          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.draftInvoices}</p>
+          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Noch nicht versendet</p>
         </div>
 
         <div 
-          className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl shadow-sm p-4 sm:p-3 border border-green-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="theme-gradient-surface theme-gradient-surface-green group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
           onClick={() => onNavigate('invoices', 'paid')}
         >
-          <div className="flex items-center mb-3 sm:mb-2">
-            <div className="p-2 bg-green-500 rounded-lg group-hover:bg-green-600 transition-colors">
-              <CheckCircle className="h-5 w-5 text-white" />
+          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
+            <div className="shrink-0 rounded-lg bg-green-500 p-1.5 transition-colors group-hover:bg-green-600 sm:p-2">
+              <CheckCircle className="h-4 w-4 text-white sm:h-5 sm:w-5" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 ml-4">Bezahlt</h3>
+            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Bezahlt</h3>
           </div>
-          <p className="text-2xl sm:text-xl font-bold text-green-600 mb-1">{stats.paidInvoices}</p>
-          <p className="text-xs sm:text-[11px] text-green-700/70 truncate">Erfolgreich abgeschlossen</p>
+          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.paidInvoices}</p>
+          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Erfolgreich abgeschlossen</p>
         </div>
 
         <div 
-          className="bg-gradient-to-r from-red-50 to-red-100 rounded-xl shadow-sm p-4 sm:p-3 border border-red-200 cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 group"
+          className="theme-gradient-surface theme-gradient-surface-red group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
           onClick={() => onNavigate('invoices', 'overdue')}
         >
-          <div className="flex items-center mb-3 sm:mb-2">
-            <div className="p-2 bg-red-500 rounded-lg group-hover:bg-red-600 transition-colors">
-              <Clock className="h-5 w-5 text-white" />
+          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
+            <div className="shrink-0 rounded-lg bg-red-500 p-1.5 transition-colors group-hover:bg-red-600 sm:p-2">
+              <Clock className="h-4 w-4 text-white sm:h-5 sm:w-5" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 ml-4">Überfällig</h3>
+            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Überfällig</h3>
           </div>
-          <p className="text-2xl sm:text-xl font-bold text-red-600 mb-1">{stats.overdueInvoices}</p>
-          <p className="text-sm text-red-700/70">Benötigt Aufmerksamkeit</p>
+          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.overdueInvoices}</p>
+          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Benötigt Aufmerksamkeit</p>
         </div>
       </div>
+
+      {/* Termine der aktuellen Kalenderwoche */}
+      <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 lg:px-6">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-semibold text-gray-900 lg:text-lg">Termine · KW {currentWeekNumber}</h3>
+                <p className="mt-0.5 truncate text-xs text-gray-500">
+                  {formatDate(currentWeekStart, locale, company?.dateFormat)} – {formatDate(currentWeekEnd, locale, company?.dateFormat)}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('calendar')}
+              className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
+            >
+              Kalender
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {currentWeekJobs.length > 0 ? (
+            <div className="overflow-x-auto">
+              <div className="grid min-w-[840px] grid-cols-7 divide-x divide-gray-200">
+                {currentWeekDays.map(({ date, jobs }) => {
+                  const isToday = date.getTime() === parseLocalJobDate(today).getTime();
+
+                  return (
+                    <div key={date.toISOString()} className={`min-w-0 ${isToday ? 'bg-primary-custom/5' : ''}`}>
+                      <div className={`border-b border-gray-200 px-2 py-2 text-center ${isToday ? 'bg-primary-custom/10' : 'bg-gray-50'}`}>
+                        <div className="text-xs font-semibold uppercase text-gray-500">
+                          {date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}
+                        </div>
+                        <div className={`mt-0.5 text-sm font-semibold ${isToday ? 'text-primary-custom' : 'text-gray-900'}`}>
+                          {formatDate(date, locale, company?.dateFormat)}
+                        </div>
+                      </div>
+                      <div className="min-h-[11rem] space-y-2 p-2">
+                        {jobs.length > 0 ? jobs.map((job) => (
+                          <button
+                            key={job.id}
+                            type="button"
+                            onClick={() => onNavigate('jobs', undefined, job.jobNumber)}
+                            className="group w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-2 text-left transition-colors hover:border-primary-custom hover:bg-primary-custom/5"
+                            aria-label={`${job.title} am ${formatDate(date, locale, company?.dateFormat)} öffnen`}
+                          >
+                            <span className="flex min-w-0 items-start gap-1.5">
+                              <span
+                                className={`mt-1 h-2 w-2 shrink-0 rounded-full ${getJobStatusDotColor(job.status)}`}
+                                title={getJobStatusLabel(job.status)}
+                                aria-label={getJobStatusLabel(job.status)}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-semibold text-gray-900 group-hover:text-primary-custom">{job.title}</span>
+                                <span className="mt-1 block truncate text-[11px] text-gray-500">{job.customerName}</span>
+                                <span className="mt-1 block truncate text-[11px] text-gray-500">
+                                  {getJobTimeRange(job, locale, company?.timeFormat, company?.numberFormat)}
+                                </span>
+                              </span>
+                            </span>
+                          </button>
+                        )) : (
+                          <div className="pt-3 text-center text-xs text-gray-400">–</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-gray-500 lg:px-6">
+              In dieser Kalenderwoche sind keine Termine geplant.
+            </div>
+          )}
+      </section>
 
       {/* Recent Invoices */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -343,7 +555,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
         
         {/* Desktop Table View */}
-        <div className="hidden lg:block w-full max-w-full overflow-x-auto">
+        <div className="hidden tablet:block w-full max-w-full overflow-x-auto">
           <table className="w-full min-w-[700px]">
             <thead className="bg-gray-50">
               <tr>
@@ -365,7 +577,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <tr 
                   key={invoice.id} 
                   className="hover:bg-gray-50 cursor-pointer transition-colors duration-200"
-                  onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
+                  onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
                   title={`Zur Rechnung ${invoice.invoiceNumber}`}
                 >
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -435,44 +647,46 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
 
         {/* Mobile Card View */}
-        <div className="lg:hidden">
+        <div className="tablet:hidden">
           {recentInvoices.map((invoice) => (
-            <div 
-              key={invoice.id} 
-              className="p-3 sm:p-4 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => onNavigate('invoices', undefined, invoice.invoiceNumber)}
-            >
-              <div className="flex items-center justify-between gap-3">
+                <div
+                  key={invoice.id}
+                  className="p-3 sm:p-4 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                >
+              <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
-                    <h4 className="truncate text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
+                    <h4 className="min-w-0 truncate text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
                     <span
                       className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotColor(invoice.status)}`}
                       title={getStatusLabel(invoice.status)}
                       aria-label={getStatusLabel(invoice.status)}
                     />
                   </div>
-                  <p className="truncate text-sm text-gray-900">{invoice.customerName}</p>
-                  <p className="mt-1 text-xs text-gray-500">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2 text-xs">
+                    <p className="min-w-0 truncate text-sm text-gray-900">{invoice.customerName}</p>
+                    <span className="shrink-0 text-gray-500">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</span>
+                  </div>
                 </div>
                 <div
-                  className="grid min-w-[9.5rem] grid-cols-[minmax(0,1fr)_2rem] items-center gap-2"
-                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                >
-                  <span className="min-w-0 text-right text-sm font-medium text-gray-900">
-                    {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
-                  </span>
-                  <ActionMenu containerClassName="relative justify-self-end" triggerClassName="action-icon-button action-icon-indigo h-7 w-7">
-                        {invoice.status === 'draft' && (
-                          <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
-                            Versenden
-                          </ActionMenuItem>
-                        )}
-                        {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                          <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
-                            Als bezahlt markieren
-                          </ActionMenuItem>
-                        )}
+                    className="flex shrink-0 items-center gap-2"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    <span className="min-w-0 text-right text-sm font-medium text-gray-900">
+                      {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
+                    </span>
+                    <ActionMenu containerClassName="relative shrink-0" triggerClassName="action-icon-button action-icon-indigo h-7 w-7">
+                          {invoice.status === 'draft' && (
+                            <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
+                              Versenden
+                            </ActionMenuItem>
+                          )}
+                          {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                            <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
+                              Als bezahlt markieren
+                            </ActionMenuItem>
+                          )}
                     </ActionMenu>
                 </div>
               </div>
@@ -487,8 +701,75 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         )}
       </div>
 
-      {/* Umsatz pro Monat */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className={`grid min-w-0 gap-4 ${ongoingCourseSeries.length > 0 ? 'lg:grid-cols-2' : ''}`}>
+        {ongoingCourseSeries.length > 0 && (
+          <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 lg:px-6">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
+                  <GraduationCap className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900 lg:text-lg">
+                    {terminology.work.plural.toLocaleLowerCase('de-DE').includes('kurs') ? 'Laufende Kursserien' : `Laufende ${terminology.work.plural}`}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-gray-500">Regelmäßige Termine im Überblick</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('jobs')}
+                className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
+              >
+                Alle anzeigen
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="divide-y divide-gray-100">
+              {ongoingCourseSeries.slice(0, 5).map((series) => {
+                const weekAppointmentCount = series.jobs.filter((job) => {
+                  const date = parseLocalJobDate(job.date);
+                  return date >= currentWeekStart && date <= currentWeekEnd;
+                }).length;
+
+                return (
+                  <button
+                    key={series.key}
+                    type="button"
+                    onClick={() => onNavigate('jobs', undefined, undefined, undefined, series.key)}
+                    className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 lg:px-6"
+                    aria-label={`${series.job.title} Kursserie öffnen`}
+                  >
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-yellow-500" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-gray-900">{series.job.title}</span>
+                      <span className="mt-0.5 block truncate text-xs text-gray-500">{series.job.customerName}</span>
+                    </span>
+                    <span className="shrink-0 text-right text-xs text-gray-500">
+                      <span className="block">{series.jobs.length} Termine insgesamt</span>
+                      <span className="mt-0.5 block">
+                        {weekAppointmentCount === 1 ? '1 Termin diese KW' : `${weekAppointmentCount} Termine diese KW`}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              {ongoingCourseSeries.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('jobs')}
+                  className="w-full px-4 py-3 text-left text-sm font-medium text-primary-custom transition-colors hover:bg-gray-50 lg:px-6"
+                >
+                  + {ongoingCourseSeries.length - 5} weitere anzeigen
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Umsatz pro Monat */}
+        <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="px-4 lg:px-6 py-4 border-b border-gray-200">
           <h3 className="text-base lg:text-lg font-semibold text-gray-900">Gesamtumsatz pro Monat</h3>
         </div>
@@ -498,10 +779,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               const percentage = maxMonthlyRevenue > 0 ? (revenue / maxMonthlyRevenue) * 100 : 0;
 
               return (
-                <div key={month} className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3">
+                <div key={month} className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)_7rem] items-center gap-3 sm:grid-cols-[7rem_minmax(0,1fr)_9rem]">
                   <span className="text-xs text-gray-600 sm:text-sm">{formatMonthLabel(month)}</span>
                   <div
-                    className="h-6 min-w-0 overflow-hidden rounded-full bg-gray-100"
+                    className="h-6 w-full min-w-0 overflow-hidden rounded-full bg-gray-100"
                     role="progressbar"
                     aria-label={`${formatMonthLabel(month)}: ${formatCurrency(revenue, locale, company?.numberFormat, company?.currency)}`}
                     aria-valuemin={0}
@@ -525,6 +806,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             Keine Umsätze vorhanden
           </div>
         )}
+        </section>
       </div>
 
       {/* Email Send Modal */}

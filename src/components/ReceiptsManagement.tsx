@@ -6,20 +6,30 @@ import type { EuerEntryPayload, Receipt, ReceiptExtractedData, ReceiptOcrStatus 
 import { fileToBase64, formatFileSize } from '../utils/fileUtils';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
 import { PageHeader } from './PageHeader';
+import { DialogShell } from './DialogShell';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string) => void;
+  embedded?: boolean;
 }
 
 type EditableReceiptField = 'vendorName' | 'documentDate' | 'documentNumber' | 'netAmount' | 'taxAmount' | 'grossAmount' | 'taxRate' | 'currency' | 'suggestedCategory';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
-const supportedImageTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const supportedReceiptTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const receiptTypeByExtension: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+const receiptAccept = 'application/pdf,image/jpeg,image/png,image/webp';
 const statusLabels: Record<ReceiptOcrStatus, string> = {
-  pending: 'Wartet auf OCR',
-  processing: 'OCR läuft',
-  completed: 'OCR abgeschlossen',
-  failed: 'OCR fehlgeschlagen',
+  pending: 'Wartet auf Erkennung',
+  processing: 'Erkennung läuft',
+  completed: 'Erkennung abgeschlossen',
+  failed: 'Erkennung fehlgeschlagen',
 };
 
 function inputValue(value: string | number | undefined) {
@@ -36,7 +46,14 @@ function normalizeOptionalNumber(value: string, locale: string, numberFormat?: '
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
+function getReceiptContentType(file: File) {
+  const declaredType = file.type.toLowerCase();
+  if (supportedReceiptTypes.has(declaredType)) return declaredType;
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  return receiptTypeByExtension[extension] || '';
+}
+
+export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsManagementProps) {
   const { company } = useCompany();
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const locale = company.locale || 'de-DE';
@@ -94,30 +111,37 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     setError('');
     setNotice('');
     let uploadedCount = 0;
+    const uploadErrors: string[] = [];
     try {
       for (const file of files) {
+        const contentType = getReceiptContentType(file);
         if (file.size > MAX_FILE_SIZE) {
-          setError(`„${file.name}“ ist zu groß. Die maximale Größe beträgt 25 MB.`);
+          uploadErrors.push(`„${file.name}“ ist zu groß. Die maximale Größe beträgt 25 MB.`);
           continue;
         }
-        if (!supportedImageTypes.has(file.type.toLowerCase())) {
-          setError(`„${file.name}“ wird nicht unterstützt. Bitte JPG, PNG oder WEBP verwenden.`);
+        if (!contentType) {
+          uploadErrors.push(`„${file.name}“ wird nicht unterstützt. Bitte PDF, JPG, PNG oder WEBP verwenden.`);
           continue;
         }
 
-        const content = await fileToBase64(file);
-        const created = await apiService.createReceipt({
-          name: file.name,
-          content,
-          contentType: file.type.toLowerCase(),
-          size: file.size,
-        });
-        setReceipts(current => [created, ...current]);
-        uploadedCount += 1;
+        try {
+          const content = await fileToBase64(file);
+          const created = await apiService.createReceipt({
+            name: file.name,
+            content,
+            contentType,
+            size: file.size,
+          });
+          setReceipts(current => [created, ...current]);
+          uploadedCount += 1;
+        } catch (uploadError) {
+          uploadErrors.push(uploadError instanceof Error ? `„${file.name}“: ${uploadError.message}` : `„${file.name}“ konnte nicht hochgeladen werden.`);
+        }
       }
       if (uploadedCount) {
         setNotice(`${uploadedCount === 1 ? 'Beleg' : `${uploadedCount} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
       }
+      if (uploadErrors.length) setError(uploadErrors.join(' '));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Der Beleg konnte nicht hochgeladen werden.');
     } finally {
@@ -142,7 +166,7 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
   };
 
   const isReviewFieldChanged = (field: EditableReceiptField) => comparableValue(reviewData[field]) !== comparableValue(originalReviewData[field]);
-  const fieldClassName = (field: EditableReceiptField) => `mt-1.5 min-h-10 w-full rounded-md border bg-white px-3 py-2 text-sm font-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${isReviewFieldChanged(field) ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'}`;
+  const fieldClassName = (field: EditableReceiptField) => `mt-1.5 min-h-11 w-full rounded-lg border bg-white px-3 py-2.5 text-sm font-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20 ${isReviewFieldChanged(field) ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'}`;
 
   const normalizeReviewData = (): ReceiptExtractedData => ({
     vendorName: reviewData.vendorName?.trim() || undefined,
@@ -188,9 +212,9 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
         setOriginalReviewData({ ...(updated.ocrExtractedData || updated.extractedData || {}) });
         setReviewData({ ...updated.extractedData });
       }
-      setNotice('Die lokale OCR wurde erneut ausgeführt. Bitte das Ergebnis prüfen.');
+      setNotice('Die lokale Belegerkennung wurde erneut ausgeführt. Bitte das Ergebnis prüfen.');
     } catch (ocrError) {
-      setError(ocrError instanceof Error ? ocrError.message : 'Die OCR konnte nicht erneut ausgeführt werden.');
+      setError(ocrError instanceof Error ? ocrError.message : 'Die Belegerkennung konnte nicht erneut ausgeführt werden.');
     } finally {
       setBusyId(null);
     }
@@ -213,7 +237,7 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     const notes = [
       `Beleg: ${receipt.name}`,
       data.documentNumber ? `Belegnummer: ${data.documentNumber}` : '',
-      'Erstellt aus lokalem OCR-Vorschlag; bitte steuerlich prüfen.',
+      'Erstellt aus lokaler Belegerkennung; bitte steuerlich prüfen.',
     ].filter(Boolean).join(' · ');
     const payload: EuerEntryPayload = {
       entryType: 'expense',
@@ -230,9 +254,8 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
     setBusyId(receipt.id);
     setError('');
     try {
-      const entry = await apiService.createEuerEntry(payload);
-      const linked = await apiService.linkReceiptToEuerEntry(receipt.id, entry.id);
-      updateReceiptInState(linked);
+      const result = await apiService.createEuerEntryFromReceipt(receipt.id, payload);
+      updateReceiptInState(result.receipt);
       setNotice('EÜR-Ausgabe wurde angelegt und mit dem Beleg verknüpft.');
     } catch (linkError) {
       setError(linkError instanceof Error ? linkError.message : 'Die EÜR-Ausgabe konnte nicht angelegt werden.');
@@ -280,19 +303,33 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
   const formatAmount = (amount: number | undefined) => amount === undefined
     ? '—'
     : formatCurrency(amount, locale, company.numberFormat, company.currency);
+  const selectedContentUrl = selectedReceipt?.content
+    ? `data:${selectedReceipt.contentType};base64,${selectedReceipt.content}`
+    : undefined;
 
   return (
-    <div className="space-y-6">
-      <PageHeader icon={FileScan} title={receiptLabel} subtitle="Fotos lokal einlesen, prüfen und mit EÜR-Buchungen verknüpfen">
-        <button type="button" onClick={() => onNavigate?.('euer')} className="action-button flex items-center gap-2">
-          Zur EÜR<ArrowRight className="h-4 w-4" />
+    <div className="space-y-4 sm:space-y-6">
+      {!embedded && <PageHeader icon={FileScan} title={receiptLabel} subtitle="Belege lokal einlesen, prüfen und mit EÜR-Buchungen verknüpfen">
+        <button
+          type="button"
+          onClick={() => onNavigate?.('euer')}
+          className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-3 sm:min-w-0 sm:px-4"
+          aria-label="Zur EÜR öffnen"
+          title="Zur EÜR öffnen"
+        >
+          <span className="hidden sm:inline">Zur EÜR</span>
+          <ArrowRight className="h-4 w-4" />
         </button>
-        <label className="btn-primary inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-white transition-all hover:brightness-90">
+        <label
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl px-3 text-white transition-all hover:brightness-90 sm:min-w-0 sm:px-4"
+          aria-label={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+          title={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+        >
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {uploading ? 'Wird verarbeitet …' : 'Foto hochladen'}
-          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+          <span className="hidden sm:inline">{uploading ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
+          <input ref={fileInputRef} type="file" accept={receiptAccept} capture="environment" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
-      </PageHeader>
+      </PageHeader>}
 
       {(error || notice) && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
@@ -302,53 +339,70 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
         </div>
       )}
 
-      <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 text-blue-950 shadow-sm">
+      <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950 shadow-sm sm:p-5">
         <div className="flex items-start gap-3">
           <FileScan className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
           <div>
-            <h2 className="font-semibold">Lokale OCR mit Bestätigung</h2>
-            <p className="mt-1 text-sm leading-6 text-blue-900">
-              Das Bild wird im Backend-Container mit Tesseract gelesen. Datum, Lieferant und Beträge sind Vorschläge und werden erst nach deiner Prüfung in die EÜR übernommen.
+            <h2 className="font-semibold">Lokale Belegerkennung mit Bestätigung</h2>
+            <p className="mt-1 text-sm leading-5 text-blue-900 sm:leading-6">
+              Bilder und eingescannte PDFs werden im Backend-Container mit Tesseract gelesen. Bei digital erzeugten PDFs wird der enthaltene Text übernommen. Aussteller, Datum und Beträge sind Vorschläge und werden erst nach deiner Prüfung in die EÜR übernommen.
             </p>
-            <p className="mt-2 text-xs text-blue-800">Unterstützt: JPG, PNG und WEBP · maximal 25 MB · keine externe Schnittstelle</p>
+            <p className="mt-2 text-xs text-blue-800">Unterstützt: PDF, JPG, PNG und WEBP · maximal 25 MB · keine externe Schnittstelle</p>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium uppercase tracking-wide text-gray-500">Gesamt</p><p className="mt-1 text-2xl font-bold text-gray-900">{statistics.total}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium uppercase tracking-wide text-gray-500">OCR fertig</p><p className="mt-1 text-2xl font-bold text-emerald-700">{statistics.completed}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium uppercase tracking-wide text-gray-500">Mit EÜR verknüpft</p><p className="mt-1 text-2xl font-bold text-blue-700">{statistics.linked}</p></div>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs">Gesamt</p><p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">{statistics.total}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">Erkannt</span><span className="hidden sm:inline">Erkennung fertig</span></p><p className="mt-1 text-xl font-bold text-emerald-700 sm:text-2xl">{statistics.completed}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">EÜR verknüpft</span><span className="hidden sm:inline">Mit EÜR verknüpft</span></p><p className="mt-1 text-xl font-bold text-blue-700 sm:text-2xl">{statistics.linked}</p></div>
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-semibold text-gray-900">Meine {receiptLabel}</h2><p className="mt-1 text-sm text-gray-500">Öffne einen Beleg, prüfe die OCR-Felder und übernimm ihn optional als EÜR-Ausgabe.</p></div>
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Neues Foto</button>
+          <div><h2 className="text-lg font-semibold text-gray-900">Meine {receiptLabel}</h2><p className="mt-1 text-sm text-gray-500">Öffne einen Beleg, prüfe die erkannten Felder und übernimm ihn optional als EÜR-Ausgabe.</p></div>
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Beleg hochladen</button>
         </div>
 
         {loading ? <div className="py-12 text-center text-sm text-gray-500">{receiptLabel} werden geladen …</div> : receipts.length === 0 ? (
           <label className="mt-5 block cursor-pointer rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50">
             <Upload className="mx-auto h-8 w-8 text-gray-400" />
             <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>
-            <p className="mt-1 text-sm text-gray-500">Foto auswählen oder direkt mit der Kamera aufnehmen</p>
-            <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={handleUpload} disabled={uploading} />
+            <p className="mt-1 text-sm text-gray-500">Datei auswählen oder direkt mit der Kamera aufnehmen</p>
+            <input type="file" accept={receiptAccept} capture="environment" className="hidden" onChange={handleUpload} disabled={uploading} />
           </label>
         ) : (
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {receipts.map(receipt => {
               const data = receipt.extractedData || {};
               const busy = busyId === receipt.id;
+              const displayName = receipt.name || data.documentNumber || 'Beleg';
+              const fileMeta = [
+                receipt.size > 0 ? formatFileSize(receipt.size) : '',
+                receipt.createdAt ? formatDate(receipt.createdAt, locale, company.dateFormat) : '',
+              ].filter(Boolean).join(' · ') || 'Datei';
+              const statusClassName = receipt.ocrStatus === 'completed'
+                ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                : receipt.ocrStatus === 'failed'
+                  ? 'border-rose-100 bg-rose-50 text-rose-700'
+                  : 'border-amber-100 bg-amber-50 text-amber-700';
+              const statusDotClassName = receipt.ocrStatus === 'completed'
+                ? 'bg-emerald-500'
+                : receipt.ocrStatus === 'failed'
+                  ? 'bg-rose-500'
+                  : 'bg-amber-500';
               return (
-                <article key={receipt.id} className={`rounded-xl border p-4 transition ${selectedReceipt?.id === receipt.id ? 'border-primary-custom shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileScan className="h-5 w-5" /></span><div className="min-w-0"><h3 className="truncate font-medium text-gray-900" title={receipt.name}>{receipt.name}</h3><p className="text-xs text-gray-500">{formatFileSize(receipt.size)} · {formatDate(receipt.createdAt, locale, company.dateFormat)}</p></div></div>
-                    <button type="button" onClick={() => void deleteReceipt(receipt)} className="rounded-md p-1 text-gray-400 hover:bg-rose-50 hover:text-rose-700" disabled={busy} aria-label={`${receipt.name} löschen`}><Trash2 className="h-4 w-4" /></button>
+                <article key={receipt.id} className={`receipt-card flex h-full min-w-0 flex-col rounded-xl border p-4 transition ${selectedReceipt?.id === receipt.id ? 'border-primary-custom shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileScan className="h-5 w-5" /></span><div className="min-w-0 flex-1"><h3 className="truncate font-medium text-gray-900" title={displayName}>{displayName}</h3><p className="truncate whitespace-nowrap text-xs text-gray-500" title={fileMeta}>{fileMeta}</p></div></div>
+                    <span className={`receipt-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${statusClassName}`} title={statusLabels[receipt.ocrStatus]} aria-label={`Status: ${statusLabels[receipt.ocrStatus]}`}>
+                      <span className={`receipt-card-status-dot h-2 w-2 shrink-0 rounded-full ${statusDotClassName}`} aria-hidden="true" />
+                      <span className="receipt-card-status-label">{statusLabels[receipt.ocrStatus]}</span>
+                    </span>
                   </div>
-                  <div className="mt-4 flex items-center justify-between gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${receipt.ocrStatus === 'completed' ? 'bg-emerald-50 text-emerald-700' : receipt.ocrStatus === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{statusLabels[receipt.ocrStatus]}</span>{receipt.ocrConfidence !== undefined && receipt.ocrConfidence > 0 && <span className="text-xs text-gray-500">{receipt.ocrConfidence.toFixed(0)} % Sicherheit</span>}</div>
-                  <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Lieferant</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
+                  <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
                   {receipt.linkedEuerEntryId && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-700"><Link2 className="h-3.5 w-3.5" />Mit EÜR verknüpft</p>}
-                  <div className="mt-4 flex gap-2"><button type="button" onClick={() => void openReview(receipt)} className="action-button flex flex-1 items-center justify-center gap-2"><Pencil className="h-4 w-4" />Prüfen</button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button px-3" disabled={busy} aria-label="OCR erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
+                  <div className="mt-auto flex items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button><button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50" disabled={busy} aria-label={`${displayName} löschen`} title="Löschen"><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
                 </article>
               );
             })}
@@ -357,39 +411,151 @@ export function ReceiptsManagement({ onNavigate }: ReceiptsManagementProps) {
       </section>
 
       {selectedReceipt && (
-        <div className="fixed inset-0 z-[1100] overflow-y-auto bg-gray-950/50 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedReceipt(null); }}>
-          <div className="flex min-h-full items-center justify-center">
-            <section role="dialog" aria-modal="true" aria-labelledby="receipt-review-title" className="relative flex max-h-[calc(100vh-1rem)] w-full max-w-[880px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:max-h-[calc(100vh-2rem)]" onMouseDown={event => event.stopPropagation()}>
-              <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-5">
-                <div className="min-w-0"><h2 id="receipt-review-title" className="text-lg font-semibold text-gray-900">Beleg prüfen</h2><p className="mt-1 text-sm text-gray-500">Erkannte Belegdaten prüfen und bei Bedarf korrigieren</p></div>
-                <button type="button" onClick={() => setSelectedReceipt(null)} className="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800" aria-label="Belegprüfung schließen"><X className="h-5 w-5" /></button>
-              </header>
-              <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className="min-w-0">
-                    <label htmlFor="receipt-vendor" className="block text-sm font-medium text-gray-700">Lieferant / Aussteller<input id="receipt-vendor" value={inputValue(reviewData.vendorName)} onChange={event => updateReviewField('vendorName', event.target.value)} className={fieldClassName('vendorName')} /></label>
+        <DialogShell
+          titleId="receipt-review-title"
+          icon={Pencil}
+          title="Beleg prüfen"
+          description="Prüfe die erkannten Angaben und korrigiere sie bei Bedarf."
+          onClose={() => setSelectedReceipt(null)}
+          size="wide"
+          zIndexClassName="z-[1100]"
+          footer={(
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedReceipt(null)}
+                className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveReview()}
+                className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={savingReview}
+              >
+                {savingReview ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : null}
+                Prüfung speichern
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveAndCreateEuerEntry()}
+                className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={Boolean(selectedReceipt.linkedEuerEntryId) || savingReview || busyId === selectedReceipt.id}
+              >
+                <Link2 className="h-4 w-4" />
+                {selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe übernehmen'}
+              </button>
+            </>
+          )}
+        >
+          <div className="space-y-3 pb-2">
+            {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label htmlFor="receipt-date" className="block text-sm font-medium text-gray-700">Belegdatum<input id="receipt-date" type="date" value={inputValue(reviewData.documentDate)} onChange={event => updateReviewField('documentDate', event.target.value)} className={fieldClassName('documentDate')} /></label>
-                      <label htmlFor="receipt-number" className="block text-sm font-medium text-gray-700">Belegnummer<input id="receipt-number" value={inputValue(reviewData.documentNumber)} onChange={event => updateReviewField('documentNumber', event.target.value)} className={fieldClassName('documentNumber')} /></label>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label htmlFor="receipt-net" className="block text-sm font-medium text-gray-700">Netto<input id="receipt-net" inputMode="decimal" value={inputValue(reviewData.netAmount)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} /></label>
-                      <label htmlFor="receipt-tax" className="block text-sm font-medium text-gray-700">MwSt. Betrag<input id="receipt-tax" inputMode="decimal" value={inputValue(reviewData.taxAmount)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} /></label>
-                      <label htmlFor="receipt-gross" className="block text-sm font-medium text-gray-700">Brutto<input id="receipt-gross" inputMode="decimal" value={inputValue(reviewData.grossAmount)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} /></label>
-                      <label htmlFor="receipt-tax-rate" className="block text-sm font-medium text-gray-700">MwSt.-Satz in %<input id="receipt-tax-rate" inputMode="decimal" value={inputValue(reviewData.taxRate)} onChange={event => updateReviewField('taxRate', event.target.value)} className={fieldClassName('taxRate')} /></label>
-                      <label htmlFor="receipt-category" className="block text-sm font-medium text-gray-700 sm:col-span-2">Kategorie-Vorschlag<select id="receipt-category" value={reviewData.suggestedCategory || 'other_expense'} onChange={event => updateReviewField('suggestedCategory', event.target.value)} className={fieldClassName('suggestedCategory')}><option value="materials">Material und Waren</option><option value="office">Bürobedarf</option><option value="software">Software und Lizenzen</option><option value="telecommunications">Telefon und Internet</option><option value="travel">Reisekosten</option><option value="vehicle">Fahrzeugkosten</option><option value="marketing">Werbung und Marketing</option><option value="professional_services">Fremdleistungen</option><option value="insurance">Versicherungen</option><option value="bank_fees">Bankgebühren</option><option value="other_expense">Sonstige Betriebsausgaben</option></select></label>
-                    </div>
-
-                    <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap"><button type="button" onClick={() => void saveReview()} className="btn-primary inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm text-white" disabled={savingReview}>{savingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Prüfung speichern</button><button type="button" onClick={() => void saveAndCreateEuerEntry()} className="action-button inline-flex min-h-10 items-center justify-center gap-2" disabled={Boolean(selectedReceipt.linkedEuerEntryId) || savingReview || busyId === selectedReceipt.id}><Link2 className="h-4 w-4" />{selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe übernehmen'}</button></div>
-                    {selectedReceipt.ocrError && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><p className="font-medium">Lokale OCR konnte nicht ausgeführt werden</p><p className="mt-1">{selectedReceipt.ocrError}</p><button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-2 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}><RefreshCw className="h-3.5 w-3.5" />Erneut versuchen</button></div>}
-                    {selectedReceipt.ocrText && <details className="mt-4 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Erkannten OCR-Text anzeigen</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap border-t border-gray-200 bg-gray-50 p-3 text-xs leading-5 text-gray-600">{selectedReceipt.ocrText}</pre></details>}
-                    {selectedReceipt.content && <details className="mt-3 overflow-hidden rounded-lg border border-gray-200"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Originalbeleg anzeigen</summary><div className="flex min-h-48 items-center justify-center border-t border-gray-200 bg-gray-50 p-3"><img src={`data:${selectedReceipt.contentType};base64,${selectedReceipt.content}`} alt={`Originalbeleg ${selectedReceipt.name}`} className="max-h-[28rem] w-full object-contain" /></div></details>}
+            <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
+              <h3 className="text-xl font-semibold text-gray-900">Belegdaten</h3>
+              <p className="mt-1 text-base text-gray-500">Grunddaten des eingelesenen Belegs.</p>
+              <div className="mt-5 space-y-4">
+                <label htmlFor="receipt-vendor" className="block text-sm font-medium text-gray-700">
+                  Aussteller
+                  <input id="receipt-vendor" value={inputValue(reviewData.vendorName)} onChange={event => updateReviewField('vendorName', event.target.value)} className={fieldClassName('vendorName')} />
+                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label htmlFor="receipt-date" className="block text-sm font-medium text-gray-700">
+                    Belegdatum
+                    <input id="receipt-date" type="date" value={inputValue(reviewData.documentDate)} onChange={event => updateReviewField('documentDate', event.target.value)} className={fieldClassName('documentDate')} />
+                  </label>
+                  <label htmlFor="receipt-number" className="block text-sm font-medium text-gray-700">
+                    Belegnummer
+                    <input id="receipt-number" value={inputValue(reviewData.documentNumber)} onChange={event => updateReviewField('documentNumber', event.target.value)} className={fieldClassName('documentNumber')} />
+                  </label>
                 </div>
               </div>
             </section>
+
+            <section className="rounded-xl border border-primary-custom border-l-2 bg-primary-light-custom p-5 sm:p-6">
+              <h3 className="text-xl font-semibold text-gray-900">Betrag</h3>
+              <p className="mt-1 text-base text-gray-500">Beträge werden für die weitere Verarbeitung übernommen.</p>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <label htmlFor="receipt-net" className="block text-sm font-medium text-gray-700">
+                  Netto
+                  <input id="receipt-net" inputMode="decimal" value={inputValue(reviewData.netAmount)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} />
+                </label>
+                <label htmlFor="receipt-tax" className="block text-sm font-medium text-gray-700">
+                  MwSt. Betrag
+                  <input id="receipt-tax" inputMode="decimal" value={inputValue(reviewData.taxAmount)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} />
+                </label>
+                <label htmlFor="receipt-gross" className="block text-sm font-medium text-gray-700">
+                  Brutto
+                  <input id="receipt-gross" inputMode="decimal" value={inputValue(reviewData.grossAmount)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} />
+                </label>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label htmlFor="receipt-tax-rate" className="block text-sm font-medium text-gray-700">
+                  MwSt.-Satz in %
+                  <input id="receipt-tax-rate" inputMode="decimal" value={inputValue(reviewData.taxRate)} onChange={event => updateReviewField('taxRate', event.target.value)} className={fieldClassName('taxRate')} />
+                </label>
+                <label htmlFor="receipt-currency" className="block text-sm font-medium text-gray-700">
+                  Währung
+                  <input id="receipt-currency" value={inputValue(reviewData.currency)} onChange={event => updateReviewField('currency', event.target.value)} className={fieldClassName('currency')} placeholder="EUR" />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
+              <h3 className="text-xl font-semibold text-gray-900">Zuordnung</h3>
+              <p className="mt-1 text-base text-gray-500">Der Vorschlag wird beim Übernehmen als EÜR-Ausgabe verwendet.</p>
+              <label htmlFor="receipt-category" className="mt-5 block text-sm font-medium text-gray-700">
+                Kategorie-Vorschlag
+                <select id="receipt-category" value={reviewData.suggestedCategory || 'other_expense'} onChange={event => updateReviewField('suggestedCategory', event.target.value)} className={fieldClassName('suggestedCategory')}>
+                  <option value="materials">Material und Waren</option>
+                  <option value="office">Bürobedarf</option>
+                  <option value="software">Software und Lizenzen</option>
+                  <option value="telecommunications">Telefon und Internet</option>
+                  <option value="travel">Reisekosten</option>
+                  <option value="vehicle">Fahrzeugkosten</option>
+                  <option value="marketing">Werbung und Marketing</option>
+                  <option value="professional_services">Fremdleistungen</option>
+                  <option value="insurance">Versicherungen</option>
+                  <option value="bank_fees">Bankgebühren</option>
+                  <option value="other_expense">Sonstige Betriebsausgaben</option>
+                </select>
+              </label>
+            </section>
+
+            {selectedReceipt.ocrError && (
+              <section className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-800 sm:p-6">
+                <p className="font-medium">Lokale Belegerkennung konnte nicht ausgeführt werden</p>
+                <p className="mt-1">{selectedReceipt.ocrError}</p>
+                <button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-3 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Erneut versuchen
+                </button>
+              </section>
+            )}
+
+            {selectedReceipt.ocrText && (
+              <details className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Erkannten Text anzeigen</summary>
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap border-t border-gray-200 bg-gray-50 p-4 text-xs leading-5 text-gray-600">{selectedReceipt.ocrText}</pre>
+              </details>
+            )}
+            {selectedReceipt.content && selectedContentUrl && (
+              <details className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Originalbeleg anzeigen</summary>
+                <div className="flex min-h-48 items-center justify-center border-t border-gray-200 bg-gray-50 p-3">
+                  {selectedReceipt.contentType.toLowerCase() === 'application/pdf' ? (
+                    <object data={selectedContentUrl} type="application/pdf" aria-label={`Originalbeleg ${selectedReceipt.name}`} className="h-[28rem] w-full">
+                      <p className="text-sm text-gray-600">Die PDF-Vorschau ist in diesem Browser nicht verfügbar. <a href={selectedContentUrl} download={selectedReceipt.name} className="font-medium text-blue-700 underline">PDF herunterladen</a></p>
+                    </object>
+                  ) : (
+                    <img src={selectedContentUrl} alt={`Originalbeleg ${selectedReceipt.name}`} className="max-h-[28rem] w-full object-contain" />
+                  )}
+                </div>
+              </details>
+            )}
           </div>
-        </div>
+        </DialogShell>
       )}
     </div>
   );

@@ -101,7 +101,7 @@ const updateWebAppManifest = (iconUrl: string) => {
   const manifest = {
     name: `${companyName} - SoloOffice`,
     short_name: companyName,
-    description: 'eRechnung-konforme Rechnungsanwendung',
+    description: 'SoloOffice – Rechnungs- und Geschäftsverwaltung',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',
@@ -152,8 +152,8 @@ const updateWebAppManifest = (iconUrl: string) => {
  * Updates the page title based on company name
  */
 export const updatePageTitle = (companyName?: string) => {
-  const baseTitle = 'SoloOffice - eRechnung-konforme Rechnungsanwendung';
-  if (companyName && companyName.trim() && companyName !== 'Meine Firma GmbH') {
+  const baseTitle = 'SoloOffice – Rechnungs- und Geschäftsverwaltung';
+  if (companyName && companyName.trim()) {
     document.title = `${companyName} - ${baseTitle}`;
   } else {
     document.title = baseTitle;

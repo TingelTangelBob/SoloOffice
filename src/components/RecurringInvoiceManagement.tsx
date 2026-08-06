@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
+import { DialogShell } from './DialogShell';
 
 type ItemDraft = {
   description: string;
@@ -338,10 +339,12 @@ export function RecurringInvoiceManagement() {
         <button
           type="button"
           onClick={openNew}
-          className="btn-primary flex items-center justify-center space-x-2 rounded-xl px-4 py-2 text-white transition-all duration-300 hover:scale-105 hover:brightness-90"
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+          aria-label="Wiederkehrende Rechnung anlegen"
+          title="Wiederkehrende Rechnung anlegen"
         >
           <Plus className="h-4 w-4" />
-          <span>Neu</span>
+          <span className="hidden sm:inline">Neu</span>
         </button>
       </PageHeader>
 
@@ -459,46 +462,24 @@ export function RecurringInvoiceManagement() {
       )}
 
       {dialog.open && (
-        <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center overflow-hidden bg-black/50 p-2 backdrop-blur-[1px] sm:p-6"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget) setDialog({ open: false });
-          }}
+        <DialogShell
+          titleId="recurring-invoice-dialog-title"
+          icon={CalendarClock}
+          title={dialog.entry ? 'Vorlage bearbeiten' : 'Wiederkehrende Rechnung anlegen'}
+          description="Definieren Sie Kunde, Zeitplan und Positionen für die automatisch erzeugten Entwürfe."
+          onClose={() => setDialog({ open: false })}
+          onSubmit={submit}
+          size="xl"
+          zIndexClassName="z-[1000]"
+          footer={(
+            <>
+              <button type="button" onClick={() => setDialog({ open: false })} className="inline-flex min-h-12 items-center justify-center rounded-lg border border-gray-300 bg-white px-8 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
+              <button type="submit" disabled={busy === 'save'} className="btn-primary inline-flex min-h-12 items-center justify-center rounded-lg px-8 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60">{busy === 'save' ? 'Speichern …' : 'Speichern'}</button>
+            </>
+          )}
         >
-          <form
-            onSubmit={submit}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="recurring-invoice-dialog-title"
-            className="grid h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-[calc(100dvh-3rem)] sm:max-h-[calc(100dvh-3rem)]"
-          >
-            <header className="sticky top-0 z-20 flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-gray-50/95 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6 sm:py-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-light text-primary-custom sm:h-10 sm:w-10 sm:rounded-xl">
-                  <CalendarClock className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <h2 id="recurring-invoice-dialog-title" className="text-lg font-semibold leading-normal text-gray-900 sm:text-xl">
-                    {dialog.entry ? 'Vorlage bearbeiten' : 'Wiederkehrende Rechnung anlegen'}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-gray-500 sm:mt-1 sm:text-sm">
-                    Definieren Sie Kunde, Zeitplan und Positionen für die automatisch erzeugten Entwürfe.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDialog({ open: false })}
-                className="action-icon-button text-gray-500 hover:bg-gray-200 hover:text-gray-900"
-                aria-label="Dialog schließen"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </header>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
               <div className="space-y-5 sm:space-y-6">
-                <section aria-labelledby="recurring-master-data-title">
+                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-master-data-title">
                   <div className="mb-3">
                     <h3 id="recurring-master-data-title" className="text-base font-semibold text-gray-900">Stammdaten</h3>
                     <p className="mt-1 text-sm text-gray-500">Name und Kunde der wiederkehrenden Rechnung.</p>
@@ -529,7 +510,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
 
-                <section className="border-t border-gray-200 pt-6" aria-labelledby="recurring-schedule-title">
+                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-schedule-title">
                   <div className="mb-3">
                     <h3 id="recurring-schedule-title" className="text-base font-semibold text-gray-900">Zeitplan</h3>
                     <p className="mt-1 text-sm text-gray-500">Legen Sie fest, wann die nächste Rechnung und die folgenden Entwürfe entstehen.</p>
@@ -619,7 +600,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
 
-                <section className="border-t border-gray-200 pt-6" aria-labelledby="recurring-details-title">
+                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-details-title">
                   <div className="mb-3">
                     <h3 id="recurring-details-title" className="text-base font-semibold text-gray-900">Zahlung und Notizen</h3>
                     <p className="mt-1 text-sm text-gray-500">Diese Angaben werden in die erzeugten Rechnungsentwürfe übernommen.</p>
@@ -649,7 +630,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
 
-                <section className="border-t border-gray-200 pt-6" aria-labelledby="recurring-items-title">
+                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-items-title">
                   <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 id="recurring-items-title" className="text-base font-semibold text-gray-900">Positionen</h3>
@@ -755,26 +736,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
               </div>
-            </div>
-
-            <footer className="sticky bottom-0 z-20 flex shrink-0 flex-col-reverse gap-2 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:flex-row sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
-              <button
-                type="button"
-                onClick={() => setDialog({ open: false })}
-                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="submit"
-                disabled={busy === 'save'}
-                className="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-5 py-2 text-sm font-medium text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy === 'save' ? 'Speichern …' : 'Speichern'}
-              </button>
-            </footer>
-          </form>
-        </div>
+        </DialogShell>
       )}
     </div>
   );

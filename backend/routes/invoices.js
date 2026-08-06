@@ -42,8 +42,9 @@ router.post('/', async (req, res) => {
       globalDiscountType,
       globalDiscountValue,
       globalDiscountAmount,
+      sourceQuoteId,
     } = req.body;
-    const invoice = await createInvoice({ customerId, items, notes, attachments, issueDate, dueDate, status, globalDiscountType, globalDiscountValue, globalDiscountAmount, documentType: 'invoice' });
+    const invoice = await createInvoice({ customerId, items, notes, attachments, issueDate, dueDate, status, globalDiscountType, globalDiscountValue, globalDiscountAmount, sourceQuoteId, documentType: 'invoice' });
     res.status(201).json(invoice);
   } catch (error) {
     logger.error('Failed to create invoice', {
@@ -53,9 +54,36 @@ router.post('/', async (req, res) => {
       method: 'POST',
       endpoint: '/invoices'
     });
-    if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
     if (error.message === 'Customer not found') return res.status(400).json({ error: error.message });
     res.status(500).json({ error: 'Failed to create invoice' });
+  }
+});
+
+// Create an invoice from completed job units in one transaction. The service
+// stores the source relation and marks the units as invoiced before commit.
+router.post('/from-jobs', async (req, res) => {
+  try {
+    const { sourceJobIds, ...invoiceData } = req.body || {};
+    const invoice = await createInvoice({
+      ...invoiceData,
+      sourceJobIds,
+      documentType: 'invoice',
+    });
+    res.status(201).json(invoice);
+  } catch (error) {
+    logger.error('Failed to create invoice from jobs', {
+      error: error.message,
+      stack: error.stack,
+      sourceJobIds: req.body?.sourceJobIds,
+      method: 'POST',
+      endpoint: '/invoices/from-jobs',
+    });
+    if (error.statusCode === 400 || error.statusCode === 409) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    if (error.message === 'Customer not found') return res.status(400).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to create invoice from jobs' });
   }
 });
 
@@ -73,7 +101,7 @@ router.put('/:id', async (req, res) => {
       method: 'PUT',
       endpoint: '/invoices/:id'
     });
-    if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: 'Failed to update invoice' });
   }
 });
@@ -92,6 +120,7 @@ router.delete('/:id', async (req, res) => {
       method: 'DELETE',
       endpoint: '/invoices/:id'
     });
+    if (error.statusCode === 409) return res.status(409).json({ error: error.message });
     res.status(500).json({ error: 'Failed to delete invoice' });
   }
 });

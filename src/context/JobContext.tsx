@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { JobEntry, Customer, Company, Invoice, InvoiceItem } from '../types';
+import { JobEntry, Customer, Company, InvoiceItem } from '../types';
 import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import logger from '../utils/logger';
@@ -50,15 +50,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
       return newJobEntry;
     } catch (error) {
       logger.error('Error adding job entry:', error);
-      // Fallback: Create locally
-      const newJobEntry: JobEntry = {
-        ...jobEntryData,
-        id: generateUUID(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setJobEntries(prev => [...prev, newJobEntry]);
-      throw error; // Re-throw to inform calling component
+      throw error;
     }
   }, []);
 
@@ -70,10 +62,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
       ));
     } catch (error) {
       logger.error('Error updating job entry:', error);
-      // Fallback: Update locally
-      setJobEntries(prev => prev.map(job =>
-        job.id === id ? { ...job, ...jobEntryData, updatedAt: new Date() } : job
-      ));
+      throw error;
     }
   }, []);
 
@@ -83,8 +72,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
       setJobEntries(prev => prev.filter(job => job.id !== id));
     } catch (error) {
       logger.error('Error deleting job entry:', error);
-      // Fallback: Delete locally
-      setJobEntries(prev => prev.filter(job => job.id !== id));
+      throw error;
     }
   }, []);
 
@@ -94,6 +82,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
       setJobEntries(jobEntriesData);
     } catch (error) {
       logger.error('Error refreshing job entries:', error);
+      throw error;
     }
   }, []);
 
@@ -149,8 +138,6 @@ export async function generateInvoiceFromJobs(
   jobEntries: JobEntry[],
   customers: Customer[],
   company: Company,
-  addInvoice: (invoice: Omit<Invoice, 'id' | 'createdAt'>) => Promise<Invoice>,
-  updateJobEntry: (id: string, jobEntry: Partial<JobEntry>) => Promise<void>,
   date?: Date
 ): Promise<void> {
   const terminology = getTerminology(company.terminologyProfile);
@@ -176,12 +163,16 @@ export async function generateInvoiceFromJobs(
 
     // Add job items (use time entries if available, otherwise use legacy fields)
     let itemOrder = 1;
+    const getUnitLabel = (job: JobEntry) => job.recurrence
+      ? ` - Einheit ${job.recurrence.occurrenceIndex || 1} vom ${formatDate(job.date, company.locale, company.dateFormat)}`
+      : '';
     customerJobs.forEach(job => {
+      const unitLabel = getUnitLabel(job);
       if (job.timeEntries && job.timeEntries.length > 0) {
         job.timeEntries.forEach(timeEntry => {
           items.push({
             id: generateUUID(),
-            description: `${job.title} - ${timeEntry.description}`,
+            description: `${job.title}${unitLabel} - ${timeEntry.description}`,
             quantity: timeEntry.hoursWorked,
             unitPrice: timeEntry.hourlyRate,
             taxRate: timeEntry.taxRate != null ? timeEntry.taxRate : 19,
@@ -193,7 +184,7 @@ export async function generateInvoiceFromJobs(
         // Only add legacy entry if there are actual hours worked and no time entries
         items.push({
           id: generateUUID(),
-          description: `${job.title} - ${job.description}`,
+          description: `${job.title}${unitLabel} - ${job.description}`,
           quantity: job.hoursWorked,
           unitPrice: job.hourlyRate,
           taxRate: 19, // Default for legacy data
@@ -205,11 +196,12 @@ export async function generateInvoiceFromJobs(
 
     // Add material items
     customerJobs.forEach(job => {
+      const unitLabel = getUnitLabel(job);
       if (job.materials && job.materials.length > 0) {
         job.materials.forEach(material => {
           items.push({
             id: generateUUID(),
-            description: `${job.title} - ${material.description}`,
+            description: `${job.title}${unitLabel} - ${material.description}`,
             quantity: material.quantity,
             unitPrice: material.unitPrice,
             taxRate: material.taxRate != null ? material.taxRate : 19,
@@ -255,12 +247,7 @@ export async function generateInvoiceFromJobs(
       notes: invoiceTitle,
     };
 
-    await addInvoice(newInvoice);
-
-    // Mark jobs as invoiced
-    for (const job of customerJobs) {
-      await updateJobEntry(job.id, { status: 'invoiced' });
-    }
+    await apiService.createInvoiceFromJobs(newInvoice, customerJobs.map(job => job.id));
   }
 }
 

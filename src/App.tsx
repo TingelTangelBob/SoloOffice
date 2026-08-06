@@ -22,7 +22,7 @@ const CreditNoteManagement = lazy(() => import('./components/CreditNoteManagemen
 const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOverview: page }) => ({ default: page })));
 const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
 const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
-const ReceiptsManagement = lazy(() => import('./components/ReceiptsManagement').then(({ ReceiptsManagement: page }) => ({ default: page })));
+const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
 const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
 
 interface PageState {
@@ -30,11 +30,19 @@ interface PageState {
   filter?: string;
   searchTerm?: string;
   quoteId?: string;
+  invoiceId?: string;
+  jobSeriesId?: string;
 }
 
 interface AppContentProps {
   currentPageState: PageState;
-  onPageChange: (page: string, filter?: string, searchTerm?: string) => void;
+  onPageChange: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
+}
+
+function normalizePageState(page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string): PageState {
+  if (page === 'receipts') return { page: 'documents', filter: filter || 'receipts', searchTerm };
+  if (page === 'incoming-e-invoices') return { page: 'documents', filter: filter || 'incoming', searchTerm };
+  return { page, filter, searchTerm, quoteId: page === 'quote-editor' ? filter : undefined, invoiceId, jobSeriesId };
 }
 
 function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
@@ -49,7 +57,7 @@ function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
 }
 
 function AppContent({ currentPageState, onPageChange }: AppContentProps) {
-  const { loading } = useLoading();
+  const { loading, error } = useLoading();
   const { company } = useCompany();
   const { quotes } = useQuotes();
 
@@ -57,6 +65,17 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
     // Show loading state while data is being fetched
     if (loading) {
       return <PageLoading fullScreen />;
+    }
+    if (error) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+          <section className="w-full max-w-lg rounded-xl border border-red-200 bg-white p-6 text-center shadow-sm">
+            <h1 className="text-lg font-semibold text-gray-900">Daten konnten nicht geladen werden</h1>
+            <p className="mt-2 text-sm text-gray-600">{error}</p>
+            <button type="button" onClick={() => window.location.reload()} className="btn-primary mt-5 rounded-lg px-4 py-2 text-sm font-semibold text-white">Erneut laden</button>
+          </section>
+        </div>
+      );
     }
 
     switch (currentPageState.page) {
@@ -70,7 +89,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
           onPageChange('settings');
           return <Settings />;
         }
-        return <JobManagement onNavigate={onPageChange} />;
+        return <JobManagement onNavigate={onPageChange} initialRecurringGroupId={currentPageState.jobSeriesId} />;
       case 'calendar':
         // Redirect to settings if job tracking is not enabled
         if (!company.jobTrackingEnabled) {
@@ -79,7 +98,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         }
         return <Calendar onNavigate={onPageChange} />;
       case 'invoices':
-        return <InvoiceManagement initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.searchTerm} onNavigate={onPageChange} />;
+        return <InvoiceManagement initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.searchTerm} initialInvoiceId={currentPageState.invoiceId} onNavigate={onPageChange} />;
       case 'recurring-invoices':
         return <RecurringInvoiceManagement />;
       case 'credit-notes':
@@ -91,8 +110,10 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <EuerManagement onNavigate={onPageChange} />;
       case 'fixed-assets':
         return <FixedAssetManagement />;
+      case 'documents':
       case 'receipts':
-        return <ReceiptsManagement onNavigate={onPageChange} />;
+      case 'incoming-e-invoices':
+        return <DocumentsManagement initialTab={currentPageState.filter} onNavigate={onPageChange} />;
       case 'quotes':
         // Redirect to settings if quotes module is not enabled
         if (!company.quotesEnabled) {
@@ -168,20 +189,31 @@ function App() {
     // Initialize from URL hash
     const hash = window.location.hash.slice(1); // Remove #
     if (hash) {
-      const [page, filter, searchTerm] = hash.split('/');
-      return { page: page || 'dashboard', filter, searchTerm, quoteId: filter };
+      const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
+      return normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
     }
     return { page: 'dashboard' };
   });
 
-  const handlePageChange = (page: string, filter?: string, searchTerm?: string) => {
-    const newState = { page, filter, searchTerm, quoteId: page === 'quote-editor' ? filter : undefined };
+  const handlePageChange = (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => {
+    const newState = normalizePageState(page, filter, searchTerm, invoiceId, jobSeriesId);
     setCurrentPageState(newState);
     
     // Update URL hash
     let hash = page;
     if (filter) hash += `/${filter}`;
     if (searchTerm) hash += `/${searchTerm}`;
+    if (invoiceId) {
+      if (!filter) hash += '/';
+      if (!searchTerm) hash += '/';
+      hash += `/${invoiceId}`;
+    }
+    if (jobSeriesId) {
+      if (!filter) hash += '/';
+      if (!searchTerm) hash += '/';
+      if (!invoiceId) hash += '/';
+      hash += `/${jobSeriesId}`;
+    }
     window.location.hash = hash;
   };
 
@@ -190,13 +222,8 @@ function App() {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
       if (hash) {
-        const [page, filter, searchTerm] = hash.split('/');
-        setCurrentPageState({ 
-          page: page || 'dashboard', 
-          filter, 
-          searchTerm,
-          quoteId: page === 'quote-editor' ? filter : undefined 
-        });
+        const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
+        setCurrentPageState(normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId));
       } else {
         setCurrentPageState({ page: 'dashboard' });
       }

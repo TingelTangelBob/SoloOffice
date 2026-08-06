@@ -34,7 +34,9 @@ export interface Customer extends Timestamps {
   postalCode: string;
   country: string;
   taxId?: string;
+  leitwegId?: string;
   phone?: string;
+  isActive?: boolean;
   additionalEmails?: CustomerEmail[];
   hourlyRates?: HourlyRate[];
   materials?: MaterialTemplate[];
@@ -64,6 +66,16 @@ export interface InvoiceItem extends Discount {
   jobNumber?: string;
   externalJobNumber?: string;
   order: number;
+}
+
+export interface InvoiceJobSource {
+  id: UUID;
+  jobId: UUID;
+  jobNumber: string;
+  externalJobNumber?: string;
+  title: string;
+  jobDate: Date;
+  recurrenceIndex?: number;
 }
 
 export type InvoiceItemPayload = Omit<InvoiceItem, 'id' | 'total'> & Partial<Pick<InvoiceItem, 'id' | 'total'>>;
@@ -97,6 +109,7 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   status: InvoiceStatus;
   notes?: string;
   attachments?: InvoiceAttachment[];
+  sourceJobs?: InvoiceJobSource[];
   // Reminder fields
   lastReminderDate?: Date;
   lastReminderSentAt?: Date;
@@ -105,6 +118,8 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   documentType?: 'invoice' | 'credit_note';
   referenceInvoiceId?: UUID | null;
   referenceInvoiceNumber?: string;
+  sourceQuoteId?: UUID | null;
+  sourceQuoteNumber?: string;
   creditNoteReason?: string;
   recurringInvoiceId?: UUID;
 }
@@ -157,7 +172,7 @@ export interface RecurringInvoicePayload {
   intervalValue?: number;
   intervalUnit?: RecurringInvoiceIntervalUnit;
   startDate: Date | string;
-  endDate?: Date | string;
+  endDate?: Date | string | null;
   nextRunDate?: Date | string;
   dueDays?: number;
   notes?: string;
@@ -227,6 +242,26 @@ export interface Quote extends Timestamps, GlobalDiscount {
 export type JobStatus = 'draft' | 'in-progress' | 'completed' | 'invoiced';
 export type JobPriority = 'low' | 'medium' | 'high';
 
+/**
+ * A schedule for a series of concrete job/course units.
+ * Weekdays use ISO values: Monday = 1 ... Sunday = 7.
+ */
+export interface JobRecurrenceRule {
+  intervalUnit: 'week' | 'month' | 'year';
+  interval: number;
+  weekdays?: number[];
+  startDate: string;
+  duration?: number;
+  /** Legacy field used by already stored weekly rules. */
+  durationWeeks?: number;
+}
+
+export interface JobRecurrence extends JobRecurrenceRule {
+  id?: UUID;
+  occurrenceIndex?: number;
+  totalOccurrences?: number;
+}
+
 export interface JobAttachment {
   id: UUID;
   name: string;
@@ -293,6 +328,9 @@ export interface JobEntry extends Timestamps {
   estimatedHours?: number;
   actualHours?: number;
   location?: string;
+  alternateLocation?: string;
+  timeZone?: string;
+  recurrence?: JobRecurrence | null;
 }
 
 export type CalendarEventType = 'vacation';
@@ -378,6 +416,7 @@ export interface Company extends ReminderSettings, CompanyHeader {
   currency?: string;
   dateFormat?: DateFormat;
   timeFormat?: TimeFormat;
+  timeZone?: string;
   primaryColor?: string;
   secondaryColor?: string;
   themeMode?: ThemeMode;
@@ -564,6 +603,14 @@ export interface AuthResponse {
   workspaces: WorkspaceSummary[];
 }
 
+export interface RegistrationResponse {
+  user?: AuthUser;
+  workspace?: WorkspaceSummary;
+  workspaces?: WorkspaceSummary[];
+  verificationRequired?: boolean;
+  message?: string;
+}
+
 export interface WorkspaceMember {
   id: UUID;
   email: string;
@@ -582,6 +629,7 @@ export interface WorkspaceInvitation {
   acceptedAt?: string;
   createdAt?: string;
   inviteToken?: string;
+  inviteLink?: string;
 }
 
 // ============================================================================
@@ -801,6 +849,32 @@ export interface ReceiptUpdatePayload {
   extractedData?: ReceiptExtractedData;
   ocrText?: string;
   linkedEuerEntryId?: UUID | null;
+}
+
+export type IncomingEInvoiceFormat = 'XRechnung' | 'ZUGFeRD';
+export type IncomingEInvoiceValidationStatus = 'validated' | 'rejected';
+
+export interface IncomingEInvoice {
+  id: UUID;
+  filename: string;
+  contentType: string;
+  size: number;
+  sha256: string;
+  format: IncomingEInvoiceFormat;
+  validationStatus: IncomingEInvoiceValidationStatus;
+  validationError?: string;
+  invoiceNumber?: string;
+  issueDate?: string;
+  currency?: string;
+  supplierName?: string;
+  supplierTaxId?: string;
+  buyerReference?: string;
+  grossAmount?: number;
+  extractedData: Record<string, unknown>;
+  linkedCustomerId?: UUID;
+  receivedAt: string;
+  updatedAt: string;
+  content?: string;
 }
 
 // ============================================================================

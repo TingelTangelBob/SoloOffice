@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Customer, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
-import { generateUUID } from '../utils/uuid';
 import logger from '../utils/logger';
 
 // ============================================================================
@@ -14,7 +13,9 @@ interface CustomerContextType {
   addCustomer: (customer: Omit<Customer, 'id' | 'customerNumber' | 'createdAt'>) => Promise<Customer>;
   updateCustomer: (id: string, customer: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
-  refreshCustomers: () => Promise<void>;
+  archiveCustomer: (id: string) => Promise<void>;
+  restoreCustomer: (id: string) => Promise<void>;
+  refreshCustomers: (includeArchived?: boolean) => Promise<void>;
   getCustomerById: (id: string) => Customer | undefined;
 }
 
@@ -47,19 +48,7 @@ export function CustomerProvider({ children, initialCustomers = [] }: CustomerPr
       return newCustomer;
     } catch (error) {
       logger.error('Error adding customer:', error);
-      // Fallback: Generate customer number locally
-      const existingNumbers = customers.map(c => parseInt(c.customerNumber)).filter(n => !isNaN(n));
-      const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
-      const customerNumber = String(nextNumber).padStart(4, '0');
-
-      const newCustomer: Customer = {
-        ...customerData,
-        id: generateUUID(),
-        customerNumber,
-        createdAt: new Date(),
-      };
-      setCustomers(prev => [...prev, newCustomer]);
-      return newCustomer;
+      throw error;
     }
   }, [customers]);
 
@@ -71,30 +60,47 @@ export function CustomerProvider({ children, initialCustomers = [] }: CustomerPr
       ));
     } catch (error) {
       logger.error('Error updating customer:', error);
-      // Fallback: Update locally
-      setCustomers(prev => prev.map(customer =>
-        customer.id === id ? { ...customer, ...customerData } : customer
-      ));
+      throw error;
     }
   }, []);
 
   const deleteCustomer = useCallback(async (id: string): Promise<void> => {
     try {
-      await apiService.deleteCustomer(id);
+      await apiService.archiveCustomer(id);
       setCustomers(prev => prev.filter(customer => customer.id !== id));
     } catch (error) {
-      logger.error('Error deleting customer:', error);
-      // Fallback: Delete locally
-      setCustomers(prev => prev.filter(customer => customer.id !== id));
+      logger.error('Error archiving customer:', error);
+      throw error;
     }
   }, []);
 
-  const refreshCustomers = useCallback(async (): Promise<void> => {
+  const archiveCustomer = useCallback(async (id: string): Promise<void> => {
     try {
-      const customersData = await apiService.getCustomers();
+      await apiService.archiveCustomer(id);
+      setCustomers(prev => prev.filter(customer => customer.id !== id));
+    } catch (error) {
+      logger.error('Error archiving customer:', error);
+      throw error;
+    }
+  }, []);
+
+  const restoreCustomer = useCallback(async (id: string): Promise<void> => {
+    try {
+      await apiService.restoreCustomer(id);
+      setCustomers(prev => prev.map(customer => customer.id === id ? { ...customer, isActive: true } : customer));
+    } catch (error) {
+      logger.error('Error restoring customer:', error);
+      throw error;
+    }
+  }, []);
+
+  const refreshCustomers = useCallback(async (includeArchived = false): Promise<void> => {
+    try {
+      const customersData = await apiService.getCustomers(includeArchived);
       setCustomers(customersData);
     } catch (error) {
       logger.error('Error refreshing customers:', error);
+      throw error;
     }
   }, []);
 
@@ -104,6 +110,8 @@ export function CustomerProvider({ children, initialCustomers = [] }: CustomerPr
     addCustomer,
     updateCustomer,
     deleteCustomer,
+    archiveCustomer,
+    restoreCustomer,
     refreshCustomers,
     getCustomerById,
   };

@@ -212,7 +212,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         });
         
         const jobNumber = currentDocument.job.jobNumber || currentDocument.job.id.slice(-8).toUpperCase();
-        filename = `${terminology.work.singular}_${jobNumber}.pdf`;
+        filename = `${terminology.work.confirmationLabel}_${jobNumber}.pdf`;
       } else if (currentDocument.type === 'quote-pdf' && currentDocument.quote) {
         const customer = customers.find(c => c.id === currentDocument.quote!.customerId);
         if (!customer) {

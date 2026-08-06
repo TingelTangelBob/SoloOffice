@@ -1,6 +1,7 @@
 import express from 'express';
 import { sendInvoiceEmail, sendInvoiceEmailMultiFormat, sendReminderEmail, testEmailConnection } from '../services/emailService.js';
 import logger from '../utils/logger.js';
+import { requireCompanyReadiness } from '../middleware/companyReadiness.js';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.get('/test', async (req, res) => {
 });
 
 // Send invoice via email with multiple formats
-router.post('/send-invoice-multi', async (req, res) => {
+router.post('/send-invoice-multi', requireCompanyReadiness, async (req, res) => {
   try {
     const { customerEmails, invoiceFormats, invoiceData, customText, attachments } = req.body;
     
@@ -85,7 +86,7 @@ router.post('/send-invoice-multi', async (req, res) => {
 });
 
 // Send invoice via email
-router.post('/send-invoice', async (req, res) => {
+router.post('/send-invoice', requireCompanyReadiness, async (req, res) => {
   try {
     const { customerEmail, invoicePDF, invoiceData, format = 'standard', customText, attachments } = req.body;
     
@@ -133,7 +134,7 @@ router.post('/send-invoice', async (req, res) => {
 });
 
 // Send reminder email
-router.post('/send-reminder', async (req, res) => {
+router.post('/send-reminder', requireCompanyReadiness, async (req, res) => {
   try {
     const { customerEmails, reminderPDF, invoiceData, stage, fee, customText, additionalAttachments } = req.body;
     

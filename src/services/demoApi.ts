@@ -1,5 +1,6 @@
 import { generateUUID } from '../utils/uuid';
-import type { TerminologyProfile } from '../types';
+import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile } from '../types';
+import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 
@@ -17,6 +18,7 @@ interface DemoState {
   euerEntryHistory: DemoRecord[];
   fixedAssets: DemoRecord[];
   receipts: DemoRecord[];
+  incomingEInvoices: DemoRecord[];
   company: DemoRecord;
   seedProfile?: TerminologyProfile;
   seedVersion?: number;
@@ -42,7 +44,7 @@ function getDemoDataStorageKey(): string {
   return workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`;
 }
 
-const DEMO_SEED_VERSION = 2;
+const DEMO_SEED_VERSION = 4;
 
 interface DemoProfileFixture {
   primaryColor: string;
@@ -204,7 +206,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   ];
   state.euerEntries = Array.from({ length: 8 }, (_, index) => ({
     id: generateUUID(), entryDate: dateOnly(isoDate(-index * 5)), description: `${fixture.workTitles[index % fixture.workTitles.length]} – Einnahme`,
-    amount: 280 + index * 75, taxRate: 19, notes: fixture.workDescription, sourceType: index % 2 === 0 ? 'invoice' : 'manual', status: 'active', createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 5),
+    amount: 280 + index * 75, taxRate: 19, notes: fixture.workDescription, sourceType: 'manual', status: 'active', createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 5),
   }));
   state.euerEntryHistory = [];
   state.fixedAssets = [
@@ -213,12 +215,47 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     id: generateUUID(), name, category, acquisitionDate: dateOnly(isoDate(-(index + 1) * 40)), acquisitionCost,
     usefulLifeYears: index === 3 ? 6 : 3, status: 'active', notes: fixture.workDescription, createdAt: isoDate(-(index + 1) * 40), updatedAt: isoDate(),
   }));
-  state.receipts = Array.from({ length: 5 }, (_, index) => ({
-    id: generateUUID(), vendorName: ['Bürobedarf Schmidt', 'Stadtwerke', 'Cloud Services', 'Fachverlag', 'Reisebüro'][index],
-    receiptNumber: `BE-2026-${String(index + 1).padStart(3, '0')}`, receiptDate: dateOnly(isoDate(-index * 8)), grossAmount: 49 + index * 57,
-    taxAmount: (49 + index * 57) * 0.19 / 1.19, ocrStatus: 'completed', ocrText: 'Lokaler Demo-Beleg', extractedData: {}, ocrExtractedData: {}, linkedEuerEntryId: null,
-    createdAt: isoDate(-index * 8), updatedAt: isoDate(-index * 8),
-  }));
+  state.receipts = Array.from({ length: 5 }, (_, index) => {
+    const vendorName = ['Bürobedarf Schmidt', 'Stadtwerke', 'Cloud Services', 'Fachverlag', 'Reisebüro'][index];
+    const documentNumber = `BE-2026-${String(index + 1).padStart(3, '0')}`;
+    const grossAmount = 49 + index * 57;
+    const taxAmount = grossAmount * 0.19 / 1.19;
+    const extractedData = {
+      vendorName,
+      documentDate: dateOnly(isoDate(-index * 8)),
+      documentNumber,
+      netAmount: grossAmount - taxAmount,
+      taxAmount,
+      grossAmount,
+      taxRate: 19,
+      currency: 'EUR',
+      suggestedCategory: 'other_expense',
+    };
+    return {
+      id: generateUUID(), name: `${documentNumber}.pdf`, contentType: 'application/pdf', size: 128000 + index * 17000,
+      ocrStatus: 'completed', ocrText: 'Lokaler Demo-Beleg', extractedData, ocrExtractedData: extractedData, linkedEuerEntryId: null,
+      createdAt: isoDate(-index * 8), updatedAt: isoDate(-index * 8),
+    };
+  });
+  state.incomingEInvoices = Array.from({ length: 3 }, (_, index) => {
+    const customer = customerAt(index + 2);
+    const extractedData = {
+      invoiceNumber: `EINGANG-2026-${String(index + 1).padStart(3, '0')}`,
+      issueDate: dateOnly(isoDate(-(index + 2) * 6)),
+      currency: 'EUR',
+      supplierName: ['Nordlicht Büroservice', 'Klarwerk Software', 'Berg & Tal Immobilien'][index],
+      supplierTaxId: `DE${String(100000000 + index * 1234567).slice(0, 9)}`,
+      buyerReference: index === 0 ? '04011000-123456-78' : undefined,
+      grossAmount: 357 + index * 211,
+    };
+    return {
+      id: generateUUID(), filename: `${extractedData.invoiceNumber}.xml`, contentType: 'application/xml', size: 24500 + index * 3200,
+      sha256: `demo-sha256-${String(index + 1).padStart(2, '0')}`, format: index === 1 ? 'ZUGFeRD' : 'XRechnung',
+      validationStatus: 'validated', validationError: undefined, ...extractedData,
+      extractedData, linkedCustomerId: index === 0 ? customer.id : undefined,
+      receivedAt: isoDate(-(index + 2) * 6), updatedAt: isoDate(-(index + 2) * 6),
+    };
+  });
   state.company = {
     ...state.company, terminologyProfile: profile, terminologyColorSource: 'profile',
     primaryColor: fixture.primaryColor, secondaryColor: fixture.secondaryColor,
@@ -285,11 +322,12 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     euerEntryHistory: [],
     fixedAssets: [],
     receipts: [],
+    incomingEInvoices: [],
     company: {
       id: 'demo-company', name: 'Demo-Firma', address: 'Beispielstraße 1', city: 'Berlin', postalCode: '10115', country: 'Deutschland',
       email: 'demo@example.com', primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
       reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
-      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
+      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
       invoiceTemplates: [], createdAt: isoDate(),
     },
   };
@@ -324,6 +362,7 @@ function readState(): DemoState {
       euerEntryHistory: parsed.euerEntryHistory || [],
       fixedAssets: parsed.fixedAssets || [],
       receipts: (parsed.receipts || []).map(receipt => ({ ...receipt, ocrExtractedData: receipt.ocrExtractedData || receipt.extractedData || {} })),
+      incomingEInvoices: parsed.incomingEInvoices || [],
     } as DemoState;
   } catch {
     const initial = createInitialState();
@@ -344,21 +383,98 @@ function addScheduleInterval(value: string, frequency: string, intervalValue = 1
   const date = new Date(`${value}T00:00:00`);
   if (frequency === 'daily') date.setDate(date.getDate() + 1);
   else if (frequency === 'weekly') date.setDate(date.getDate() + 7);
-  else if (frequency === 'monthly') date.setMonth(date.getMonth() + 1);
-  else if (frequency === 'quarterly') date.setMonth(date.getMonth() + 3);
-  else if (frequency === 'semiannual') date.setMonth(date.getMonth() + 6);
-  else if (frequency === 'annual') date.setFullYear(date.getFullYear() + 1);
+  else if (frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual' || frequency === 'annual' || intervalUnit === 'month' || intervalUnit === 'year') {
+    const day = date.getDate();
+    const sourceLastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    const preserveEndOfMonth = day === sourceLastDay;
+    const monthOffset = frequency === 'monthly' ? 1
+      : frequency === 'quarterly' ? 3
+        : frequency === 'semiannual' ? 6
+          : frequency === 'annual' ? 12
+            : intervalUnit === 'year' ? Math.max(1, intervalValue) * 12
+              : Math.max(1, intervalValue);
+    date.setDate(1);
+    date.setMonth(date.getMonth() + monthOffset);
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    date.setDate(preserveEndOfMonth ? lastDay : Math.min(day, lastDay));
+  }
   else if (intervalUnit === 'day') date.setDate(date.getDate() + Math.max(1, intervalValue));
   else if (intervalUnit === 'week') date.setDate(date.getDate() + Math.max(1, intervalValue) * 7);
-  else if (intervalUnit === 'year') date.setFullYear(date.getFullYear() + Math.max(1, intervalValue));
-  else date.setMonth(date.getMonth() + Math.max(1, intervalValue));
   return date.toISOString().split('T')[0];
+}
+
+const demoRecurringFrequencies = new Set(['monthly', 'quarterly', 'semiannual', 'annual', 'custom']);
+const demoRecurringStatuses = new Set(['active', 'paused', 'ended']);
+const demoRecurringUnits = new Set(['day', 'week', 'month', 'year']);
+
+function assertDemoDate(value: unknown, label: string): string {
+  const date = String(value || '');
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new Error(`${label} ist ungültig.`);
+  }
+  return date;
+}
+
+function validateDemoRecurring(data: DemoRecord): { startDate: string; endDate?: string; nextRunDate: string; dueDays: number } {
+  if (!String(data.customerId || '') || !String(data.name || '').trim()) throw new Error('Kunde und Name sind erforderlich.');
+  if (!Array.isArray(data.items) || data.items.length === 0) throw new Error('Mindestens eine Position ist erforderlich.');
+  if (!demoRecurringFrequencies.has(String(data.frequency))) throw new Error('Ungültige Häufigkeit.');
+  if (!demoRecurringStatuses.has(String(data.status))) throw new Error('Ungültiger Status.');
+  if ((data.items as unknown[]).some(item => {
+    const row = item as DemoRecord;
+    return !String(row.description || '').trim()
+      || !Number.isFinite(Number(row.quantity))
+      || Number(row.quantity) <= 0
+      || !Number.isFinite(Number(row.unitPrice))
+      || Number(row.unitPrice) < 0
+      || !Number.isFinite(Number(row.taxRate))
+      || Number(row.taxRate) < 0
+      || Number(row.taxRate) > 100;
+  })) throw new Error('Bitte Beschreibung, Menge, Preis und MwSt.-Satz der Positionen prüfen.');
+  if (String(data.frequency) === 'custom' && (!Number.isInteger(Number(data.intervalValue)) || Number(data.intervalValue) <= 0 || !demoRecurringUnits.has(String(data.intervalUnit)))) {
+    throw new Error('Für ein benutzerdefiniertes Intervall sind eine positive Zahl und eine gültige Einheit erforderlich.');
+  }
+  const startDate = assertDemoDate(data.startDate, 'Das Startdatum');
+  const endDate = data.endDate ? assertDemoDate(data.endDate, 'Das Enddatum') : null;
+  const nextRunDate = assertDemoDate(data.nextRunDate, 'Das nächste Ausführungsdatum');
+  const dueDays = Number(data.dueDays);
+  if (endDate && endDate < startDate) throw new Error('Das Enddatum darf nicht vor dem Startdatum liegen.');
+  if (nextRunDate < startDate) throw new Error('Die nächste Ausführung darf nicht vor dem Startdatum liegen.');
+  if (!Number.isInteger(dueDays) || dueDays < 0) throw new Error('Das Zahlungsziel muss eine ganze Zahl ab 0 sein.');
+  return { startDate, endDate: endDate || undefined, nextRunDate, dueDays };
 }
 
 function calculateItems(items: DemoRecord[]) {
   const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
   const taxAmount = items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.taxRate || 0)) / 100, 0);
   return { subtotal, taxAmount, total: subtotal + taxAmount };
+}
+
+function validateDemoEuerSource(state: DemoState, data: DemoRecord, currentId?: string) {
+  const sourceType = String(data.sourceType || 'manual');
+  const sourceId = data.sourceId ? String(data.sourceId) : '';
+  if (sourceType === 'manual') return;
+  if (!sourceId) throw new Error('Für diese Buchungsart ist eine Quelle erforderlich.');
+  if (sourceType === 'invoice_payment') {
+    if (data.entryType !== 'income') throw new Error('Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.');
+    const invoice = state.invoices.find(item => item.id === sourceId && item.documentType !== 'credit_note');
+    if (!invoice) throw new Error('Die zugeordnete Rechnung wurde nicht gefunden.');
+    const allocated = state.euerEntries
+      .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === sourceId && entry.status !== 'voided' && entry.id !== currentId)
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const remaining = Math.max(0, Number(invoice.total || 0) - allocated);
+    if (Number(data.amount || 0) > remaining + 0.01) throw new Error(`Die Teilzahlung überschreitet den offenen Rechnungsbetrag von ${remaining.toFixed(2)} €.`);
+    return;
+  }
+  if (sourceType === 'receipt') {
+    const receipt = state.receipts.find(item => item.id === sourceId);
+    if (!receipt) throw new Error('Der zugeordnete Beleg wurde nicht gefunden.');
+    if (receipt.linkedEuerEntryId && receipt.linkedEuerEntryId !== currentId) throw new Error('Der Beleg ist bereits mit einer anderen EÜR-Buchung verknüpft.');
+    if (state.euerEntries.some(entry => entry.sourceType === 'receipt' && entry.sourceId === sourceId && entry.status !== 'voided' && entry.id !== currentId)) throw new Error('Der Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.');
+    return;
+  }
+  if (sourceType === 'correction' && !state.euerEntries.some(entry => entry.id === sourceId && entry.status === 'active')) throw new Error('Die zu korrigierende EÜR-Buchung wurde nicht gefunden.');
 }
 
 function payload(options: RequestInit): DemoRecord {
@@ -706,6 +822,104 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     return state.company as unknown as T;
   }
 
+  if (resource === 'quotes' && parts[2] === 'convert-to-invoice' && id && method === 'POST') {
+    const quote = state.quotes.find(item => item.id === id);
+    if (!quote) throw new Error('Angebot nicht gefunden');
+    if (quote.convertedToInvoiceId) throw new Error('Das Angebot wurde bereits in eine Rechnung umgewandelt.');
+    if (quote.status !== 'accepted') throw new Error('Nur angenommene Angebote können in Rechnungen umgewandelt werden.');
+
+    const items = (Array.isArray(quote.items) ? quote.items : []).map(item => ({
+      ...item,
+      id: generateUUID(),
+      order: Number(item.order || 0),
+    }));
+    const totals = calculateItems(items);
+    const issueDate = dateOnly(isoDate());
+    const invoice: DemoRecord = {
+      id: generateUUID(),
+      invoiceNumber: `RE-${new Date(`${issueDate}T00:00:00`).getFullYear()}-${String(state.invoices.length + 1).padStart(3, '0')}`,
+      customerId: quote.customerId,
+      customerName: quote.customerName,
+      issueDate,
+      dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00`).getTime() + 30 * 86400000)),
+      items,
+      ...totals,
+      status: 'draft',
+      notes: quote.notes ? `Erstellt aus Angebot ${quote.quoteNumber}\n\n${quote.notes}` : `Erstellt aus Angebot ${quote.quoteNumber}`,
+      sourceQuoteId: quote.id,
+      sourceQuoteNumber: quote.quoteNumber,
+      documentType: 'invoice',
+      createdAt: isoDate(),
+    };
+    state.invoices.push(invoice);
+    quote.convertedToInvoiceId = invoice.id;
+    quote.status = 'billed';
+    quote.updatedAt = isoDate();
+    saveState(state);
+    return invoice as unknown as T;
+  }
+
+  if (resource === 'invoices' && parts[1] === 'from-jobs' && method === 'POST') {
+    const sourceJobIds = Array.isArray(data.sourceJobIds) ? data.sourceJobIds.map(String) : [];
+    if (sourceJobIds.length === 0 || new Set(sourceJobIds).size !== sourceJobIds.length) {
+      throw new Error('Mindestens eine eindeutige Auftragseinheit ist erforderlich.');
+    }
+    const sourceJobs = sourceJobIds.map(jobId => state.jobs.find(job => job.id === jobId));
+    if (sourceJobs.some(job => !job)) throw new Error('Mindestens eine Auftragseinheit wurde nicht gefunden.');
+    const jobsForInvoice = sourceJobs.filter((job): job is DemoRecord => Boolean(job));
+    if (jobsForInvoice.some(job => job.status !== 'completed')) throw new Error('Nur abgeschlossene Auftragseinheiten können abgerechnet werden.');
+    if (new Set(jobsForInvoice.map(job => String(job.customerId))).size !== 1) throw new Error('Alle Auftragseinheiten müssen zum selben Kunden gehören.');
+    if (state.invoices.some(invoice => Array.isArray(invoice.sourceJobIds) && sourceJobIds.some(jobId => (invoice.sourceJobIds as string[]).includes(jobId)))) {
+      throw new Error('Mindestens eine Auftragseinheit wurde bereits abgerechnet.');
+    }
+
+    const customer = state.customers.find(item => item.id === String(jobsForInvoice[0].customerId));
+    if (!customer) throw new Error('Kunde nicht gefunden');
+    const items = (Array.isArray(data.items) ? data.items : []).map(item => ({ ...item, id: generateUUID() }));
+    const totals = calculateItems(items as DemoRecord[]);
+    const sourceJobSources = jobsForInvoice.map(job => {
+      const recurrence = job.recurrence as Partial<JobRecurrence> | undefined;
+      return {
+      id: generateUUID(),
+      jobId: job.id,
+      jobNumber: String(job.jobNumber || ''),
+      externalJobNumber: job.externalJobNumber ? String(job.externalJobNumber) : undefined,
+      title: String(job.title || ''),
+      jobDate: dateOnly(job.date || isoDate()),
+        recurrenceIndex: recurrence?.occurrenceIndex,
+      };
+    });
+    const invoice: DemoRecord = {
+      ...data,
+      id: generateUUID(),
+      sourceJobIds,
+      sourceJobs: sourceJobSources,
+      customerId: customer.id,
+      customerName: customer.name,
+      invoiceNumber: `RE-${new Date().getFullYear()}-${String(state.invoices.length + 1).padStart(3, '0')}`,
+      issueDate: dateOnly(data.issueDate || isoDate()),
+      dueDate: dateOnly(data.dueDate || isoDate(30)),
+      items,
+      ...totals,
+      status: 'draft',
+      documentType: 'invoice',
+      createdAt: isoDate(),
+    };
+    state.invoices.push(invoice);
+    jobsForInvoice.forEach(job => { job.status = 'invoiced'; job.updatedAt = isoDate(); });
+    saveState(state);
+    return invoice as unknown as T;
+  }
+
+  if (resource === 'customers' && id && (parts[2] === 'archive' || parts[2] === 'restore') && method === 'POST') {
+    const customer = state.customers.find(item => item.id === id);
+    if (!customer) throw new Error('Kunde nicht gefunden');
+    customer.isActive = parts[2] === 'restore';
+    customer.updatedAt = isoDate();
+    saveState(state);
+    return { id: customer.id, isActive: customer.isActive } as unknown as T;
+  }
+
   if (resource === 'euer-entries') {
     const entries = state.euerEntries;
     const history = state.euerEntryHistory;
@@ -738,6 +952,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (!String(data.description || '').trim()) throw new Error('Eine Beschreibung ist erforderlich.');
       if (!Number.isFinite(amount) || amount < 0) throw new Error('Der Betrag muss eine positive Zahl sein.');
       if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('Der MwSt.-Satz muss zwischen 0 und 100 liegen.');
+      validateDemoEuerSource(state, data);
       const record: DemoRecord = {
         ...data,
         id: generateUUID(),
@@ -764,8 +979,18 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'GET') return entries[index] as unknown as T;
       if (method === 'PUT') {
         if (entries[index].status === 'voided') throw new Error('Eine stornierte Buchung kann nicht bearbeitet werden.');
+        const oldEntry = entries[index];
+        const updated: DemoRecord = { ...oldEntry, ...data, id, updatedAt: isoDate() };
+        validateDemoEuerSource(state, updated, id);
+        if (oldEntry.sourceType === 'receipt' && (updated.sourceType !== 'receipt' || updated.sourceId !== oldEntry.sourceId)) {
+          const oldReceipt = state.receipts.find(receipt => receipt.id === String(oldEntry.sourceId));
+          if (oldReceipt?.linkedEuerEntryId === id) oldReceipt.linkedEuerEntryId = null;
+        }
+        if (updated.sourceType === 'receipt') {
+          const receipt = state.receipts.find(item => item.id === String(updated.sourceId));
+          if (receipt) receipt.linkedEuerEntryId = id;
+        }
         const oldData = { ...entries[index] };
-        const updated: DemoRecord = { ...entries[index], ...data, id, updatedAt: isoDate() };
         updated.entryDate = dateOnly(updated.entryDate);
         updated.status = 'active';
         entries[index] = updated;
@@ -776,8 +1001,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'DELETE') {
         if (entries[index].status === 'voided') throw new Error('Die Buchung wurde bereits storniert.');
         const oldData = { ...entries[index] };
-        const updated = { ...entries[index], status: 'voided', correctionReason: String(data.correctionReason || 'Stornierung'), updatedAt: isoDate() };
+        const updated: DemoRecord = { ...entries[index], status: 'voided', correctionReason: String(data.correctionReason || 'Stornierung'), updatedAt: isoDate() };
         entries[index] = updated;
+        if (updated.sourceType === 'receipt') {
+          const receipt = state.receipts.find(item => item.id === String(updated.sourceId));
+          if (receipt?.linkedEuerEntryId === id) receipt.linkedEuerEntryId = null;
+        }
         addHistory(updated, 'voided', updated.correctionReason as string, oldData);
         saveState(state);
         return undefined as T;
@@ -805,10 +1034,40 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       return receipts[index] as unknown as T;
     }
 
+    if (parts[2] === 'create-euer' && id && method === 'POST') {
+      const receipt = receipts.find(item => item.id === id);
+      if (!receipt) throw new Error('Beleg nicht gefunden.');
+      if (receipt.linkedEuerEntryId) throw new Error('Der Beleg ist bereits mit einer EÜR-Buchung verknüpft.');
+      if (state.euerEntries.some(entry => entry.sourceType === 'receipt' && entry.sourceId === id && entry.status === 'active')) {
+        throw new Error('Der Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.');
+      }
+      const entryData = { ...data, sourceType: 'receipt', sourceId: id, entryType: 'expense' } as DemoRecord;
+      validateDemoEuerSource(state, entryData);
+      const entry: DemoRecord = {
+        ...entryData,
+        id: generateUUID(),
+        entryDate: dateOnly(data.entryDate || isoDate()),
+        description: String(data.description || '').trim(),
+        amount: Number(data.amount || 0),
+        taxRate: Number(data.taxRate || 0),
+        status: 'active',
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      state.euerEntries.push(entry);
+      state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: entry.id, action: 'created', reason: '', oldData: null, newData: { ...entry }, changedAt: isoDate() });
+      receipt.linkedEuerEntryId = entry.id;
+      receipt.updatedAt = isoDate();
+      saveState(state);
+      return { entry, receipt } as unknown as T;
+    }
+
     if (parts[2] === 'link-euer' && id && method === 'POST') {
       const receipt = receipts.find(item => item.id === id);
       const entry = state.euerEntries.find(item => item.id === data.euerEntryId);
       if (!receipt || !entry) throw new Error('Beleg oder EÜR-Buchung nicht gefunden.');
+      if (entry.sourceType !== 'receipt' || entry.sourceId !== id || entry.status === 'voided') throw new Error('Die EÜR-Buchung gehört nicht zu diesem Beleg.');
+      if (receipt.linkedEuerEntryId && receipt.linkedEuerEntryId !== entry.id) throw new Error('Der Beleg ist bereits mit einer anderen EÜR-Buchung verknüpft.');
       receipt.linkedEuerEntryId = String(data.euerEntryId);
       receipt.updatedAt = isoDate();
       saveState(state);
@@ -843,10 +1102,55 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         return receipts[index] as unknown as T;
       }
       if (method === 'DELETE') {
+        if (receipts[index].linkedEuerEntryId) throw new Error('Der Beleg ist mit einer EÜR-Buchung verknüpft. Bitte die Buchung zuerst stornieren.');
         state.receipts = receipts.filter(receipt => receipt.id !== id);
         saveState(state);
         return undefined as T;
       }
+    }
+  }
+
+  if (resource === 'e-invoices') {
+    const incoming = state.incomingEInvoices;
+    if (parts[2] === 'link-customer' && id && method === 'POST') {
+      const invoice = incoming.find(item => item.id === id);
+      if (!invoice) throw new Error('E-Rechnung nicht gefunden.');
+      const customer = state.customers.find(item => item.id === String(data.customerId));
+      if (!customer) throw new Error('Kunde nicht gefunden.');
+      invoice.linkedCustomerId = customer.id;
+      invoice.updatedAt = isoDate();
+      saveState(state);
+      return invoice as unknown as T;
+    }
+    if (method === 'GET' && !id) return collectionResponse<T>(incoming);
+    if (method === 'POST' && !id) {
+      const filename = String(data.filename || 'eingang.xml');
+      const record: DemoRecord = {
+        ...data,
+        id: generateUUID(),
+        filename,
+        contentType: String(data.contentType || 'application/xml'),
+        size: Math.max(1, Math.round(String(data.content || '').length * 0.75)),
+        sha256: `demo-sha256-${generateUUID()}`,
+        format: 'XRechnung',
+        validationStatus: 'validated',
+        invoiceNumber: `DEMO-EINGANG-${String(incoming.length + 1).padStart(3, '0')}`,
+        issueDate: dateOnly(isoDate()),
+        currency: 'EUR',
+        supplierName: 'Demo-Lieferant',
+        grossAmount: 119,
+        extractedData: { invoiceNumber: `DEMO-EINGANG-${String(incoming.length + 1).padStart(3, '0')}`, issueDate: dateOnly(isoDate()), currency: 'EUR', supplierName: 'Demo-Lieferant', grossAmount: 119 },
+        receivedAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      incoming.push(record);
+      saveState(state);
+      return record as unknown as T;
+    }
+    if (id) {
+      const invoice = incoming.find(item => item.id === id);
+      if (!invoice) throw new Error('E-Rechnung nicht gefunden.');
+      if (method === 'GET') return invoice as unknown as T;
     }
   }
 
@@ -906,7 +1210,13 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (!recurring) throw new Error('Wiederkehrende Rechnung nicht gefunden');
       if (recurring.status !== 'active') throw new Error('Die Vorlage ist nicht aktiv');
 
-      const runDate = dateOnly(data.scheduledDate || recurring.nextRunDate);
+      const runDate = assertDemoDate(data.scheduledDate || recurring.nextRunDate, 'Das Ausführungsdatum');
+      if (recurring.endDate && runDate > assertDemoDate(recurring.endDate, 'Das Enddatum')) throw new Error('Die wiederkehrende Rechnung ist bereits beendet.');
+      const existingRun = ((recurring.runs as DemoRecord[] | undefined) || []).find(run => run.scheduledDate === runDate && run.status === 'success');
+      if (existingRun?.generatedInvoiceId) {
+        const existingInvoice = state.invoices.find(invoice => invoice.id === existingRun.generatedInvoiceId);
+        if (existingInvoice) return existingInvoice as unknown as T;
+      }
       const invoiceItems = (Array.isArray(recurring.items) ? recurring.items : []).map(item => ({
         ...item,
         id: generateUUID(),
@@ -957,18 +1267,21 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (method === 'POST' && !id) {
       const customer = state.customers.find(item => item.id === String(data.customerId));
       if (!customer) throw new Error('Kunde nicht gefunden');
+      const normalized = validateDemoRecurring({
+        ...data,
+        frequency: data.frequency || 'monthly',
+        intervalValue: Number(data.intervalValue || 1),
+        intervalUnit: data.intervalUnit || 'month',
+        startDate: data.startDate || isoDate(),
+        nextRunDate: data.nextRunDate || data.startDate || isoDate(),
+        status: data.status || 'active',
+        dueDays: Number(data.dueDays ?? 30),
+      });
       const record: DemoRecord = {
         ...data,
         id: generateUUID(),
         customerName: customer.name,
-        items: Array.isArray(data.items) ? data.items : [],
-        frequency: data.frequency || 'monthly',
-        intervalValue: Number(data.intervalValue || 1),
-        intervalUnit: data.intervalUnit || 'month',
-        startDate: dateOnly(data.startDate || isoDate()),
-        nextRunDate: dateOnly(data.nextRunDate || data.startDate || isoDate()),
-        status: data.status || 'active',
-        dueDays: Number(data.dueDays ?? 30),
+        ...normalized,
         runs: [],
         createdAt: isoDate(),
         updatedAt: isoDate(),
@@ -983,12 +1296,15 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'GET') return recurringItems[index] as unknown as T;
       if (method === 'PUT') {
         const customer = data.customerId ? state.customers.find(item => item.id === String(data.customerId)) : undefined;
+        if (data.customerId && !customer) throw new Error('Kunde nicht gefunden');
         const updated = {
           ...recurringItems[index],
           ...data,
           ...(customer ? { customerName: customer.name } : {}),
           updatedAt: isoDate(),
         };
+        const normalized = validateDemoRecurring(updated);
+        Object.assign(updated, normalized);
         recurringItems[index] = updated;
         saveState(state);
         return updated as unknown as T;
@@ -1129,10 +1445,37 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
   if (method === 'GET' && !id) {
-    const visibleItems = key === 'invoices' ? items.filter(item => item.documentType !== 'credit_note') : items;
+    const visibleItems = key === 'invoices'
+      ? items.filter(item => item.documentType !== 'credit_note')
+      : key === 'customers' && queryParams.get('includeArchived') !== 'true'
+        ? items.filter(item => item.isActive !== false)
+        : items;
     return collectionResponse<T>(visibleItems);
   }
   if (method === 'POST' && !id) {
+    if (key === 'jobs') {
+      const recurrence = data.recurrence as JobRecurrenceRule | undefined;
+      const occurrenceDates = recurrence
+        ? getJobRecurrenceDates(recurrence)
+        : [dateOnly(data.date || isoDate())];
+      if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine Einheiten.');
+
+      const recurrenceId = recurrence ? generateUUID() : undefined;
+      const records = occurrenceDates.map((occurrenceDate, index) => ({
+        ...data,
+        id: generateUUID(),
+        jobNumber: data.jobNumber || `AB-${new Date().getFullYear()}-${String(state.jobs.length + index + 1).padStart(3, '0')}`,
+        date: occurrenceDate,
+        recurrence: recurrence
+          ? { ...recurrence, id: recurrenceId, occurrenceIndex: index + 1, totalOccurrences: occurrenceDates.length }
+          : undefined,
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      })) as DemoRecord[];
+      state.jobs.push(...records);
+      saveState(state);
+      return records[0] as unknown as T;
+    }
     const record: DemoRecord = { ...data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() };
     if (key === 'customers') record.customerNumber = String(1001 + items.length);
     items.push(record);
@@ -1143,12 +1486,133 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const index = items.findIndex(itemRecord => itemRecord.id === id);
     if (method === 'GET') return (index >= 0 ? items[index] : {}) as unknown as T;
     if (method === 'PUT') {
+      if (key === 'quotes' && (items[index]?.convertedToInvoiceId || items[index]?.status === 'billed')) {
+        throw new Error('Ein bereits abgerechnetes Angebot kann nicht mehr geändert werden.');
+      }
+      if (key === 'jobs' && index >= 0) {
+        const current = items[index];
+        const targetStatus = String(data.status ?? current.status ?? 'draft');
+        const effectiveCustomerId = data.customerId !== undefined ? data.customerId : current.customerId;
+        const effectiveTitle = data.title !== undefined ? data.title : current.title;
+        const effectiveDescription = data.description !== undefined ? data.description : current.description;
+        if (targetStatus !== 'draft' && (
+          !String(effectiveCustomerId || '')
+          || !String(effectiveTitle || '').trim()
+          || !String(effectiveDescription || '').trim()
+        )) {
+          throw new Error('Pflichtfelder fehlen: Kunde, Titel und Beschreibung sind vor dem Weiterführen erforderlich.');
+        }
+        const recurrence = data.recurrence as JobRecurrenceRule | null | undefined;
+        const currentRecurrence = current.recurrence as JobRecurrence | undefined;
+
+        if (recurrence !== undefined && currentRecurrence?.id) {
+          const seriesId = currentRecurrence.id;
+          const series = state.jobs
+            .filter((record) => (record.recurrence as JobRecurrence | undefined)?.id === seriesId)
+            .sort((a, b) => (
+              ((a.recurrence as JobRecurrence | undefined)?.occurrenceIndex || 0)
+              - ((b.recurrence as JobRecurrence | undefined)?.occurrenceIndex || 0)
+            ));
+
+          if (series.some((record) => record.status === 'completed' || record.status === 'invoiced')) {
+            throw new Error('Diese Kursserie enthält bereits abgeschlossene oder abgerechnete Termine und kann deshalb nicht mehr in ihrer Wiederholung geändert werden.');
+          }
+
+          const seriesIds = new Set(series.map((record) => record.id));
+          if (recurrence === null) {
+            const updated = { ...current, ...data, id, recurrence: undefined, updatedAt: isoDate() } as DemoRecord;
+            state.jobs = state.jobs
+              .filter((record) => !seriesIds.has(record.id) || record.id === id)
+              .map((record) => record.id === id ? updated : record);
+            saveState(state);
+            return updated as unknown as T;
+          }
+
+          const occurrenceDates = getJobRecurrenceDates(recurrence);
+          if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine Einheiten.');
+
+          const survivorCount = Math.min(series.length, occurrenceDates.length);
+          const survivors = series.slice(0, survivorCount);
+          const currentSeriesRow = series.find((record) => record.id === id);
+          if (currentSeriesRow && !survivors.some((record) => record.id === id)) {
+            survivors[survivors.length - 1] = currentSeriesRow;
+          }
+
+          const updatedCurrent = { ...current, ...data, id, updatedAt: isoDate() } as DemoRecord;
+          const survivorIds = new Set(survivors.map((record) => record.id));
+          const updatedSeries = survivors.map((record, occurrenceIndex) => ({
+            ...(record.id === id ? updatedCurrent : record),
+            date: occurrenceDates[occurrenceIndex],
+            recurrence: {
+              ...recurrence,
+              id: seriesId,
+              occurrenceIndex: occurrenceIndex + 1,
+              totalOccurrences: occurrenceDates.length,
+            },
+            updatedAt: isoDate(),
+          })) as DemoRecord[];
+          const extraRecords = occurrenceDates.slice(survivors.length).map((occurrenceDate, occurrenceOffset) => ({
+            ...updatedCurrent,
+            id: generateUUID(),
+            jobNumber: `AB-${new Date().getFullYear()}-${String(state.jobs.length + occurrenceOffset + 1).padStart(3, '0')}`,
+            date: occurrenceDate,
+            recurrence: {
+              ...recurrence,
+              id: seriesId,
+              occurrenceIndex: survivors.length + occurrenceOffset + 1,
+              totalOccurrences: occurrenceDates.length,
+            },
+            createdAt: isoDate(),
+            updatedAt: isoDate(),
+          })) as DemoRecord[];
+
+          const updatedSeriesById = new Map(updatedSeries.map((record) => [record.id, record]));
+          state.jobs = state.jobs
+            .filter((record) => !seriesIds.has(record.id) || survivorIds.has(record.id))
+            .map((record) => updatedSeriesById.get(record.id) || record);
+          state.jobs.push(...extraRecords);
+          saveState(state);
+          return (updatedSeriesById.get(id) || updatedCurrent) as unknown as T;
+        }
+
+        if (recurrence && !current.recurrence) {
+          const occurrenceDates = getJobRecurrenceDates(recurrence);
+          if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine Einheiten.');
+          const recurrenceId = generateUUID();
+          const records = occurrenceDates.map((occurrenceDate, occurrenceIndex) => ({
+            ...current,
+            ...data,
+            id: occurrenceIndex === 0 ? id : generateUUID(),
+            jobNumber: occurrenceIndex === 0
+              ? current.jobNumber
+              : `AB-${new Date().getFullYear()}-${String(state.jobs.length + occurrenceIndex).padStart(3, '0')}`,
+            date: occurrenceDate,
+            recurrence: { ...recurrence, id: recurrenceId, occurrenceIndex: occurrenceIndex + 1, totalOccurrences: occurrenceDates.length },
+            createdAt: current.createdAt || isoDate(),
+            updatedAt: isoDate(),
+          })) as DemoRecord[];
+          items[index] = records[0];
+          items.push(...records.slice(1));
+          saveState(state);
+          return records[0] as unknown as T;
+        }
+      }
       const updated = { ...(items[index] || { id }), ...data, id, updatedAt: isoDate() };
       if (index >= 0) items[index] = updated; else items.push(updated);
       saveState(state);
       return updated as unknown as T;
     }
     if (method === 'DELETE') {
+      if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
+      if (key === 'invoices' && items[index]?.status !== 'draft') throw new Error('Nur Entwürfe können gelöscht werden.');
+      if (key === 'invoices' && Array.isArray(items[index]?.sourceJobIds)) {
+        state.jobs.forEach(job => {
+          if (((items[index]?.sourceJobIds as string[]) || []).includes(job.id) && job.status === 'invoiced') {
+            job.status = 'completed';
+            job.updatedAt = isoDate();
+          }
+        });
+      }
       const remainingItems = items.filter(itemRecord => itemRecord.id !== id);
       state[key] = remainingItems as DemoState[typeof key];
       saveState(state);

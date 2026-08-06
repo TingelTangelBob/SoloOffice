@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import logger from '../utils/logger';
 import { 
   Plus, 
@@ -18,18 +18,23 @@ import {
   RefreshCw,
   X,
   Upload,
+  Copy,
+  Repeat2,
+  Info,
+  ChevronDown,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
+import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
 import { JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
-import { JobInvoiceGenerator } from './JobInvoiceGenerator';
+import { JobInvoiceGenerationType, JobInvoiceGenerator } from './JobInvoiceGenerator';
 import { PageHeader } from './PageHeader';
 import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
 import { ConfirmationModal } from './ConfirmationModal';
 import { DocumentPreview } from './DocumentPreview';
-import { createJobAttachmentPreviewDocuments } from '../utils/previewDocuments';
+import { createInvoiceAttachmentPreviewDocuments, createJobAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { generateJobPDF, downloadBlob } from '../utils/pdfGenerator';
 import { calculateTotalHours } from '../utils/jobUtils';
@@ -38,9 +43,11 @@ import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
+import { generateUUID } from '../utils/uuid';
 
 interface JobManagementProps {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
+  initialRecurringGroupId?: string;
 }
 
 type StatusChangeFeedback = {
@@ -51,8 +58,20 @@ type StatusChangeFeedback = {
   errorMessage?: string;
 };
 
-export function JobManagement({ onNavigate }: JobManagementProps = {}) {
+type RecurringJobGroup = {
+  key: string;
+  jobs: JobEntry[];
+};
+
+type DisplayedJob = {
+  job: JobEntry;
+  recurrenceGroup?: RecurringJobGroup;
+  isGroupHeader?: boolean;
+};
+
+export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManagementProps = {}) {
   const { customers, addCustomer, refreshCustomers } = useCustomers();
+  const { invoices } = useInvoices();
   const { jobEntries, addJobEntry, updateJobEntry, deleteJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -60,6 +79,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
   const [showInvoiceGenerator, setShowInvoiceGenerator] = useState(false);
+  const [invoiceGenerationType, setInvoiceGenerationType] = useState<JobInvoiceGenerationType>('single');
   const [invoiceCreationNotice, setInvoiceCreationNotice] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
@@ -69,6 +89,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [showAllStats, setShowAllStats] = useState(false);
+  const [expandedRecurringGroups, setExpandedRecurringGroups] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [newCustomerData, setNewCustomerData] = useState({
@@ -109,6 +130,37 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
 
   // Get locale from company settings
   const locale = company?.locale || 'de-DE';
+
+  const hasInitialRecurringGroup = Boolean(
+    initialRecurringGroupId && jobEntries.some(job => job.recurrence?.id === initialRecurringGroupId),
+  );
+
+  useEffect(() => {
+    if (!initialRecurringGroupId || !hasInitialRecurringGroup) return;
+
+    setSearchTerm('');
+    setStatusFilter('all');
+    setCustomerFilter('all');
+    setDateFilter('all');
+    setExpandedRecurringGroups(previous => {
+      if (previous.has(initialRecurringGroupId)) return previous;
+      const next = new Set(previous);
+      next.add(initialRecurringGroupId);
+      return next;
+    });
+  }, [hasInitialRecurringGroup, initialRecurringGroupId]);
+
+  useEffect(() => {
+    if (!initialRecurringGroupId || !hasInitialRecurringGroup) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-recurring-group]'))
+        .find(element => element.dataset.recurringGroup === initialRecurringGroupId && element.offsetParent !== null);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [expandedRecurringGroups, hasInitialRecurringGroup, initialRecurringGroupId]);
 
   // Filter and search jobs
   const filteredJobs = useMemo(() => {
@@ -164,6 +216,52 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     });
   }, [jobEntries, searchTerm, statusFilter, customerFilter, dateFilter]);
 
+  const recurringGroups = useMemo(() => {
+    const groups = new Map<string, RecurringJobGroup>();
+    filteredJobs.forEach((job) => {
+      const key = job.recurrence?.id;
+      if (!key) return;
+      const group = groups.get(key) || { key, jobs: [] };
+      group.jobs.push(job);
+      groups.set(key, group);
+    });
+    groups.forEach((group) => {
+      group.jobs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    });
+    return groups;
+  }, [filteredJobs]);
+
+  const displayedJobs = useMemo<DisplayedJob[]>(() => {
+    const rows: DisplayedJob[] = [];
+    const emittedGroups = new Set<string>();
+
+    filteredJobs.forEach((job) => {
+      const key = job.recurrence?.id;
+      const group = key ? recurringGroups.get(key) : undefined;
+
+      if (!group || group.jobs.length < 2) {
+        rows.push({ job });
+        return;
+      }
+
+      if (emittedGroups.has(group.key)) return;
+      emittedGroups.add(group.key);
+
+      const jobsToShow = expandedRecurringGroups.has(group.key)
+        ? group.jobs
+        : group.jobs.slice(0, 1);
+      jobsToShow.forEach((groupJob, index) => {
+        rows.push({
+          job: groupJob,
+          recurrenceGroup: group,
+          isGroupHeader: index === 0,
+        });
+      });
+    });
+
+    return rows;
+  }, [filteredJobs, recurringGroups, expandedRecurringGroups]);
+
   // Calculate statistics
   const stats = useMemo(() => {
     const totalJobs = filteredJobs.length;
@@ -202,9 +300,15 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         isOpen: true,
         title: terminology.work.deleteLabel,
         message: `Dieser ${terminology.work.singular} wurde bereits abgerechnet. Das Löschen abgerechneter ${terminology.work.plural} kann die GoBD-Konformität verletzen und ist rechtlich problematisch. Sind Sie sicher, dass Sie fortfahren möchten?`,
-        onConfirm: () => {
-          deleteJobEntry(job.id);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        onConfirm: async () => {
+          try {
+            await deleteJobEntry(job.id);
+          } catch (error) {
+            logger.error('Error deleting invoiced job:', error);
+            alert(error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.');
+          } finally {
+            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          }
         },
         isDestructive: true,
         isGoBDWarning: true
@@ -214,9 +318,15 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         isOpen: true,
         title: terminology.work.deleteLabel,
           message: `Möchten Sie den ${terminology.work.singular} "${job.title}" wirklich löschen?`,
-        onConfirm: () => {
-          deleteJobEntry(job.id);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        onConfirm: async () => {
+          try {
+            await deleteJobEntry(job.id);
+          } catch (error) {
+            logger.error('Error deleting job:', error);
+            alert(error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.');
+          } finally {
+            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          }
         },
         isDestructive: true
       });
@@ -227,6 +337,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     try {
       if (editingJob) {
         await updateJobEntry(editingJob.id, jobData);
+        await refreshJobEntries();
       } else {
         await addJobEntry(jobData);
         // Refresh job entries in other components
@@ -234,10 +345,11 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
       }
       setShowForm(false);
       setEditingJob(null);
+      return true;
     } catch (error) {
       logger.error('Error saving job:', error);
       // Don't close the form if there was an error, so user can retry
-      // The error message is already shown by the Context
+      throw error;
     }
   };
 
@@ -283,13 +395,32 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     }
   };
 
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'high': return 'text-red-600';
-      case 'medium': return 'text-yellow-600';
-      case 'low': return 'text-green-600';
-      default: return 'text-gray-600';
+  const handleDuplicate = async (job: JobEntry) => {
+    try {
+      const duplicatedJob = await addJobEntry({
+        ...job,
+        jobNumber: '',
+        externalJobNumber: '',
+        date: new Date(),
+        status: 'draft',
+        recurrence: undefined,
+        signature: undefined,
+        attachments: [],
+        timeEntries: (job.timeEntries || []).map((entry) => ({ ...entry, id: generateUUID() })),
+        materials: (job.materials || []).map((material) => ({ ...material, id: generateUUID() })),
+      });
+      await refreshJobEntries();
+      setEditingJob(duplicatedJob);
+      setShowForm(true);
+    } catch (error) {
+      logger.error('Error duplicating job:', error);
     }
+  };
+
+  const getNotePreview = (notes?: string) => {
+    const note = notes?.replace(/\s+/g, ' ').trim() || '';
+    if (!note) return '';
+    return note.length > 90 ? `${note.slice(0, 87)}...` : note;
   };
 
   const getStatusDotColor = (status: JobEntry['status']) => {
@@ -307,6 +438,23 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     newStatus: JobEntry['status'],
     clearSelection = false,
   ) => {
+    if (newStatus !== 'draft') {
+      const hasIncompleteJob = jobIds.some((jobId) => {
+        const job = jobEntries.find((entry) => entry.id === jobId);
+        return !job?.customerId || !job.title?.trim() || !job.description?.trim();
+      });
+      if (hasIncompleteJob) {
+        setStatusChangeFeedback({
+          phase: 'error',
+          completed: 0,
+          total: jobIds.length,
+          statusText: getStatusText(newStatus),
+          errorMessage: 'Pflichtfelder fehlen: Kunde, Titel und Beschreibung müssen vor dem Weiterführen ausgefüllt sein.',
+        });
+        return;
+      }
+    }
+
     setIsBulkOperation(true);
     setStatusChangeFeedback({
       phase: 'loading',
@@ -357,6 +505,34 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     }
   };
 
+  const handleRecurringGroupSelection = (group: RecurringJobGroup, checked: boolean) => {
+    setInvoiceCreationNotice(false);
+    setSelectedJobIds((previous) => {
+      const next = new Set(previous);
+      group.jobs.forEach((job) => {
+        if (checked) next.add(job.id);
+        else next.delete(job.id);
+      });
+      return [...next];
+    });
+  };
+
+  const toggleRecurringGroup = (groupKey: string) => {
+    setExpandedRecurringGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  };
+
+  const handleRecurringGroupRowClick = (event: ReactMouseEvent, group?: RecurringJobGroup, isGroupHeader?: boolean) => {
+    if (!group || !isGroupHeader) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, label')) return;
+    toggleRecurringGroup(group.key);
+  };
+
   const handleBulkInvoiceGeneration = () => {
     const completedSelectedJobs = selectedJobIds.filter(jobId => {
       const job = jobEntries.find(j => j.id === jobId);
@@ -369,6 +545,12 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     }
 
     setInvoiceCreationNotice(false);
+    const selectedJobs = jobEntries.filter((job) => selectedJobIds.includes(job.id));
+    const recurringCourseId = selectedJobs[0]?.recurrence?.id;
+    const isOneCompleteCourse = Boolean(recurringCourseId)
+      && selectedJobs.length > 1
+      && selectedJobs.every((job) => job.recurrence?.id === recurringCourseId);
+    setInvoiceGenerationType(isOneCompleteCourse ? 'course' : 'single');
     setShowInvoiceGenerator(true);
   };
 
@@ -463,7 +645,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
         customer
       });
 
-      const filename = `${terminology.work.singular}_${job.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(job.date).toLocaleDateString('de-DE').replace(/\./g, '-')}.pdf`;
+      const filename = `${terminology.work.confirmationLabel}_${job.title.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date(job.date).toLocaleDateString('de-DE').replace(/\./g, '-')}.pdf`;
       downloadBlob(pdfBlob, filename);
     } catch (error) {
       logger.error(`Fehler beim Erstellen der ${terminology.work.singular}-PDF:`, error);
@@ -472,7 +654,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
   };
 
   const handlePreview = (job: JobEntry) => {
-    // Create preview documents for the job
+    // Create preview documents for the course record and its attachments.
     const documents = createJobAttachmentPreviewDocuments(job, company?.terminologyProfile);
     
     setDocumentPreview({
@@ -480,6 +662,40 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
       documents,
       initialIndex: 0
     });
+  };
+
+  const findInvoiceForJobs = (jobsToCheck: JobEntry[]) => invoices.find((invoice) =>
+    jobsToCheck.some((job) => invoice.sourceJobs?.some((sourceJob) => sourceJob.jobId === job.id)),
+  );
+
+  const handlePreviewInvoice = (job: JobEntry, recurrenceGroup?: RecurringJobGroup) => {
+    const invoice = findInvoiceForJobs(recurrenceGroup?.jobs || [job]);
+    if (!invoice) return;
+
+    setDocumentPreview({
+      isOpen: true,
+      documents: createInvoiceAttachmentPreviewDocuments(invoice),
+      initialIndex: 0,
+    });
+  };
+
+  const handleEditInvoice = (job: JobEntry, recurrenceGroup?: RecurringJobGroup) => {
+    const invoice = findInvoiceForJobs(recurrenceGroup?.jobs || [job]);
+    if (!invoice) return;
+    onNavigate?.('invoices', 'all', undefined, invoice.id);
+  };
+
+  const handleCreateInvoice = (job: JobEntry, recurrenceGroup?: RecurringJobGroup) => {
+    const jobsToInvoice = recurrenceGroup?.jobs || [job];
+    if (!jobsToInvoice.some((item) => item.status === 'completed')) {
+      setInvoiceCreationNotice(true);
+      return;
+    }
+
+    setInvoiceCreationNotice(false);
+    setSelectedJobIds(jobsToInvoice.map((item) => item.id));
+    setInvoiceGenerationType('course');
+    setShowInvoiceGenerator(true);
   };
 
   const handleClosePreview = () => {
@@ -514,38 +730,47 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
     return (
       <JobInvoiceGenerator
         selectedJobIds={selectedJobIds}
+        initialGenerationType={invoiceGenerationType}
         onClose={() => {
           setShowInvoiceGenerator(false);
           setSelectedJobIds([]);
         }}
-        onInvoiceGenerated={() => {
+        onInvoiceGenerated={(createdInvoices) => {
           setShowInvoiceGenerator(false);
           setSelectedJobIds([]);
+          const createdInvoice = createdInvoices.length === 1 ? createdInvoices[0] : undefined;
+          if (createdInvoice) {
+            onNavigate?.('invoices', 'all', undefined, createdInvoice.id);
+          }
         }}
       />
     );
   }
 
   return (
-    <div className="space-y-8 xl:space-y-4 2xl:space-y-8">
+    <div className="space-y-8 pt-20 lg:pt-0 xl:space-y-4 2xl:space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
         <PageHeader icon={Briefcase} title={terminology.work.managementLabel}>
         
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        <div className="flex shrink-0 flex-row gap-2">
           <button
             type="button"
             onClick={() => setShowImport(true)}
-            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-primary-custom px-3 text-sm text-primary-custom transition hover:bg-primary-light-custom sm:px-4 sm:text-base"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-primary-custom px-3 text-sm text-primary-custom transition hover:bg-primary-light-custom sm:min-w-0 sm:px-4 sm:text-base"
+            aria-label="Importieren"
+            title="Importieren"
           >
-            <Upload className="mr-0 h-4 w-4 sm:mr-2" />
+            <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Importieren</span>
           </button>
           <button
             onClick={() => setShowForm(true)}
-            className="inline-flex h-10 shrink-0 items-center rounded-xl bg-primary-custom px-3 text-sm text-white transition-all duration-300 hover:scale-105 hover:bg-primary-custom/90 sm:px-4 sm:text-base"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-custom px-3 text-sm text-white transition-all duration-300 hover:scale-105 hover:bg-primary-custom/90 sm:min-w-0 sm:px-4 sm:text-base"
+            aria-label={terminology.work.newLabel}
+            title={terminology.work.newLabel}
           >
-            <Plus className="mr-0 h-4 w-4 sm:mr-2" />
+            <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">{terminology.work.newLabel}</span>
           </button>
         </div>
@@ -761,7 +986,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
       />
 
       {/* Jobs List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {filteredJobs.length === 0 ? (
           <div className="p-8 lg:p-12 text-center">
             <Briefcase className="h-12 w-12 lg:h-16 lg:w-16 text-gray-400 mx-auto mb-4" />
@@ -863,16 +1088,25 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
               </div>
             )}
             {/* Mobile View */}
-            <div className="block lg:hidden">
+            <div className="block tablet:hidden">
               <div className="divide-y divide-gray-200">
-                {filteredJobs.map((job) => (
-                  <div key={job.id} className="p-4 hover:bg-gray-50">
+                {displayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
+                  <div
+                    key={job.id}
+                    data-recurring-group={recurrenceGroup && isGroupHeader ? recurrenceGroup.key : undefined}
+                    onClick={(event) => handleRecurringGroupRowClick(event, recurrenceGroup, isGroupHeader)}
+                    className={`p-4 hover:bg-gray-50 ${recurrenceGroup && isGroupHeader ? 'cursor-pointer' : ''} ${recurrenceGroup && !isGroupHeader ? 'ml-3 border-l-2 border-primary-custom/30 bg-primary-custom/[0.02]' : ''}`}
+                  >
                     <div className="flex items-start space-x-3">
                       <div className="flex-shrink-0 pt-1">
                         <input
                           type="checkbox"
-                          checked={selectedJobIds.includes(job.id)}
-                          onChange={(e) => handleJobSelection(job.id, e.target.checked)}
+                          checked={recurrenceGroup && isGroupHeader
+                            ? recurrenceGroup.jobs.every((groupJob) => selectedJobIds.includes(groupJob.id))
+                            : selectedJobIds.includes(job.id)}
+                          onChange={(e) => recurrenceGroup && isGroupHeader
+                            ? handleRecurringGroupSelection(recurrenceGroup, e.target.checked)
+                            : handleJobSelection(job.id, e.target.checked)}
                           className="custom-checkbox cursor-pointer"
                           title={`${terminology.work.singular} auswählen`}
                         />
@@ -881,20 +1115,34 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">
-                              {job.priority && (
-                                <AlertTriangle className={`mr-1 inline h-4 w-4 align-text-bottom ${getPriorityColor(job.priority)}`} />
-                              )}
+                            <h3
+                              className="min-w-0 truncate text-sm font-medium text-gray-900"
+                              title={job.priority ? `Priorität: ${job.priority === 'high' ? 'hoch' : job.priority === 'medium' ? 'mittel' : 'niedrig'}` : undefined}
+                            >
                               {job.title}
                             </h3>
+                            {recurrenceGroup && isGroupHeader && (
+                              <span className="shrink-0 rounded-full bg-primary-custom/10 px-2 py-0.5 text-[11px] font-medium text-primary-custom">
+                                {recurrenceGroup.jobs.length} Termine
+                              </span>
+                            )}
                             <label
                               className="relative inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center"
-                              title={getStatusText(job.status)}
+                              title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}
                             >
-                              <span className={`h-2.5 w-2.5 rounded-full sm:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
-                              <span className={`hidden rounded-full px-2.5 py-1 text-xs font-semibold sm:inline-flex ${getStatusColor(job.status)}`}>
+                              <span className={`h-2.5 w-2.5 rounded-full tablet:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                              <span className={`hidden rounded-full px-2.5 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(job.status)}`}>
                                 {getStatusText(job.status)}
                               </span>
+                              {job.recurrence && (
+                                <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />
+                              )}
+                              {getNotePreview(job.notes) && (
+                                <Info
+                                  className="h-4 w-4 shrink-0 text-primary-custom"
+                                  aria-label={`Hinweis: ${getNotePreview(job.notes)}`}
+                                />
+                              )}
                               <select
                                 value={job.status}
                                 onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
@@ -914,9 +1162,21 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                             containerClassName="shrink-0"
                             triggerClassName="action-icon-button bg-gray-100 text-gray-700 hover:bg-gray-200"
                           >
-                            <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>PDF exportieren</ActionMenuItem>
-                            <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>Dokumente anzeigen</ActionMenuItem>
+                            <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>{terminology.work.confirmationLabel} exportieren</ActionMenuItem>
+                            <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>{terminology.work.confirmationLabel} anzeigen</ActionMenuItem>
+                            {((recurrenceGroup && isGroupHeader && recurrenceGroup.jobs.some((item) => item.status === 'completed')) || (!recurrenceGroup && job.status === 'completed')) && (
+                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
+                                {recurrenceGroup && isGroupHeader ? 'Rechnung für gesamten Kurs erstellen' : 'Rechnung erstellen'}
+                              </ActionMenuItem>
+                            )}
+                            {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="green" onClick={() => handlePreviewInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung anzeigen</ActionMenuItem>
+                            )}
+                            {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                              <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
+                            )}
                             <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                            <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
                             <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                           </ActionMenu>
                         </div>
@@ -925,7 +1185,7 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                           {job.description}
                         </p>
                         
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                           <div className="flex items-center whitespace-nowrap">
                             <span className="text-gray-500 mr-2">{terminology.work.numberShortLabel}:</span>
                             <span className="text-gray-900 font-medium">{job.jobNumber}</span>
@@ -937,6 +1197,24 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                           </div>
                           
                           <div className="flex items-center whitespace-nowrap">
+                            {recurrenceGroup && isGroupHeader && (
+                              <button
+                                type="button"
+                                onClick={() => toggleRecurringGroup(recurrenceGroup.key)}
+                                className="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-primary-custom/10 hover:text-primary-custom"
+                                aria-expanded={expandedRecurringGroups.has(recurrenceGroup.key)}
+                                aria-label={expandedRecurringGroups.has(recurrenceGroup.key) ? 'Kursserie einklappen' : 'Kursserie aufklappen'}
+                                title={expandedRecurringGroups.has(recurrenceGroup.key) ? 'Kursserie einklappen' : 'Kursserie aufklappen'}
+                              >
+                                <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedRecurringGroups.has(recurrenceGroup.key) ? 'rotate-180' : ''}`} />
+                              </button>
+                            )}
+                            {recurrenceGroup && !isGroupHeader && (
+                              <span className="relative mr-1 inline-flex h-5 w-3 shrink-0 items-center" aria-hidden="true">
+                                <span className="absolute bottom-0 left-1 top-0 w-px bg-primary-custom/30" />
+                                <span className="absolute left-1 top-1/2 h-px w-2 bg-primary-custom/30" />
+                              </span>
+                            )}
                             <Calendar className="h-4 w-4 text-gray-400 mr-1 flex-shrink-0" />
                             <span className="text-gray-900">{formatDate(job.date, locale, company?.dateFormat)}</span>
                           </div>
@@ -954,14 +1232,14 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden lg:block w-full max-w-full overflow-x-auto">
+            <div className="hidden tablet:block w-full max-w-full overflow-x-auto">
               <table className="w-full min-w-[820px]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-2 py-3 text-left w-12">
                       <span className="sr-only">Auswahl</span>
                     </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                       Datum
                     </th>
                     <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
@@ -973,9 +1251,6 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                     <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                       {terminology.entity.singular}
                     </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
-                      Status
-                    </th>
                     <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
                       Std.
                     </th>
@@ -985,21 +1260,50 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredJobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-gray-50">
+                    {displayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
+                      <tr
+                        key={job.id}
+                        data-recurring-group={recurrenceGroup && isGroupHeader ? recurrenceGroup.key : undefined}
+                        onClick={(event) => handleRecurringGroupRowClick(event, recurrenceGroup, isGroupHeader)}
+                        className={`hover:bg-gray-50 ${recurrenceGroup && isGroupHeader ? 'cursor-pointer' : ''} ${recurrenceGroup && !isGroupHeader ? 'bg-primary-custom/[0.02]' : ''}`}
+                      >
                       <td className="px-2 py-4 xl:py-2 2xl:py-4 w-12">
                         <div className="flex items-center">
                           <input
                             type="checkbox"
-                            checked={selectedJobIds.includes(job.id)}
-                          onChange={(e) => handleJobSelection(job.id, e.target.checked)}
+                            checked={recurrenceGroup && isGroupHeader
+                              ? recurrenceGroup.jobs.every((groupJob) => selectedJobIds.includes(groupJob.id))
+                              : selectedJobIds.includes(job.id)}
+                          onChange={(e) => recurrenceGroup && isGroupHeader
+                            ? handleRecurringGroupSelection(recurrenceGroup, e.target.checked)
+                            : handleJobSelection(job.id, e.target.checked)}
                           className="custom-checkbox cursor-pointer"
                           title={`${terminology.work.singular} auswählen`}
                         />
                         </div>
                       </td>
-                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-24">
-                        <span className="text-sm text-gray-900 whitespace-nowrap">{formatDate(job.date, locale, company?.dateFormat)}</span>
+                      <td className={`w-28 px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 ${recurrenceGroup && !isGroupHeader ? 'border-l-2 border-primary-custom' : ''}`}>
+                        <div className="flex items-center gap-1">
+                          {recurrenceGroup && isGroupHeader && (
+                            <button
+                              type="button"
+                              onClick={() => toggleRecurringGroup(recurrenceGroup.key)}
+                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-primary-custom/10 hover:text-primary-custom"
+                              aria-expanded={expandedRecurringGroups.has(recurrenceGroup.key)}
+                              aria-label={expandedRecurringGroups.has(recurrenceGroup.key) ? 'Kursserie einklappen' : 'Kursserie aufklappen'}
+                              title={expandedRecurringGroups.has(recurrenceGroup.key) ? 'Kursserie einklappen' : 'Kursserie aufklappen'}
+                            >
+                              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedRecurringGroups.has(recurrenceGroup.key) ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
+                          {recurrenceGroup && !isGroupHeader && (
+                            <span className="relative inline-flex h-6 w-3 shrink-0 items-center" aria-hidden="true">
+                              <span className="absolute bottom-0 left-1 top-0 w-0.5 rounded-full bg-primary-custom/65" />
+                              <span className="absolute left-1 top-1/2 h-0.5 w-2 rounded-full bg-primary-custom/65" />
+                            </span>
+                          )}
+                          <span className="text-sm text-gray-900 whitespace-nowrap">{formatDate(job.date, locale, company?.dateFormat)}</span>
+                        </div>
                       </td>
                       <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4">
                         <div className="text-sm font-medium text-gray-900 truncate">
@@ -1008,8 +1312,15 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                       </td>
                       <td className="min-w-0 px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4">
                         <div className="min-w-0 max-w-full">
-                          <div className="min-w-0 truncate whitespace-nowrap text-sm font-medium text-gray-900">
-                            {job.title}
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <div className="min-w-0 truncate whitespace-nowrap text-sm font-medium text-gray-900">
+                              {job.title}
+                            </div>
+                            {recurrenceGroup && isGroupHeader && (
+                              <span className="shrink-0 rounded-full bg-primary-custom/10 px-2 py-0.5 text-[11px] font-medium text-primary-custom">
+                                {recurrenceGroup.jobs.length} Termine
+                              </span>
+                            )}
                           </div>
                           <div className="block max-w-full min-w-0 truncate whitespace-nowrap text-xs text-gray-500">
                             {job.description}
@@ -1019,9 +1330,18 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                       <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-32">
                         <span className="text-sm text-gray-900 truncate block">{job.customerName}</span>
                       </td>
-                      <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-28">
-                        <label className="relative inline-flex items-center gap-2" title={getStatusText(job.status)}>
+                      <td className="hidden">
+                        <label className="relative inline-flex items-center gap-2" title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}>
                           <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                          {job.recurrence && (
+                            <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />
+                          )}
+                          {getNotePreview(job.notes) && (
+                            <Info
+                              className="h-4 w-4 shrink-0 text-primary-custom"
+                              aria-label={`Hinweis: ${getNotePreview(job.notes)}`}
+                            />
+                          )}
                           <span className="sr-only">{getStatusText(job.status)}</span>
                           <select
                           value={job.status}
@@ -1040,16 +1360,46 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                       <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-20">
                         <span className="text-sm text-gray-900">{formatNumber(calculateTotalHours(job), locale, company?.numberFormat, 1)}h</span>
                       </td>
-                      <td className="sticky right-0 z-10 bg-white px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 text-right w-14 2xl:w-44">
-                        <div className="flex justify-end space-x-1">
+                      <td className="sticky right-0 z-10 bg-white px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 text-right w-24 2xl:w-44">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="flex shrink-0 items-center gap-2" title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}>
+                            <label className="relative inline-flex h-8 w-3.5 shrink-0 cursor-pointer items-center justify-center">
+                              <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                              <select
+                                value={job.status}
+                                onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
+                                disabled={job.status === 'invoiced'}
+                                aria-label={`Status: ${getStatusText(job.status)}`}
+                                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                              >
+                                <option value="draft">Entwurf</option>
+                                <option value="in-progress">In Bearbeitung</option>
+                                <option value="completed">Abgeschlossen</option>
+                                <option value="invoiced">Abgerechnet</option>
+                              </select>
+                            </label>
+                            {job.recurrence && <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" title="Wiederkehrender Kurs" />}
+                          </div>
                           <div className="2xl:hidden">
                             <ActionMenu
                               ariaLabel={`Aktionen für ${job.title}`}
                               triggerClassName="action-icon-button bg-gray-100 text-gray-700 hover:bg-gray-200"
                             >
-                              <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>PDF exportieren</ActionMenuItem>
-                              <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>Dokumente anzeigen</ActionMenuItem>
-                              <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                              <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>{terminology.work.confirmationLabel} exportieren</ActionMenuItem>
+                            <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>{terminology.work.confirmationLabel} anzeigen</ActionMenuItem>
+                            {((recurrenceGroup && isGroupHeader && recurrenceGroup.jobs.some((item) => item.status === 'completed')) || (!recurrenceGroup && job.status === 'completed')) && (
+                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
+                                {recurrenceGroup && isGroupHeader ? 'Rechnung für gesamten Kurs erstellen' : 'Rechnung erstellen'}
+                              </ActionMenuItem>
+                            )}
+                            {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="green" onClick={() => handlePreviewInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung anzeigen</ActionMenuItem>
+                            )}
+                            {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                              <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
+                            )}
+                            <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                              <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
                               <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                             </ActionMenu>
                           </div>
@@ -1057,23 +1407,57 @@ export function JobManagement({ onNavigate }: JobManagementProps = {}) {
                           <button
                             onClick={() => handleExportJobPDF(job)}
                             className="action-icon-button action-icon-blue"
-                            title="PDF exportieren"
+                            title={`${terminology.work.confirmationLabel} exportieren`}
                           >
                             <Download className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handlePreview(job)}
                             className="action-icon-button action-icon-green"
-                            title="Dokumente anzeigen"
+                            title={`${terminology.work.confirmationLabel} anzeigen`}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          {((recurrenceGroup && isGroupHeader && recurrenceGroup.jobs.some((item) => item.status === 'completed')) || (!recurrenceGroup && job.status === 'completed')) && (
+                            <button
+                              onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}
+                              className="action-icon-button bg-primary-light-custom text-primary-custom hover:bg-primary-medium-custom"
+                              title={recurrenceGroup && isGroupHeader ? 'Rechnung für gesamten Kurs erstellen' : 'Rechnung erstellen'}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                          )}
+                          {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                            <button
+                              onClick={() => handlePreviewInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}
+                              className="action-icon-button action-icon-green"
+                              title="Rechnung anzeigen"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                          )}
+                          {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
+                            <button
+                              onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}
+                              className="action-icon-button action-icon-indigo"
+                              title="Rechnung bearbeiten"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleEdit(job)}
                             className="action-icon-button action-icon-indigo"
                             title={job.status === 'invoiced' ? 'Bearbeiten (GoBD-Warnung wird angezeigt)' : 'Bearbeiten'}
                           >
                             <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDuplicate(job)}
+                            className="action-icon-button action-icon-blue"
+                            title="Duplizieren"
+                          >
+                            <Copy className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(job)}

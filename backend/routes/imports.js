@@ -409,6 +409,7 @@ async function planJobs(client, rows, duplicateMode) {
       externalJobNumber: externalJobNumber || undefined,
       customerId: customer.id,
       customerAddress: text(pick(row, ['customerAddress', 'customer_address', 'kundenadresse'])) || customer.address || '',
+      location: text(pick(row, ['location', 'ausführungsort', 'ausfuehrungsort', 'executionLocation'])) || undefined,
       title,
       description: rawDescription || title,
       date,
@@ -702,11 +703,11 @@ async function applyJob(client, entry) {
   const jobNumber = data.jobNumber || await nextNumber(client, 'job_entries', 'job_number', 'AB', year);
   const result = await client.query(`
     INSERT INTO job_entries (
-      job_number, external_job_number, customer_id, customer_address, title, description, date,
+      job_number, external_job_number, customer_id, customer_address, location, title, description, date,
       start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, materials, status, notes, priority
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     RETURNING id
-  `, [jobNumber, data.externalJobNumber || null, data.customerId, data.customerAddress || null, data.title, data.description, data.date, data.startTime, data.endTime, data.hoursWorked, data.hourlyRate, data.hourlyRateId, JSON.stringify(data.materials || []), data.status, data.notes || null, data.priority]);
+  `, [jobNumber, data.externalJobNumber || null, data.customerId, data.customerAddress || null, data.location || null, data.title, data.description, data.date, data.startTime, data.endTime, data.hoursWorked, data.hourlyRate, data.hourlyRateId, JSON.stringify(data.materials || []), data.status, data.notes || null, data.priority]);
   const jobId = result.rows[0].id;
   const timeEntries = data.timeEntries?.length > 0
     ? data.timeEntries

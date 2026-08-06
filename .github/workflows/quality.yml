@@ -1,0 +1,26 @@
+name: SoloOffice Qualität
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Statische Audit-Verträge prüfen
+        run: node scripts/verify-audit-contracts.mjs
+
+      - name: Frontend-Image bauen (Lint, TypeScript, Vite-Build)
+        run: docker build --build-arg VITE_API_URL=/api --build-arg VITE_DEMO_MODE=false -t solooffice-frontend .
+
+      - name: Backend-Image bauen
+        run: docker build -t solooffice-backend ./backend

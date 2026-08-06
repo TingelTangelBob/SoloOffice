@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.app.json",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -15,7 +16,7 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.344.0",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",

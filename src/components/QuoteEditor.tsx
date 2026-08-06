@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye, FileText, Plus } from 'lucide-react';
+import { Save, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye, FileText, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -36,6 +36,7 @@ import { generateUUID } from '../utils/uuid';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
+import { DialogShell } from './DialogShell';
 
 // Sortable Item Component for Drag & Drop
 interface SortableQuoteItemProps {
@@ -969,28 +970,26 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const hasNoTemplates = materialTemplates.length === 0 && hourlyRateTemplates.length === 0;
 
   return (
-    <div
-      className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center p-4 z-[1000] overflow-y-auto"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) requestClose();
-      }}
-    >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl my-4 max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <h2 className="text-2xl font-bold text-gray-900">
-            {quote ? 'Angebot bearbeiten' : 'Neues Angebot'}
-          </h2>
-          <button
-            onClick={requestClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-white rounded-full"
-            title="Schließen"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} onChange={() => setIsDirty(true)} className="p-6 space-y-6 flex-1 min-h-0 overflow-y-auto">
+    <>
+      <DialogShell
+        titleId="quote-editor-dialog-title"
+        icon={FileText}
+        title={quote ? 'Angebot bearbeiten' : 'Neues Angebot'}
+        description={quote ? `${quote.quoteNumber} bearbeiten und speichern.` : 'Erstellen Sie ein Angebot mit Kunde, Positionen und Zahlungsangaben.'}
+        onClose={requestClose}
+        onSubmit={handleSubmit}
+        onChange={() => setIsDirty(true)}
+        size="xl"
+        zIndexClassName="z-[1000]"
+        footer={(
+          <>
+            <button type="button" onClick={requestClose} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
+            <button type="button" onClick={handleQuotePreview} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-primary-custom px-5 py-2 text-base font-medium text-primary-custom transition hover:bg-primary-light-custom sm:flex-none"><Eye className="mr-2 h-5 w-5" />Vorschau</button>
+            <button type="submit" className="btn-primary inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
+          </>
+        )}
+      >
+        <div className="space-y-6 pb-2">
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -1325,43 +1324,43 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           )}
 
           {/* Totals */}
-          <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg p-6 border border-gray-200 space-y-3">
+          <div className="theme-gradient-surface theme-gradient-surface-totals rounded-lg border p-6 space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Zwischensumme:</span>
-              <span className="font-medium text-gray-900">{formatMoney(totals.subtotal)}</span>
+              <span className="theme-gradient-label">Zwischensumme:</span>
+              <span className="theme-gradient-value font-medium">{formatMoney(totals.subtotal)}</span>
             </div>
 
             {discountsEnabled && totals.itemDiscountAmount > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Positionsrabatte:</span>
-                <span className="font-medium text-red-600">-{formatMoney(totals.itemDiscountAmount)}</span>
+                <span className="theme-gradient-label">Positionsrabatte:</span>
+                <span className="theme-gradient-negative font-medium">-{formatMoney(totals.itemDiscountAmount)}</span>
               </div>
             )}
 
             {discountsEnabled && totals.globalDiscountAmount > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Gesamtrabatt:</span>
-                <span className="font-medium text-red-600">-{formatMoney(totals.globalDiscountAmount)}</span>
+                <span className="theme-gradient-label">Gesamtrabatt:</span>
+                <span className="theme-gradient-negative font-medium">-{formatMoney(totals.globalDiscountAmount)}</span>
               </div>
             )}
 
             {discountsEnabled && (totals.itemDiscountAmount > 0 || totals.globalDiscountAmount > 0) && (
-              <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
-                <span className="text-gray-600">Zwischensumme nach Rabatten:</span>
-                <span className="font-medium text-gray-900">{formatMoney(totals.discountedSubtotal)}</span>
+              <div className="flex justify-between border-t border-gray-300 pt-2 text-sm">
+                <span className="theme-gradient-label">Zwischensumme nach Rabatten:</span>
+                <span className="theme-gradient-value font-medium">{formatMoney(totals.discountedSubtotal)}</span>
               </div>
             )}
 
             {!company.isSmallBusiness && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">MwSt.:</span>
-                <span className="font-medium text-gray-900">{formatMoney(totals.taxAmount)}</span>
+                <span className="theme-gradient-label">MwSt.:</span>
+                <span className="theme-gradient-value font-medium">{formatMoney(totals.taxAmount)}</span>
               </div>
             )}
 
-            <div className="flex justify-between text-lg font-bold pt-3 border-t-2 border-blue-300">
-              <span className="text-gray-900">Gesamtbetrag:</span>
-              <span className="text-blue-600">{formatMoney(totals.total)}</span>
+            <div className="theme-gradient-divider flex justify-between border-t-2 pt-3 text-lg font-bold">
+              <span className="theme-gradient-heading">Gesamtbetrag:</span>
+              <span className="theme-gradient-total">{formatMoney(totals.total)}</span>
             </div>
 
             {company.isSmallBusiness && (
@@ -1404,33 +1403,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="sticky bottom-0 z-10 -mx-6 flex gap-3 border-t border-gray-200 bg-white p-4 backdrop-blur sm:p-6">
-            <button
-              type="button"
-              onClick={requestClose}
-              className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              onClick={handleQuotePreview}
-              className="flex-1 rounded-lg border border-primary-custom px-6 py-3 font-medium text-primary-custom transition-colors hover:bg-primary-light-custom"
-            >
-              <Eye className="mr-2 inline h-5 w-5" />
-              Vorschau
-            </button>
-            <button
-              type="submit"
-              className="btn-primary flex-1 rounded-lg px-6 py-3 font-medium text-white transition-colors"
-            >
-              <Save className="w-5 h-5" />
-              {quote ? 'Änderungen speichern' : 'Angebot erstellen'}
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      </DialogShell>
 
       {/* Document Preview Modal */}
       {showPreview && (
@@ -1466,6 +1440,6 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
         cancelText="Weiter bearbeiten"
         isDestructive
       />
-    </div>
+    </>
   );
 }

@@ -71,6 +71,25 @@
 
 /* Mobile-optimierte Touch-Targets */
 @layer base {
+  /* Einheitliche Dropdown-Anzeige für native Selects. Die native Auswahl bleibt
+     erhalten, der sichtbare Pfeil sitzt aber zuverlässig im Feld. */
+  select:not(.select-with-chevron) {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23647585' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+    background-position: right 0.7rem center;
+    background-repeat: no-repeat;
+    background-size: 0.9rem 0.9rem;
+    padding-right: 2.25rem !important;
+    transition: background-size 150ms ease, background-position 150ms ease;
+  }
+
+  select:not(.select-with-chevron):focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 5-5 5 5'/%3E%3C/svg%3E");
+    background-position: right 0.7rem center;
+    background-size: 1rem 1rem;
+  }
+
   body.sidebar-resizing {
     cursor: col-resize;
     user-select: none;
@@ -121,6 +140,7 @@
   /* Smooth scrolling */
   html {
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
   }
 
   /* Prevent horizontal overflow */
@@ -148,6 +168,33 @@
     @apply inline-flex min-h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors duration-200 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  /* Belegkarten verdichten den Status erst anhand der tatsächlichen Kartenbreite. */
+  .receipt-card {
+    container-type: inline-size;
+  }
+
+  .receipt-card-status-label {
+    display: inline;
+  }
+
+  @container (max-width: 32rem) {
+    .receipt-card-status {
+      gap: 0;
+      border-color: transparent;
+      background-color: transparent;
+      padding: 0.25rem 0.125rem;
+    }
+
+    .receipt-card-status-label {
+      display: none;
+    }
+
+    .receipt-card-status-dot {
+      height: 0.625rem;
+      width: 0.625rem;
+    }
+  }
+
   /* Einheitliche Icon-Aktionen in Listen und Tabellen */
   .action-icon-button {
     @apply inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md shadow-sm transition-colors duration-200;
@@ -162,6 +209,17 @@
   .action-menu-trigger:hover {
     background-color: var(--primary-medium);
     color: var(--primary-color);
+  }
+
+  .action-menu-trigger-primary {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+  }
+
+  .action-menu-trigger-primary:hover {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+    filter: brightness(0.9);
   }
 
   .template-card-actions > button {
@@ -231,6 +289,124 @@
   /* Permanent explanations are intentionally not dismissible. */
   .guidance-panel {
     @apply rounded-xl border border-gray-200 bg-white text-gray-700;
+  }
+
+  /* Theme-aware surfaces keep their background and foreground colors together. */
+  .theme-gradient-surface {
+    --gradient-surface-start: #f9fafb;
+    --gradient-surface-end: #eff6ff;
+    --gradient-surface-border: #dbeafe;
+    --gradient-surface-heading: #111827;
+    --gradient-surface-label: #4b5563;
+    --gradient-surface-value: #1d4ed8;
+    --gradient-surface-muted: #1d4ed8;
+    --gradient-surface-negative: #dc2626;
+    --gradient-surface-total: #2563eb;
+    --gradient-surface-divider: #93c5fd;
+    background-image: linear-gradient(135deg, var(--gradient-surface-start), var(--gradient-surface-end));
+    border-color: var(--gradient-surface-border);
+  }
+
+  .theme-gradient-surface-orange {
+    --gradient-surface-start: #fff7ed;
+    --gradient-surface-end: #ffedd5;
+    --gradient-surface-border: #fed7aa;
+    --gradient-surface-value: #c2410c;
+    --gradient-surface-muted: #c2410c;
+  }
+
+  .theme-gradient-surface-green {
+    --gradient-surface-start: #f0fdf4;
+    --gradient-surface-end: #dcfce7;
+    --gradient-surface-border: #bbf7d0;
+    --gradient-surface-value: #15803d;
+    --gradient-surface-muted: #15803d;
+  }
+
+  .theme-gradient-surface-red {
+    --gradient-surface-start: #fef2f2;
+    --gradient-surface-end: #fee2e2;
+    --gradient-surface-border: #fecaca;
+    --gradient-surface-value: #dc2626;
+    --gradient-surface-muted: #dc2626;
+  }
+
+  .theme-gradient-surface-totals {
+    --gradient-surface-label: #4b5563;
+    --gradient-surface-value: #111827;
+  }
+
+  .theme-gradient-heading {
+    color: var(--gradient-surface-heading);
+  }
+
+  .theme-gradient-label {
+    color: var(--gradient-surface-label);
+  }
+
+  .theme-gradient-value {
+    color: var(--gradient-surface-value);
+  }
+
+  .theme-gradient-muted {
+    color: var(--gradient-surface-muted);
+  }
+
+  .theme-gradient-negative {
+    color: var(--gradient-surface-negative);
+  }
+
+  .theme-gradient-total {
+    color: var(--gradient-surface-total);
+  }
+
+  .theme-gradient-divider {
+    border-color: var(--gradient-surface-divider);
+  }
+
+  #app-shell[data-theme="dark"] .theme-gradient-surface {
+    --gradient-surface-start: #1f2937;
+    --gradient-surface-end: #172554;
+    --gradient-surface-border: #4b5563;
+    --gradient-surface-heading: #f3f4f6;
+    --gradient-surface-label: #d1d5db;
+    --gradient-surface-value: #f3f4f6;
+    --gradient-surface-muted: #bfdbfe;
+    --gradient-surface-negative: #fca5a5;
+    --gradient-surface-total: #93c5fd;
+    --gradient-surface-divider: #60a5fa;
+  }
+
+  #app-shell[data-theme="dark"] .theme-gradient-surface-orange {
+    --gradient-surface-start: #431407;
+    --gradient-surface-end: #7c2d12;
+    --gradient-surface-border: #9a3412;
+    --gradient-surface-heading: #fff7ed;
+    --gradient-surface-value: #fdba74;
+    --gradient-surface-muted: #fed7aa;
+  }
+
+  #app-shell[data-theme="dark"] .theme-gradient-surface-green {
+    --gradient-surface-start: #052e16;
+    --gradient-surface-end: #14532d;
+    --gradient-surface-border: #16a34a;
+    --gradient-surface-heading: #f0fdf4;
+    --gradient-surface-value: #86efac;
+    --gradient-surface-muted: #bbf7d0;
+  }
+
+  #app-shell[data-theme="dark"] .theme-gradient-surface-red {
+    --gradient-surface-start: #450a0a;
+    --gradient-surface-end: #7f1d1d;
+    --gradient-surface-border: #dc2626;
+    --gradient-surface-heading: #fef2f2;
+    --gradient-surface-value: #fca5a5;
+    --gradient-surface-muted: #fecaca;
+  }
+
+  #app-shell[data-theme="dark"] .theme-gradient-surface-totals {
+    --gradient-surface-label: #d1d5db;
+    --gradient-surface-value: #f3f4f6;
   }
 
 }

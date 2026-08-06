@@ -27,6 +27,13 @@ import * as migration018 from './018_fixed_assets.js';
 import * as migration019 from './019_terminology_color_source.js';
 import * as migration020 from './020_receipt_ocr_baseline.js';
 import * as migration021 from './021_identity_and_workspace_ownership.js';
+import * as migration022 from './022_recurring_jobs.js';
+import * as migration023 from './023_job_location.js';
+import * as migration024 from './024_document_links_and_archiving.js';
+import * as migration025 from './025_security_and_compliance.js';
+import * as migration026 from './026_incoming_e_invoices.js';
+import * as migration027 from './027_draft_jobs.js';
+import * as migration028 from './028_time_zones.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -51,6 +58,13 @@ const migrations = [
   migration019,
   migration020,
   migration021,
+  migration022,
+  migration023,
+  migration024,
+  migration025,
+  migration026,
+  migration027,
+  migration028,
 ];
 
 /**

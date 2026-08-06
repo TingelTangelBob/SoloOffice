@@ -1,4 +1,4 @@
-import { pool, query } from '../database.js';
+import { pool } from '../database.js';
 import { findQuoteById } from '../queries/quoteQueries.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
 import { generateInvoiceNumber } from './invoiceService.js';
@@ -195,7 +195,7 @@ export async function updateQuote(id, data) {
     const updateData = data;
 
     // First, get the current quote to preserve existing values
-    const currentQuote = await client.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    const currentQuote = await client.query('SELECT * FROM quotes WHERE id = $1 FOR UPDATE', [id]);
 
     if (currentQuote.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -203,6 +203,12 @@ export async function updateQuote(id, data) {
     }
 
     const current = currentQuote.rows[0];
+
+    if (current.converted_to_invoice_id || current.status === 'billed') {
+      const error = new Error('Ein bereits abgerechnetes Angebot kann nicht mehr geändert werden.');
+      error.statusCode = 409;
+      throw error;
+    }
 
     // Merge current values with updates (but preserve quote number)
     const mergedData = {
@@ -289,8 +295,35 @@ export async function updateQuote(id, data) {
 }
 
 export async function deleteQuote(id) {
-  const result = await query('DELETE FROM quotes WHERE id = $1 RETURNING id', [id]);
-  return result.rows.length > 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(`
+      SELECT id, status, converted_to_invoice_id,
+             EXISTS (SELECT 1 FROM invoices WHERE source_quote_id = quotes.id) AS has_source_invoice
+      FROM quotes
+      WHERE id = $1
+      FOR UPDATE
+    `, [id]);
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    const quote = current.rows[0];
+    if (quote.status !== 'draft' || quote.converted_to_invoice_id || quote.has_source_invoice) {
+      const error = new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const result = await client.query('DELETE FROM quotes WHERE id = $1 RETURNING id', [id]);
+    await client.query('COMMIT');
+    return result.rows.length > 0;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function convertQuoteToInvoice(id) {
@@ -342,6 +375,7 @@ export async function convertQuoteToInvoice(id) {
         GROUP BY quote_id
       ) attachments_subquery ON q.id = attachments_subquery.quote_id
       WHERE q.id = $1
+      FOR UPDATE OF q
     `, [id]);
 
     if (quoteResult.rows.length === 0) {
@@ -365,17 +399,18 @@ export async function convertQuoteToInvoice(id) {
 
     // Generate invoice number after all validation has passed
     const issueDate = new Date().toISOString().split('T')[0];
-    const invoiceNumber = await generateInvoiceNumber(issueDate);
+    const invoiceNumber = await generateInvoiceNumber(issueDate, 'invoice', client);
 
     // Create invoice
     const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      INSERT INTO invoices (invoice_number, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `, [
       invoiceNumber,
+      id,
       quote.customer_id,
       quote.customer_name,
       issueDate,

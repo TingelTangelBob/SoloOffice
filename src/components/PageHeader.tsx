@@ -11,11 +11,11 @@ interface PageHeaderProps {
 
 export function PageHeader({ icon: Icon, title, subtitle, children, singleRow = false }: PageHeaderProps) {
   return (
-    <div className={`fixed inset-x-0 top-0 z-10 flex min-h-16 w-full items-center gap-2 overflow-hidden border-b border-gray-200 bg-white px-3 pl-16 shadow-sm lg:static lg:min-h-0 lg:overflow-visible lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none ${singleRow ? 'lg:flex-row lg:justify-between' : 'lg:flex-row lg:justify-between'} lg:gap-4`}>
+    <div className={`page-header fixed inset-x-0 top-0 z-10 flex min-h-16 w-full items-center gap-2 overflow-hidden border-b border-gray-100 bg-white px-3 pl-16 lg:static lg:min-h-0 lg:overflow-visible lg:border-0 lg:bg-transparent lg:p-0 ${singleRow ? 'lg:flex-row lg:justify-between' : 'lg:flex-row lg:justify-between'} lg:gap-4`}>
       <div className="flex min-w-0 flex-1 items-center overflow-visible">
         {Icon && <Icon className="mr-2 h-5 w-5 flex-shrink-0 text-primary-custom sm:h-6 sm:w-6 lg:mr-3 lg:h-8 lg:w-8" />}
         <div className="min-w-0">
-          <h1 className="min-w-0 break-words text-lg font-bold leading-normal text-gray-900 sm:text-xl lg:text-3xl">{title}</h1>
+          <h1 className="min-w-0 break-words text-xl font-bold leading-tight text-gray-900 sm:text-2xl lg:text-3xl">{title}</h1>
           {subtitle && <p className="mt-1 hidden text-gray-600 lg:block">{subtitle}</p>}
         </div>
       </div>

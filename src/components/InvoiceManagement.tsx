@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, Receipt } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
+import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
 import { Invoice } from '../types';
 import { InvoiceEditor } from './InvoiceEditor';
@@ -26,12 +27,14 @@ import { getTerminology } from '../utils/terminology';
 interface InvoiceManagementProps {
   initialFilter?: string;
   initialSearchTerm?: string;
+  initialInvoiceId?: string;
   onNavigate?: (page: string) => void;
 }
 
-export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate }: InvoiceManagementProps = {}) {
+export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, onNavigate }: InvoiceManagementProps = {}) {
   const { customers, addCustomer } = useCustomers();
   const { invoices, deleteInvoice, updateInvoice } = useInvoices();
+  const { refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const invoiceRecords = useMemo(
@@ -40,6 +43,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   );
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const openedInitialInvoiceId = useRef<string | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
   const [isExporting, setIsExporting] = useState<string | null>(null);
@@ -205,12 +209,41 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
     }
   };
 
+  useEffect(() => {
+    if (!initialInvoiceId || openedInitialInvoiceId.current === initialInvoiceId) return;
+    const invoice = invoiceRecords.find((item) => item.id === initialInvoiceId);
+    if (!invoice) return;
+
+    openedInitialInvoiceId.current = initialInvoiceId;
+    handleOpenEditor(invoice);
+  }, [handleOpenEditor, initialInvoiceId, invoiceRecords]);
+
   const handleCloseEditor = () => {
     setIsEditorOpen(false);
     setEditingInvoice(null);
   };
 
+  const canDeleteInvoice = (invoice: Invoice) => (
+    invoice.status === 'draft'
+    && !invoice.recurringInvoiceId
+    && !invoice.sourceQuoteId
+  );
+
+  const removeInvoice = async (id: string) => {
+    await deleteInvoice(id);
+    await refreshJobEntries();
+  };
+
   const handleDelete = async (invoice: Invoice) => {
+    if (!canDeleteInvoice(invoice)) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Rechnung kann nicht gelöscht werden',
+        message: 'Nur Rechnungsentwürfe ohne wiederkehrende Vorlage oder Angebotsquelle können gelöscht werden. Bei einem aus Auftragseinheiten erzeugten Entwurf werden die Einheiten wieder zur Abrechnung freigegeben.',
+        onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false })),
+      });
+      return;
+    }
     if (invoice.status !== 'draft') {
       setConfirmModal({
         isOpen: true,
@@ -218,7 +251,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         message: 'Diese Rechnung wurde bereits versendet bzw. gemahnt. Das Löschen versendeter oder gemahnter Rechnungen kann die GoBD-Konformität verletzen und ist rechtlich problematisch. Sind Sie sicher, dass Sie fortfahren möchten?',
         onConfirm: async () => {
           try {
-            await deleteInvoice(invoice.id);
+            await removeInvoice(invoice.id);
           } catch (error) {
             logger.error('Error deleting invoice:', error);
           }
@@ -233,7 +266,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         message: `Möchten Sie die Rechnung ${invoice.invoiceNumber} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
         onConfirm: async () => {
           try {
-            await deleteInvoice(invoice.id);
+            await removeInvoice(invoice.id);
           } catch (error) {
             logger.error('Error deleting invoice:', error);
           }
@@ -722,13 +755,26 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid': return 'bg-green-100 text-green-800';
-      case 'sent': return 'bg-primary-custom/10 text-primary-custom';
+      case 'sent': return 'bg-primary-light-custom text-primary-custom';
       case 'draft': return 'bg-gray-100 text-gray-800';
       case 'overdue': return 'bg-red-100 text-red-800';
       case 'reminded_1x': return 'bg-orange-100 text-orange-800';
       case 'reminded_2x': return 'bg-orange-200 text-orange-900';
       case 'reminded_3x': return 'bg-red-200 text-red-900';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'paid': return 'bg-green-500';
+      case 'sent': return 'bg-primary-custom';
+      case 'draft': return 'bg-gray-400';
+      case 'overdue': return 'bg-red-500';
+      case 'reminded_1x':
+      case 'reminded_2x': return 'bg-orange-500';
+      case 'reminded_3x': return 'bg-red-500';
+      default: return 'bg-gray-400';
     }
   };
 
@@ -818,7 +864,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         <PageHeader icon={Receipt} title="Rechnungen" subtitle="Verwalten Sie Ihre Rechnungen">
         <button
           onClick={() => handleOpenEditor()}
-          className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+          aria-label="Neue Rechnung erstellen"
+          title="Neue Rechnung erstellen"
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">Neue Rechnung</span>
@@ -858,7 +906,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
       />
 
       {/* Invoice List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <BulkSelectionHeader
           itemLabel="Rechnung"
           itemLabelPlural="Rechnungen"
@@ -910,7 +958,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div className="hidden w-full min-w-0 max-w-full overflow-hidden lg:block">
+        <div className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
             <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
@@ -932,8 +980,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Betrag
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                  Status
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8 2xl:w-32">
+                  <span className="hidden 2xl:inline">Status</span>
+                  <span className="sr-only 2xl:hidden">Status</span>
                 </th>
                 <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
                   <span className="sr-only">Aktionen</span>
@@ -955,8 +1004,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(invoice.issueDate, locale, company?.dateFormat)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {invoice.invoiceNumber}
+                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditor(invoice)}
+                      className="link-primary rounded-sm text-left font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
+                      aria-label={`Rechnung ${invoice.invoiceNumber} öffnen`}
+                    >
+                      {invoice.invoiceNumber}
+                    </button>
                   </td>
                   <td className="max-w-0 px-3 py-4 text-sm text-gray-900">
                     <span className="block truncate">{invoice.customerName}</span>
@@ -967,9 +1023,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
+                  <td className="w-8 px-2 py-4 whitespace-nowrap 2xl:w-32 2xl:px-3">
+                    <span className={`hidden 2xl:inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
+                    </span>
+                    <span
+                      className={`inline-flex h-2.5 w-2.5 rounded-full 2xl:hidden ${getStatusDotColor(invoice.status)}`}
+                      title={getStatusLabel(invoice.status)}
+                    >
+                      <span className="sr-only">{getStatusLabel(invoice.status)}</span>
                     </span>
                   </td>
                   <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 2xl:w-56 2xl:px-3">
@@ -1032,7 +1094,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
+                    <ActionMenu containerClassName="hidden tablet:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
                         {invoice.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>}
                         {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(invoice.id, 'paid')}>Als bezahlt markieren</ActionMenuItem>}
                         <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
@@ -1048,7 +1110,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
         </div>
 
         {/* Mobile Card View */}
-        <div className="lg:hidden">
+        <div className="tablet:hidden">
           {filteredInvoices.map((invoice) => (
             <div key={invoice.id} className="p-4 border-b border-gray-200 last:border-b-0">
               <div className="grid grid-cols-[auto,minmax(0,1fr),auto,auto] items-start gap-x-3">
@@ -1062,17 +1124,28 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, onNavigate
                   />
                 </div>
                 
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">{invoice.invoiceNumber}</h3>
-                    <span className={`inline-flex shrink-0 px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
+                <div className="relative min-w-0">
+                  <div className="flex min-w-0 items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditor(invoice)}
+                      className="link-primary min-w-0 max-w-full truncate rounded-sm text-left text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
+                      aria-label={`Rechnung ${invoice.invoiceNumber} öffnen`}
+                    >
+                      {invoice.invoiceNumber}
+                    </button>
+                    <span
+                      className={`absolute right-0 top-0 inline-flex h-2.5 w-2.5 rounded-full ${getStatusDotColor(invoice.status)} tablet:hidden`}
+                      title={getStatusLabel(invoice.status)}
+                      aria-label={getStatusLabel(invoice.status)}
+                    />
+                    <span className={`hidden shrink-0 rounded-full px-2 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
                     </span>
                   </div>
                   <p className="mt-1 truncate text-sm text-gray-600">{invoice.customerName}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {formatDate(invoice.issueDate, locale, company?.dateFormat)} - Fällig: {formatDate(invoice.dueDate, locale, company?.dateFormat)}
-                  </p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</p>
+                  <p className="text-xs text-gray-500 whitespace-nowrap">Fällig: {formatDate(invoice.dueDate, locale, company?.dateFormat)}</p>
                 </div>
                 <div className="self-center whitespace-nowrap text-right">
                   <p className="text-sm font-medium text-gray-900">{formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}</p>

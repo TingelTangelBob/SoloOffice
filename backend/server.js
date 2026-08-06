@@ -26,11 +26,35 @@ import importsRouter from './routes/imports.js';
 import authRouter from './routes/auth.js';
 import workspacesRouter from './routes/workspaces.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
+import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
+import { metricsMiddleware, getMetricsSnapshot } from './utils/metrics.js';
+import { pruneSessions } from './services/sessionMaintenance.js';
+import eInvoicesRouter from './routes/eInvoices.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const trustProxy = process.env.TRUST_PROXY === 'false'
+  ? false
+  : Number.isFinite(Number(process.env.TRUST_PROXY || 1))
+    ? Number(process.env.TRUST_PROXY || 1)
+    : 1;
+app.set('trust proxy', trustProxy);
+app.use(metricsMiddleware);
+
+// API security headers are set here as a defence in depth for deployments
+// that do not put another reverse proxy in front of the backend.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.ENABLE_HSTS === 'true') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 
 // Middleware
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:8080,http://localhost:5173')
@@ -44,9 +68,6 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '100mb' })); // Increase limit for PDF attachments
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
-
 // Health check endpoint
 app.get('/health', async (req, res) => {
   const dbHealth = await checkHealth();
@@ -76,7 +97,22 @@ app.get('/health', async (req, res) => {
 // API routes
 // Authentication endpoints that must be reachable without an existing session.
 app.use('/api', csrfProtection);
-app.use('/api/auth', authRouter);
+app.use('/api', persistentRateLimit({
+  name: 'api-ip',
+  windowMs: 60 * 1000,
+  max: Number(process.env.API_RATE_LIMIT_MAX || 300),
+  keyGenerator: req => req.ip,
+}));
+app.use('/api/auth', express.json({ limit: '1mb' }), express.urlencoded({ limit: '1mb', extended: true }), authRouter);
+
+// Parsers are deliberately scoped. Receipt/PDF and backup payloads need more
+// room; ordinary API requests must stay small.
+app.use('/api/receipts', express.json({ limit: '35mb' }));
+app.use('/api/e-invoices', express.json({ limit: '15mb' }));
+app.use('/api/email', express.json({ limit: '100mb' }));
+app.use('/api/backup', express.json({ limit: '50mb' }));
+app.use('/api', express.json({ limit: '2mb' }));
+app.use('/api', express.urlencoded({ limit: '2mb', extended: true }));
 
 // All business routes share one authentication and authorization seam. The
 // database adapter applies the request's workspace context underneath it.
@@ -90,6 +126,7 @@ app.use('/api/recurring-invoices', recurringInvoicesRouter);
 app.use('/api/credit-notes', creditNotesRouter);
 app.use('/api/euer-entries', euerEntriesRouter);
 app.use('/api/receipts', receiptsRouter);
+app.use('/api/e-invoices', eInvoicesRouter);
 app.use('/api/fixed-assets', fixedAssetsRouter);
 app.use('/api/imports', importsRouter);
 app.use('/api/quotes', quotesRouter);
@@ -105,10 +142,27 @@ app.use('/api/reporting', reportingRouter);
 app.use('/api/reminders', remindersRouter);
 app.use('/api/calendar-events', calendarEventsRouter);
 
+app.get('/metrics', (req, res) => {
+  const configuredToken = process.env.METRICS_TOKEN;
+  if (configuredToken && req.get('authorization') !== `Bearer ${configuredToken}`) {
+    return res.status(401).json({ error: 'Metriken nicht autorisiert' });
+  }
+  return res.json(getMetricsSnapshot());
+});
+
+// Make unknown API paths explicit instead of falling through to a proxy or
+// returning an HTML error page.
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpunkt nicht gefunden' });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled server error', { error: err.message, stack: err.stack, url: req.url, method: req.method });
-  res.status(500).json({ error: 'Internal server error' });
+  const statusCode = Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 500
+    ? err.statusCode
+    : 500;
+  res.status(statusCode).json({ error: statusCode === 500 ? 'Internal server error' : err.message });
 });
 
 // Initialize database and start server
@@ -117,6 +171,12 @@ async function startServer() {
     logger.info('Connecting to database...');
     await createTables();
     logger.info('Database initialized successfully');
+    await pruneSessions();
+    const maintenanceInterval = setInterval(() => {
+      pruneRateLimitBuckets().catch(error => logger.warn('Rate-Limit-Bereinigung fehlgeschlagen', { error: error.message }));
+      pruneSessions().catch(error => logger.warn('Session-Bereinigung fehlgeschlagen', { error: error.message }));
+    }, 60 * 60 * 1000);
+    app.locals.maintenanceInterval = maintenanceInterval;
     
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Server started`, { port: PORT, environment: process.env.NODE_ENV || 'development' });
@@ -130,12 +190,14 @@ async function startServer() {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   logger.info('Shutting down server...');
+  if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
   await pool.end();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('Shutting down server (SIGTERM)...');
+  if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
   await pool.end();
   process.exit(0);
 });

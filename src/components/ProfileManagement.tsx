@@ -13,6 +13,7 @@ export function ProfileManagement() {
     switchWorkspace,
     updateProfile,
     changePassword,
+    deleteAccount,
     createWorkspace,
     canManageWorkspace,
     getWorkspaceMembers,
@@ -30,13 +31,10 @@ export function ProfileManagement() {
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, 'owner'>>('member');
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
-  const [latestInvite, setLatestInvite] = useState('');
+  const [latestInviteLink, setLatestInviteLink] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const latestInviteLink = latestInvite
-    ? `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(latestInvite)}`
-    : '';
-
   useEffect(() => {
     setFirstName(user?.firstName || '');
     setLastName(user?.lastName || '');
@@ -95,7 +93,7 @@ export function ProfileManagement() {
     return run(async () => {
       const invitation = await createWorkspaceInvitation(inviteEmail, inviteRole);
       setInviteEmail('');
-      setLatestInvite(invitation.inviteToken || '');
+      setLatestInviteLink(invitation.inviteLink || (invitation.inviteToken ? `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(invitation.inviteToken)}` : ''));
       setInvitations(previous => [{ ...invitation }, ...previous]);
     }, 'Einladung erstellt.');
   };
@@ -103,14 +101,19 @@ export function ProfileManagement() {
   const copyInvite = async () => {
     if (!latestInviteLink) return;
     await navigator.clipboard?.writeText(latestInviteLink);
-    setMessage('Einladungstoken kopiert.');
+      setMessage('Einladungstoken kopiert.');
   };
+
+  const handleDeleteAccount = () => run(async () => {
+    if (!window.confirm('Konto und eigene Workspaces endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.')) return;
+    await deleteAccount(deletePassword);
+  }, 'Konto gelöscht.');
 
   return (
     <div className="space-y-6">
       <div>
         <p className="text-sm font-medium text-primary-custom">Konto & Workspace</p>
-        <h1 className="mt-1 text-2xl font-semibold text-gray-900">Profil</h1>
+        <h1 className="mt-1 text-xl font-semibold text-gray-900 sm:text-2xl">Profil</h1>
         <p className="mt-1 text-sm text-gray-500">Verwalte deine persönlichen Daten, Sitzungen und Teamzugänge.</p>
       </div>
 
@@ -160,6 +163,15 @@ export function ProfileManagement() {
       </section>
 
       <button type="button" onClick={() => run(logout, 'Abgemeldet.')} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><LogOut className="h-4 w-4" />Abmelden</button>
+
+      <section className="rounded-xl border border-red-200 bg-red-50 p-5">
+        <h2 className="font-semibold text-red-900">Konto löschen</h2>
+        <p className="mt-1 text-sm text-red-800">Eigene Workspaces und Kontodaten werden endgültig gelöscht. Geteilte Workspaces müssen vorher übertragen werden.</p>
+        <form onSubmit={event => { event.preventDefault(); void handleDeleteAccount(); }} className="mt-3 flex flex-wrap gap-2">
+          <input type="password" required minLength={10} value={deletePassword} onChange={event => setDeletePassword(event.target.value)} placeholder="Aktuelles Passwort bestätigen" className="min-w-[240px] flex-1 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm" />
+          <button type="submit" className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">Konto endgültig löschen</button>
+        </form>
+      </section>
     </div>
   );
 }

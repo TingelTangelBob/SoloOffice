@@ -12,6 +12,11 @@ function getStorage(scope: NoticeStorageScope): Storage | null {
 
 function getStorageKey(noticeId: string, scope: NoticeStorageScope): string {
   const scopeKey = scope.kind === 'profile' ? `profile:${scope.id}` : 'session';
+  return `solooffice:dismissed-notice:${scopeKey}:${noticeId}`;
+}
+
+function getLegacyStorageKey(noticeId: string, scope: NoticeStorageScope): string {
+  const scopeKey = scope.kind === 'profile' ? `profile:${scope.id}` : 'session';
   return `belego:dismissed-notice:${scopeKey}:${noticeId}`;
 }
 
@@ -20,7 +25,14 @@ export function isNoticeDismissed(
   scope: NoticeStorageScope = defaultScope,
 ): boolean {
   try {
-    return getStorage(scope)?.getItem(getStorageKey(noticeId, scope)) === 'true';
+    const storage = getStorage(scope);
+    if (!storage) return false;
+    if (storage.getItem(getStorageKey(noticeId, scope)) === 'true') return true;
+    if (storage.getItem(getLegacyStorageKey(noticeId, scope)) === 'true') {
+      storage.setItem(getStorageKey(noticeId, scope), 'true');
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }

@@ -6,15 +6,13 @@ import {
   getMaterialTemplatesForCustomer,
 } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
-import { useInvoices } from '../context/InvoiceContext';
 import { useJobs, generateInvoiceFromJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
 
 export function useDocumentHelpers() {
   const { customers } = useCustomers();
   const companyCtx = useCompany();
-  const { addInvoice } = useInvoices();
-  const { jobEntries, updateJobEntry } = useJobs();
+  const { jobEntries } = useJobs();
   const terminology = getTerminology(companyCtx.company.terminologyProfile);
 
   return {
@@ -53,8 +51,6 @@ export function useDocumentHelpers() {
         jobEntries,
         customers,
         companyCtx.company,
-        addInvoice,
-        updateJobEntry,
         date
       );
     },

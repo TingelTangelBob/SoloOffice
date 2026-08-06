@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Archive, ArchiveRestore, Search, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
@@ -13,9 +13,17 @@ import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
+import { DialogShell } from './DialogShell';
+
+const formatCustomerAddress = (customer: Customer) => (
+  [
+    customer.address,
+    [customer.postalCode, customer.city].filter(Boolean).join(' '),
+  ].filter(Boolean).join(', ')
+);
 
 export function CustomerManagement() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, refreshCustomers } = useCustomers();
+  const { customers, addCustomer, updateCustomer, archiveCustomer, restoreCustomer, refreshCustomers } = useCustomers();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
@@ -42,6 +50,7 @@ export function CustomerManagement() {
   const [isCreateMaterialModalOpen, setIsCreateMaterialModalOpen] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [newMaterialData, setNewMaterialData] = useState({
     name: '',
@@ -61,9 +70,14 @@ export function CustomerManagement() {
     postalCode: '',
     country: 'Deutschland',
     taxId: '',
+    leitwegId: '',
     phone: '',
   });
   const initialFormSnapshot = useRef('');
+
+  useEffect(() => {
+    void refreshCustomers(showArchived).catch(error => logger.error('Error loading customer archive:', error));
+  }, [refreshCustomers, showArchived]);
 
   const filteredCustomers = customers.filter(customer => {
     const customerName = customer.name || '';
@@ -89,6 +103,7 @@ export function CustomerManagement() {
         postalCode: customer.postalCode,
         country: customer.country,
         taxId: customer.taxId || '',
+        leitwegId: customer.leitwegId || '',
         phone: customer.phone || '',
       });
       setAdditionalEmails(customer.additionalEmails || []);
@@ -105,6 +120,7 @@ export function CustomerManagement() {
           postalCode: customer.postalCode,
           country: customer.country,
           taxId: customer.taxId || '',
+          leitwegId: customer.leitwegId || '',
           phone: customer.phone || '',
         },
         additionalEmails: customer.additionalEmails || [],
@@ -129,6 +145,7 @@ export function CustomerManagement() {
         postalCode: '',
         country: 'Deutschland',
         taxId: '',
+        leitwegId: '',
         phone: '',
       });
       setAdditionalEmails([]);
@@ -145,6 +162,7 @@ export function CustomerManagement() {
           postalCode: '',
           country: 'Deutschland',
           taxId: '',
+          leitwegId: '',
           phone: '',
         },
         additionalEmails: [],
@@ -289,9 +307,17 @@ export function CustomerManagement() {
     const id = deleteCustomerId;
     setDeleteCustomerId(null);
     try {
-      await deleteCustomer(id);
+      await archiveCustomer(id);
     } catch (error) {
-      logger.error('Error deleting customer:', error);
+      logger.error('Error archiving customer:', error);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    try {
+      await restoreCustomer(id);
+    } catch (error) {
+      logger.error('Error restoring customer:', error);
     }
   };
 
@@ -646,14 +672,18 @@ export function CustomerManagement() {
         <button
           type="button"
           onClick={() => setShowImport(true)}
-          className="inline-flex items-center justify-center space-x-2 rounded-xl border border-primary-custom px-4 py-2 text-primary-custom transition hover:bg-primary-light-custom"
+          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom sm:min-w-0 sm:px-4"
+          aria-label="Importieren"
+          title="Importieren"
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Importieren</span>
         </button>
         <button
           onClick={() => handleOpenModal()}
-          className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
+          className="btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-white transition-all duration-300 hover:brightness-90 sm:min-w-0 sm:px-4"
+          aria-label={terminology.entity.newLabel}
+          title={terminology.entity.newLabel}
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">{terminology.entity.newLabel}</span>
@@ -663,7 +693,8 @@ export function CustomerManagement() {
 
       {/* Search */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="relative">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
           <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
           <input
             type="text"
@@ -673,12 +704,17 @@ export function CustomerManagement() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <label className="inline-flex shrink-0 items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />
+          Archivierte anzeigen
+        </label>
+        </div>
       </div>
 
       {/* Customer List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {/* Desktop Table View */}
-        <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
+        <div className="hidden tablet:block w-full min-w-0 max-w-full overflow-x-auto">
           <table className="w-full min-w-[680px]">
             <thead className="bg-gray-50">
               <tr>
@@ -702,27 +738,19 @@ export function CustomerManagement() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{customer.name}</div>
                     <div className="text-sm text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>
-                    {customer.taxId && (
+                  {customer.taxId && (
                       <div className="text-sm text-gray-500">USt-IdNr: {customer.taxId}</div>
                     )}
+                    {customer.leitwegId && <div className="text-sm text-gray-500">Leitweg-ID: {customer.leitwegId}</div>}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      <span>{customer.email}</span>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900">
+                      <span className="min-w-0 truncate">{customer.email}</span>
+                      {customer.phone && <span className="shrink-0 text-gray-500">{customer.phone}</span>}
                     </div>
-                    {customer.phone && (
-                      <div className="text-sm text-gray-500">
-                        <span>{customer.phone}</span>
-                      </div>
-                    )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      <div>
-                        <div>{customer.address}</div>
-                        <div className="text-gray-500">{customer.postalCode} {customer.city}</div>
-                      </div>
-                    </div>
+                  <td className="px-6 py-4">
+                    <div className="break-words text-sm text-gray-900">{formatCustomerAddress(customer)}</div>
                   </td>
                   <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-24 2xl:px-6">
                     <div className="hidden 2xl:flex space-x-2">
@@ -736,14 +764,14 @@ export function CustomerManagement() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDelete(customer.id)}
-                        className="action-icon-button action-icon-red"
-                        title="Löschen"
+                        onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
+                        className={`action-icon-button ${customer.isActive === false ? 'action-icon-green' : 'action-icon-red'}`}
+                        title={customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        {customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                       </button>
                     </div>
-                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" menuClassName="min-w-40">
+                    <ActionMenu containerClassName="hidden tablet:block 2xl:hidden" menuClassName="min-w-40">
                       <ActionMenuItem
                         icon={<Edit className="h-4 w-4" />}
                         tone="indigo"
@@ -752,11 +780,11 @@ export function CustomerManagement() {
                         Bearbeiten
                       </ActionMenuItem>
                       <ActionMenuItem
-                        icon={<Trash2 className="h-4 w-4" />}
-                        tone="red"
-                        onClick={() => handleDelete(customer.id)}
+                        icon={customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                        tone={customer.isActive === false ? 'green' : 'red'}
+                        onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
                       >
-                        Löschen
+                        {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                       </ActionMenuItem>
                     </ActionMenu>
                   </td>
@@ -767,7 +795,7 @@ export function CustomerManagement() {
         </div>
 
         {/* Mobile Card View */}
-        <div className="lg:hidden">
+        <div className="tablet:hidden">
           {filteredCustomers.map((customer) => (
             <div key={customer.id} className="p-4 border-b border-gray-200 last:border-b-0">
               <div className="flex justify-between items-start mb-2">
@@ -777,6 +805,7 @@ export function CustomerManagement() {
                   {customer.taxId && (
                     <p className="text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
                   )}
+                  {customer.leitwegId && <p className="text-xs text-gray-500">Leitweg-ID: {customer.leitwegId}</p>}
                 </div>
                 <ActionMenu containerClassName="relative ml-2" menuClassName="min-w-40">
                   <ActionMenuItem
@@ -787,32 +816,31 @@ export function CustomerManagement() {
                     Bearbeiten
                   </ActionMenuItem>
                   <ActionMenuItem
-                    icon={<Trash2 className="h-4 w-4" />}
-                    tone="red"
-                    onClick={() => handleDelete(customer.id)}
+                    icon={customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                    tone={customer.isActive === false ? 'green' : 'red'}
+                    onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
                   >
-                    Löschen
+                    {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                   </ActionMenuItem>
                 </ActionMenu>
               </div>
               
               <div className="space-y-1">
-                <div className="flex items-center space-x-2 text-sm text-gray-900">
-                  <Mail className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{customer.email}</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <div className="flex min-w-0 flex-auto items-center gap-2 text-gray-900">
+                    <Mail className="h-3 w-3 shrink-0 text-gray-400" />
+                    <span className="min-w-0 truncate">{customer.email}</span>
+                  </div>
+                  {customer.phone && (
+                    <div className="flex shrink-0 items-center gap-2 text-gray-600">
+                      <Phone className="h-3 w-3 shrink-0 text-gray-400" />
+                      <span>{customer.phone}</span>
+                    </div>
+                  )}
                 </div>
-                {customer.phone && (
-                  <div className="flex items-center space-x-2 text-sm text-gray-600">
-                    <Phone className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                    <span>{customer.phone}</span>
-                  </div>
-                )}
-                <div className="flex items-start space-x-2 text-sm text-gray-600">
-                  <MapPin className="h-3 w-3 text-gray-400 flex-shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <div className="truncate">{customer.address}</div>
-                    <div className="text-gray-500">{customer.postalCode} {customer.city}</div>
-                  </div>
+                <div className="flex min-w-0 items-start gap-2 text-sm text-gray-600">
+                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
+                  <span className="min-w-0 break-words">{formatCustomerAddress(customer)}</span>
                 </div>
               </div>
             </div>
@@ -835,18 +863,23 @@ export function CustomerManagement() {
       />
 
       {isModalOpen && (
-        <div
-          className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center z-[1000] p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) requestCloseModal();
-          }}
+        <DialogShell
+          titleId="customer-dialog-title"
+          icon={Users}
+          title={editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
+          description="Pflegen Sie Stammdaten, Kontaktmöglichkeiten und individuelle Konditionen."
+          onClose={requestCloseModal}
+          onSubmit={handleSubmit}
+          size="lg"
+          zIndexClassName="z-[1000]"
+          footer={(
+            <>
+              <button type="button" onClick={requestCloseModal} className="min-h-12 flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
+              <button type="submit" className="btn-primary min-h-12 flex-1 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none">{editingCustomer ? 'Aktualisieren' : 'Erstellen'}</button>
+            </>
+          )}
         >
-          <div className="bg-white rounded-xl w-full max-w-md h-[90vh] max-h-[90vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
-            <h3 className="flex-shrink-0 px-4 pt-4 lg:px-6 text-lg font-semibold text-gray-900 mb-4">
-              {editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
-            </h3>
-            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-4 lg:px-6">
+              <div className="space-y-5 pb-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {terminology.entity.numberLabel}
@@ -952,6 +985,18 @@ export function CustomerManagement() {
                   type="text"
                   value={formData.taxId}
                   onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Leitweg-ID (XRechnung)
+                </label>
+                <input
+                  type="text"
+                  value={formData.leitwegId}
+                  onChange={(e) => setFormData({ ...formData, leitwegId: e.target.value })}
+                  placeholder="z. B. 991-12345-67"
                   className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1201,27 +1246,7 @@ export function CustomerManagement() {
               </div>
 
               </div>
-
-              <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 lg:px-6">
-                <div className="flex flex-col sm:flex-row gap-4">
-                <button
-                  type="submit"
-                  className="flex-1 btn-primary py-2 px-4 rounded-xl transition-all duration-300 hover:scale-105"
-                >
-                  {editingCustomer ? 'Aktualisieren' : 'Erstellen'}
-                </button>
-                <button
-                  type="button"
-                  onClick={requestCloseModal}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-xl hover:bg-gray-400 transition-all duration-300"
-                >
-                  Abbrechen
-                </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       <ConfirmationModal
@@ -1242,28 +1267,24 @@ export function CustomerManagement() {
         isOpen={deleteCustomerId !== null}
         onClose={() => setDeleteCustomerId(null)}
         onConfirm={confirmDeleteCustomer}
-        title={`${terminology.entity.plural} löschen?`}
-        message={`Möchten Sie diesen ${terminology.entity.accusative} wirklich löschen?`}
-        confirmText="Löschen"
+        title={`${terminology.entity.plural} archivieren?`}
+        message={`Möchten Sie diesen ${terminology.entity.accusative} archivieren? Historische Dokumente bleiben erhalten.`}
+        confirmText="Archivieren"
         cancelText="Abbrechen"
         isDestructive
       />
 
       {/* Hourly Rate Edit Modal */}
       {isHourlyRateModalOpen && editingHourlyRate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Stundensatz bearbeiten
-              </h3>
-              <button
-                onClick={handleCloseHourlyRateModal}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
+        <DialogShell
+          titleId="hourly-rate-dialog-title"
+          icon={Clock}
+          title="Stundensatz bearbeiten"
+          description="Pflegen Sie Bezeichnung, Preis und steuerliche Zuordnung."
+          onClose={handleCloseHourlyRateModal}
+          size="md"
+          zIndexClassName="z-[1000]"
+        >
             <HourlyRateEditForm
               rate={editingHourlyRate}
               currencySymbol={currencySymbol}
@@ -1272,25 +1293,20 @@ export function CustomerManagement() {
               onSave={(updatedData) => handleUpdateHourlyRate(editingHourlyRate.id, updatedData)}
               onCancel={handleCloseHourlyRateModal}
             />
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       {/* Material Edit Modal */}
       {isMaterialModalOpen && editingMaterial && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Material bearbeiten
-              </h3>
-              <button
-                onClick={handleCloseMaterialModal}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
+        <DialogShell
+          titleId="material-dialog-title"
+          icon={Package}
+          title="Material bearbeiten"
+          description="Pflegen Sie Bezeichnung, Preis, Einheit und Steuer."
+          onClose={handleCloseMaterialModal}
+          size="md"
+          zIndexClassName="z-[1000]"
+        >
             <MaterialEditForm
               material={editingMaterial}
               currencySymbol={currencySymbol}
@@ -1299,8 +1315,7 @@ export function CustomerManagement() {
               onSave={(updatedData) => handleUpdateMaterial(editingMaterial.id, updatedData)}
               onCancel={handleCloseMaterialModal}
             />
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       {/* Create Hourly Rate Modal */}

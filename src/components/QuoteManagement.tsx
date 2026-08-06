@@ -164,54 +164,29 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleDelete = async (quote: Quote) => {
-    if (quote.status === 'accepted' || quote.status === 'billed') {
-      const statusText = quote.status === 'billed' ? 'abgerechnet' : 'akzeptiert';
+    if (quote.status !== 'draft' || Boolean(quote.convertedToInvoiceId)) {
       setConfirmModal({
         isOpen: true,
-        title: 'Angebot löschen',
-        message: `Dieses Angebot wurde bereits ${statusText}. Das Löschen ${statusText}er Angebote kann die GoBD-Konformität verletzen und ist rechtlich problematisch. Sind Sie sicher, dass Sie fortfahren möchten?`,
-        onConfirm: async () => {
-          try {
-            await apiService.deleteQuote(quote.id);
-            await loadQuotes();
-          } catch (error) {
-            logger.error('Error deleting quote:', error);
-          }
-        },
-        isDestructive: true,
-        isGoBDWarning: true
+        title: 'Angebot kann nicht gelöscht werden',
+        message: 'Nur unabhängige Angebotsentwürfe können gelöscht werden. Versendete, angenommene oder bereits abgerechnete Angebote bleiben als Nachweis erhalten.',
+        onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false })),
       });
-    } else if (quote.status === 'sent') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Angebot löschen',
-        message: 'Dieses Angebot wurde bereits versendet. Sind Sie sicher, dass Sie es löschen möchten?',
-        onConfirm: async () => {
-          try {
-            await apiService.deleteQuote(quote.id);
-            await loadQuotes();
-          } catch (error) {
-            logger.error('Error deleting quote:', error);
-          }
-        },
-        isDestructive: true,
-      });
-    } else {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Angebot löschen',
-        message: `Möchten Sie das Angebot ${quote.quoteNumber} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
-        onConfirm: async () => {
-          try {
-            await apiService.deleteQuote(quote.id);
-            await loadQuotes();
-          } catch (error) {
-            logger.error('Error deleting quote:', error);
-          }
-        },
-        isDestructive: true,
-      });
+      return;
     }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Angebot löschen',
+      message: `Möchten Sie das Angebot ${quote.quoteNumber} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      onConfirm: async () => {
+        try {
+          await apiService.deleteQuote(quote.id);
+          await loadQuotes();
+        } catch (error) {
+          logger.error('Error deleting quote:', error);
+        }
+      },
+      isDestructive: true,
+    });
   };
 
   const handleStatusChange = async (id: string, newStatus: Quote['status']) => {
@@ -341,11 +316,23 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     switch (status) {
       case 'accepted': return 'bg-green-100 text-green-800';
       case 'billed': return 'bg-blue-100 text-blue-800';
-      case 'sent': return 'bg-primary-custom/10 text-primary-custom';
+      case 'sent': return 'bg-primary-light-custom text-primary-custom';
       case 'draft': return 'bg-gray-100 text-gray-800';
       case 'rejected': return 'bg-red-100 text-red-800';
       case 'expired': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'accepted': return 'bg-green-500';
+      case 'billed': return 'bg-blue-500';
+      case 'sent': return 'bg-primary-custom';
+      case 'draft': return 'bg-gray-400';
+      case 'rejected': return 'bg-red-500';
+      case 'expired': return 'bg-orange-500';
+      default: return 'bg-gray-400';
     }
   };
 
@@ -601,14 +588,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         <button
           type="button"
           onClick={() => setShowImport(true)}
-          className="inline-flex items-center justify-center space-x-2 rounded-xl border border-primary-custom px-4 py-2 text-primary-custom transition hover:bg-primary-light-custom"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom sm:min-w-0 sm:px-4"
+          aria-label="Importieren"
+          title="Importieren"
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Importieren</span>
         </button>
         <button
           onClick={() => handleOpenEditor()}
-          className="btn-primary text-white px-4 py-2 rounded-xl flex items-center justify-center space-x-2 hover:brightness-90 transition-all duration-300 hover:scale-105"
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+          aria-label="Neues Angebot erstellen"
+          title="Neues Angebot erstellen"
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">Neues Angebot</span>
@@ -655,7 +646,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       />
 
       {/* Quote List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <BulkSelectionHeader
           itemLabel="Angebot"
           itemLabelPlural="Angebote"
@@ -712,9 +703,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div className="hidden lg:block w-full min-w-0 max-w-full overflow-x-auto">
-          <div className="min-w-full">
-            <table className="w-full min-w-[920px]">
+        <div className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+            <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-16">
@@ -735,8 +725,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Betrag
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                  Status
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8 2xl:w-32">
+                  <span className="hidden 2xl:inline">Status</span>
+                  <span className="sr-only 2xl:hidden">Status</span>
                 </th>
                 <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
                   <span className="sr-only">Aktionen</span>
@@ -745,7 +736,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredQuotes.map((quote) => (
-                <tr key={quote.id} className="hover:bg-gray-50">
+                <tr key={quote.id} className="group hover:bg-gray-50">
                   <td className="px-3 py-4 w-16">
                     <input
                       type="checkbox"
@@ -761,8 +752,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {quote.quoteNumber}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {quote.customerName}
+                  <td className="max-w-0 px-3 py-4 text-sm text-gray-900">
+                    <span className="block truncate">{quote.customerName}</span>
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(quote.validUntil, locale, company?.dateFormat)}
@@ -770,12 +761,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
+                  <td className="w-8 px-2 py-4 whitespace-nowrap 2xl:w-32 2xl:px-3">
+                    <span className={`hidden 2xl:inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
                       {getStatusLabel(quote.status)}
                     </span>
+                    <span
+                      className={`inline-flex h-2.5 w-2.5 rounded-full 2xl:hidden ${getStatusDotColor(quote.status)}`}
+                      title={getStatusLabel(quote.status)}
+                    >
+                      <span className="sr-only">{getStatusLabel(quote.status)}</span>
+                    </span>
                   </td>
-                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-56 2xl:px-3">
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 2xl:w-56 2xl:px-3">
                     <div className="hidden 2xl:flex flex-wrap gap-1">
                       {quote.status === 'draft' && (
                         <button
@@ -855,7 +852,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <ActionMenu containerClassName="hidden lg:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
+                    <ActionMenu containerClassName="hidden tablet:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
                         {quote.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>}
                         {quote.status === 'sent' && <>
                           <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
@@ -872,15 +869,14 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
               ))}
             </tbody>
             </table>
-          </div>
         </div>
 
         {/* Mobile Card View */}
-        <div className="lg:hidden">
+        <div className="tablet:hidden">
           {filteredQuotes.map((quote) => (
             <div key={quote.id} className="p-4 border-b border-gray-200 last:border-b-0">
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0 pt-1">
+              <div className="grid grid-cols-[auto,minmax(0,1fr),auto,auto] items-start gap-x-3">
+                <div className="pt-1">
                   <input
                     type="checkbox"
                     checked={selectedQuoteIds.includes(quote.id)}
@@ -890,26 +886,24 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   />
                 </div>
                 
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">{quote.quoteNumber}</h3>
-                      <p className="text-sm text-gray-600 truncate">{quote.customerName}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {formatDate(quote.issueDate, locale, company?.dateFormat)} - Gültig bis: {formatDate(quote.validUntil, locale, company?.dateFormat)}
-                      </p>
-                    </div>
-                    <div className="text-right ml-4">
-                      <p className="text-sm font-medium text-gray-900">{formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}</p>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
-                        {getStatusLabel(quote.status)}
-                      </span>
-                    </div>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">{quote.quoteNumber}</h3>
+                    <span className={`inline-flex shrink-0 px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
+                      {getStatusLabel(quote.status)}
+                    </span>
                   </div>
+                  <p className="mt-1 truncate text-sm text-gray-600">{quote.customerName}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatDate(quote.issueDate, locale, company?.dateFormat)} - Gültig bis: {formatDate(quote.validUntil, locale, company?.dateFormat)}
+                  </p>
+                </div>
+                <div className="self-center whitespace-nowrap text-right">
+                  <p className="text-sm font-medium text-gray-900">{formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}</p>
+                </div>
 
-                  <ActionMenu containerClassName="relative mt-3" triggerClassName="action-icon-button action-icon-blue">
+                <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue">
                   <div className="flex flex-col gap-0.5">
-                    {/* Status-based action buttons */}
                     {quote.status === 'draft' && (
                       <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>
                     )}
@@ -922,19 +916,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
                       <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} tone="blue" onClick={() => handleConvertToInvoice(quote)}>In Rechnung umwandeln</ActionMenuItem>
                     )}
-                    
-                    {/* Icon action buttons */}
+
                     <>
                       <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(quote)}>Bearbeiten</ActionMenuItem>
-                      
                       <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(quote)}>Vorschau anzeigen</ActionMenuItem>
-                      
                       <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id}>Herunterladen</ActionMenuItem>
                       <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(quote)}>Löschen</ActionMenuItem>
                     </>
                   </div>
-                  </ActionMenu>
-                </div>
+                </ActionMenu>
               </div>
             </div>
           ))}

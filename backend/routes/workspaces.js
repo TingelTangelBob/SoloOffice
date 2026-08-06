@@ -11,8 +11,14 @@ import {
   normaliseEmail,
   publicWorkspace,
 } from '../utils/auth.js';
+import { sendSystemEmail } from '../services/emailService.js';
+import logger from '../utils/logger.js';
 
 const router = express.Router();
+
+function publicAppUrl(req) {
+  return (process.env.APP_BASE_URL || process.env.CORS_ORIGIN?.split(',')[0] || `${req.protocol}://${req.get('host') || 'localhost:8080'}`).replace(/\/$/, '');
+}
 
 router.get('/', async (req, res) => {
   const result = await query(`
@@ -126,13 +132,25 @@ router.post('/:workspaceId/invitations', requireWorkspaceFromParam('workspaceId'
     RETURNING id, email, role, expires_at, created_at
   `, [req.params.workspaceId, email, role, hashOpaqueToken(token), req.auth.userId]);
   const row = result.rows[0];
+  const inviteLink = `${publicAppUrl(req)}?invite=${encodeURIComponent(token)}`;
+  try {
+    await sendSystemEmail({
+      workspaceId: req.params.workspaceId,
+      to: email,
+      subject: 'SoloOffice: Einladung zum Workspace',
+      text: `Sie wurden zu einem SoloOffice-Workspace eingeladen. Einladung annehmen: ${inviteLink}`,
+      html: `<p>Sie wurden zu einem SoloOffice-Workspace eingeladen.</p><p><a href="${inviteLink}">Einladung annehmen</a></p>`,
+    });
+  } catch (emailError) {
+    logger.warn('Workspace-Einladung konnte nicht per E-Mail versendet werden', { error: emailError.message });
+  }
   res.status(201).json({
     id: row.id,
     email: row.email,
     role: row.role,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
-    inviteToken: token,
+    ...(process.env.EXPOSE_INVITATION_TOKENS === 'true' ? { inviteToken: token, inviteLink } : {}),
   });
 });
 

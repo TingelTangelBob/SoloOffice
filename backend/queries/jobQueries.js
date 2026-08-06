@@ -25,15 +25,36 @@ const parseMaterials = (materialsData) => {
   return [];
 };
 
+const parseRecurrence = (row) => {
+  if (!row.recurrence_id || !row.recurrence_rule) return undefined;
+  let rule = row.recurrence_rule;
+  if (typeof rule === 'string') {
+    try {
+      rule = JSON.parse(rule);
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    ...rule,
+    id: row.recurrence_id,
+    occurrenceIndex: row.recurrence_index,
+    totalOccurrences: row.recurrence_total,
+  };
+};
+
 const formatJobData = (row, customerName = null) => ({
   id: row.id,
   jobNumber: row.job_number,
   externalJobNumber: row.external_job_number,
   customerId: row.customer_id,
-  customerName: customerName || row.customer_name,
+  customerName: customerName || row.customer_name || '',
   customerAddress: row.customer_address,
-  title: row.title,
-  description: row.description,
+  location: row.location,
+  alternateLocation: row.alternate_location || '',
+  timeZone: row.time_zone || 'Europe/Berlin',
+  title: row.title || '',
+  description: row.description || '',
   date: row.date,
   startTime: row.start_time,
   endTime: row.end_time,
@@ -47,13 +68,14 @@ const formatJobData = (row, customerName = null) => ({
   priority: row.priority,
   attachments: row.attachments || [],
   signature: row.signature || null,
+  recurrence: parseRecurrence(row),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
 
 export async function findAllJobs() {
   const result = await pool.query(`
-      SELECT j.*, c.name as customer_name,
+      SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -81,9 +103,10 @@ export async function findAllJobs() {
              ) as time_entries
       FROM job_entries j
       LEFT JOIN customers c ON j.customer_id = c.id
+      LEFT JOIN job_recurrences jr ON j.recurrence_id = jr.id
       LEFT JOIN job_attachments ja ON j.id = ja.job_id
       LEFT JOIN job_time_entries jte ON j.id = jte.job_id
-      GROUP BY j.id, c.name
+      GROUP BY j.id, c.name, jr.rule
       ORDER BY j.date DESC, j.created_at DESC
     `);
 
@@ -92,7 +115,7 @@ export async function findAllJobs() {
 
 export async function findJobById(id) {
   const result = await pool.query(`
-      SELECT j.*, c.name as customer_name,
+      SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -120,10 +143,11 @@ export async function findJobById(id) {
              ) as time_entries
       FROM job_entries j
       LEFT JOIN customers c ON j.customer_id = c.id
+      LEFT JOIN job_recurrences jr ON j.recurrence_id = jr.id
       LEFT JOIN job_attachments ja ON j.id = ja.job_id
       LEFT JOIN job_time_entries jte ON j.id = jte.job_id
       WHERE j.id = $1
-      GROUP BY j.id, c.name
+      GROUP BY j.id, c.name, jr.rule
     `, [id]);
 
   if (result.rows.length === 0) {

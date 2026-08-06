@@ -5,6 +5,7 @@ import { lookup } from 'node:dns/promises';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { testEmailConnection } from '../services/emailService.js';
+import { decryptSecret, encryptSecret } from '../utils/secretBox.js';
 
 const router = express.Router();
 
@@ -273,10 +274,11 @@ router.get('/smtp-settings', async (req, res) => {
     }
 
     const settings = result.rows[0];
-    // Don't send the password in the response for security
+    // Never send the encrypted value to the browser; only expose a mask.
+    const { smtp_pass_encrypted: encryptedPassword, ...publicSettings } = settings;
     const sanitizedSettings = {
-      ...settings,
-      smtp_pass: settings.smtp_pass ? '****' : ''
+      ...publicSettings,
+      smtp_pass: encryptedPassword ? '****' : ''
     };
 
     res.json({
@@ -329,12 +331,12 @@ router.post('/smtp-settings', async (req, res) => {
       // Create new settings
       await query(`
         INSERT INTO smtp_settings (
-          id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass,
+          id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_encrypted,
           email_from, email_from_name, is_enabled, test_email, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
       `, [
         1, smtp_host, smtp_port || 587, smtp_secure || false,
-        smtp_user, smtp_pass, email_from, email_from_name,
+        smtp_user, encryptSecret(smtp_pass), email_from, email_from_name,
         is_enabled || false, test_email
       ]);
     } else {
@@ -366,7 +368,7 @@ router.post('/smtp-settings', async (req, res) => {
             smtp_port = $2,
             smtp_secure = $3,
             smtp_user = $4,
-            smtp_pass = $5,
+            smtp_pass_encrypted = $5,
             email_from = $6,
             email_from_name = $7,
             is_enabled = $8,
@@ -376,7 +378,7 @@ router.post('/smtp-settings', async (req, res) => {
         `;
         params = [
           smtp_host, smtp_port || 587, smtp_secure || false,
-          smtp_user, smtp_pass, email_from, email_from_name,
+          smtp_user, encryptSecret(smtp_pass), email_from, email_from_name,
           is_enabled || false, test_email
         ];
       }
@@ -425,7 +427,7 @@ router.post('/debug-config', async (req, res) => {
           smtp_port: settings.smtp_port,
           smtp_secure: settings.smtp_secure,
           smtp_user: settings.smtp_user,
-          smtp_pass: settings.smtp_pass ? '****' : null,
+          smtp_pass: settings.smtp_pass_encrypted ? '****' : null,
           email_from: settings.email_from,
           email_from_name: settings.email_from_name,
           is_enabled: settings.is_enabled
@@ -491,7 +493,7 @@ router.post('/diagnose-smtp', async (req, res) => {
       host: settings.smtp_host,
       port: settings.smtp_port,
       secure: settings.smtp_secure,
-      hasAuth: !!(settings.smtp_user && settings.smtp_pass),
+      hasAuth: !!(settings.smtp_user && settings.smtp_pass_encrypted),
       commonIssues: [],
       suggestions: []
     };
@@ -506,7 +508,7 @@ router.post('/diagnose-smtp', async (req, res) => {
       diagnosis.commonIssues.push('Kein SMTP-Host konfiguriert');
     }
 
-    if (!settings.smtp_user || !settings.smtp_pass) {
+    if (!settings.smtp_user || !settings.smtp_pass_encrypted) {
       diagnosis.commonIssues.push('Unvollständige Anmeldedaten');
       diagnosis.suggestions.push('Überprüfen Sie Benutzername und Passwort');
     }
@@ -556,7 +558,7 @@ router.post('/test-smtp', async (req, res) => {
           secure: dbSettings.smtp_secure,
           auth: {
             user: dbSettings.smtp_user,
-            pass: dbSettings.smtp_pass,
+            pass: decryptSecret(dbSettings.smtp_pass_encrypted),
           },
         };
       } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -786,7 +788,7 @@ router.post('/send-test-email', async (req, res) => {
       secure: dbSettings.smtp_secure,
       auth: {
         user: dbSettings.smtp_user,
-        pass: dbSettings.smtp_pass,
+        pass: decryptSecret(dbSettings.smtp_pass_encrypted),
       },
       connectionTimeout: 10000, // 10 seconds
       greetingTimeout: 10000, // 10 seconds

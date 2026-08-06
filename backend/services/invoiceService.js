@@ -1,14 +1,24 @@
-import { pool, query } from '../database.js';
+import { pool } from '../database.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
 import logger from '../utils/logger.js';
 import { validateDiscountFields } from '../utils/validation.js';
 
-export async function generateInvoiceNumber(issueDate, documentType = 'invoice') {
-  const client = await pool.connect();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function generateInvoiceNumber(issueDate, documentType = 'invoice', clientOverride = null) {
+  const client = clientOverride || await pool.connect();
   try {
     // Use the year from the issue date instead of current system year
     const invoiceYear = new Date(issueDate).getFullYear();
     const prefix = documentType === 'credit_note' ? 'GS' : 'RE';
+    const workspaceResult = await client.query("SELECT COALESCE(NULLIF(current_setting('app.workspace_id', true), ''), 'global') AS workspace_id");
+    const workspaceId = workspaceResult.rows[0]?.workspace_id || 'global';
+    // The number is derived from the current maximum, so concurrent requests
+    // must share a transaction-scoped advisory lock.
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [`solooffice:invoice-number:${workspaceId}:${invoiceYear}:${prefix}`]
+    );
     const yearPattern = `${prefix}-${invoiceYear}-%`;
     const lastInvoiceResult = await client.query(`
       SELECT invoice_number
@@ -47,11 +57,11 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice')
 
     return invoiceNumber;
   } finally {
-    client.release();
+    if (!clientOverride) client.release();
   }
 }
 
-export async function createInvoice(data) {
+export async function createInvoice(data, transactionHook) {
   const discountValidation = validateDiscountFields(data);
   if (!discountValidation.valid) {
     const err = new Error(discountValidation.message);
@@ -74,6 +84,8 @@ export async function createInvoice(data) {
     referenceInvoiceId = null,
     creditNoteReason = null,
     recurringInvoiceId = null,
+    sourceQuoteId = null,
+    sourceJobIds = [],
   } = data;
 
   if (!['invoice', 'credit_note'].includes(documentType)) {
@@ -82,13 +94,56 @@ export async function createInvoice(data) {
     throw err;
   }
 
-  // Generate invoice number before opening transaction (generateInvoiceNumber uses its own connection)
-  const invoiceNumber = await generateInvoiceNumber(issueDate, documentType);
+  if (!Array.isArray(sourceJobIds) || sourceJobIds.some(id => !UUID_PATTERN.test(String(id)))) {
+    const err = new Error('Ungültige Auftragsreferenz.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (sourceJobIds.length > 0 && documentType !== 'invoice') {
+    const err = new Error('Auftragsreferenzen sind nur für Rechnungen zulässig.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (new Set(sourceJobIds).size !== sourceJobIds.length) {
+    const err = new Error('Eine Auftragseinheit wurde mehrfach ausgewählt.');
+    err.statusCode = 400;
+    throw err;
+  }
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
+
+    if (recurringInvoiceId) {
+      const recurringResult = await client.query(`
+        SELECT id
+        FROM recurring_invoices
+        WHERE id = $1
+        FOR UPDATE
+      `, [recurringInvoiceId]);
+      if (!recurringResult.rows.length) {
+        const error = new Error('Die wiederkehrende Rechnung wurde nicht gefunden.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const existingRun = await client.query(`
+        SELECT generated_invoice_id
+        FROM recurring_invoice_runs
+        WHERE recurring_invoice_id = $1 AND scheduled_date = $2 AND status = 'success'
+        LIMIT 1
+      `, [recurringInvoiceId, issueDate]);
+      if (existingRun.rows[0]?.generated_invoice_id) {
+        const error = new Error('Für dieses Ausführungsdatum wurde bereits eine Rechnung erzeugt.');
+        error.statusCode = 409;
+        error.code = 'RECURRING_ALREADY_GENERATED';
+        error.existingInvoiceId = existingRun.rows[0].generated_invoice_id;
+        throw error;
+      }
+    }
+
+    // Generate the number only after a recurring template has been locked.
+    const invoiceNumber = await generateInvoiceNumber(issueDate, documentType, client);
 
     // Get customer name
     const customerResult = await client.query('SELECT name FROM customers WHERE id = $1', [customerId]);
@@ -96,6 +151,76 @@ export async function createInvoice(data) {
       throw new Error('Customer not found');
     }
     const customerName = customerResult.rows[0].name;
+
+    let sourceQuote = null;
+    if (sourceQuoteId) {
+      if (documentType !== 'invoice' || !UUID_PATTERN.test(String(sourceQuoteId))) {
+        const error = new Error('Ungültige Angebotsreferenz.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const sourceQuoteResult = await client.query(`
+        SELECT id, customer_id, status, converted_to_invoice_id
+        FROM quotes
+        WHERE id = $1
+        FOR UPDATE
+      `, [sourceQuoteId]);
+      sourceQuote = sourceQuoteResult.rows[0];
+      if (!sourceQuote || sourceQuote.customer_id !== customerId) {
+        const error = new Error('Das Angebot wurde nicht gefunden oder gehört zu einem anderen Kunden.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (sourceQuote.converted_to_invoice_id) {
+        const error = new Error('Das Angebot wurde bereits in eine Rechnung umgewandelt.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (sourceQuote.status !== 'accepted') {
+        const error = new Error('Nur angenommene Angebote können in Rechnungen umgewandelt werden.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    let sourceJobs = [];
+    if (sourceJobIds.length > 0) {
+      const sourceJobResult = await client.query(`
+        SELECT id, customer_id, status, job_number, external_job_number, title, date, recurrence_index
+        FROM job_entries
+        WHERE id = ANY($1::uuid[])
+        FOR UPDATE
+      `, [sourceJobIds]);
+
+      if (sourceJobResult.rows.length !== sourceJobIds.length) {
+        const err = new Error('Mindestens eine Auftragseinheit wurde nicht gefunden.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (sourceJobResult.rows.some(job => job.customer_id !== customerId)) {
+        const err = new Error('Alle Auftragseinheiten müssen zum selben Kunden gehören.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (sourceJobResult.rows.some(job => job.status !== 'completed')) {
+        const err = new Error('Nur abgeschlossene Auftragseinheiten können abgerechnet werden.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const existingSourceResult = await client.query(`
+        SELECT job_id
+        FROM invoice_job_sources
+        WHERE job_id = ANY($1::uuid[])
+        FOR UPDATE
+      `, [sourceJobIds]);
+      if (existingSourceResult.rows.length > 0) {
+        const err = new Error('Mindestens eine Auftragseinheit wurde bereits abgerechnet.');
+        err.statusCode = 409;
+        throw err;
+      }
+      sourceJobs = sourceJobResult.rows;
+    }
 
     // Calculate totals with discounts
     let subtotalBeforeDiscounts = 0;
@@ -166,12 +291,20 @@ export async function createInvoice(data) {
 
     // Insert invoice
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *
-    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscAmount]);
+    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscAmount]);
 
     const invoiceId = invoiceResult.rows[0].id;
+
+    if (sourceQuote) {
+      await client.query(`
+        UPDATE quotes
+        SET converted_to_invoice_id = $1, status = 'billed'
+        WHERE id = $2
+      `, [invoiceId, sourceQuote.id]);
+    }
 
     // Insert invoice items
     for (let i = 0; i < processedItems.length; i++) {
@@ -189,6 +322,33 @@ export async function createInvoice(data) {
         INSERT INTO invoice_attachments (invoice_id, name, content, content_type, size)
         VALUES ($1, $2, $3, $4, $5)
       `, [invoiceId, attachment.name, attachment.content, attachment.contentType, attachment.size]);
+    }
+
+    if (sourceJobs.length > 0) {
+      for (const sourceJob of sourceJobs) {
+        await client.query(`
+          INSERT INTO invoice_job_sources (
+            invoice_id, job_id, job_number, external_job_number, title, job_date, recurrence_index
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          invoiceId,
+          sourceJob.id,
+          sourceJob.job_number,
+          sourceJob.external_job_number || null,
+          sourceJob.title,
+          sourceJob.date,
+          sourceJob.recurrence_index || null,
+        ]);
+      }
+      await client.query(
+        `UPDATE job_entries SET status = 'invoiced', updated_at = NOW() WHERE id = ANY($1::uuid[])`,
+        [sourceJobIds]
+      );
+    }
+
+    if (transactionHook) {
+      await transactionHook(client, invoiceResult.rows[0]);
     }
 
     await client.query('COMMIT');
@@ -226,6 +386,12 @@ export async function updateInvoice(id, data) {
     }
 
     const current = currentInvoice.rows[0];
+
+    if (updateData.sourceQuoteId !== undefined && updateData.sourceQuoteId !== current.source_quote_id) {
+      const error = new Error('Die Herkunft einer Rechnung kann nach dem Anlegen nicht geändert werden.');
+      error.statusCode = 409;
+      throw error;
+    }
 
     // Recalculate totals if items are provided
     let calculatedSubtotal = updateData.subtotal ?? current.subtotal;
@@ -306,6 +472,7 @@ export async function updateInvoice(id, data) {
       referenceInvoiceId: updateData.referenceInvoiceId !== undefined ? updateData.referenceInvoiceId : current.reference_invoice_id,
       creditNoteReason: updateData.creditNoteReason !== undefined ? updateData.creditNoteReason : current.credit_note_reason,
       recurringInvoiceId: updateData.recurringInvoiceId !== undefined ? updateData.recurringInvoiceId : current.recurring_invoice_id,
+      sourceQuoteId: current.source_quote_id,
       items: updateData.items // items are handled separately
     };
 
@@ -315,8 +482,8 @@ export async function updateInvoice(id, data) {
       SET invoice_number = $1, customer_id = $2, customer_name = $3, issue_date = $4,
           due_date = $5, subtotal = $6, tax_amount = $7, total = $8, status = $9, notes = $10,
           global_discount_type = $11, global_discount_value = $12, global_discount_amount = $13,
-          reference_invoice_id = $14, credit_note_reason = $15, recurring_invoice_id = $16
-      WHERE id = $17
+          reference_invoice_id = $14, credit_note_reason = $15, recurring_invoice_id = $16, source_quote_id = $17
+      WHERE id = $18
       RETURNING *
     `, [
       mergedData.invoiceNumber,
@@ -335,6 +502,7 @@ export async function updateInvoice(id, data) {
       mergedData.referenceInvoiceId,
       mergedData.creditNoteReason,
       mergedData.recurringInvoiceId,
+      mergedData.sourceQuoteId,
       id
     ]);
 
@@ -386,6 +554,40 @@ export async function updateInvoice(id, data) {
 }
 
 export async function deleteInvoice(id) {
-  const result = await query('DELETE FROM invoices WHERE id = $1 RETURNING id', [id]);
-  return result.rows.length > 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const invoiceResult = await client.query(`
+      SELECT id, status, recurring_invoice_id, source_quote_id,
+             EXISTS (SELECT 1 FROM quotes WHERE converted_to_invoice_id = invoices.id) AS has_source_quote
+      FROM invoices
+      WHERE id = $1
+      FOR UPDATE
+    `, [id]);
+    if (!invoiceResult.rows.length) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    const invoice = invoiceResult.rows[0];
+    if (invoice.status !== 'draft' || invoice.recurring_invoice_id || invoice.source_quote_id || invoice.has_source_quote) {
+      const error = new Error('Nur unabhängige Entwürfe ohne Dokumentquelle können gelöscht werden.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const sourceJobs = await client.query('SELECT job_id FROM invoice_job_sources WHERE invoice_id = $1 FOR UPDATE', [id]);
+    if (sourceJobs.rows.length > 0) {
+      const jobIds = sourceJobs.rows.map(row => row.job_id);
+      await client.query('DELETE FROM invoice_job_sources WHERE invoice_id = $1', [id]);
+      await client.query(`UPDATE job_entries SET status = 'completed', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status = 'invoiced'`, [jobIds]);
+    }
+    await client.query('DELETE FROM invoices WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

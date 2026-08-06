@@ -75,6 +75,7 @@ router.put('/:id', async (req, res) => {
       endpoint: '/quotes/:id'
     });
     if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    if (error.statusCode === 409) return res.status(409).json({ error: error.message });
     res.status(500).json({ error: 'Failed to update quote' });
   }
 });
@@ -93,6 +94,7 @@ router.delete('/:id', async (req, res) => {
       method: 'DELETE',
       endpoint: '/quotes/:id'
     });
+    if (error.statusCode === 409) return res.status(409).json({ error: error.message });
     res.status(500).json({ error: 'Failed to delete quote' });
   }
 });

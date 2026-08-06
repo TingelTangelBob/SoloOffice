@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to manage multiple Belego instances
+# Script to manage multiple SoloOffice instances
 
 # Colors for better output
 RED='\033[0;31m'
@@ -29,7 +29,7 @@ print_error() {
 # Function to list all running instances
 list_instances() {
     echo
-    print_info "=== Laufende Belego Instanzen ==="
+    print_info "=== Laufende SoloOffice-Instanzen ==="
     echo
     
     # Get all running containers with belego in name
@@ -59,7 +59,7 @@ list_instances() {
                     status="${RED}STOPPED${NC}"
                 fi
                 
-                echo -e "  ${BLUE}$instance_name${NC} - $status - Frontend:$FRONTEND_PORT Backend:$BACKEND_PORT DB:$DB_PORT"
+                echo -e "  ${BLUE}$instance_name${NC} - $status - Frontend:$FRONTEND_PORT (Backend/DB intern)"
             fi
         fi
     done
@@ -137,7 +137,7 @@ EOF
         echo
         print_info "=== Zugriffsinformationen ==="
         print_success "Frontend: http://localhost:$FRONTEND_PORT"
-        print_success "Backend:  http://localhost:$BACKEND_PORT"
+        print_info "Backend:  intern im Compose-Netzwerk (Debug-Override für localhost-Zugriff verwenden)"
     else
         print_error "Fehler beim Starten der Instanz '$instance_name'"
         return 1
@@ -327,7 +327,7 @@ case "$1" in
         ;;
     --help|-h|help)
         echo
-        print_info "=== Belego Instance Manager ==="
+        print_info "=== SoloOffice Instance Manager ==="
         echo
         echo "Usage: $0 {command} [instance_name] [options]"
         echo

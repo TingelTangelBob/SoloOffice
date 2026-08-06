@@ -78,6 +78,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
   const taxAreaWasActive = useRef(taxAreaActive);
   const isSidebarCompact = sidebarSettings.collapsed || sidebarSettings.width <= SIDEBAR_COMPACT_BREAKPOINT;
+  const companySetupComplete = [
+    company.name,
+    company.address,
+    company.postalCode,
+    company.city,
+    company.email,
+    company.taxId,
+    company.bankAccount,
+  ].every(value => Boolean(value?.trim()));
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -169,7 +178,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   };
 
   const receiptNavItem: NavItem = {
-    id: 'receipts',
+    id: 'documents',
     label: 'Belege',
     icon: FileScan,
   };
@@ -343,7 +352,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   return (
                     <li key={item.id}>
                       <button
+                        type="button"
                         onClick={() => handlePageChange(item.id)}
+                        aria-label={item.label}
+                        aria-current={isParentActive ? 'page' : undefined}
+                        title={isSidebarCompact ? item.label : undefined}
                         className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
                           isParentActive
                             ? 'nav-active'
@@ -365,6 +378,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                               <button
                                 type="button"
                                 onClick={() => handlePageChange(child.id)}
+                                aria-current={currentPage === child.id ? 'page' : undefined}
                                 className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                   currentPage === child.id
                                     ? 'font-medium text-primary-custom'
@@ -389,7 +403,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     return (
                       <li key={item.id}>
                         <button
+                          type="button"
                           onClick={() => handlePageChange(item.id)}
+                          aria-label={item.label}
+                          aria-current={currentPage === item.id ? 'page' : undefined}
+                          title={isSidebarCompact ? item.label : undefined}
                           className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
                             currentPage === item.id
                               ? 'nav-active'
@@ -407,6 +425,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   <button
                     type="button"
                     onClick={() => handlePageChange('profile')}
+                    aria-label="Profil öffnen"
+                    aria-current={currentPage === 'profile' ? 'page' : undefined}
                     className={`flex w-full items-center rounded-lg py-2 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-3'} ${currentPage === 'profile' ? 'nav-active' : 'text-gray-700 hover:bg-gray-50'}`}
                     title={isSidebarCompact ? user?.displayName : undefined}
                   >
@@ -430,6 +450,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
 
           <main className="min-h-screen min-w-0 flex-1 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 safe-area-bottom">
             <div className={`mx-auto w-full ${contentWidthClass}`}>
+              {!companySetupComplete && currentPage !== 'settings' && (
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+                  <span><strong>Firmendaten vervollständigen:</strong> Für belastbare Rechnungen und E-Rechnungen fehlen noch Pflichtangaben.</span>
+                  <button type="button" onClick={() => handlePageChange('settings')} className="rounded-lg bg-orange-600 px-3 py-2 font-medium text-white hover:bg-orange-700">Zu den Einstellungen</button>
+                </div>
+              )}
               {children}
             </div>
           </main>

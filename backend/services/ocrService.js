@@ -6,12 +6,14 @@ import path from 'node:path';
 
 const execFileAsync = promisify(execFile);
 const MAX_OCR_OUTPUT = 8 * 1024 * 1024;
+const MAX_PDF_PAGES = 50;
 
 const extensionByMimeType = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  'application/pdf': '.pdf',
 };
 
 const amountPattern = /(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})?/g;
@@ -195,13 +197,97 @@ async function readConfidence(inputPath) {
   }
 }
 
+async function runTesseract(inputPath, name) {
+  try {
+    const { stdout } = await execFileAsync('tesseract', [inputPath, 'stdout', '-l', 'deu+eng', '--psm', '6'], {
+      maxBuffer: MAX_OCR_OUTPUT,
+    });
+    return String(stdout || '').trim();
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('Lokales OCR ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
+    }
+    throw new Error(`Lokales OCR konnte „${name || 'Beleg'}“ nicht lesen.`);
+  }
+}
+
+async function extractPdfText(inputPath, name) {
+  try {
+    const { stdout } = await execFileAsync('pdftotext', ['-layout', inputPath, '-'], {
+      maxBuffer: MAX_OCR_OUTPUT,
+    });
+    return String(stdout || '').trim();
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
+    }
+    throw new Error(`Die PDF „${name || 'Beleg'}“ konnte nicht gelesen werden.`);
+  }
+}
+
+async function getPdfPageCount(inputPath, name) {
+  try {
+    const { stdout } = await execFileAsync('pdfinfo', [inputPath], { maxBuffer: 1024 * 1024 });
+    const pageMatch = String(stdout || '').match(/^Pages:\s+(\d+)$/m);
+    const pageCount = Number(pageMatch?.[1]);
+    if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error('Keine PDF-Seiten gefunden.');
+    if (pageCount > MAX_PDF_PAGES) throw new Error(`PDF-Belege dürfen höchstens ${MAX_PDF_PAGES} Seiten enthalten.`);
+    return pageCount;
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
+    }
+    if (error instanceof Error && error.message.includes('höchstens')) throw error;
+    throw new Error(`Die PDF „${name || 'Beleg'}“ konnte nicht gelesen werden.`);
+  }
+}
+
+async function runScannedPdfOcr(inputPath, tempDirectory, name) {
+  await getPdfPageCount(inputPath, name);
+  const pagePrefix = path.join(tempDirectory, 'page');
+  try {
+    await execFileAsync('pdftoppm', ['-png', '-r', '180', inputPath, pagePrefix], {
+      maxBuffer: MAX_OCR_OUTPUT,
+    });
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
+    }
+    throw new Error(`Die eingescannte PDF „${name || 'Beleg'}“ konnte nicht verarbeitet werden.`);
+  }
+
+  const pageFiles = (await fs.readdir(tempDirectory))
+    .filter(fileName => /^page-\d+\.png$/i.test(fileName))
+    .sort((left, right) => Number(left.match(/-(\d+)\.png$/i)?.[1]) - Number(right.match(/-(\d+)\.png$/i)?.[1]));
+  if (!pageFiles.length) throw new Error(`Die eingescannte PDF „${name || 'Beleg'}“ enthält keine lesbaren Seiten.`);
+
+  const pageTexts = [];
+  const confidences = [];
+  for (const pageFile of pageFiles) {
+    const pagePath = path.join(tempDirectory, pageFile);
+    const pageText = await runTesseract(pagePath, name);
+    if (pageText) pageTexts.push(pageText);
+    const confidence = await readConfidence(pagePath);
+    if (confidence !== undefined) confidences.push(confidence);
+  }
+
+  return {
+    text: pageTexts.join('\n\n').trim(),
+    confidence: confidences.length
+      ? Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100) / 100
+      : undefined,
+  };
+}
+
 /**
- * Run Tesseract inside the backend container. No file is sent to an external
- * service; the temporary image is removed again after both OCR passes.
+ * Process images and PDFs inside the backend container. Digital PDFs use
+ * their embedded text; image-only PDFs are rendered locally and passed to
+ * Tesseract. No file is sent to an external service.
  */
 export async function runLocalOcr({ content, contentType, name }) {
-  const extension = extensionByMimeType[contentType];
-  if (!extension) throw new Error('Für die lokale OCR werden JPG-, PNG- oder WEBP-Bilder unterstützt.');
+  const normalizedContentType = String(contentType || '').toLowerCase();
+  const extension = extensionByMimeType[normalizedContentType];
+  if (!extension) throw new Error('Für die lokale Belegerkennung werden PDF-, JPG-, PNG- oder WEBP-Dateien unterstützt.');
 
   const buffer = decodeBase64Content(content);
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'solooffice-ocr-'));
@@ -209,22 +295,19 @@ export async function runLocalOcr({ content, contentType, name }) {
 
   try {
     await fs.writeFile(inputPath, buffer);
-    let stdout;
-    try {
-      ({ stdout } = await execFileAsync('tesseract', [inputPath, 'stdout', '-l', 'deu+eng', '--psm', '6'], {
-        maxBuffer: MAX_OCR_OUTPUT,
-      }));
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        throw new Error('Lokales OCR ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
-      }
-      throw new Error(`Lokales OCR konnte „${name || 'Beleg'}“ nicht lesen.`);
+    let text;
+    let confidence;
+    if (normalizedContentType === 'application/pdf') {
+      text = await extractPdfText(inputPath, name);
+      if (!text) ({ text, confidence } = await runScannedPdfOcr(inputPath, tempDirectory, name));
+    } else {
+      text = await runTesseract(inputPath, name);
+      confidence = await readConfidence(inputPath);
     }
 
-    const text = String(stdout || '').trim();
     return {
       text,
-      confidence: await readConfidence(inputPath),
+      confidence,
       extractedData: parseExtractedData(text),
     };
   } finally {

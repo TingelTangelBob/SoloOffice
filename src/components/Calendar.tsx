@@ -5,6 +5,8 @@ import {
   ChevronRight, 
   ChevronDown,
   Search,
+  Plus,
+  Share2,
   X,
   Edit,
   Trash2,
@@ -1038,6 +1040,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     try {
       if (editingJob) {
         await updateJobEntry(editingJob.id, jobData);
+        await refreshJobEntries();
       } else {
         await addJobEntry(jobData);
         // Refresh job entries in other components  
@@ -1045,8 +1048,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       }
       setShowJobForm(false);
       setEditingJob(null);
+      return true;
     } catch (error) {
       logger.error('Error saving job:', error);
+      throw error;
     }
   };
 
@@ -1160,19 +1165,21 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         <button
           type="button"
           onClick={handleNewEntry}
-          className="order-3 min-h-0 inline-flex h-10 items-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:px-4"
+          className="order-3 inline-flex h-10 min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:min-h-0 sm:min-w-0 sm:px-4"
           aria-label="Neuen Eintrag erstellen"
           title="Neuen Eintrag erstellen"
         >
+          <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Neu</span>
         </button>
         <button
           type="button"
           onClick={() => setShowShareDialog(true)}
-          className="order-2 min-h-0 inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:px-3"
+          className="order-2 inline-flex h-10 min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-h-0 sm:min-w-0 sm:px-3"
           aria-label="Kalender teilen"
           title="Kalender teilen"
         >
+          <Share2 className="h-4 w-4" />
           <span className="hidden sm:inline">Teilen</span>
         </button>
         <div className="relative order-1 search-container">
@@ -1343,7 +1350,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         {viewMode === 'month' && <div className="mt-3 overflow-hidden">
           <div
             ref={monthGridRef}
-            className="grid h-[calc(100vh-180px)] min-h-[24rem] w-full min-w-0 grid-cols-[32px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:min-h-0"
+            className="grid h-[calc(100vh-280px)] min-h-[24rem] w-full min-w-0 grid-cols-[32px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:h-[calc(100vh-180px)] sm:min-h-0"
             style={{ gridTemplateRows: `${MONTH_HEADER_HEIGHT}px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
           >
             {/* Week day headers */}

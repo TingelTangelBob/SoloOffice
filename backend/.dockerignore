@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+node_modules
+backups
+coverage
+*.log
+*.tmp
+Projektordner
+Dockerfile*
+docker-compose*.yml

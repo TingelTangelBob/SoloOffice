@@ -312,8 +312,8 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
 
         {resolved.showFooter && (
           <div className="mt-auto border-t pt-2" style={{ borderColor: `${resolved.accentColor}55`, color: mutedText }}>
-            <div className="flex justify-between gap-2"><span>{companyName}</span><span>info@meinefirma.de</span><span>Seite 1</span></div>
-            <div className="mt-1">Musterstraße 123 · 10115 Berlin · www.meinefirma.de</div>
+            <div className="flex justify-between gap-2"><span>{companyName || 'Ihr Firmenname'}</span><span>Ihre E-Mail-Adresse</span><span>Seite 1</span></div>
+            <div className="mt-1">Ihre Adresse · PLZ Ort · Ihre Website</div>
           </div>
         )}
       </div>
@@ -671,7 +671,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
         subtitle="PDF-Layouts und Dokumentdesign zentral verwalten"
       />
 
-      <div className="sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1">
+      <div className="theme-tab-bar sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
@@ -682,8 +682,8 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
                 setActiveTab(tab.id);
                 closeEditor();
               }}
-              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeTab === tab.id
-                ? 'bg-primary-custom text-white shadow-sm'
+              className={`theme-tab-button inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeTab === tab.id
+                ? 'theme-tab-active bg-primary-custom text-white shadow-sm'
                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
             >
               <Icon className="h-4 w-4" />

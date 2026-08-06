@@ -1,5 +1,5 @@
 import express from 'express';
-import { query } from '../database.js';
+import { pool, query } from '../database.js';
 
 const router = express.Router();
 
@@ -66,6 +66,65 @@ function validateEntry(data) {
   return null;
 }
 
+async function validateSource(data, currentId = null, executor = query) {
+  const sourceType = String(data.sourceType || 'manual');
+  const sourceId = data.sourceId ? String(data.sourceId) : '';
+  const amount = Number(data.amount);
+
+  if (sourceType === 'manual') return null;
+  if (!sourceId || !uuidPattern.test(sourceId)) return 'Für diese Buchungsart ist eine gültige Quelle erforderlich.';
+
+  if (sourceType === 'invoice_payment') {
+    if (data.entryType !== 'income') return 'Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.';
+    const invoiceResult = await executor(`
+      SELECT total, document_type
+      FROM invoices
+      WHERE id = $1
+      FOR UPDATE
+    `, [sourceId]);
+    const invoice = invoiceResult.rows[0];
+    if (!invoice || (invoice.document_type && invoice.document_type !== 'invoice')) return 'Die zugeordnete Rechnung wurde nicht gefunden.';
+
+    const paymentResult = await executor(`
+      SELECT COALESCE(SUM(amount), 0) AS amount
+      FROM euer_entries
+      WHERE source_type = 'invoice_payment'
+        AND source_id = $1
+        AND status = 'active'
+        AND ($2::uuid IS NULL OR id <> $2::uuid)
+    `, [sourceId, currentId]);
+    const alreadyAllocated = Number(paymentResult.rows[0]?.amount || 0);
+    const remaining = Math.max(0, Number(invoice.total || 0) - alreadyAllocated);
+    if (amount > remaining + 0.01) return `Die Teilzahlung überschreitet den offenen Rechnungsbetrag von ${remaining.toFixed(2)} €. `;
+    return null;
+  }
+
+  if (sourceType === 'receipt') {
+    const receiptResult = await executor('SELECT id, linked_euer_entry_id FROM receipts WHERE id = $1 FOR UPDATE', [sourceId]);
+    if (!receiptResult.rows.length) return 'Der zugeordnete Beleg wurde nicht gefunden.';
+    const linkedEntryId = receiptResult.rows[0].linked_euer_entry_id;
+    if (linkedEntryId && linkedEntryId !== currentId) {
+      const linkedEntryResult = await executor('SELECT status FROM euer_entries WHERE id = $1', [linkedEntryId]);
+      if (linkedEntryResult.rows[0]?.status !== 'voided') return 'Der Beleg ist bereits mit einer anderen EÜR-Buchung verknüpft.';
+    }
+    const linkedResult = await executor(`
+      SELECT id FROM euer_entries
+      WHERE source_type = 'receipt' AND source_id = $1 AND status = 'active'
+        AND ($2::uuid IS NULL OR id <> $2::uuid)
+      LIMIT 1
+    `, [sourceId, currentId]);
+    if (linkedResult.rows.length) return 'Der Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.';
+    return null;
+  }
+
+  if (sourceType === 'correction') {
+    const entryResult = await executor('SELECT id, status FROM euer_entries WHERE id = $1', [sourceId]);
+    if (!entryResult.rows.length || entryResult.rows[0].status !== 'active' || sourceId === currentId) return 'Die zu korrigierende EÜR-Buchung wurde nicht gefunden.';
+  }
+
+  return null;
+}
+
 const entryColumns = `id, entry_type, entry_date, description, category, amount, tax_rate, notes,
   source_type, source_id, status, correction_reason, created_at, updated_at`;
 
@@ -119,15 +178,22 @@ router.get('/:id', async (req, res, next) => {
 });
 
 router.post('/', async (req, res, next) => {
+  const client = await pool.connect();
   try {
     const error = validateEntry(req.body);
     if (error) return res.status(400).json({ error });
+    await client.query('BEGIN');
+    const sourceError = await validateSource(req.body, null, client.query.bind(client));
+    if (sourceError) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: sourceError });
+    }
 
     const {
       entryType, entryDate, description, category, amount, taxRate = 0, notes,
       sourceType = 'manual', sourceId, correctionReason,
     } = req.body;
-    const result = await query(`
+    const result = await client.query(`
       INSERT INTO euer_entries
         (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, correction_reason)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -136,18 +202,46 @@ router.post('/', async (req, res, next) => {
       entryType, entryDate, String(description).trim(), category, Number(amount), Number(taxRate),
       notes || null, sourceType, sourceId || null, correctionReason || null,
     ]);
+    if (sourceType === 'receipt') {
+      const receiptResult = await client.query(`
+        UPDATE receipts
+        SET linked_euer_entry_id = $1, updated_at = NOW()
+        WHERE id = $2 AND (
+          linked_euer_entry_id IS NULL
+          OR linked_euer_entry_id = $1
+          OR linked_euer_entry_id IN (SELECT id FROM euer_entries WHERE status = 'voided')
+        )
+      `, [result.rows[0].id, sourceId]);
+      if (receiptResult.rowCount === 0) {
+        const conflict = new Error('Der Beleg ist bereits mit einer anderen EÜR-Buchung verknüpft.');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+    }
+    await client.query('COMMIT');
     res.status(201).json(toEntry(result.rows[0]));
   } catch (error) {
+    await client.query('ROLLBACK');
     next(error);
+  } finally {
+    client.release();
   }
 });
 
 router.put('/:id', async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const currentResult = await query('SELECT * FROM euer_entries WHERE id = $1', [req.params.id]);
-    if (currentResult.rows.length === 0) return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
+    await client.query('BEGIN');
+    const currentResult = await client.query('SELECT * FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (currentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
+    }
     const currentRow = currentResult.rows[0];
-    if (currentRow.status === 'voided') return res.status(409).json({ error: 'Eine stornierte Buchung kann nicht bearbeitet werden.' });
+    if (currentRow.status === 'voided') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Eine stornierte Buchung kann nicht bearbeitet werden.' });
+    }
 
     const current = toEntry(currentRow);
     const merged = {
@@ -158,9 +252,17 @@ router.put('/:id', async (req, res, next) => {
       sourceId: req.body.sourceId === '' ? undefined : (req.body.sourceId ?? current.sourceId),
     };
     const error = validateEntry(merged);
-    if (error) return res.status(400).json({ error });
+    if (error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error });
+    }
+    const sourceError = await validateSource(merged, req.params.id, client.query.bind(client));
+    if (sourceError) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: sourceError });
+    }
 
-    const result = await query(`
+    const result = await client.query(`
       UPDATE euer_entries
       SET entry_type = $1, entry_date = $2, description = $3, category = $4, amount = $5,
           tax_rate = $6, notes = $7, source_type = $8, source_id = $9,
@@ -172,28 +274,73 @@ router.put('/:id', async (req, res, next) => {
       Number(merged.amount), Number(merged.taxRate || 0), merged.notes || null,
       merged.sourceType, merged.sourceId || null, merged.correctionReason || null, req.params.id,
     ]);
-    if (result.rows.length === 0) return res.status(409).json({ error: 'Die Buchung ist nicht mehr aktiv.' });
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Die Buchung ist nicht mehr aktiv.' });
+    }
+    const previousSource = current.source_type === 'receipt' ? current.source_id : null;
+    if (previousSource && (merged.sourceType !== 'receipt' || merged.sourceId !== previousSource)) {
+      await client.query('UPDATE receipts SET linked_euer_entry_id = NULL, updated_at = NOW() WHERE id = $1 AND linked_euer_entry_id = $2', [previousSource, req.params.id]);
+    }
+    if (merged.sourceType === 'receipt') {
+      const receiptResult = await client.query(`
+        UPDATE receipts
+        SET linked_euer_entry_id = $1, updated_at = NOW()
+        WHERE id = $2 AND (
+          linked_euer_entry_id IS NULL
+          OR linked_euer_entry_id = $1
+          OR linked_euer_entry_id IN (SELECT id FROM euer_entries WHERE status = 'voided')
+        )
+      `, [req.params.id, merged.sourceId]);
+      if (receiptResult.rowCount === 0) {
+        const conflict = new Error('Der Beleg ist bereits mit einer anderen EÜR-Buchung verknüpft.');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+    }
+    await client.query('COMMIT');
     res.json(toEntry(result.rows[0]));
   } catch (error) {
+    await client.query('ROLLBACK');
     next(error);
+  } finally {
+    client.release();
   }
 });
 
 router.delete('/:id', async (req, res, next) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    const currentResult = await client.query('SELECT id, source_type, status FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (currentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
+    }
+    if (currentResult.rows[0].status === 'voided') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Die Buchung wurde bereits storniert.' });
+    }
     const reason = String(req.body?.correctionReason || 'Stornierung').trim().slice(0, 500);
-    const result = await query(`
+    const result = await client.query(`
       UPDATE euer_entries
       SET status = 'voided', correction_reason = $1, updated_at = NOW()
       WHERE id = $2 AND status = 'active'
     `, [reason || 'Stornierung', req.params.id]);
     if (result.rowCount === 0) {
-      const existing = await query('SELECT id FROM euer_entries WHERE id = $1', [req.params.id]);
-      return res.status(existing.rows.length ? 409 : 404).json({ error: existing.rows.length ? 'Die Buchung wurde bereits storniert.' : 'EÜR-Buchung nicht gefunden.' });
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Die Buchung ist nicht mehr aktiv.' });
     }
+    if (currentResult.rows[0].source_type === 'receipt') {
+      await client.query('UPDATE receipts SET linked_euer_entry_id = NULL, updated_at = NOW() WHERE linked_euer_entry_id = $1', [req.params.id]);
+    }
+    await client.query('COMMIT');
     res.status(204).send();
   } catch (error) {
+    await client.query('ROLLBACK');
     next(error);
+  } finally {
+    client.release();
   }
 });
 

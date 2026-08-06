@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Invoice } from '../types';
 import { apiService } from '../services/api';
-import { generateUUID } from '../utils/uuid';
 import logger from '../utils/logger';
 
 // ============================================================================
@@ -47,14 +46,7 @@ export function InvoiceProvider({ children, initialInvoices = [] }: InvoiceProvi
       return newInvoice;
     } catch (error) {
       logger.error('Error adding invoice:', error);
-      // Fallback: Create locally
-      const newInvoice: Invoice = {
-        ...invoiceData,
-        id: generateUUID(),
-        createdAt: new Date(),
-      };
-      setInvoices(prev => [...prev, newInvoice]);
-      return newInvoice;
+      throw error;
     }
   }, []);
 
@@ -66,10 +58,7 @@ export function InvoiceProvider({ children, initialInvoices = [] }: InvoiceProvi
       ));
     } catch (error) {
       logger.error('Error updating invoice:', error);
-      // Fallback: Update locally
-      setInvoices(prev => prev.map(invoice =>
-        invoice.id === id ? { ...invoice, ...invoiceData } : invoice
-      ));
+      throw error;
     }
   }, []);
 
@@ -79,8 +68,7 @@ export function InvoiceProvider({ children, initialInvoices = [] }: InvoiceProvi
       setInvoices(prev => prev.filter(invoice => invoice.id !== id));
     } catch (error) {
       logger.error('Error deleting invoice:', error);
-      // Fallback: Delete locally
-      setInvoices(prev => prev.filter(invoice => invoice.id !== id));
+      throw error;
     }
   }, []);
 
@@ -90,6 +78,7 @@ export function InvoiceProvider({ children, initialInvoices = [] }: InvoiceProvi
       setInvoices(invoicesData);
     } catch (error) {
       logger.error('Error refreshing invoices:', error);
+      throw error;
     }
   }, []);
 

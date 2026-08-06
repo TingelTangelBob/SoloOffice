@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { X, Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit } from 'lucide-react';
-import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, CalendarEvent } from '../types';
+import { Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit, Info, LockKeyhole, ChevronDown } from 'lucide-react';
+import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, CalendarEvent, JobRecurrenceRule } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
@@ -14,13 +14,18 @@ import { createDefaultTimeEntry } from '../utils/jobUtils';
 import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
 import { formatCurrency, formatNumber, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { LocalizedDateInput } from './LocalizedDateInput';
+import { LocalizedTimeInput } from './LocalizedTimeInput';
 import { getTerminology } from '../utils/terminology';
+import { getIsoWeekday, getJobRecurrenceDates, getRecurrenceWeekdayLabel, RECURRENCE_WEEKDAYS } from '../utils/jobRecurrence';
+import { DialogShell } from './DialogShell';
+import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 
 interface JobEntryFormProps {
   job?: JobEntry | null;
   customers: Customer[];
   defaultDate?: Date | null;
-  onSubmit: (jobData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSubmit: (jobData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => void | boolean | Promise<void | boolean>;
   onCancel: () => void;
   onCreateCustomer?: () => void;
   onSubmitVacation?: (event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => void | Promise<void>;
@@ -28,10 +33,67 @@ interface JobEntryFormProps {
   onNavigateToSettings?: () => void;
 }
 
+type RecurrenceIntervalUnit = JobRecurrenceRule['intervalUnit'];
+
+function TaxDisabledHint() {
+  return (
+    <span
+      className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full text-gray-500 outline-none hover:text-primary-custom focus:text-primary-custom"
+      tabIndex={0}
+      role="img"
+      aria-label="MwSt. durch Kleinunternehmerregelung deaktiviert"
+      title="MwSt. durch Kleinunternehmerregelung deaktiviert"
+    >
+      <Info className="h-3.5 w-3.5" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block group-focus:block">
+        MwSt. durch Kleinunternehmerregelung deaktiviert
+      </span>
+    </span>
+  );
+}
+
+function AutomaticNumberHint() {
+  return (
+    <span
+      className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full text-gray-400 outline-none hover:text-primary-custom focus:text-primary-custom"
+      tabIndex={0}
+      role="img"
+      aria-label="Wird automatisch vergeben und kann nicht geändert werden"
+    >
+      <Info className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-[11px] font-normal text-white shadow-lg group-hover:block group-focus:block">
+        Wird automatisch vergeben und kann nicht geändert werden
+      </span>
+    </span>
+  );
+}
+
+interface SelectWithChevronProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  containerClassName?: string;
+}
+
+function SelectWithChevron({ className = '', containerClassName = '', children, ...props }: SelectWithChevronProps) {
+  return (
+    <div className={`group relative isolate block w-full min-w-0 max-w-full ${containerClassName}`}>
+      <select
+        {...props}
+        className={`select-with-chevron box-border block w-full min-w-0 max-w-full appearance-none !pr-10 ${className}`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 transition-transform duration-200 group-focus-within:rotate-180"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
   const { addCustomer, refreshCustomers } = useCustomers();
   const { company, hourlyRates } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
+  const workspaceTimeZone = company.timeZone || DEFAULT_TIME_ZONE;
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const formatMoney = (amount: number) => formatCurrency(
     amount,
@@ -40,9 +102,9 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     company.currency
   );
 
-  const sectionSelectClass = 'h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:w-48 sm:flex-none';
-  const sectionIconButtonClass = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
-  const sectionActionButtonClass = 'btn-secondary inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs transition-colors sm:text-sm';
+  const sectionSelectClass = 'box-border h-[36px] min-h-[36px] max-h-[36px] w-full rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom';
+  const sectionIconButtonClass = 'theme-control-button box-border inline-flex h-[36px] min-h-[36px] max-h-[36px] w-[36px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
+  const sectionActionButtonClass = 'btn-primary box-border inline-flex h-[36px] min-h-[36px] max-h-[36px] w-[36px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
 
   const { getHourlyRatesForCustomer, getCombinedHourlyRatesForCustomer, getCombinedMaterialTemplatesForCustomer } = useDocumentHelpers();
 
@@ -64,6 +126,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     type: 'hourlyRates'
   });
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [pendingRateNavigation, setPendingRateNavigation] = useState<'customers' | 'settings' | null>(null);
+  const [isSavingBeforeNavigation, setIsSavingBeforeNavigation] = useState(false);
 
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -90,6 +154,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     customerId: '',
     customerName: '',
     customerAddress: '',
+    location: '',
+    timeZone: DEFAULT_TIME_ZONE,
     title: '',
     description: '',
     date: new Date(),
@@ -104,7 +170,14 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     notes: '',
     attachments: [],
   });
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
+  const [recurrenceInterval, setRecurrenceInterval] = useState(1);
+  const [recurrenceIntervalUnit, setRecurrenceIntervalUnit] = useState<RecurrenceIntervalUnit>('week');
+  const [recurrenceDurationCount, setRecurrenceDurationCount] = useState(1);
+  const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([getIsoWeekday(new Date())]);
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [isDirty, setIsDirty] = useState(false);
+  const [formError, setFormError] = useState('');
   
   // Document Preview state
   const [documentPreview, setDocumentPreview] = useState<{
@@ -119,15 +192,19 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
   useEffect(() => {
     if (job) {
+      const existingRecurrence = job.recurrence;
+      const jobDate = typeof job.date === 'string' ? new Date(job.date) : job.date;
       setFormData({
         jobNumber: job.jobNumber,
         externalJobNumber: job.externalJobNumber || '',
-        customerId: job.customerId,
-        customerName: job.customerName,
+        customerId: job.customerId || '',
+        customerName: job.customerName || '',
         customerAddress: job.customerAddress || '',
-        title: job.title,
-        description: job.description,
-        date: typeof job.date === 'string' ? new Date(job.date) : job.date,
+        location: job.location === 'Online' ? 'Online' : 'Vor Ort',
+        timeZone: job.timeZone || workspaceTimeZone,
+        title: job.title || '',
+        description: job.description || '',
+        date: jobDate,
         startTime: job.startTime || '',
         endTime: job.endTime || '',
         hoursWorked: job.hoursWorked,
@@ -138,7 +215,16 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
         status: job.status,
         notes: job.notes || '',
         attachments: job.attachments || [],
+        recurrence: existingRecurrence,
       });
+      setRecurrenceEnabled(Boolean(existingRecurrence));
+      setRecurrenceInterval(existingRecurrence?.interval || 1);
+      setRecurrenceIntervalUnit(existingRecurrence?.intervalUnit || 'week');
+      const existingStartDate = existingRecurrence?.startDate || formatDateForInput(jobDate);
+      const startWeekday = getIsoWeekday(existingStartDate);
+      setRecurrenceDurationCount(existingRecurrence?.duration ?? existingRecurrence?.durationWeeks ?? 1);
+      setRecurrenceWeekdays([...new Set([...(existingRecurrence?.weekdays || []), startWeekday])]);
+      setRecurrenceStartDate(existingStartDate);
     } else {
       // Für neue Aufträge: keine Standard-Zeiteinträge, Nutzer muss explizit hinzufügen
       // Note: For new jobs, we can't use customer-specific rates yet since customer isn't selected
@@ -150,6 +236,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
         customerId: '',
         customerName: '',
         customerAddress: '',
+        location: 'Vor Ort',
+        timeZone: workspaceTimeZone,
         title: '',
         description: '',
         date: initialDate,
@@ -171,12 +259,19 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       }
       
       setFormData(initialFormData);
-      const initialDateValue = initialDate.toISOString().split('T')[0];
+      setRecurrenceEnabled(false);
+      setRecurrenceInterval(1);
+      setRecurrenceIntervalUnit('week');
+      setRecurrenceDurationCount(1);
+      setRecurrenceWeekdays([getIsoWeekday(initialDate)]);
+      const initialDateValue = formatDateForInput(initialDate);
+      setRecurrenceStartDate(initialDateValue);
       setVacationForm((previous) => ({ ...previous, startDate: initialDateValue, endDate: initialDateValue }));
     }
     setIsDirty(false);
+    setFormError('');
     setEntryType('job');
-  }, [job, hourlyRates, defaultDate]);
+  }, [job, hourlyRates, defaultDate, workspaceTimeZone]);
 
   // Filter customers based on search term
   const filteredCustomers = customers.filter(customer =>
@@ -215,6 +310,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
   const handleCustomerChange = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
+    setIsDirty(true);
     setFormData((prev) => ({
       ...prev,
       customerId,
@@ -231,6 +327,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       defaultRate?.taxRate != null ? defaultRate.taxRate : 19 // Use hourly rate tax rate or default to 19%
     );
     
+    setIsDirty(true);
     setFormData((prev) => ({
       ...prev,
       timeEntries: [...(prev.timeEntries || []), newTimeEntry]
@@ -251,6 +348,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     // Set description to template name
     newTimeEntry.description = template.name;
     
+    setIsDirty(true);
     setFormData((prev) => ({
       ...prev,
       timeEntries: [...(prev.timeEntries || []), newTimeEntry]
@@ -258,6 +356,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const updateTimeEntry = (index: number, field: keyof JobTimeEntry, value: string | number) => {
+    setIsDirty(true);
     setFormData((prev) => {
       const timeEntries = [...(prev.timeEntries || [])];
       timeEntries[index] = { ...timeEntries[index], [field]: value };
@@ -300,6 +399,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const removeTimeEntry = (index: number) => {
+    setIsDirty(true);
     setFormData((prev) => {
       const timeEntries = (prev.timeEntries || []).filter((_, i) => i !== index);
       const totalHours = timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0);
@@ -315,6 +415,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
 
 
   const handleTimeChange = (field: 'startTime' | 'endTime', value: string) => {
+    setIsDirty(true);
     setFormData((prev) => {
       const updated = { ...prev, [field]: value };
       
@@ -337,6 +438,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const addMaterial = (templateId?: string) => {
+    setIsDirty(true);
     let newMaterial: JobMaterial;
     
     if (templateId) {
@@ -406,6 +508,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const updateMaterial = (index: number, field: keyof JobMaterial, value: string | number) => {
+    setIsDirty(true);
     setFormData(prev => {
       const materials = [...(prev.materials || [])];
       materials[index] = { ...materials[index], [field]: value };
@@ -422,6 +525,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const removeMaterial = (index: number) => {
+    setIsDirty(true);
     setFormData(prev => ({
       ...prev,
       materials: prev.materials?.filter((_, i) => i !== index) || []
@@ -429,6 +533,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
   };
 
   const handleAttachmentsChange = (attachments: JobAttachment[]) => {
+    setIsDirty(true);
     setFormData(prev => ({
       ...prev,
       attachments
@@ -461,21 +566,107 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.customerId || !formData.title || !formData.description) {
-      alert('Bitte füllen Sie alle Pflichtfelder aus.');
+  const buildRecurrence = () => {
+    if (!recurrenceEnabled) return undefined;
+    const startDate = recurrenceStartDate || formatDateForInput(formData.date);
+    const duration = Math.max(1, recurrenceDurationCount);
+    return {
+      intervalUnit: recurrenceIntervalUnit,
+      interval: Math.max(1, recurrenceInterval),
+      ...(recurrenceIntervalUnit === 'week' ? { weekdays: [...recurrenceWeekdays].sort((a, b) => a - b) } : {}),
+      startDate,
+      duration,
+      ...(recurrenceIntervalUnit === 'week' ? { durationWeeks: duration } : {}),
+      ...(job?.recurrence?.id ? {
+        id: job.recurrence.id,
+        occurrenceIndex: job.recurrence.occurrenceIndex,
+        totalOccurrences: job.recurrence.totalOccurrences,
+      } : {}),
+    };
+  };
+
+  const getSubmitData = (statusOverride?: JobEntry['status']) => ({
+    ...formData,
+    ...(statusOverride ? { status: statusOverride } : {}),
+    recurrence: recurrenceEnabled ? buildRecurrence() : job?.recurrence ? null : undefined,
+  });
+
+  const validateJobForm = () => {
+    if (!formData.customerId || !formData.title.trim() || !formData.description.trim()) {
+      setFormError('Bitte füllen Sie alle Pflichtfelder aus, bevor Sie den Eintrag weiterführen.');
+      return false;
+    }
+
+    if (recurrenceEnabled && recurrenceWeekdays.length === 0) {
+      setFormError('Bitte mindestens einen Wochentag für die Wiederholung wählen.');
+      return false;
+    }
+
+    setFormError('');
+    return true;
+  };
+
+  const getRateNavigationCallback = (target: 'customers' | 'settings') => (
+    target === 'customers' ? onNavigateToCustomers : onNavigateToSettings
+  );
+
+  const requestRateNavigation = (target: 'customers' | 'settings') => {
+    const navigate = getRateNavigationCallback(target);
+    setShowRatesRedirectModal({ isOpen: false, type: 'hourlyRates' });
+
+    if (!navigate) return;
+    if (!isDirty) {
+      navigate();
       return;
     }
-    
-    // Convert date to string format for backend
-    const submitData = {
-      ...formData,
-      date: formData.date
-    };
-    
-    onSubmit(submitData);
+
+    setPendingRateNavigation(target);
+  };
+
+  const discardAndNavigateToRates = () => {
+    if (!pendingRateNavigation) return;
+    const navigate = getRateNavigationCallback(pendingRateNavigation);
+    setPendingRateNavigation(null);
+    navigate?.();
+  };
+
+  const saveAndNavigateToRates = async () => {
+    if (!pendingRateNavigation) return;
+
+    const navigate = getRateNavigationCallback(pendingRateNavigation);
+    if (!navigate) return;
+
+    setIsSavingBeforeNavigation(true);
+    try {
+      const saved = await onSubmit(getSubmitData('draft'));
+      if (saved === false) return;
+      setPendingRateNavigation(null);
+      navigate();
+    } catch (error) {
+      logger.error('Fehler beim Speichern vor dem Verlassen des Formulars:', error);
+      setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
+    } finally {
+      setIsSavingBeforeNavigation(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Bestehende Entwürfe dürfen auch mit noch offenen Pflichtfeldern weiter
+    // bearbeitet und gespeichert werden. Die Prüfung greift beim Erstellen
+    // sowie beim Weiterführen in eine aktive Statusstufe.
+    if (!job && !validateJobForm()) return;
+    if (job && job.status !== 'draft' && !validateJobForm()) return;
+
+    setFormError('');
+    try {
+      const saved = await onSubmit(getSubmitData());
+      if (saved === false) setFormError('Die Änderungen konnten nicht gespeichert werden.');
+    } catch (error) {
+      logger.error('Fehler beim Speichern des Eintrags:', error);
+      setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
+    }
   };
 
   const handleVacationSubmit = async (e: React.FormEvent) => {
@@ -501,26 +692,25 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     }
   };
 
-  const handleSubmitAsDraft = (e: React.FormEvent) => {
+  const handleSubmitAsDraft = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.customerId || !formData.title || !formData.description) {
-      alert('Bitte füllen Sie alle Pflichtfelder aus.');
-      return;
+
+    setFormError('');
+    try {
+      const saved = await onSubmit(getSubmitData('draft'));
+      if (saved === false) setFormError('Der Entwurf konnte nicht gespeichert werden.');
+    } catch (error) {
+      logger.error('Fehler beim Speichern des Entwurfs:', error);
+      setFormError(error instanceof Error ? error.message : 'Der Entwurf konnte nicht gespeichert werden.');
     }
-    
-    // Convert date to string format for backend
-    const submitData = {
-      ...formData,
-      status: 'draft' as const,
-      date: formData.date
-    };
-    
-    onSubmit(submitData);
   };
 
   const formatDateForInput = (date: Date) => {
-    return new Date(date).toISOString().split('T')[0];
+    const localDate = new Date(date);
+    const year = localDate.getFullYear();
+    const month = String(localDate.getMonth() + 1).padStart(2, '0');
+    const day = String(localDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const requestClose = () => {
@@ -531,50 +721,118 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     onCancel();
   };
 
+  const timeHoursPerUnit = (formData.timeEntries || []).reduce(
+    (sum, entry) => sum + (Number(entry.hoursWorked) || 0),
+    0
+  );
+  const timeCostPerUnit = (formData.timeEntries || []).reduce(
+    (sum, entry) => sum + (Number(entry.total) || 0),
+    0
+  );
+  const recurrenceUnitCount = recurrenceEnabled
+    ? getJobRecurrenceDates({
+        intervalUnit: recurrenceIntervalUnit,
+        interval: recurrenceInterval,
+        weekdays: recurrenceWeekdays,
+        startDate: recurrenceStartDate,
+        duration: recurrenceDurationCount,
+      }).length
+    : 1;
+  const recurrenceDurationLabel = recurrenceIntervalUnit === 'week'
+    ? (recurrenceDurationCount === 1 ? 'Woche' : 'Wochen')
+    : recurrenceIntervalUnit === 'month'
+      ? (recurrenceDurationCount === 1 ? 'Monat' : 'Monate')
+      : (recurrenceDurationCount === 1 ? 'Jahr' : 'Jahre');
+  const recurrenceIntervalLabel = recurrenceIntervalUnit === 'month'
+    ? (recurrenceInterval === 1 ? 'Monat' : 'Monate')
+    : (recurrenceInterval === 1 ? 'Jahr' : 'Jahre');
+  const recurrencePreviewDescription = recurrenceIntervalUnit === 'week'
+    ? `${recurrenceWeekdays.map(getRecurrenceWeekdayLabel).join(' und ')} über ${recurrenceDurationCount} ${recurrenceDurationLabel}`
+    : `Alle ${recurrenceInterval} ${recurrenceIntervalLabel} über ${recurrenceDurationCount} ${recurrenceDurationLabel}`;
+
+  const dialogFooter = entryType === 'vacation' ? (
+    <>
+      <button
+        type="button"
+        onClick={requestClose}
+        className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+      >
+        Abbrechen
+      </button>
+      <button
+        type="submit"
+        className="btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
+      >
+        <Calendar className="h-4 w-4" />
+        <span>Eintragen</span>
+      </button>
+    </>
+  ) : (
+    <>
+      <button
+        type="button"
+        onClick={requestClose}
+        className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+      >
+        Abbrechen
+      </button>
+      {!job && (
+        <button
+          type="button"
+          onClick={handleSubmitAsDraft}
+          className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        >
+          <Save className="h-4 w-4" />
+          <span>Als Entwurf speichern</span>
+        </button>
+      )}
+      <button
+        type="submit"
+        className="btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
+      >
+        <Save className="h-4 w-4" />
+        <span>{job ? 'Aktualisieren' : 'Erstellen'}</span>
+      </button>
+    </>
+  );
+
   return (
-    <div
-      className="fixed inset-0 min-h-screen bg-black/50 flex items-center justify-center p-2 md:p-4 z-[1000]"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) requestClose();
-      }}
-    >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[95vh] md:max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
-          <h3 className="text-base md:text-lg font-semibold text-gray-900">
-            {job ? terminology.work.editLabel : entryType === 'vacation' ? 'Neuer Urlaubseintrag' : terminology.work.newLabel}
-          </h3>
-          <div className="flex items-center gap-2">
-            {!job && onSubmitVacation && (
-              <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setEntryType('job')}
-                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${entryType === 'job' ? 'bg-primary-custom font-medium text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
-                >
-                  {terminology.work.singular}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEntryType('vacation')}
-                  className={`rounded-md px-3 py-1.5 text-sm ${entryType === 'vacation' ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-500'}`}
-                >
-                  Urlaub
-                </button>
-              </div>
-            )}
+    <>
+      <DialogShell
+        titleId="job-entry-dialog-title"
+        icon={Calendar}
+        title={job ? terminology.work.editLabel : entryType === 'vacation' ? 'Neuer Urlaubseintrag' : terminology.work.newLabel}
+        description={entryType === 'vacation' ? 'Erfassen Sie den Zeitraum als Abwesenheit im Kalender.' : 'Erfassen und verwalten Sie Leistungen, Zeiten, Materialien und Anhänge.'}
+        onClose={requestClose}
+        onSubmit={entryType === 'vacation' ? handleVacationSubmit : handleSubmit}
+        onChange={() => {
+          setIsDirty(true);
+          setFormError('');
+        }}
+        headerActions={!job && onSubmitVacation ? (
+          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
             <button
               type="button"
-              onClick={requestClose}
-              className="text-gray-400 hover:text-gray-600 p-1"
-              aria-label="Dialog schließen"
+              onClick={() => setEntryType('job')}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors sm:text-sm ${entryType === 'job' ? 'bg-primary-custom font-medium text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
             >
-              <X className="h-5 w-5" />
+              {terminology.work.singular}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEntryType('vacation')}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors sm:text-sm ${entryType === 'vacation' ? 'bg-primary-custom font-medium text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+            >
+              Urlaub
             </button>
           </div>
-        </div>
-
-        <form onSubmit={entryType === 'vacation' ? handleVacationSubmit : handleSubmit} onChange={() => setIsDirty(true)} className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-3 md:p-4">
+        ) : undefined}
+        size="xl"
+        zIndexClassName="z-[1000]"
+        footer={dialogFooter}
+      >
+        <div className="space-y-4 pb-2">
+        {formError && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{formError}</div>}
             {entryType === 'vacation' ? (
               <div className="mx-auto max-w-xl space-y-4 py-2">
                 <p className="text-sm text-gray-500">
@@ -594,23 +852,25 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">Von</label>
-                    <input
-                      type="date"
+                    <LocalizedDateInput
                       required
                       value={vacationForm.startDate}
-                      onChange={(event) => setVacationForm((previous) => ({ ...previous, startDate: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                      onChange={(value) => setVacationForm((previous) => ({ ...previous, startDate: value }))}
+                      locale={company.locale}
+                      dateFormat={company.dateFormat}
+                      className="w-full"
                     />
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">Bis</label>
-                    <input
-                      type="date"
+                    <LocalizedDateInput
                       required
                       min={vacationForm.startDate}
                       value={vacationForm.endDate}
-                      onChange={(event) => setVacationForm((previous) => ({ ...previous, endDate: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                      onChange={(value) => setVacationForm((previous) => ({ ...previous, endDate: value }))}
+                      locale={company.locale}
+                      dateFormat={company.dateFormat}
+                      className="w-full"
                     />
                   </div>
                 </div>
@@ -628,215 +888,363 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
             ) : (
             <div className="space-y-4 md:space-y-6">
               {/* Basic Information */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {terminology.entity.singular} *
-              </label>
-              <div className="flex gap-2">
-                <div className="w-full max-w-sm relative">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 tablet:grid-cols-[minmax(0,2.2fr)_minmax(6.5rem,0.7fr)_minmax(8rem,0.85fr)_minmax(8rem,0.75fr)] sm:gap-3">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Titel *</label>
                   <input
                     type="text"
-                    value={customerSearchTerm}
-                    onChange={handleCustomerSearchChange}
-                    onFocus={() => setIsCustomerDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
-                    placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-                    required
+                    value={formData.title}
+                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    placeholder="z. B. Deutsch-Kurs B2"
                   />
-                  {isCustomerDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                      {filteredCustomers.length > 0 ? (
-                        filteredCustomers.map(customer => (
-                          <button
-                            key={customer.id}
-                            type="button"
-                            onClick={() => handleCustomerSelectDropdown(customer)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none border-b border-gray-100 last:border-b-0 text-sm"
-                          >
-                            <div className="font-medium">{customer.name}</div>
-                            {customer.customerNumber && (
-                              <div className="text-xs text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>
-                            )}
-                            {customer.email && (
-                              <div className="text-xs text-gray-500">{customer.email}</div>
-                            )}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-gray-500 text-xs">
-                          {terminology.entity.noResults}
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-1 flex items-center gap-1 whitespace-nowrap text-xs font-medium text-gray-700 sm:text-sm">
+                    <span>{terminology.work.numberLabel}</span>
+                    <AutomaticNumberHint />
+                  </label>
+                  <div
+                    className="flex h-[38px] min-w-0 cursor-not-allowed items-center justify-between gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-100 px-2 text-xs text-gray-600 sm:px-3 sm:text-sm"
+                    title="Wird automatisch vergeben und kann nicht geändert werden"
+                    aria-label={`${terminology.work.numberLabel} automatisch vergeben`}
+                  >
+                    <span className="truncate">{formData.jobNumber || 'Wird vergeben'}</span>
+                    <LockKeyhole className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Externe {terminology.work.numberLabel}</label>
+                  <input
+                    type="text"
+                    value={formData.externalJobNumber}
+                    onChange={(e) => setFormData(prev => ({ ...prev, externalJobNumber: e.target.value }))}
+                    className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    placeholder="Optional"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Status</label>
+                  <SelectWithChevron
+                    value={formData.status}
+                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }))}
+                    className="h-[38px] w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                  >
+                    <option value="draft">Entwurf</option>
+                    <option value="in-progress">In Bearbeitung</option>
+                    <option value="completed">Abgeschlossen</option>
+                    <option value="invoiced">Abgerechnet</option>
+                  </SelectWithChevron>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 tablet:grid-cols-[minmax(0,1.45fr)_minmax(10.5rem,.75fr)_minmax(15rem,1fr)]">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{terminology.entity.singular} *</label>
+                  <div className="flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <input
+                        type="text"
+                        value={customerSearchTerm}
+                        onChange={handleCustomerSearchChange}
+                        onFocus={() => setIsCustomerDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
+                        placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                      />
+                      {isCustomerDropdownOpen && (
+                        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
+                          {filteredCustomers.length > 0 ? (
+                            filteredCustomers.map(customer => (
+                              <button
+                                key={customer.id}
+                                type="button"
+                                onClick={() => handleCustomerSelectDropdown(customer)}
+                                className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+                              >
+                                <div className="font-medium">{customer.name}</div>
+                                {customer.customerNumber && <div className="text-xs text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>}
+                                {customer.email && <div className="text-xs text-gray-500">{customer.email}</div>}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-xs text-gray-500">{terminology.entity.noResults}</div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
+                    {onCreateCustomer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          logger.debug('Plus button clicked in JobEntryForm');
+                          setShowCustomerForm(true);
+                        }}
+                        className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom p-0 text-sm text-white transition-colors hover:bg-primary-custom/90"
+                        title={terminology.entity.newLabel}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {onCreateCustomer && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      logger.debug('Plus button clicked in JobEntryForm');
-                      setShowCustomerForm(true);
+
+                <div className="min-w-[10.5rem]">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Ausführungsort</label>
+                  <div className="box-border flex h-[38px] min-w-[10.5rem] flex-nowrap items-center overflow-hidden rounded-lg border border-gray-300 bg-gray-50 p-0.5">
+                    {(['Vor Ort', 'Online'] as const).map((location) => (
+                      <button
+                        key={location}
+                        type="button"
+                        onClick={() => {
+                          setIsDirty(true);
+                          setFormData(previous => ({ ...previous, location }));
+                        }}
+                        className={`theme-switch-option box-border h-[30px] min-h-0 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none transition-colors sm:text-sm ${formData.location === location ? 'theme-switch-active bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        {location}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Zeitzone</label>
+                  <SelectWithChevron
+                    value={formData.timeZone || workspaceTimeZone}
+                    onChange={(event) => {
+                      setIsDirty(true);
+                      setFormData(previous => ({ ...previous, timeZone: event.target.value }));
                     }}
-                    className="min-h-0 inline-flex h-[38px] w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 p-0 text-sm text-white transition-colors hover:bg-blue-600"
-                          title={terminology.entity.newLabel}
+                    className="box-border h-[38px] min-h-0 w-full rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    aria-label="Zeitzone des Kurses"
                   >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-              >
-                <option value="draft">Entwurf</option>
-                <option value="in-progress">In Bearbeitung</option>
-                <option value="completed">Abgeschlossen</option>
-                <option value="invoiced">Abgerechnet</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Titel *
-              </label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-                placeholder="z.B. Website-Entwicklung"
-              />
-            </div>
-          </div>
-
-          {/* Customer Address - Full width under customer selection */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {terminology.entity.addressLabel} (Ausführungsort)
-              <span className="text-gray-500 text-xs ml-1">
-                - Optional, falls abweichend vom Rechnungsempfänger
-              </span>
-            </label>
-            <textarea
-              value={formData.customerAddress || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, customerAddress: e.target.value }))}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-              placeholder="z.B. Max Mustermann
-Musterstraße 123
-12345 Musterstadt"
-            />
-          </div>
-
-          <div className="col-span-1 md:col-span-2 lg:col-span-3">
-            {/* Job Numbers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {terminology.work.numberLabel}
-                </label>
-                <input
-                  type="text"
-                  value={formData.jobNumber}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-sm text-gray-600"
-                  placeholder="Wird automatisch generiert"
-                />
+                    {TIME_ZONE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </SelectWithChevron>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Externe {terminology.work.numberLabel}
-                </label>
-                <input
-                  type="text"
-                  value={formData.externalJobNumber}
-                  onChange={(e) => setFormData(prev => ({ ...prev, externalJobNumber: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-                  placeholder="Optional: Externe Referenznummer"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <div className="md:col-span-2 lg:col-span-1">
+          <div className="grid grid-cols-1 gap-3 tablet:grid-cols-4">
+              <div className="min-w-0">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Datum *
               </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="date"
-                  value={formatDateForInput(formData.date)}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date: new Date(e.target.value) }))}
-                  required
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-                />
-              </div>
+              <LocalizedDateInput
+                value={recurrenceStartDate}
+                onChange={(value) => {
+                  setIsDirty(true);
+                  setRecurrenceStartDate(value);
+                  if (value) {
+                    const startWeekday = getIsoWeekday(value);
+                    setRecurrenceWeekdays((previous) => previous.includes(startWeekday)
+                      ? previous
+                      : [...previous, startWeekday].sort((a, b) => a - b));
+                  }
+                  setFormData(prev => ({ ...prev, date: value ? new Date(`${value}T00:00:00`) : prev.date }));
+                }}
+                locale={company.locale}
+                dateFormat={company.dateFormat}
+                className="w-full"
+              />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Beginn
                 </label>
-                <input
-                  type="time"
+                <LocalizedTimeInput
                   value={formData.startTime || ''}
-                  onChange={(event) => handleTimeChange('startTime', event.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                  onChange={(value) => handleTimeChange('startTime', value)}
+                  timeFormat={company.timeFormat}
+                  className="w-full"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Ende
                 </label>
-                <input
-                  type="time"
+                <LocalizedTimeInput
                   value={formData.endTime || ''}
-                  onChange={(event) => handleTimeChange('endTime', event.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                  onChange={(value) => handleTimeChange('endTime', value)}
+                  timeFormat={company.timeFormat}
+                  className="w-full"
                 />
               </div>
-            </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Wiederholung</label>
+                <div className="box-border flex h-[38px] min-w-[11rem] flex-nowrap items-center overflow-hidden rounded-lg border border-gray-300 bg-gray-50 p-0.5">
+                  {[
+                    { label: 'Einmalig', value: false },
+                    { label: 'Kursserie', value: true },
+                  ].map(option => (
+                    <button
+                      key={option.label}
+                      type="button"
+                      onClick={() => {
+                        setIsDirty(true);
+                        setRecurrenceEnabled(option.value);
+                      }}
+                      className={`theme-switch-option box-border h-[30px] min-h-0 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none transition-colors sm:text-sm ${recurrenceEnabled === option.value ? 'theme-switch-active bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Beschreibung *
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              required
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-              placeholder="Detaillierte Beschreibung der Arbeiten..."
-            />
+          {/* Kursserie */}
+          {recurrenceEnabled && (
+          <div className="theme-series-panel rounded-lg border border-primary-custom/20 bg-primary-custom/5 p-2.5 sm:p-3">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-3 text-xs text-gray-700 sm:text-sm tablet:flex-nowrap">
+                  <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+                    <span className="font-medium">Jede</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={recurrenceIntervalUnit === 'week' ? 52 : recurrenceIntervalUnit === 'month' ? 12 : 10}
+                        value={recurrenceInterval}
+                        onChange={(event) => {
+                          setIsDirty(true);
+                          const maxInterval = recurrenceIntervalUnit === 'week' ? 52 : recurrenceIntervalUnit === 'month' ? 12 : 10;
+                          setRecurrenceInterval(Math.min(maxInterval, Math.max(1, Number(event.target.value) || 1)));
+                        }}
+                        className="w-[4.75rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                      />
+                    <SelectWithChevron
+                      containerClassName="w-[7rem] shrink-0"
+                      value={recurrenceIntervalUnit}
+                      onChange={(event) => {
+                        const nextUnit = event.target.value as RecurrenceIntervalUnit;
+                        setIsDirty(true);
+                        setRecurrenceIntervalUnit(nextUnit);
+                        const maxInterval = nextUnit === 'week' ? 52 : nextUnit === 'month' ? 12 : 10;
+                        const maxDuration = nextUnit === 'week' ? 104 : nextUnit === 'month' ? 120 : 100;
+                        setRecurrenceInterval((previous) => Math.min(maxInterval, previous));
+                        setRecurrenceDurationCount((previous) => Math.min(maxDuration, previous));
+                        if (nextUnit === 'week') {
+                          const startWeekday = getIsoWeekday(recurrenceStartDate);
+                          setRecurrenceWeekdays((previous) => previous.includes(startWeekday)
+                            ? previous
+                            : [...previous, startWeekday].sort((a, b) => a - b));
+                        }
+                      }}
+                      className="h-[38px] w-[7rem] rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    >
+                      <option value="week">Woche(n)</option>
+                      <option value="month">Monat(e)</option>
+                      <option value="year">Jahr(e)</option>
+                    </SelectWithChevron>
+                  </label>
+                  <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+                    <span className="font-medium">f&#252;r</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={recurrenceIntervalUnit === 'week' ? 104 : recurrenceIntervalUnit === 'month' ? 120 : 100}
+                        value={recurrenceDurationCount}
+                        onChange={(event) => {
+                          setIsDirty(true);
+                          const maxDuration = recurrenceIntervalUnit === 'week' ? 104 : recurrenceIntervalUnit === 'month' ? 120 : 100;
+                          setRecurrenceDurationCount(Math.min(maxDuration, Math.max(1, Number(event.target.value) || 1)));
+                        }}
+                        className="w-[4.75rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                      />
+                    <span>{recurrenceIntervalUnit === 'week' ? 'Wochen' : recurrenceIntervalUnit === 'month' ? 'Monate' : 'Jahre'}</span>
+                  </label>
+                {recurrenceIntervalUnit === 'week' ? (
+                <fieldset className="flex min-w-0 items-center gap-2 tablet:flex-1">
+                  <legend className="sr-only">Wochentage</legend>
+                  <div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
+                    {RECURRENCE_WEEKDAYS.map((weekday) => {
+                      const selected = recurrenceWeekdays.includes(weekday.value);
+                      return (
+                        <button
+                          key={weekday.value}
+                          type="button"
+                          onClick={() => {
+                            if (selected && weekday.value === getIsoWeekday(recurrenceStartDate)) return;
+                            setIsDirty(true);
+                            setRecurrenceWeekdays((previous) => selected
+                              ? previous.filter((value) => value !== weekday.value)
+                              : [...previous, weekday.value]);
+                          }}
+                          aria-pressed={selected}
+                          title={weekday.label}
+                          className={`theme-switch-option h-[38px] min-h-0 w-full whitespace-nowrap rounded-lg border px-0 py-0 text-xs font-medium transition-colors sm:text-sm ${selected
+                            ? 'theme-switch-active border-primary-custom bg-primary-custom text-white'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-primary-custom hover:bg-gray-50'}`}
+                        >
+                          {weekday.shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                ) : (
+                  <div className="min-w-0 flex-1 whitespace-nowrap text-xs text-gray-500 sm:text-sm">
+                    Am Tag des Startdatums
+                  </div>
+                )}
+              </div>
+
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs leading-4 text-blue-900 sm:text-sm">
+                  <strong>Vorschau:</strong>{' '}
+                  {recurrenceWeekdays.length > 0
+                    ? `${recurrencePreviewDescription} = ${recurrenceUnitCount} Einheiten`
+                    : 'Bitte mindestens einen Wochentag w\u00e4hlen.'}
+                </div>
+            </div>
+          </div>
+          )}
+
+          {/* Description and optional note */}
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Beschreibung *
+              </label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                placeholder="Detaillierte Beschreibung ..."
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Hinweis <span className="text-xs font-normal text-gray-500">(optional)</span>
+              </label>
+              <textarea
+                value={formData.notes || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                placeholder={formData.location === 'Vor Ort'
+                  ? 'Interner Hinweis, z. B. abweichender Ausführungsort ...'
+                  : 'Interner Hinweis ...'}
+              />
+            </div>
           </div>
 
           {/* Time Tracking */}
           <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h4 className="text-sm font-medium text-gray-900 flex items-center">
-                <Clock className="h-4 w-4 mr-2" />
+            <div className="mb-2 flex items-center gap-2">
+              <h4 className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-900 sm:text-sm">
+                <Clock className="mr-1 inline h-4 w-4 align-text-bottom sm:mr-2" />
                 Zeiterfassung
               </h4>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-                <label className="hidden shrink-0 text-xs text-gray-600 sm:inline" htmlFor="time-entry-template">
-                  Aus Vorlage:
-                </label>
-                <select
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+                <SelectWithChevron
+                  containerClassName="min-w-0 flex-[1_1_0%] sm:w-48 sm:flex-none"
                   id="time-entry-template"
+                  aria-label="Stundensatz aus Vorlage wählen"
                   onChange={(e) => {
                     if (e.target.value) {
                       addTimeEntryFromTemplate(e.target.value);
@@ -852,7 +1260,7 @@ Musterstraße 123
                       {rate.displayName} - {formatMoney(Number(rate.rate) || 0)}/h
                     </option>
                   ))}
-                </select>
+                </SelectWithChevron>
                 <button
                   type="button"
                   onClick={() => setShowRatesRedirectModal({
@@ -870,7 +1278,7 @@ Musterstraße 123
                   onClick={addTimeEntry}
                   className={sectionActionButtonClass}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="hidden h-4 w-4 sm:block" />
                   <span className="hidden sm:inline">Manuell</span>
                   <span className="sm:hidden">+</span>
                 </button>
@@ -998,10 +1406,11 @@ Musterstraße 123
                         </div>
                         
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            MwSt. (%)
+                          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700">
+                            <span>MwSt. %</span>
+                            {company?.isSmallBusiness && <TaxDisabledHint />}
                           </label>
-                          <select
+                          <SelectWithChevron
                             value={company?.isSmallBusiness ? 0 : timeEntry.taxRate}
                             onChange={(e) => updateTimeEntry(index, 'taxRate', parseFloat(e.target.value))}
                             disabled={company?.isSmallBusiness}
@@ -1012,12 +1421,7 @@ Musterstraße 123
                             <option value={0}>0%</option>
                             {!company?.isSmallBusiness && <option value={7}>7%</option>}
                             {!company?.isSmallBusiness && <option value={19}>19%</option>}
-                          </select>
-                          {company?.isSmallBusiness && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              MwSt. durch Kleinunternehmerregelung deaktiviert
-                            </p>
-                          )}
+                          </SelectWithChevron>
                         </div>
 
                         <div>
@@ -1036,24 +1440,41 @@ Musterstraße 123
                   </div>
                 ))}
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 md:p-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-blue-900">Gesamtstunden:</span>
-                    <span className="font-bold text-blue-900">
-                      {formatNumber(
-                        formData.timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0),
-                        company.locale,
-                        company.numberFormat,
-                        2
-                      )}h
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm mt-1">
-                    <span className="font-medium text-blue-900">Gesamtkosten:</span>
-                    <span className="font-bold text-blue-900">
-                      {formatMoney(formData.timeEntries.reduce((sum, entry) => sum + (Number(entry.total) || 0), 0))}
-                    </span>
-                  </div>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-900 sm:p-3">
+                  {recurrenceEnabled ? (
+                    <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
+                      <div className="min-w-0">
+                        <span className="block font-medium">Pro Einheit</span>
+                        <span className="mt-1 block font-bold">
+                          {formatNumber(timeHoursPerUnit, company.locale, company.numberFormat, 2)} h
+                        </span>
+                        <span className="block font-bold">{formatMoney(timeCostPerUnit)}</span>
+                      </div>
+                      <div className="min-w-0 border-l border-blue-200 pl-2">
+                        <span className="block font-medium">Gesamt für Zeitraum</span>
+                        <span className="mt-1 block font-bold">
+                          {formatNumber(timeHoursPerUnit * recurrenceUnitCount, company.locale, company.numberFormat, 2)} h
+                        </span>
+                        <span className="block font-bold">{formatMoney(timeCostPerUnit * recurrenceUnitCount)}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-blue-800">
+                          {recurrenceUnitCount} {recurrenceUnitCount === 1 ? 'Einheit' : 'Einheiten'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Gesamtstunden:</span>
+                        <span className="font-bold">
+                          {formatNumber(timeHoursPerUnit, company.locale, company.numberFormat, 2)} h
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-sm">
+                        <span className="font-medium">Gesamtkosten:</span>
+                        <span className="font-bold">{formatMoney(timeCostPerUnit)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1068,14 +1489,15 @@ Musterstraße 123
 
           {/* Materials */}
           <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h4 className="text-sm font-medium text-gray-900 flex items-center">
-                <DollarSign className="h-4 w-4 mr-2" />
+            <div className="mb-2 flex items-center gap-2">
+              <h4 className="min-w-0 shrink whitespace-nowrap text-xs font-medium text-gray-900 sm:text-sm">
+                <DollarSign className="mr-1 inline h-4 w-4 align-text-bottom sm:mr-2" />
                 Materialien & Zusatzkosten
               </h4>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
                 <label className="sr-only" htmlFor="material-template">Materialvorlage</label>
-                <select
+                <SelectWithChevron
+                  containerClassName="min-w-0 flex-[1_1_0%] sm:w-48 sm:flex-none"
                   id="material-template"
                   onChange={(e) => {
                     if (e.target.value) {
@@ -1100,7 +1522,7 @@ Musterstraße 123
                       return [];
                     }
                   })()}
-                </select>
+                </SelectWithChevron>
                 <button
                   type="button"
                   onClick={() => setShowRatesRedirectModal({
@@ -1119,7 +1541,7 @@ Musterstraße 123
                   onClick={() => addMaterial()}
                   className={sectionActionButtonClass}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="hidden h-4 w-4 sm:block" />
                   <span className="hidden sm:inline">Manuell</span>
                   <span className="sm:hidden">+</span>
                 </button>
@@ -1182,8 +1604,11 @@ Musterstraße 123
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">MwSt. %</label>
-                        <select
+                        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700">
+                          <span>MwSt. %</span>
+                          {company?.isSmallBusiness && <TaxDisabledHint />}
+                        </label>
+                        <SelectWithChevron
                           value={company?.isSmallBusiness ? 0 : material.taxRate}
                           onChange={(e) => updateMaterial(index, 'taxRate', parseFloat(e.target.value))}
                           disabled={company?.isSmallBusiness}
@@ -1194,12 +1619,7 @@ Musterstraße 123
                           <option value={0}>0%</option>
                           {!company?.isSmallBusiness && <option value={7}>7%</option>}
                           {!company?.isSmallBusiness && <option value={19}>19%</option>}
-                        </select>
-                        {company?.isSmallBusiness && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            MwSt. durch Kleinunternehmerregelung deaktiviert
-                          </p>
-                        )}
+                        </SelectWithChevron>
                       </div>
 
                       <div className="flex items-center justify-between">
@@ -1245,20 +1665,6 @@ Musterstraße 123
             )}
           </div>
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notizen
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
-              placeholder="Zusätzliche Notizen oder Kommentare..."
-            />
-          </div>
-
               {/* Attachments */}
               <div>
                 <AttachmentManager
@@ -1275,53 +1681,11 @@ Musterstraße 123
             )}
           </div>
 
-          {/* Action Buttons - Fixed at bottom */}
-          <div className="flex-shrink-0 border-t border-gray-200 p-3 md:p-4">
-            <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
-              <button
-                type="button"
-                onClick={requestClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Abbrechen
-              </button>
-              {entryType === 'vacation' ? (
-                <button
-                  type="submit"
-                  className="btn-primary text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 text-sm"
-                >
-                  <Calendar className="h-4 w-4" />
-                  <span>Eintragen</span>
-                </button>
-              ) : (
-                <>
-                  {!job && (
-                    <button
-                      type="button"
-                      onClick={handleSubmitAsDraft}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center space-x-2"
-                    >
-                      <Save className="h-4 w-4" />
-                      <span>Als Entwurf speichern</span>
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    className="btn-primary text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 text-sm"
-                  >
-                    <Save className="h-4 w-4" />
-                    <span>{job ? 'Aktualisieren' : 'Erstellen'}</span>
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </form>
-      </div>
+      </DialogShell>
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55 p-4">
           <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
@@ -1342,6 +1706,7 @@ Musterstraße 123
                 
                 // Pre-select the newly created customer
                 if (createdCustomer && createdCustomer.id) {
+                  setIsDirty(true);
                   setFormData(prev => ({ ...prev, customerId: createdCustomer.id }));
                 }
                 
@@ -1492,10 +1857,51 @@ Musterstraße 123
       <RatesAndMaterialsRedirectModal
         isOpen={showRatesRedirectModal.isOpen}
         onClose={() => setShowRatesRedirectModal({ isOpen: false, type: 'hourlyRates' })}
-        onNavigateToCustomers={() => onNavigateToCustomers && onNavigateToCustomers()}
-        onNavigateToSettings={() => onNavigateToSettings && onNavigateToSettings()}
+        onNavigateToCustomers={() => requestRateNavigation('customers')}
+        onNavigateToSettings={() => requestRateNavigation('settings')}
         type={showRatesRedirectModal.type}
       />
+
+      {pendingRateNavigation && (
+        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-2xl">
+            <div className="border-b border-gray-200 p-4 sm:p-5">
+              <h3 className="text-base font-semibold text-gray-900 sm:text-lg">Änderungen speichern?</h3>
+            </div>
+            <div className="p-4 sm:p-5">
+              <p className="text-sm leading-6 text-gray-600">
+                Du hast Eingaben im Formular geändert. Sollen sie gespeichert werden, bevor du die Verwaltung öffnest?
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 p-4 sm:flex-row sm:justify-end sm:p-5">
+              <button
+                type="button"
+                onClick={() => setPendingRateNavigation(null)}
+                disabled={isSavingBeforeNavigation}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={discardAndNavigateToRates}
+                disabled={isSavingBeforeNavigation}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Nicht speichern
+              </button>
+              <button
+                type="button"
+                onClick={saveAndNavigateToRates}
+                disabled={isSavingBeforeNavigation}
+                className="btn-primary rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSavingBeforeNavigation ? 'Speichern ...' : 'Speichern & weiter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmationModal
         isOpen={showDiscardModal}
@@ -1510,6 +1916,6 @@ Musterstraße 123
         cancelText="Weiter bearbeiten"
         isDestructive
       />
-    </div>
+    </>
   );
 }

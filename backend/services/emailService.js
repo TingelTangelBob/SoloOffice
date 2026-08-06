@@ -3,6 +3,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
+import { decryptSecret } from '../utils/secretBox.js';
+import { runWithRequestContext } from '../utils/requestContext.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,7 +96,7 @@ const createTransporter = async () => {
         secure: settings.smtp_secure,
         auth: {
           user: settings.smtp_user,
-          pass: settings.smtp_pass,
+          pass: decryptSecret(settings.smtp_pass_encrypted),
         },
         connectionTimeout: 10000, // 10 seconds
         greetingTimeout: 10000, // 10 seconds
@@ -804,6 +806,22 @@ export const testEmailConnection = async () => {
     logger.error('SMTP-Verbindung fehlgeschlagen:', error);
     return { success: false, message: error.message };
   }
+};
+
+export const sendSystemEmail = async ({ workspaceId, to, subject, text, html }) => {
+  const send = async () => {
+    const transporter = await createTransporter();
+    const senderInfo = await getSenderInfo();
+    if (!senderInfo.email) throw new Error('Kein Absender für System-E-Mails konfiguriert.');
+    return transporter.sendMail({
+      from: { name: senderInfo.name, address: senderInfo.email },
+      to,
+      subject,
+      text,
+      html: html || undefined,
+    });
+  };
+  return workspaceId ? runWithRequestContext({ workspaceId }, send) : send();
 };
 
 // Send Quote Email - uses frontend PDF generation for consistency

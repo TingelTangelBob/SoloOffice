@@ -2,7 +2,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { apiService } from '../services/api';
 import { DEMO_DEFAULT_WORKSPACE_ID, getDemoActiveWorkspaceId, isDemoMode, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
-import type { AuthResponse, AuthUser, WorkspaceInvitation, WorkspaceMember, WorkspaceRole, WorkspaceSummary } from '../types';
+import type { AuthResponse, AuthUser, RegistrationResponse, WorkspaceInvitation, WorkspaceMember, WorkspaceRole, WorkspaceSummary } from '../types';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -11,12 +11,13 @@ interface AuthContextValue {
   loading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string, workspaceId?: string) => Promise<void>;
-  register: (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => Promise<void>;
+  register: (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => Promise<RegistrationResponse>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => Promise<void>;
   updateProfile: (firstName: string, lastName: string) => Promise<void>;
   changePassword: (currentPassword: string, password: string) => Promise<void>;
+  deleteAccount: (currentPassword: string) => Promise<void>;
   acceptInvitation: (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => Promise<void>;
   createWorkspace: (name: string) => Promise<WorkspaceSummary>;
   can: (permission: string) => boolean;
@@ -144,8 +145,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyResponse]);
 
   const register = useCallback(async (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => {
-    if (isDemoMode) return;
-    applyResponse(await apiService.registerAccount(payload));
+    if (isDemoMode) return {};
+    const response = await apiService.registerAccount(payload);
+    if (response.user && response.workspace && response.workspaces) {
+      applyResponse({ user: response.user, workspace: response.workspace, workspaces: response.workspaces });
+    }
+    return response;
   }, [applyResponse]);
 
   const logout = useCallback(async () => {
@@ -185,6 +190,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const changePassword = useCallback(async (currentPassword: string, password: string) => {
     if (!isDemoMode) await apiService.changePassword({ currentPassword, password });
+  }, []);
+
+  const deleteAccount = useCallback(async (currentPassword: string) => {
+    if (!isDemoMode) await apiService.deleteAccount(currentPassword);
+    setUser(null);
+    setWorkspace(null);
+    setWorkspaces([]);
   }, []);
 
   const acceptInvitation = useCallback(async (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => {
@@ -232,6 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     switchWorkspace,
     updateProfile,
     changePassword,
+    deleteAccount,
     acceptInvitation,
     createWorkspace,
     can,
@@ -241,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeWorkspaceMember,
     getWorkspaceInvitations,
     createWorkspaceInvitation,
-  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, acceptInvitation, createWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
+  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

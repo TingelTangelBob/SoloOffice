@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import logger from '../utils/logger';
 import { X, FileText, Calendar, Users, Check, AlertTriangle } from 'lucide-react';
-import { JobEntry, Customer } from '../types';
+import { Invoice, JobEntry, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -10,35 +10,58 @@ import { generateJobPDF } from '../utils/pdfGenerator';
 import { generateUUID } from '../utils/uuid';
 import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
+import { ConfirmationModal } from './ConfirmationModal';
+import { apiService } from '../services/api';
+
+export type JobInvoiceGenerationType = 'single' | 'course' | 'daily' | 'weekly' | 'monthly';
 
 interface JobInvoiceGeneratorProps {
   selectedJobIds: string[];
   onClose: () => void;
-  onInvoiceGenerated: () => void;
+  onInvoiceGenerated: (invoices: Invoice[]) => void;
+  initialGenerationType?: JobInvoiceGenerationType;
 }
 
 export function JobInvoiceGenerator({ 
   selectedJobIds, 
   onClose,
-  onInvoiceGenerated
+  onInvoiceGenerated,
+  initialGenerationType = 'single',
 }: JobInvoiceGeneratorProps) {
   const { customers } = useCustomers();
-  const { addInvoice, refreshInvoices } = useInvoices();
-  const { jobEntries: jobs, updateJobEntry } = useJobs();
+  const { refreshInvoices } = useInvoices();
+  const { jobEntries: jobs, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
-  const [generationType, setGenerationType] = useState<'single' | 'daily' | 'weekly' | 'monthly'>('single');
+  const [generationType, setGenerationType] = useState<JobInvoiceGenerationType>(initialGenerationType);
   const [isGenerating, setIsGenerating] = useState(false);
   const [nonCompletedNoticeDismissed, setNonCompletedNoticeDismissed] = useState(false);
+  const [includedJobIds, setIncludedJobIds] = useState<string[]>([]);
+  const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
 
   const selectedJobs = jobs.filter((job: JobEntry) => selectedJobIds.includes(job.id));
   
   // Filter only completed jobs for invoicing
   const completedJobs = selectedJobs.filter((job: JobEntry) => job.status === 'completed');
   const nonCompletedJobs = selectedJobs.filter((job: JobEntry) => job.status !== 'completed');
+  const billableJobs = completedJobs.filter((job) => includedJobIds.includes(job.id));
+
+  useEffect(() => {
+    setIncludedJobIds(jobs
+      .filter((job) => selectedJobIds.includes(job.id) && job.status === 'completed')
+      .map((job) => job.id));
+  }, [jobs, selectedJobIds]);
   
   // Group jobs by customer
-  const jobsByCustomer = completedJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
+  const jobsByCustomer = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
+    if (!acc[job.customerId]) {
+      acc[job.customerId] = [];
+    }
+    acc[job.customerId].push(job);
+    return acc;
+  }, {} as Record<string, JobEntry[]>);
+
+  const completedJobsByCustomer = completedJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
     if (!acc[job.customerId]) {
       acc[job.customerId] = [];
     }
@@ -56,11 +79,17 @@ export function JobInvoiceGenerator({
     return weekNo;
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
+    if (billableJobs.length === 0) return;
+    setShowFinalConfirmation(true);
+  };
+
+  const confirmGenerate = async () => {
+    setShowFinalConfirmation(false);
     setIsGenerating(true);
     try {
-      await generateInvoices();
-      onInvoiceGenerated();
+      const createdInvoices = await generateInvoices();
+      onInvoiceGenerated(createdInvoices);
       onClose();
     } catch (error) {
       logger.error('Error generating invoice:', error);
@@ -71,11 +100,24 @@ export function JobInvoiceGenerator({
   };
 
   const generateInvoices = async () => {
+    const createdInvoices: Invoice[] = [];
+    const createAndCollect = async (jobsToInvoice: JobEntry[]) => {
+      const invoice = await createInvoiceForJobs(jobsToInvoice);
+      if (invoice) createdInvoices.push(invoice);
+    };
+
     switch (generationType) {
       case 'single':
         // Create separate invoice for each completed job only
-        for (const job of completedJobs) {
-          await createInvoiceForJobs([job]);
+        for (const job of billableJobs) {
+          await createAndCollect([job]);
+        }
+        break;
+
+      case 'course':
+        // Create one invoice for the complete selected course/series per customer.
+        for (const customerJobs of Object.values(jobsByCustomer)) {
+          await createAndCollect(customerJobs as JobEntry[]);
         }
         break;
       
@@ -92,7 +134,7 @@ export function JobInvoiceGenerator({
           }, {} as Record<string, JobEntry[]>);
           
           for (const dayJobs of Object.values(jobsByDateForCustomer)) {
-            await createInvoiceForJobs(dayJobs);
+            await createAndCollect(dayJobs);
           }
         }
         break;
@@ -118,7 +160,7 @@ export function JobInvoiceGenerator({
           }, {} as Record<string, JobEntry[]>);
           
           for (const weekJobs of Object.values(jobsByWeekForCustomer)) {
-            await createInvoiceForJobs(weekJobs);
+            await createAndCollect(weekJobs);
           }
         }
         break;
@@ -137,11 +179,13 @@ export function JobInvoiceGenerator({
           }, {} as Record<string, JobEntry[]>);
           
           for (const monthJobs of Object.values(jobsByMonthForCustomer)) {
-            await createInvoiceForJobs(monthJobs);
+            await createAndCollect(monthJobs);
           }
         }
         break;
     }
+
+    return createdInvoices;
   };
 
   const createInvoiceForJobs = async (jobsToInvoice: JobEntry[]) => {
@@ -155,6 +199,9 @@ export function JobInvoiceGenerator({
     // Add job items
     let itemOrder = 1;
     for (const job of jobsToInvoice) {
+      const unitLabel = job.recurrence
+        ? ` - Einheit ${job.recurrence.occurrenceIndex || 1} vom ${formatDate(job.date)}`
+        : '';
       // Check if job has multiple time entries
       if (job.timeEntries && job.timeEntries.length > 0) {
         // Add each time entry as separate line item
@@ -163,8 +210,8 @@ export function JobInvoiceGenerator({
           const taxRate = company?.isSmallBusiness ? 0 : (timeEntry.taxRate != null ? timeEntry.taxRate : 19);
           
           items.push({
-            id: `time-entry-${timeEntry.id}`,
-            description: `${job.title} - ${timeEntry.description}`,
+            id: `time-entry-${job.id}-${timeEntry.id}`,
+            description: `${job.title}${unitLabel} - ${timeEntry.description}`,
             quantity: timeEntry.hoursWorked,
             unitPrice: timeEntry.hourlyRate,
             taxRate: taxRate,
@@ -181,7 +228,7 @@ export function JobInvoiceGenerator({
         
         items.push({
           id: `job-${job.id}`,
-          description: `${job.title} - ${job.description}`,
+          description: `${job.title}${unitLabel} - ${job.description}`,
           quantity: job.hoursWorked,
           unitPrice: job.hourlyRate,
           taxRate: taxRate,
@@ -199,8 +246,8 @@ export function JobInvoiceGenerator({
           const taxRate = company?.isSmallBusiness ? 0 : (material.taxRate != null ? material.taxRate : 19);
           
           items.push({
-            id: `material-${material.id}`,
-            description: `${job.title} - ${material.description}`,
+            id: `material-${job.id}-${material.id}`,
+            description: `${job.title}${unitLabel} - ${material.description}`,
             quantity: material.quantity,
             unitPrice: material.unitPrice,
             taxRate: taxRate,
@@ -321,15 +368,12 @@ export function JobInvoiceGenerator({
       attachments
     };
 
-    await addInvoice(invoice);
+    const createdInvoice = await apiService.createInvoiceFromJobs(invoice, jobsToInvoice.map(job => job.id));
     
     // Refresh invoices in other components
     await refreshInvoices();
-
-    // Update job status to 'invoiced'
-    for (const job of jobsToInvoice) {
-      await updateJobEntry(job.id, { status: 'invoiced' });
-    }
+    await refreshJobEntries();
+    return createdInvoice;
   };
 
   const formatCurrency = (amount: number) => {
@@ -342,21 +386,25 @@ export function JobInvoiceGenerator({
   };
 
   const calculateJobTotal = (job: JobEntry) => {
-    const laborCost = job.hoursWorked * job.hourlyRate;
+    const laborCost = job.timeEntries && job.timeEntries.length > 0
+      ? job.timeEntries.reduce((sum, entry) => sum + Number(entry.total ?? (entry.hoursWorked * entry.hourlyRate)), 0)
+      : job.hoursWorked * job.hourlyRate;
     const materialCost = job.materials?.reduce((sum, material) => sum + material.total, 0) || 0;
     return laborCost + materialCost;
   };
 
   const getTotalAmount = () => {
-    return completedJobs.reduce((sum: number, job: JobEntry) => sum + calculateJobTotal(job), 0);
+    return billableJobs.reduce((sum: number, job: JobEntry) => sum + calculateJobTotal(job), 0);
   };
 
   const getPreviewInfo = () => {
     switch (generationType) {
       case 'single':
-        return `${completedJobs.length} Rechnung(en) werden erstellt (eine pro ${terminology.work.singular})`;
+        return `${billableJobs.length} Rechnung(en) werden erstellt (eine pro ${terminology.work.singular})`;
+      case 'course':
+        return `${Object.keys(jobsByCustomer).length} Rechnung(en) werden erstellt (eine für den gesamten Kurs)`;
       case 'daily': {
-        const completedJobsByDate = completedJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
+        const completedJobsByDate = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
           const dateKey = new Date(job.date).toDateString();
           if (!acc[dateKey]) {
             acc[dateKey] = [];
@@ -367,7 +415,7 @@ export function JobInvoiceGenerator({
         return `${Object.keys(completedJobsByDate).length} Rechnung(en) werden erstellt (eine pro Tag)`;
       }
       case 'weekly': {
-        const completedJobsByWeek = completedJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
+        const completedJobsByWeek = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
           const date = new Date(job.date);
           // Get Monday of the week (ISO week)
           const monday = new Date(date);
@@ -386,7 +434,7 @@ export function JobInvoiceGenerator({
         return `${Object.keys(completedJobsByWeek).length} Rechnung(en) werden erstellt (eine pro Woche)`;
       }
       case 'monthly': {
-        const completedJobsByMonth = completedJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
+        const completedJobsByMonth = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
           const date = new Date(job.date);
           const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
           if (!acc[monthKey]) {
@@ -457,6 +505,23 @@ export function JobInvoiceGenerator({
                 </div>
               </label>
 
+              <label className="flex cursor-pointer items-start space-x-3">
+                <input
+                  type="radio"
+                  name="generationType"
+                  value="course"
+                  checked={generationType === 'course'}
+                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
+                  className="custom-radio"
+                />
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Gesamter Kurs in einer Rechnung</div>
+                  <div className="text-xs text-gray-500">
+                    Übernimmt alle ausgewählten Einheiten dieses Kurses mit ihren Einzelpositionen in eine Rechnung
+                  </div>
+                </div>
+              </label>
+
               <label className="flex items-start space-x-3 cursor-pointer">
                 <input
                   type="radio"
@@ -518,6 +583,9 @@ export function JobInvoiceGenerator({
                 <h4 className="text-sm font-medium text-blue-900">Vorschau</h4>
                 <p className="text-sm text-blue-700 mt-1">{getPreviewInfo()}</p>
                 <p className="text-sm text-blue-700">
+                  {billableJobs.length} Einheit(en) geprüft; jede Einheit wird als eigene Rechnungsposition übernommen.
+                </p>
+                <p className="text-sm text-blue-700">
                   Gesamtbetrag: <strong>{formatCurrency(getTotalAmount())}</strong> (netto)
                 </p>
               </div>
@@ -527,13 +595,15 @@ export function JobInvoiceGenerator({
           {/* Selected Jobs Summary */}
           <div>
             <h4 className="text-sm font-medium text-gray-900 mb-3">
-              Ausgewählte {terminology.work.plural} ({completedJobs.length} abgeschlossen von {selectedJobs.length} ausgewählt)
+              Einheiten prüfen ({billableJobs.length} von {completedJobs.length} abgeschlossen ausgewählt; {selectedJobs.length} insgesamt markiert)
             </h4>
             <div className="bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto">
               <div className="space-y-3">
-                {Object.entries(jobsByCustomer).map(([customerId, customerJobs]) => {
+                {Object.entries(completedJobsByCustomer).map(([customerId, customerJobs]) => {
                   const customer = customers.find(c => c.id === customerId);
-                  const customerTotal = customerJobs.reduce((sum, job) => sum + calculateJobTotal(job), 0);
+                  const customerTotal = customerJobs
+                    .filter(job => includedJobIds.includes(job.id))
+                    .reduce((sum, job) => sum + calculateJobTotal(job), 0);
                   
                   return (
                     <div key={customerId} className="border border-gray-200 rounded-lg p-3 bg-white">
@@ -550,13 +620,24 @@ export function JobInvoiceGenerator({
                       <div className="space-y-1">
                         {customerJobs.map(job => (
                           <div key={job.id} className="flex items-center justify-between text-sm">
-                            <div className="flex items-center space-x-2">
+                            <label className="flex min-w-0 items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={includedJobIds.includes(job.id)}
+                                onChange={(event) => setIncludedJobIds((previous) => event.target.checked
+                                  ? [...previous, job.id]
+                                  : previous.filter((id) => id !== job.id))}
+                                className="custom-checkbox shrink-0"
+                                aria-label={`${formatDate(job.date)} ${job.title} für Rechnung auswählen`}
+                              />
                               <Calendar className="h-3 w-3 text-gray-400" />
                               <span className="text-gray-600">{formatDate(job.date)}</span>
-                              <span className="text-gray-900">{job.title}</span>
+                              <span className="truncate text-gray-900">
+                                {job.title}{job.recurrence ? ` - Einheit ${job.recurrence.occurrenceIndex || 1}` : ''}
+                              </span>
                               <span className="text-gray-500">({job.hoursWorked}h)</span>
-                            </div>
-                            <span className="text-gray-900">
+                            </label>
+                            <span className={`shrink-0 text-gray-900 ${includedJobIds.includes(job.id) ? '' : 'text-gray-400 line-through'}`}>
                               {formatCurrency(calculateJobTotal(job))}
                             </span>
                           </div>
@@ -574,7 +655,7 @@ export function JobInvoiceGenerator({
             <h4 className="text-sm font-medium text-yellow-900 mb-2">Wichtige Hinweise</h4>
             <ul className="text-sm text-yellow-800 space-y-1">
               <li>• Die Rechnungen werden im Entwurfsstatus erstellt</li>
-              <li>• Alle abgeschlossenen {terminology.work.plural} werden als "Abgerechnet" markiert</li>
+              <li>• Nur die angehakten Einheiten werden als "Abgerechnet" markiert</li>
               <li>• Sie können die erstellten Rechnungen nachträglich bearbeiten</li>
               <li>• Die Mehrwertsteuer wird automatisch je nach Steuersatz berechnet</li>
             </ul>
@@ -591,7 +672,7 @@ export function JobInvoiceGenerator({
             </button>
             <button
               onClick={handleGenerate}
-              disabled={isGenerating || completedJobs.length === 0}
+              disabled={isGenerating || billableJobs.length === 0}
               className="btn-primary text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm disabled:opacity-50"
             >
               <FileText className="h-4 w-4" />
@@ -605,6 +686,14 @@ export function JobInvoiceGenerator({
           </div>
         </div>
       </div>
+      <ConfirmationModal
+        isOpen={showFinalConfirmation}
+        title="Rechnungseinheiten bestätigen"
+        message={`${billableJobs.length} ausgewählte Einheit(en) werden nach der Prüfung als Rechnungspositionen übernommen. Gesamtbetrag netto: ${formatCurrency(getTotalAmount())}. Danach werden diese Einheiten als abgerechnet markiert.`}
+        confirmText="Rechnungen erstellen"
+        onConfirm={confirmGenerate}
+        onClose={() => setShowFinalConfirmation(false)}
+      />
     </div>
   );
 }

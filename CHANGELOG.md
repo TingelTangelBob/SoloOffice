@@ -17,6 +17,12 @@ Vorbereitung für den nächsten Beta-Release (`v0.2.0-beta.1`).
 - Belegverwaltung mit lokaler OCR, Prüfung der Vorschläge und Verknüpfung mit der EÜR.
 - Anlagenverzeichnis mit vorbereitender Abschreibungsübersicht.
 - Erweiterte EÜR mit Teilzahlungen, Korrekturen, Stornierungen und Änderungshistorie.
+- Eingehende eRechnungen mit Validierung und Verarbeitung eingehender Dokumente.
+- Wiederkehrende Aufträge, Entwürfe und zusätzliche Auftragsinformationen.
+- Dokumentenverknüpfungen und Archivierungsfunktionen.
+- Zeitzonenunterstützung für zeitabhängige Geschäfts- und Kalenderdaten.
+- Erweiterte Auftrags- und Zeiterfassung mit wiederkehrenden Abläufen, Entwürfen und verbesserten Folgeaktionen.
+- Überarbeitete Dashboard- und Dokumentvorschauen für einen schnelleren Überblick über aktuelle Vorgänge.
 
 ### Verbesserungen
 
@@ -26,6 +32,9 @@ Vorbereitung für den nächsten Beta-Release (`v0.2.0-beta.1`).
 - Erweiterte Backup-/Restore-Berücksichtigung der neuen Datenbereiche.
 - Lokale OCR- und Belegverarbeitung ohne Übertragung an externe Dienste.
 - Projekt- und Agentendokumentation mit zentralem Kontext und einheitlichen Arbeitsanforderungen.
+- Erweiterte Docker-, SaaS- und lokale Testdokumentation.
+- Sicherheits- und Compliance-Härtungen, darunter Rate-Limiting, Session-Wartung, Secret-Schutz und Metriken.
+- Gemeinsame Layout-, Seitenkopf-, Navigations- und Stylingpfade über weitere Kernseiten vereinheitlicht.
 
 ### Fehlerbehebungen
 
@@ -33,6 +42,8 @@ Vorbereitung für den nächsten Beta-Release (`v0.2.0-beta.1`).
 - EÜR-Buchungen werden bei Stornierung revisionssicher erhalten statt physisch gelöscht.
 - Validierungen und Fehlerzustände für Belege, EÜR, Anlagen, Workspaces und Importe erweitert.
 - Demo-Daten und produktive API-Abläufe stärker aneinander angeglichen.
+- Zusätzliche Validierungen und Schutzmaßnahmen für eRechnungen, Dokumente, Sessions und Unternehmensdaten.
+- Fehler und Inkonsistenzen in Auftrags-, Rechnungs-, Dashboard- und Dokumentdarstellungen behoben.
 
 ### Bekannte Einschränkungen
 

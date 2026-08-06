@@ -34,16 +34,46 @@ const parseMaterials = (materialsData) => {
   return [];
 };
 
+const isValidTimeZone = (value) => {
+  try {
+    new Intl.DateTimeFormat('de-DE', { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const parseRecurrence = (row) => {
+  if (!row.recurrence_id || !row.recurrence_rule) return undefined;
+  let rule = row.recurrence_rule;
+  if (typeof rule === 'string') {
+    try {
+      rule = JSON.parse(rule);
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    ...rule,
+    id: row.recurrence_id,
+    occurrenceIndex: row.recurrence_index,
+    totalOccurrences: row.recurrence_total,
+  };
+};
+
 // Helper function to format job data
 const formatJobData = (row, customerName = null) => ({
   id: row.id,
   jobNumber: row.job_number,
   externalJobNumber: row.external_job_number,
   customerId: row.customer_id,
-  customerName: customerName || row.customer_name,
+  customerName: customerName || row.customer_name || '',
   customerAddress: row.customer_address,
-  title: row.title,
-  description: row.description,
+  location: row.location,
+  alternateLocation: row.alternate_location || '',
+  timeZone: row.time_zone || 'Europe/Berlin',
+  title: row.title || '',
+  description: row.description || '',
   date: row.date,
   startTime: row.start_time,
   endTime: row.end_time,
@@ -57,9 +87,198 @@ const formatJobData = (row, customerName = null) => ({
   priority: row.priority,
   attachments: row.attachments || [],
   signature: row.signature || null,
+  recurrence: parseRecurrence(row),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
+
+const parseDateOnly = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+  if (!match) return new Date(NaN);
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return new Date(NaN);
+  return date;
+};
+
+const formatDateOnly = (value) => value.toISOString().split('T')[0];
+
+const normalizeRecurrence = (value) => {
+  if (!value) return null;
+
+  const intervalUnit = value.intervalUnit || 'week';
+  const interval = Math.floor(Number(value.interval));
+  const startDate = String(value.startDate || '');
+  const parsedStartDate = parseDateOnly(startDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(parsedStartDate.getTime())) {
+    throw new Error('Ungültiges Startdatum für die Wiederholung');
+  }
+
+  const duration = Math.floor(Number(value.duration ?? value.durationWeeks));
+  const maxDuration = intervalUnit === 'week' ? 104 : intervalUnit === 'month' ? 120 : 100;
+  if (!['week', 'month', 'year'].includes(intervalUnit) || !Number.isInteger(interval) || interval < 1 || interval > maxDuration) {
+    throw new Error('Ungültiges Wiederholungsintervall');
+  }
+  if (!Number.isInteger(duration) || duration < 1 || duration > maxDuration) {
+    throw new Error('Ungültige Wiederholungsdauer');
+  }
+
+  const startWeekday = parsedStartDate.getUTCDay() === 0 ? 7 : parsedStartDate.getUTCDay();
+  const weekdays = [...new Set([startWeekday, ...(Array.isArray(value.weekdays) ? value.weekdays : [])].map(Number))]
+    .filter(day => day >= 1 && day <= 7)
+    .sort((a, b) => a - b);
+
+  return {
+    intervalUnit,
+    interval,
+    startDate,
+    duration,
+    ...(intervalUnit === 'week' ? { weekdays, durationWeeks: duration } : {}),
+  };
+};
+
+const expandRecurrence = (rule) => {
+  const startDate = parseDateOnly(rule.startDate);
+  const duration = Number(rule.duration ?? rule.durationWeeks);
+  if (Number.isNaN(startDate.getTime()) || !Number.isFinite(duration)) return [];
+
+  if (rule.intervalUnit === 'month' || rule.intervalUnit === 'year') {
+    const dates = [];
+    for (let offset = 0; offset < duration; offset += rule.interval) {
+      const occurrence = new Date(startDate);
+      occurrence.setUTCDate(1);
+      if (rule.intervalUnit === 'month') {
+        occurrence.setUTCMonth(startDate.getUTCMonth() + offset);
+      } else {
+        occurrence.setUTCFullYear(startDate.getUTCFullYear() + offset);
+      }
+      const daysInMonth = new Date(Date.UTC(occurrence.getUTCFullYear(), occurrence.getUTCMonth() + 1, 0)).getUTCDate();
+      occurrence.setUTCDate(Math.min(startDate.getUTCDate(), daysInMonth));
+      dates.push(formatDateOnly(occurrence));
+    }
+    return dates;
+  }
+
+  const isoWeekday = startDate.getUTCDay() === 0 ? 7 : startDate.getUTCDay();
+  const startMonday = new Date(startDate);
+  startMonday.setUTCDate(startMonday.getUTCDate() - (isoWeekday - 1));
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + duration * 7);
+  const weekdays = [...new Set([isoWeekday, ...(rule.weekdays || [])])].sort((a, b) => a - b);
+  const dates = [];
+
+  for (let weekOffset = 0; ; weekOffset += rule.interval) {
+    const weekStart = new Date(startMonday);
+    weekStart.setUTCDate(startMonday.getUTCDate() + weekOffset * 7);
+    if (weekStart >= endDate) break;
+    for (const weekday of weekdays) {
+      const occurrence = new Date(weekStart);
+      occurrence.setUTCDate(weekStart.getUTCDate() + weekday - 1);
+      if (occurrence >= startDate && occurrence < endDate) dates.push(formatDateOnly(occurrence));
+    }
+  }
+
+  return dates;
+};
+
+const generateJobNumber = async (client) => {
+  const currentYear = new Date().getFullYear();
+  const yearPattern = `AB-${currentYear}-%`;
+  const lastJobResult = await client.query(
+    'SELECT job_number FROM job_entries WHERE job_number LIKE $1 ORDER BY created_at DESC, job_number DESC LIMIT 1',
+    [yearPattern]
+  );
+
+  if (lastJobResult.rows.length === 0) return `AB-${currentYear}-001`;
+  const lastJobNumber = lastJobResult.rows[0].job_number || '';
+  const numberPart = lastJobNumber.startsWith(`AB-${currentYear}-`)
+    ? lastJobNumber.substring(`AB-${currentYear}-`.length)
+    : '';
+  const lastNumber = parseInt(numberPart, 10);
+  return `AB-${currentYear}-${String(Number.isNaN(lastNumber) ? 1 : lastNumber + 1).padStart(3, '0')}`;
+};
+
+const insertJobInstance = async (client, data) => {
+  const jobNumber = await generateJobNumber(client);
+  const result = await client.query(`
+    INSERT INTO job_entries (
+      job_number, external_job_number, customer_id, customer_address, location, alternate_location, time_zone, title, description, date,
+      start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, materials, status, notes, priority,
+      recurrence_id, recurrence_index, recurrence_total
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+    RETURNING id
+  `, [
+    jobNumber,
+    data.externalJobNumber || null,
+    data.customerId || null,
+    data.customerAddress || null,
+    data.location || null,
+    data.alternateLocation || null,
+    data.timeZone || 'Europe/Berlin',
+    data.title || null,
+    data.description || null,
+    data.date,
+    data.startTime || null,
+    data.endTime || null,
+    data.hoursWorked || 0,
+    data.hourlyRate || 0,
+    data.hourlyRateId || null,
+    JSON.stringify(data.materials || []),
+    data.status || 'draft',
+    data.notes || null,
+    data.priority || null,
+    data.recurrenceId || null,
+    data.recurrenceIndex || null,
+    data.recurrenceTotal || null,
+  ]);
+
+  const jobId = result.rows[0].id;
+  const timeEntries = Array.isArray(data.timeEntries) ? data.timeEntries : [];
+  if (timeEntries.length > 0) {
+    for (const timeEntry of timeEntries) {
+      await client.query(`
+        INSERT INTO job_time_entries (job_id, description, start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, tax_rate, total)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
+        jobId,
+        timeEntry.description || '',
+        timeEntry.startTime || null,
+        timeEntry.endTime || null,
+        timeEntry.hoursWorked || 0,
+        timeEntry.hourlyRate || 0,
+        timeEntry.hourlyRateId || null,
+        timeEntry.taxRate != null ? timeEntry.taxRate : 19,
+        timeEntry.total || 0,
+      ]);
+    }
+  } else if (data.hoursWorked > 0 || data.startTime || data.endTime) {
+    await client.query(`
+      INSERT INTO job_time_entries (job_id, description, start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, tax_rate, total)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      jobId,
+      'Arbeitszeit',
+      data.startTime || null,
+      data.endTime || null,
+      data.hoursWorked || 0,
+      data.hourlyRate || 0,
+      data.hourlyRateId || null,
+      19,
+      (data.hoursWorked || 0) * (data.hourlyRate || 0),
+    ]);
+  }
+
+  if (Array.isArray(data.attachments)) {
+    for (const attachment of data.attachments) {
+      await client.query(`
+        INSERT INTO job_attachments (job_id, name, content, content_type, size)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [jobId, attachment.name, attachment.content, attachment.contentType, attachment.size]);
+    }
+  }
+
+  return jobId;
+};
 
 // Get all job entries
 router.get('/', async (req, res) => {
@@ -94,6 +313,9 @@ router.post('/', async (req, res) => {
     const {
       customerId,
       customerAddress,
+      location,
+      alternateLocation,
+      timeZone,
       title,
       description,
       date,
@@ -108,28 +330,39 @@ router.post('/', async (req, res) => {
       notes,
       priority,
       attachments,
-      externalJobNumber
+      externalJobNumber,
+      recurrence: recurrenceInput,
     } = req.body;
 
-    // Validate required fields
-    if (!customerId || !title || !description) {
+    const targetStatus = status || 'draft';
+    const effectiveTimeZone = timeZone || 'Europe/Berlin';
+
+    if (!isValidTimeZone(effectiveTimeZone)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ungültige Zeitzone für den Kurs.' });
+    }
+
+    // Drafts may be incomplete. Active workflow stages require all core fields.
+    if (targetStatus !== 'draft' && (!customerId || !String(title || '').trim() || !String(description || '').trim())) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ 
-        error: 'Missing required fields', 
+        error: 'Pflichtfelder fehlen',
         details: {
-          customerId: !customerId ? 'Customer ID is required' : null,
-          title: !title ? 'Title is required' : null,
-          description: !description ? 'Description is required' : null
+          customerId: !customerId ? 'Kunde ist erforderlich' : null,
+          title: !String(title || '').trim() ? 'Titel ist erforderlich' : null,
+          description: !String(description || '').trim() ? 'Beschreibung ist erforderlich' : null
         }
       });
     }
 
-    // Get customer name
-    const customerResult = await client.query('SELECT name FROM customers WHERE id = $1', [customerId]);
-    if (customerResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Customer not found', customerId });
+    // Get customer name when a draft already has a customer.
+    if (customerId) {
+      const customerResult = await client.query('SELECT name FROM customers WHERE id = $1', [customerId]);
+      if (customerResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Customer not found', customerId });
+      }
     }
-    const customerName = customerResult.rows[0].name;
 
     // Validate date format
     const jobDate = new Date(date);
@@ -138,95 +371,67 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid date format' });
     }
     const formattedDate = jobDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    // Generate job number - format: AB-YYYY-XXX
-    const currentYear = new Date().getFullYear();
-    const yearPattern = `AB-${currentYear}-%`;
-    const lastJobResult = await client.query('SELECT job_number FROM job_entries WHERE job_number LIKE $1 ORDER BY created_at DESC LIMIT 1', [yearPattern]);
-    
-    let jobNumber;
-    if (lastJobResult.rows.length === 0) {
-      jobNumber = `AB-${currentYear}-001`;
-    } else {
-      const lastJobNumber = lastJobResult.rows[0].job_number;
-      if (lastJobNumber && lastJobNumber.startsWith(`AB-${currentYear}-`)) {
-        const numberPart = lastJobNumber.substring(`AB-${currentYear}-`.length);
-        const lastNumber = parseInt(numberPart);
-        if (!isNaN(lastNumber)) {
-          jobNumber = `AB-${currentYear}-${String(lastNumber + 1).padStart(3, '0')}`;
-        } else {
-          jobNumber = `AB-${currentYear}-001`;
-        }
-      } else {
-        jobNumber = `AB-${currentYear}-001`;
-      }
-    }
-    
-    // Create job entry with generated job number
-    const result = await client.query(`
-      INSERT INTO job_entries (
-        job_number, external_job_number, customer_id, customer_address, title, description, date,
-        hours_worked, hourly_rate, hourly_rate_id, materials, status, notes, priority
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING *
-    `, [
-      jobNumber, externalJobNumber || null, customerId, customerAddress || null, title, description, formattedDate,
-      hoursWorked || 0, hourlyRate || 0, hourlyRateId || null, JSON.stringify(materials || []), status || 'draft', notes, priority
-    ]);
 
-    const jobId = result.rows[0].id;
-
-    // Save time entries if provided
-    if (timeEntries && Array.isArray(timeEntries) && timeEntries.length > 0) {
-      for (const timeEntry of timeEntries) {
-        await client.query(`
-          INSERT INTO job_time_entries (job_id, description, start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, tax_rate, total)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        `, [
-          jobId,
-          timeEntry.description || '',
-          timeEntry.startTime || null,
-          timeEntry.endTime || null,
-          timeEntry.hoursWorked || 0,
-          timeEntry.hourlyRate || 0,
-          timeEntry.hourlyRateId || null,
-          timeEntry.taxRate != null ? timeEntry.taxRate : 19,
-          timeEntry.total || 0
-        ]);
-      }
-    } else if (hoursWorked > 0 || startTime || endTime) {
-      // Backward compatibility: create a single time entry from legacy fields
-      await client.query(`
-        INSERT INTO job_time_entries (job_id, description, start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, tax_rate, total)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [
-        jobId,
-        'Arbeitszeit',
-        startTime || null,
-        endTime || null,
-        hoursWorked || 0,
-        hourlyRate || 0,
-        hourlyRateId || null,
-        19, // Default tax rate for legacy entries
-        (hoursWorked || 0) * (hourlyRate || 0)
-      ]);
+    let recurrence;
+    try {
+      recurrence = normalizeRecurrence(recurrenceInput);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: error.message });
     }
 
-    // Save attachments if provided
-    if (attachments && Array.isArray(attachments)) {
-      for (const attachment of attachments) {
-        await client.query(`
-          INSERT INTO job_attachments (job_id, name, content, content_type, size)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [jobId, attachment.name, attachment.content, attachment.contentType, attachment.size]);
-      }
+    const occurrenceDates = recurrence ? expandRecurrence(recurrence) : [formattedDate];
+    if (occurrenceDates.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Die Wiederholung erzeugt keine gültige Einheit.' });
     }
+
+    let recurrenceId = null;
+    if (recurrence) {
+      const recurrenceResult = await client.query(
+        'INSERT INTO job_recurrences (rule) VALUES ($1) RETURNING id',
+        [JSON.stringify(recurrence)]
+      );
+      recurrenceId = recurrenceResult.rows[0].id;
+    }
+
+    const createdJobIds = [];
+    for (const [index, occurrenceDate] of occurrenceDates.entries()) {
+      const createdJobId = await insertJobInstance(client, {
+        customerId,
+        customerAddress,
+        location,
+        alternateLocation,
+        timeZone: effectiveTimeZone,
+        title,
+        description,
+        date: occurrenceDate,
+        startTime,
+        endTime,
+        hoursWorked,
+        hourlyRate,
+        hourlyRateId,
+        timeEntries,
+        materials,
+        status,
+        notes,
+        priority,
+        attachments,
+        externalJobNumber,
+        recurrenceId,
+        recurrenceIndex: recurrence ? index + 1 : null,
+        recurrenceTotal: recurrence ? occurrenceDates.length : null,
+      });
+      createdJobIds.push(createdJobId);
+    }
+
+    const jobId = createdJobIds[0];
 
     await client.query('COMMIT');
 
     // Fetch the complete job with attachments and time entries
     const completeJob = await client.query(`
-      SELECT j.*, c.name as customer_name,
+      SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -254,10 +459,11 @@ router.post('/', async (req, res) => {
              ) as time_entries
       FROM job_entries j
       LEFT JOIN customers c ON j.customer_id = c.id
+      LEFT JOIN job_recurrences jr ON j.recurrence_id = jr.id
       LEFT JOIN job_attachments ja ON j.id = ja.job_id
       LEFT JOIN job_time_entries jte ON j.id = jte.job_id
       WHERE j.id = $1
-      GROUP BY j.id, c.name
+      GROUP BY j.id, c.name, jr.rule
     `, [jobId]);
 
     const job = formatJobData(completeJob.rows[0]);
@@ -285,13 +491,23 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     
     // Check if job exists and get current status
-    const currentJobResult = await client.query('SELECT status FROM job_entries WHERE id = $1', [id]);
+    const currentJobResult = await client.query(
+      'SELECT status, recurrence_id, customer_id, title, description FROM job_entries WHERE id = $1',
+      [id]
+    );
     if (currentJobResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Job not found' });
     }
     
     const currentJob = currentJobResult.rows[0];
+
+    const existingSeriesResult = currentJob.recurrence_id
+      ? await client.query(
+        'SELECT * FROM job_entries WHERE recurrence_id = $1 ORDER BY recurrence_index ASC, created_at ASC',
+        [currentJob.recurrence_id]
+      )
+      : { rows: [] };
     
     // Prevent editing if job is already invoiced
     if (currentJob.status === 'invoiced') {
@@ -305,6 +521,9 @@ router.put('/:id', async (req, res) => {
     const {
       customerId,
       customerAddress,
+      location,
+      alternateLocation,
+      timeZone,
       title,
       description,
       date,
@@ -319,7 +538,8 @@ router.put('/:id', async (req, res) => {
       priority,
       attachments,
       timeEntries,
-      externalJobNumber
+      externalJobNumber,
+      recurrence: recurrenceInput,
     } = req.body;
 
     // Get customer name if customerId is provided
@@ -333,6 +553,74 @@ router.put('/:id', async (req, res) => {
       customerName = customerResult.rows[0].name;
     }
 
+    const targetStatus = status || currentJob.status;
+    const effectiveCustomerId = customerId !== undefined ? customerId || null : currentJob.customer_id;
+    const effectiveTitle = title !== undefined ? title : currentJob.title;
+    const effectiveDescription = description !== undefined ? description : currentJob.description;
+    if (targetStatus !== 'draft' && (
+      !effectiveCustomerId
+      || !String(effectiveTitle || '').trim()
+      || !String(effectiveDescription || '').trim()
+    )) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Pflichtfelder fehlen',
+        details: {
+          customerId: !effectiveCustomerId ? 'Kunde ist erforderlich' : null,
+          title: !String(effectiveTitle || '').trim() ? 'Titel ist erforderlich' : null,
+          description: !String(effectiveDescription || '').trim() ? 'Beschreibung ist erforderlich' : null,
+        },
+      });
+    }
+
+    if (timeZone !== undefined && !isValidTimeZone(timeZone || 'Europe/Berlin')) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ungültige Zeitzone für den Kurs.' });
+    }
+
+    let recurrenceToCreate = null;
+    let recurrenceUpdate = null;
+    let recurrenceDetach = false;
+    if (recurrenceInput !== undefined) {
+      try {
+        if (currentJob.recurrence_id) {
+          const hasProtectedSeriesUnit = existingSeriesResult.rows.some(({ status }) => ['completed', 'invoiced'].includes(status));
+          if (hasProtectedSeriesUnit) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+              error: 'Diese Kursserie enthält bereits abgeschlossene oder abgerechnete Termine und kann deshalb nicht mehr in ihrer Wiederholung geändert werden.',
+              message: 'Kursserie nicht änderbar'
+            });
+          }
+          if (recurrenceInput === null) {
+            recurrenceDetach = true;
+          } else {
+            const recurrence = normalizeRecurrence(recurrenceInput);
+            const occurrenceDates = expandRecurrence(recurrence);
+            if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine gültige Einheit.');
+            recurrenceUpdate = {
+              id: currentJob.recurrence_id,
+              rule: recurrence,
+              dates: occurrenceDates,
+              rows: existingSeriesResult.rows,
+            };
+          }
+        } else if (recurrenceInput) {
+          const recurrence = normalizeRecurrence(recurrenceInput);
+          const occurrenceDates = expandRecurrence(recurrence);
+          if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine gültige Einheit.');
+          const recurrenceResult = await client.query(
+            'INSERT INTO job_recurrences (rule) VALUES ($1) RETURNING id',
+            [JSON.stringify(recurrence)]
+          );
+          recurrenceToCreate = { id: recurrenceResult.rows[0].id, dates: occurrenceDates };
+        }
+      } catch (error) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: error.message });
+      }
+    }
+
     // Prepare the update query - only update fields that are provided
     const updates = [];
     const values = [];
@@ -340,11 +628,23 @@ router.put('/:id', async (req, res) => {
 
     if (customerId !== undefined) {
       updates.push(`customer_id = $${paramIndex++}`);
-      values.push(customerId);
+      values.push(customerId || null);
     }
     if (customerAddress !== undefined) {
       updates.push(`customer_address = $${paramIndex++}`);
       values.push(customerAddress);
+    }
+    if (location !== undefined) {
+      updates.push(`location = $${paramIndex++}`);
+      values.push(location || null);
+    }
+    if (alternateLocation !== undefined) {
+      updates.push(`alternate_location = $${paramIndex++}`);
+      values.push(alternateLocation || null);
+    }
+    if (timeZone !== undefined) {
+      updates.push(`time_zone = $${paramIndex++}`);
+      values.push(timeZone || 'Europe/Berlin');
     }
     if (title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
@@ -401,6 +701,19 @@ router.put('/:id', async (req, res) => {
     if (req.body.signature !== undefined) {
       updates.push(`signature = $${paramIndex++}`);
       values.push(req.body.signature ? JSON.stringify(req.body.signature) : null);
+    }
+    if (recurrenceToCreate) {
+      updates.push(`recurrence_id = $${paramIndex++}`);
+      values.push(recurrenceToCreate.id);
+      updates.push(`recurrence_index = $${paramIndex++}`);
+      values.push(1);
+      updates.push(`recurrence_total = $${paramIndex++}`);
+      values.push(recurrenceToCreate.dates.length);
+    }
+    if (recurrenceDetach) {
+      updates.push('recurrence_id = NULL');
+      updates.push('recurrence_index = NULL');
+      updates.push('recurrence_total = NULL');
     }
 
     // Always update the updated_at timestamp
@@ -466,11 +779,117 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    if (recurrenceDetach) {
+      for (const seriesRow of existingSeriesResult.rows) {
+        if (seriesRow.id === id) continue;
+        await client.query('DELETE FROM job_entries WHERE id = $1', [seriesRow.id]);
+      }
+      await client.query('DELETE FROM job_recurrences WHERE id = $1', [currentJob.recurrence_id]);
+    }
+
+    if (recurrenceUpdate) {
+      const orderedRows = [...recurrenceUpdate.rows].sort((a, b) => (
+        (a.recurrence_index || 0) - (b.recurrence_index || 0)
+      ));
+      const survivorCount = Math.min(orderedRows.length, recurrenceUpdate.dates.length);
+      const survivors = orderedRows.slice(0, survivorCount);
+      const currentSeriesRow = orderedRows.find((seriesRow) => seriesRow.id === id);
+      if (currentSeriesRow && !survivors.some((seriesRow) => seriesRow.id === id)) {
+        survivors[survivors.length - 1] = currentSeriesRow;
+      }
+      const survivorIds = new Set(survivors.map((seriesRow) => seriesRow.id));
+
+      for (const seriesRow of orderedRows) {
+        if (!survivorIds.has(seriesRow.id)) {
+          await client.query('DELETE FROM job_entries WHERE id = $1', [seriesRow.id]);
+        }
+      }
+
+      for (const [index, seriesRow] of survivors.entries()) {
+        await client.query(`
+          UPDATE job_entries
+          SET date = $1,
+              recurrence_id = $2,
+              recurrence_index = $3,
+              recurrence_total = $4,
+              updated_at = NOW()
+          WHERE id = $5
+        `, [recurrenceUpdate.dates[index], recurrenceUpdate.id, index + 1, recurrenceUpdate.dates.length, seriesRow.id]);
+      }
+
+      await client.query(
+        'UPDATE job_recurrences SET rule = $1, updated_at = NOW() WHERE id = $2',
+        [JSON.stringify(recurrenceUpdate.rule), recurrenceUpdate.id]
+      );
+
+      const updatedRow = result.rows[0];
+      const recurringJobData = {
+        customerId: updatedRow.customer_id,
+        customerAddress: updatedRow.customer_address,
+        location: updatedRow.location,
+        title: updatedRow.title,
+        description: updatedRow.description,
+        startTime: updatedRow.start_time,
+        endTime: updatedRow.end_time,
+        hoursWorked: Number(updatedRow.hours_worked) || 0,
+        hourlyRate: Number(updatedRow.hourly_rate) || 0,
+        hourlyRateId: updatedRow.hourly_rate_id,
+        timeEntries: Array.isArray(timeEntries) ? timeEntries : [],
+        materials: parseMaterials(updatedRow.materials),
+        status: updatedRow.status,
+        notes: updatedRow.notes,
+        priority: updatedRow.priority,
+        attachments: Array.isArray(attachments) ? attachments : [],
+        externalJobNumber: updatedRow.external_job_number,
+        recurrenceId: recurrenceUpdate.id,
+        recurrenceTotal: recurrenceUpdate.dates.length,
+      };
+      for (let index = survivors.length; index < recurrenceUpdate.dates.length; index += 1) {
+        await insertJobInstance(client, {
+          ...recurringJobData,
+          date: recurrenceUpdate.dates[index],
+          recurrenceIndex: index + 1,
+        });
+      }
+    }
+
+    if (recurrenceToCreate) {
+      const updatedRow = result.rows[0];
+      const recurringJobData = {
+        customerId: updatedRow.customer_id,
+        customerAddress: updatedRow.customer_address,
+        location: updatedRow.location,
+        title: updatedRow.title,
+        description: updatedRow.description,
+        startTime: updatedRow.start_time,
+        endTime: updatedRow.end_time,
+        hoursWorked: Number(updatedRow.hours_worked) || 0,
+        hourlyRate: Number(updatedRow.hourly_rate) || 0,
+        hourlyRateId: updatedRow.hourly_rate_id,
+        timeEntries: Array.isArray(timeEntries) ? timeEntries : [],
+        materials: parseMaterials(updatedRow.materials),
+        status: updatedRow.status,
+        notes: updatedRow.notes,
+        priority: updatedRow.priority,
+        attachments: Array.isArray(attachments) ? attachments : [],
+        externalJobNumber: updatedRow.external_job_number,
+        recurrenceId: recurrenceToCreate.id,
+        recurrenceTotal: recurrenceToCreate.dates.length,
+      };
+      for (const [index, occurrenceDate] of recurrenceToCreate.dates.slice(1).entries()) {
+        await insertJobInstance(client, {
+          ...recurringJobData,
+          date: occurrenceDate,
+          recurrenceIndex: index + 2,
+        });
+      }
+    }
+
     await client.query('COMMIT');
 
     // Fetch the complete job with attachments and time entries
     const completeJob = await client.query(`
-      SELECT j.*, c.name as customer_name,
+      SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -490,15 +909,17 @@ router.put('/:id', async (req, res) => {
                  'hoursWorked', jte.hours_worked,
                  'hourlyRate', jte.hourly_rate,
                  'hourlyRateId', jte.hourly_rate_id,
+                 'taxRate', jte.tax_rate,
                  'total', jte.total
                )
              ) FILTER (WHERE jte.id IS NOT NULL) as time_entries
       FROM job_entries j
       LEFT JOIN customers c ON j.customer_id = c.id
+      LEFT JOIN job_recurrences jr ON j.recurrence_id = jr.id
       LEFT JOIN job_attachments ja ON j.id = ja.job_id
       LEFT JOIN job_time_entries jte ON j.id = jte.job_id
       WHERE j.id = $1
-      GROUP BY j.id, c.name
+      GROUP BY j.id, c.name, jr.rule
     `, [id]);
 
     const job = formatJobData(completeJob.rows[0]);
@@ -522,13 +943,14 @@ router.delete('/:id', async (req, res) => {
     const { id } = req.params;
     
     // Check if job exists and get current status
-    const currentJobResult = await client.query('SELECT status FROM job_entries WHERE id = $1', [id]);
+    const currentJobResult = await client.query('SELECT status, recurrence_id FROM job_entries WHERE id = $1', [id]);
     if (currentJobResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Job not found' });
     }
     
     const currentJob = currentJobResult.rows[0];
+    const recurrenceId = currentJob.recurrence_id;
     
     // Prevent deleting if job is already invoiced
     if (currentJob.status === 'invoiced') {
@@ -548,6 +970,13 @@ router.delete('/:id', async (req, res) => {
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (recurrenceId) {
+      await client.query(
+        'DELETE FROM job_recurrences WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM job_entries WHERE recurrence_id = $1)',
+        [recurrenceId]
+      );
     }
     
     await client.query('COMMIT');
@@ -684,7 +1113,7 @@ router.post('/:id/signature', async (req, res) => {
     
     // Fetch the complete job with customer name
     const completeJob = await client.query(`
-      SELECT j.*, c.name as customer_name,
+      SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -710,10 +1139,11 @@ router.post('/:id/signature', async (req, res) => {
              ) FILTER (WHERE jte.id IS NOT NULL) as time_entries
       FROM job_entries j
       LEFT JOIN customers c ON j.customer_id = c.id
+      LEFT JOIN job_recurrences jr ON j.recurrence_id = jr.id
       LEFT JOIN job_attachments ja ON j.id = ja.job_id
       LEFT JOIN job_time_entries jte ON j.id = jte.job_id
       WHERE j.id = $1
-      GROUP BY j.id, c.name
+      GROUP BY j.id, c.name, jr.rule
     `, [id]);
 
     const job = formatJobData(completeJob.rows[0]);

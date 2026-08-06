@@ -17,6 +17,7 @@ interface ActionMenuProps {
   menuClassName?: string;
   title?: string;
   triggerClassName?: string;
+  variant?: 'default' | 'primary';
 }
 
 interface MenuPosition {
@@ -75,12 +76,16 @@ export function ActionMenu({
   icon = <MoreHorizontal className="h-4 w-4" />,
   menuClassName = 'min-w-52',
   title = 'Aktionen',
-  triggerClassName = 'action-icon-button action-icon-blue'
+  triggerClassName = 'action-icon-button action-icon-blue',
+  variant = 'default'
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const portalTarget = typeof document !== 'undefined'
+    ? document.getElementById('app-shell') || document.body
+    : null;
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -149,18 +154,20 @@ export function ActionMenu({
         ref={triggerRef}
         type="button"
         onClick={toggleMenu}
-        className={`action-menu-trigger ${triggerClassName}`}
+        className={`${variant === 'primary' ? 'action-menu-trigger-primary' : 'action-menu-trigger'} ${triggerClassName}`}
         aria-label={ariaLabel}
         aria-expanded={isOpen}
+        aria-haspopup="menu"
         title={title}
       >
         {icon}
       </button>
 
-      {isOpen && typeof document !== 'undefined' && createPortal(
+      {isOpen && portalTarget && createPortal(
         <div
           ref={menuRef}
           className={`action-menu fixed z-[1000] max-h-[min(70vh,22rem)] overflow-x-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 text-left shadow-xl ${menuClassName}`}
+          role="menu"
           style={{
             left: position?.left ?? VIEWPORT_PADDING,
             top: position?.top ?? VIEWPORT_PADDING,
@@ -172,7 +179,7 @@ export function ActionMenu({
         >
           {children}
         </div>,
-        document.body
+        portalTarget
       )}
     </div>
   );

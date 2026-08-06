@@ -1,4 +1,4 @@
-import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
+import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -96,8 +96,8 @@ class ApiService {
     return this.request<AuthResponse>('/auth/me', { skipErrorLogging: true });
   }
 
-  async registerAccount(payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }): Promise<AuthResponse> {
-    return this.request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(payload) });
+  async registerAccount(payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }): Promise<RegistrationResponse> {
+    return this.request<RegistrationResponse>('/auth/register', { method: 'POST', body: JSON.stringify(payload) });
   }
 
   async loginAccount(payload: { email: string; password: string; workspaceId?: string }): Promise<AuthResponse> {
@@ -122,6 +122,22 @@ class ApiService {
 
   async changePassword(payload: { currentPassword: string; password: string }): Promise<void> {
     await this.request('/auth/change-password', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async deleteAccount(currentPassword: string): Promise<void> {
+    await this.request('/auth/account', { method: 'DELETE', body: JSON.stringify({ currentPassword }) });
+  }
+
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+  }
+
+  async resetPassword(payload: { token: string; password: string }): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`);
   }
 
   async acceptInvitation(payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }): Promise<AuthResponse> {
@@ -183,8 +199,8 @@ class ApiService {
   // Customer API
   // --------------------------------------------------------------------------
 
-  async getCustomers(): Promise<Customer[]> {
-    return this.request<Customer[]>('/customers');
+  async getCustomers(includeArchived = false): Promise<Customer[]> {
+    return this.request<Customer[]>(includeArchived ? '/customers?includeArchived=true' : '/customers');
   }
 
   async getCustomer(id: string): Promise<Customer> {
@@ -207,6 +223,14 @@ class ApiService {
 
   async deleteCustomer(id: string): Promise<void> {
     await this.request(`/customers/${id}`, { method: 'DELETE' });
+  }
+
+  async archiveCustomer(id: string): Promise<{ id: string; isActive: boolean }> {
+    return this.request<{ id: string; isActive: boolean }>(`/customers/${id}/archive`, { method: 'POST' });
+  }
+
+  async restoreCustomer(id: string): Promise<{ id: string; isActive: boolean }> {
+    return this.request<{ id: string; isActive: boolean }>(`/customers/${id}/restore`, { method: 'POST' });
   }
 
   // Customer Email Methods
@@ -290,6 +314,13 @@ class ApiService {
     return this.request<Invoice>('/invoices', {
       method: 'POST',
       body: JSON.stringify(invoice),
+    });
+  }
+
+  async createInvoiceFromJobs(invoice: Omit<Invoice, 'id' | 'createdAt'>, jobIds: string[]): Promise<Invoice> {
+    return this.request<Invoice>('/invoices/from-jobs', {
+      method: 'POST',
+      body: JSON.stringify({ ...invoice, sourceJobIds: jobIds }),
     });
   }
 
@@ -908,6 +939,13 @@ class ApiService {
     });
   }
 
+  async createEuerEntryFromReceipt(receiptId: string, payload: EuerEntryPayload): Promise<{ entry: EuerEntry; receipt: Receipt }> {
+    return this.request<{ entry: EuerEntry; receipt: Receipt }>(`/receipts/${receiptId}/create-euer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async updateEuerEntry(id: string, payload: Partial<EuerEntryPayload>): Promise<EuerEntry> {
     return this.request<EuerEntry>(`/euer-entries/${id}`, {
       method: 'PUT',
@@ -991,6 +1029,30 @@ class ApiService {
 
   async deleteReceipt(id: string): Promise<void> {
     await this.request(`/receipts/${id}`, { method: 'DELETE' });
+  }
+
+  // Eingang elektronischer Rechnungen
+
+  async getIncomingEInvoices(): Promise<IncomingEInvoice[]> {
+    return this.request<IncomingEInvoice[]>('/e-invoices');
+  }
+
+  async getIncomingEInvoice(id: string): Promise<IncomingEInvoice> {
+    return this.request<IncomingEInvoice>(`/e-invoices/${id}`);
+  }
+
+  async receiveEInvoice(payload: { filename: string; content: string; contentType: string }): Promise<IncomingEInvoice> {
+    return this.request<IncomingEInvoice>('/e-invoices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async linkIncomingEInvoiceCustomer(id: string, customerId: string): Promise<IncomingEInvoice> {
+    return this.request<IncomingEInvoice>(`/e-invoices/${id}/link-customer`, {
+      method: 'POST',
+      body: JSON.stringify({ customerId }),
+    });
   }
 
   // --------------------------------------------------------------------------
