@@ -256,13 +256,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       <DynamicColors />
       <div id="app-shell" className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="fixed left-3 top-2 z-50 inline-flex h-12 w-12 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700 lg:hidden"
-            aria-label={isMobileMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
-          >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 lg:hidden">
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="pointer-events-auto absolute left-3 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700"
+              aria-label={isMobileMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
+            >
+              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
 
           {isMobileMenuOpen && (
             <div

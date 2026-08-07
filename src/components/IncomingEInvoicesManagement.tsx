@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileCheck2, Inbox, Link2, Loader2, Upload, X } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { apiService } from '../services/api';
@@ -14,11 +14,18 @@ interface IncomingEInvoicesManagementProps {
   embedded?: boolean;
 }
 
-function statusLabel(invoice: IncomingEInvoice) {
-  return invoice.validationStatus === 'validated' ? 'Strukturell geprüft' : 'Prüfung fehlgeschlagen';
+export interface IncomingEInvoicesManagementHandle {
+  openUpload: () => void;
 }
 
-export function IncomingEInvoicesManagement({ embedded = false }: IncomingEInvoicesManagementProps) {
+function statusLabel(invoice: IncomingEInvoice) {
+  return invoice.validationStatus === 'validated' ? 'E-Rechnung geprüft' : 'Prüfung fehlgeschlagen';
+}
+
+export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoicesManagement(
+  { embedded = false }: IncomingEInvoicesManagementProps,
+  ref: ForwardedRef<IncomingEInvoicesManagementHandle>,
+) {
   const { customers } = useCustomers();
   const [invoices, setInvoices] = useState<IncomingEInvoice[]>([]);
   const [selected, setSelected] = useState<IncomingEInvoice | null>(null);
@@ -28,6 +35,8 @@ export function IncomingEInvoicesManagement({ embedded = false }: IncomingEInvoi
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const openUpload = useCallback(() => fileInputRef.current?.click(), []);
+  useImperativeHandle(ref, () => ({ openUpload }), [openUpload]);
 
   const customerNames = useMemo(() => new Map(customers.map(customer => [customer.id, customer.name])), [customers]);
 
@@ -94,13 +103,14 @@ export function IncomingEInvoicesManagement({ embedded = false }: IncomingEInvoi
   const linkedCount = invoices.filter(invoice => invoice.linkedCustomerId).length;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <>
+      <input ref={fileInputRef} type="file" accept=".xml,application/xml,text/xml" className="hidden" onChange={handleUpload} disabled={uploading} />
+      <div className="space-y-4 sm:space-y-6">
       {!embedded && <PageHeader icon={Inbox} title="E-Rechnungseingang" subtitle="E-Rechnungen lokal empfangen, prüfen, archivieren und zuordnen">
-        <label className="btn-primary inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-xl px-3 text-white transition-all hover:brightness-90 sm:min-w-0 sm:px-4" title="E-Rechnung als XML übernehmen">
+        <button type="button" onClick={openUpload} className="btn-primary inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" title="E-Rechnung als XML übernehmen" disabled={uploading}>
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          <span className="hidden sm:inline">{uploading ? 'Wird geprüft …' : 'XML übernehmen'}</span>
-          <input ref={fileInputRef} type="file" accept=".xml,application/xml,text/xml" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+          <span className="hidden xl:inline">{uploading ? 'Wird geprüft …' : 'XML übernehmen'}</span>
+        </button>
       </PageHeader>}
 
       {(error || notice) && (
@@ -131,23 +141,31 @@ export function IncomingEInvoicesManagement({ embedded = false }: IncomingEInvoi
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-lg font-semibold text-gray-900">Eingegangene E-Rechnungen</h2><p className="mt-1 text-sm text-gray-500">Die Quelldatei bleibt zusammen mit Hash und Prüfstatus erhalten.</p></div>
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="action-button inline-flex items-center gap-2"><Upload className="h-4 w-4" />XML übernehmen</button>
+          <button type="button" onClick={openUpload} className="action-button inline-flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />XML übernehmen</button>
         </div>
 
         {loading ? <div className="py-12 text-center text-sm text-gray-500">Eingänge werden geladen …</div> : invoices.length === 0 ? (
-          <label className="mt-5 block cursor-pointer rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50">
+          <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
             <Inbox className="mx-auto h-8 w-8 text-gray-400" />
-            <p className="mt-3 font-medium text-gray-800">Noch keine E-Rechnung eingegangen</p>
-            <p className="mt-1 text-sm text-gray-500">XRechnung- oder CII-XML auswählen</p>
-            <input type="file" accept=".xml,application/xml,text/xml" className="hidden" onChange={handleUpload} disabled={uploading} />
-          </label>
+            <span className="mt-3 block font-medium text-gray-800">Noch keine E-Rechnung eingegangen</span>
+            <span className="mt-1 block text-sm text-gray-500">XRechnung- oder CII-XML auswählen</span>
+          </button>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {invoices.map(invoice => (
-              <article key={invoice.id} className="flex h-full min-w-0 flex-col rounded-xl border border-gray-200 p-4 transition hover:border-gray-300 hover:shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileCheck2 className="h-5 w-5" /></span><div className="min-w-0"><h3 className="truncate font-medium text-gray-900" title={invoice.filename}>{invoice.filename}</h3><p className="text-xs text-gray-500">{invoice.format} · {formatFileSize(invoice.size)}</p></div></div>
-                  <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium ${invoice.validationStatus === 'validated' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'}`}><span className={`h-2 w-2 rounded-full ${invoice.validationStatus === 'validated' ? 'bg-emerald-500' : 'bg-rose-500'}`} />{statusLabel(invoice)}</span>
+              <article key={invoice.id} className="document-card flex h-full min-w-0 flex-col rounded-xl border border-gray-200 p-4 transition hover:border-gray-300 hover:shadow-sm">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileCheck2 className="h-5 w-5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="break-words font-medium leading-5 text-gray-900" title={invoice.filename}>{invoice.filename}</h3>
+                      <p className="mt-1 break-words text-xs leading-4 text-gray-500">{invoice.format} · {formatFileSize(invoice.size)}</p>
+                    </div>
+                  </div>
+                  <span className={`document-card-status inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium ${invoice.validationStatus === 'validated' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'}`} title={statusLabel(invoice)} aria-label={`Status: ${statusLabel(invoice)}`}>
+                    <span className={`document-card-status-dot h-2 w-2 shrink-0 rounded-full ${invoice.validationStatus === 'validated' ? 'bg-emerald-500' : 'bg-rose-500'}`} aria-hidden="true" />
+                    <span className="document-card-status-label whitespace-nowrap">{statusLabel(invoice)}</span>
+                  </span>
                 </div>
                 <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Nummer</dt><dd className="truncate font-medium text-gray-800">{invoice.invoiceNumber || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate text-gray-800">{invoice.supplierName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Betrag</dt><dd className="font-medium text-gray-800">{invoice.grossAmount === undefined ? 'Nicht erkannt' : formatCurrency(invoice.grossAmount, 'de-DE', 'european', invoice.currency || 'EUR')}</dd></div></dl>
                 <p className="mt-3 flex items-center gap-1.5 text-xs text-gray-500">{invoice.linkedCustomerId ? <><Link2 className="h-3.5 w-3.5 text-blue-700" />{customerNames.get(invoice.linkedCustomerId) || 'Kunde zugeordnet'}</> : 'Noch keinem Kunden zugeordnet'}</p>
@@ -190,6 +208,7 @@ export function IncomingEInvoicesManagement({ embedded = false }: IncomingEInvoi
           </div>
         </DialogShell>
       )}
-    </div>
+      </div>
+    </>
   );
-}
+});

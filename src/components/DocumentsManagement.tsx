@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, FileCheck2, FileScan, RefreshCw, X } from 'lucide-react';
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowRight, CheckCircle2, FileCheck2, FileScan, FileUp, LayoutGrid, ReceiptText, RefreshCw, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { DateFormat, IncomingEInvoice, Receipt } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { IncomingEInvoicesManagement } from './IncomingEInvoicesManagement';
+import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUpload';
+import { IncomingEInvoicesManagement, type IncomingEInvoicesManagementHandle } from './IncomingEInvoicesManagement';
+import { ImportWizard } from './ImportWizard';
 import { PageHeader } from './PageHeader';
-import { ReceiptsManagement } from './ReceiptsManagement';
+import { ReceiptsManagement, type ReceiptsManagementHandle } from './ReceiptsManagement';
+import { ThemeTabBar } from './ThemeTabBar';
 
 type DocumentsTab = 'all' | 'receipts' | 'incoming';
 type DocumentKind = Exclude<DocumentsTab, 'all'>;
@@ -41,7 +44,7 @@ function normalizeTab(value?: string): DocumentsTab {
 function toUnifiedReceipt(receipt: Receipt, locale: string, dateFormat: DateFormat): UnifiedDocument {
   const data = receipt.extractedData || {};
   const statusLabel = receipt.ocrStatus === 'completed'
-    ? 'Erkennung abgeschlossen'
+    ? 'Beleg erkannt'
     : receipt.ocrStatus === 'failed'
       ? 'Erkennung fehlgeschlagen'
       : receipt.ocrStatus === 'processing'
@@ -91,7 +94,7 @@ function toUnifiedIncoming(invoice: IncomingEInvoice, locale: string, dateFormat
     supplier: invoice.supplierName,
     amount: invoice.grossAmount,
     currency: invoice.currency || 'EUR',
-    statusLabel: validated ? 'Strukturell geprüft' : 'Prüfung fehlgeschlagen',
+    statusLabel: validated ? 'E-Rechnung geprüft' : 'Prüfung fehlgeschlagen',
     statusClassName: validated
       ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
       : 'border-rose-100 bg-rose-50 text-rose-700',
@@ -108,6 +111,11 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const receiptsManagementRef = useRef<ReceiptsManagementHandle>(null);
+  const incomingEInvoicesRef = useRef<IncomingEInvoicesManagementHandle>(null);
+  const receiptUploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setActiveTab(normalizeTab(initialTab));
@@ -153,48 +161,95 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
     onNavigate?.('documents', tab === 'all' ? undefined : tab);
   };
 
+  const handleOverviewUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    setUploadingReceipt(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await uploadReceiptFiles(files);
+      if (result.created.length) {
+        setReceipts(current => [...result.created.slice().reverse(), ...current]);
+        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
+      }
+      if (result.errors.length) setError(result.errors.join(' '));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Der Beleg konnte nicht hochgeladen werden.');
+    } finally {
+      setUploadingReceipt(false);
+    }
+  };
+
+  const openReceiptUpload = () => {
+    if (activeTab === 'receipts') receiptsManagementRef.current?.openUpload();
+    else receiptUploadInputRef.current?.click();
+  };
+
+  const openIncomingUpload = () => incomingEInvoicesRef.current?.openUpload();
+
   const formatAmount = (document: UnifiedDocument) => document.amount === undefined
     ? 'Nicht erkannt'
     : formatCurrency(document.amount, company.locale || 'de-DE', company.numberFormat, document.currency || company.currency);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <>
+      <input ref={receiptUploadInputRef} type="file" accept={RECEIPT_UPLOAD_ACCEPT} capture="environment" multiple className="hidden" onChange={handleOverviewUpload} disabled={uploadingReceipt} />
+      <div className="space-y-4 sm:space-y-6">
       <PageHeader icon={FileScan} title="Belege" subtitle="Normale Belege und elektronische Rechnungen an einem Ort verwalten">
+        {(activeTab === 'all' || activeTab === 'receipts') && (
+          <>
+            <button
+              type="button"
+              onClick={openReceiptUpload}
+              className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
+              disabled={uploadingReceipt}
+              aria-label={uploadingReceipt ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+              title={uploadingReceipt ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+            >
+              {uploadingReceipt ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <span className="hidden xl:inline">{uploadingReceipt ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
+            </button>
+            <button type="button" onClick={() => setIsImportOpen(true)} className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4" aria-label="Ausgaben importieren" title="Ausgaben importieren">
+              <FileUp className="h-4 w-4" />
+              <span className="hidden xl:inline">Ausgaben importieren</span>
+            </button>
+          </>
+        )}
         {activeTab === 'receipts' && (
           <button
             type="button"
             onClick={() => onNavigate?.('euer')}
-            className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-3 sm:min-w-0 sm:px-4"
+            className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4"
             aria-label="Zur EÜR öffnen"
             title="Zur EÜR öffnen"
           >
-            <span className="hidden sm:inline">Zur EÜR</span>
+            <span className="hidden md:inline xl:hidden">EÜR</span>
+            <span className="hidden xl:inline">Zur EÜR</span>
             <ArrowRight className="h-4 w-4" />
+          </button>
+        )}
+        {activeTab === 'incoming' && (
+          <button type="button" onClick={openIncomingUpload} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" aria-label="E-Rechnung als XML übernehmen" title="E-Rechnung als XML übernehmen">
+            <Upload className="h-4 w-4" />
+            <span className="hidden xl:inline">XML übernehmen</span>
           </button>
         )}
       </PageHeader>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Belegarten">
-        <div className="grid grid-cols-3 gap-1">
-          {([
-            ['all', 'Alle', tabCounts.all],
-            ['receipts', 'Sonstige Belege', tabCounts.receipts],
-            ['incoming', 'E-Rechnungen', tabCounts.incoming],
-          ] as Array<[DocumentsTab, string, number]>).map(([tab, label, count]) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => selectTab(tab)}
-              className={`min-h-11 rounded-lg px-2 py-2 text-sm font-medium transition sm:px-4 ${activeTab === tab ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-            >
-              <span className="block truncate">{label}</span>
-              <span className={`text-xs ${activeTab === tab ? 'text-white/80' : 'text-gray-400'}`}>{count}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <ThemeTabBar
+        className="sticky top-16 z-20 w-full lg:top-2"
+        ariaLabel="Belegarten"
+        activeTab={activeTab}
+        onChange={selectTab}
+        tabs={[
+          { id: 'all' as const, label: 'Alle', icon: LayoutGrid, count: tabCounts.all },
+          { id: 'receipts' as const, label: 'Sonstige Belege', icon: ReceiptText, count: tabCounts.receipts },
+          { id: 'incoming' as const, label: 'E-Rechnungen', icon: FileCheck2, count: tabCounts.incoming },
+        ]}
+      />
 
       {(error || notice) && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
@@ -221,7 +276,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
             <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
               <FileScan className="mx-auto h-8 w-8 text-gray-400" />
               <p className="mt-3 font-medium text-gray-800">Noch keine Belege</p>
-              <p className="mt-1 text-sm text-gray-500">Wähle oben eine Belegart, um einen normalen Beleg oder eine E-Rechnung zu übernehmen.</p>
+              <p className="mt-1 text-sm text-gray-500">Nutze oben die Upload-Aktionen oder wähle eine Belegart, um einen normalen Beleg oder eine E-Rechnung zu übernehmen.</p>
             </div>
           ) : (
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -229,18 +284,18 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
                 const isIncoming = document.kind === 'incoming';
                 const Icon = isIncoming ? FileCheck2 : FileScan;
                 return (
-                  <article key={`${document.kind}-${document.id}`} className="flex h-full min-w-0 flex-col rounded-xl border border-gray-200 p-4 transition hover:border-gray-300 hover:shadow-sm">
+                  <article key={`${document.kind}-${document.id}`} className="document-card flex h-full min-w-0 flex-col rounded-xl border border-gray-200 p-4 transition hover:border-gray-300 hover:shadow-sm">
                     <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
                         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isIncoming ? 'bg-violet-50 text-violet-700' : 'bg-blue-50 text-blue-700'}`}><Icon className="h-5 w-5" /></span>
-                        <div className="min-w-0">
-                          <h3 className="truncate font-medium text-gray-900" title={document.title}>{document.title}</h3>
-                          <p className="truncate text-xs text-gray-500" title={`${document.typeLabel} · ${document.meta}`}>{document.typeLabel} · {document.meta}</p>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="break-words font-medium leading-5 text-gray-900" title={document.title}>{document.title}</h3>
+                          <p className="mt-1 break-words text-xs leading-4 text-gray-500" title={`${document.typeLabel} · ${document.meta}`}>{document.typeLabel} · {document.meta}</p>
                         </div>
                       </div>
-                      <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${document.statusClassName}`}>
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${document.statusDotClassName}`} />
-                        <span className="hidden sm:inline">{document.statusLabel}</span>
+                      <span className={`document-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${document.statusClassName}`} title={document.statusLabel} aria-label={`Status: ${document.statusLabel}`}>
+                        <span className={`document-card-status-dot h-2 w-2 shrink-0 rounded-full ${document.statusDotClassName}`} aria-hidden="true" />
+                        <span className="document-card-status-label whitespace-nowrap">{document.statusLabel}</span>
                       </span>
                     </div>
                     <dl className="mt-4 space-y-2 text-sm">
@@ -261,8 +316,15 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         </section>
       )}
 
-      {activeTab === 'receipts' && <ReceiptsManagement onNavigate={onNavigate} embedded />}
-      {activeTab === 'incoming' && <IncomingEInvoicesManagement embedded />}
-    </div>
+      {activeTab === 'receipts' && <ReceiptsManagement ref={receiptsManagementRef} onNavigate={onNavigate} embedded />}
+      {activeTab === 'incoming' && <IncomingEInvoicesManagement ref={incomingEInvoicesRef} embedded />}
+      <ImportWizard
+        resource="euerEntries"
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onImported={() => setNotice('Ausgaben wurden importiert und in der EÜR gespeichert.')}
+      />
+      </div>
+    </>
   );
 }

@@ -496,6 +496,53 @@ function demoImportText(value: unknown): string {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function demoImportDate(value: unknown): string | null {
+  const source = demoImportText(value);
+  if (!source) return null;
+  const germanDate = source.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (germanDate) {
+    const year = germanDate[3].length === 2 ? `20${germanDate[3]}` : germanDate[3];
+    const result = `${year}-${germanDate[2].padStart(2, '0')}-${germanDate[1].padStart(2, '0')}`;
+    const parsed = new Date(`${result}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== result ? null : result;
+  }
+  const isoDate = source.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoDate) {
+    const result = `${isoDate[1]}-${isoDate[2].padStart(2, '0')}-${isoDate[3].padStart(2, '0')}`;
+    const parsed = new Date(`${result}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== result ? null : result;
+  }
+  const excelSerial = Number(source);
+  if (Number.isFinite(excelSerial) && excelSerial > 20000 && excelSerial < 100000) {
+    const parsed = new Date(Date.UTC(1899, 11, 30) + excelSerial * 86400000);
+    return parsed.toISOString().slice(0, 10);
+  }
+  const parsed = new Date(source);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+function demoImportEuerCategory(value: unknown): string | null {
+  const source = demoImportText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('de-DE')
+    .replace(/[^a-z0-9]/g, '');
+  const aliases: Record<string, string> = {
+    material: 'materials', materialien: 'materials', waren: 'materials',
+    office: 'office', buro: 'office', buerobedarf: 'office', buerokosten: 'office', burobedarf: 'office', burokosten: 'office',
+    software: 'software', lizenzen: 'software',
+    telefon: 'telecommunications', internet: 'telecommunications', telekommunikation: 'telecommunications',
+    reise: 'travel', reisekosten: 'travel',
+    fahrzeug: 'vehicle', fahrzeugkosten: 'vehicle',
+    werbung: 'marketing', marketing: 'marketing',
+    beratung: 'professional_services', dienstleistung: 'professional_services', fremdleistung: 'professional_services', fremdleistungen: 'professional_services',
+    versicherung: 'insurance', versicherungen: 'insurance',
+    bankgebuehren: 'bank_fees', bankgebuhren: 'bank_fees', bankkosten: 'bank_fees',
+    sonstige: 'other_expense', sonstigeausgabe: 'other_expense', sonstigebetriebsausgaben: 'other_expense', otherexpense: 'other_expense',
+  };
+  return aliases[source] || (['materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle', 'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense'].includes(source) ? source : null);
+}
+
 function demoImportCustomer(state: DemoState, row: DemoRecord): DemoRecord | undefined {
   const customerId = demoImportText(row.customerId);
   const customerNumber = demoImportText(row.customerNumber);
@@ -550,11 +597,66 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
           ? state.hourlyRates
           : resource === 'materials'
             ? state.materialTemplates
+            : resource === 'euerEntries'
+              ? state.euerEntries
             : ((state.company.invoiceTemplates || []) as DemoRecord[]);
   const seen = new Set<string>();
 
   rows.forEach((row, index) => {
     const rowNumber = Number(row._rowNumber || index + 2);
+
+    if (resource === 'euerEntries') {
+      const rawDate = demoImportText(row.entryDate ?? row.entry_date ?? row.date ?? row.datum ?? row.buchungsdatum ?? row.belegdatum);
+      const entryDate = demoImportDate(rawDate);
+      const description = demoImportText(row.description ?? row.beschreibung ?? row.bezeichnung ?? row.text ?? row.verwendungszweck ?? row.zweck);
+      const amount = demoImportNumber(row.amount ?? row.betrag ?? row.brutto ?? row.grossAmount ?? row.gross_amount ?? row.ausgabe ?? row.ausgabenbetrag);
+      const categoryValue = demoImportText(row.category ?? row.kategorie ?? row.ausgabenkategorie ?? row.kostenart);
+      const category = demoImportEuerCategory(categoryValue) || 'other_expense';
+      const rawTaxRate = row.taxRate ?? row.tax_rate ?? row.tax ?? row.mwst ?? row.ust ?? row.steuersatz;
+      const taxRate = rawTaxRate === undefined ? 0 : demoImportNumber(rawTaxRate);
+
+      if (!entryDate) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Datum der Ausgabe fehlt oder ist ungültig.' });
+        return;
+      }
+      if (!description || description.length > 255) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Eine Beschreibung ist erforderlich und darf höchstens 255 Zeichen enthalten.' });
+        return;
+      }
+      if (amount === null || amount < 0) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Betrag ist ungültig oder fehlt.' });
+        return;
+      }
+      if (taxRate === null || taxRate < 0 || taxRate > 100) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.' });
+        return;
+      }
+
+      const identity = `${entryDate}|${description.toLocaleLowerCase()}|${category}|${amount.toFixed(2)}`;
+      const existing = collection.find(item => `${item.entryDate}|${demoImportText(item.description).toLocaleLowerCase()}|${item.category}|${Number(item.amount).toFixed(2)}` === identity);
+      if (seen.has(identity) || existing) {
+        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Diese Ausgabe ist bereits vorhanden oder doppelt in der Importdatei enthalten.' });
+        return;
+      }
+      seen.add(identity);
+
+      const warnings: string[] = [];
+      if (!categoryValue) warnings.push('Kategorie wird als sonstige Betriebsausgabe übernommen');
+      else if (!demoImportEuerCategory(categoryValue)) warnings.push('Unbekannte Kategorie wird als sonstige Betriebsausgabe übernommen');
+      if (rawTaxRate === undefined) warnings.push('MwSt.-Satz wird mit 0 % übernommen');
+      entries.push({
+        rowNumbers: [rowNumber],
+        status: warnings.length ? 'warning' : 'valid',
+        message: warnings.length ? `${warnings.join(', ')}.` : 'Ausgabe kann angelegt werden.',
+        data: {
+          entryType: 'expense', entryDate, description, category, amount, taxRate,
+          notes: demoImportText(row.notes ?? row.note ?? row.notizen ?? row.bemerkung ?? row.anmerkung) || undefined,
+          sourceType: 'manual',
+        },
+      });
+      return;
+    }
+
     const name = demoImportText(row.name || row.customerName);
     if ((resource === 'customers' || resource === 'positions' || resource === 'hourlyRates' || resource === 'materials') && !name) {
       entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Name fehlt.' });
@@ -672,6 +774,10 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
           if (target) Object.assign(target, entry.data, { updatedAt: isoDate() });
         } else templates.push({ ...entry.data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() });
         state.company.invoiceTemplates = templates;
+      } else if (resource === 'euerEntries') {
+        const createdEntry = { ...entry.data, id: generateUUID(), status: 'active', sourceType: 'manual', createdAt: isoDate(), updatedAt: isoDate() };
+        state.euerEntries.push(createdEntry);
+        state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: createdEntry.id, action: 'created', reason: '', oldData: null, newData: { ...createdEntry }, changedAt: isoDate() });
       } else {
         const targetCollection = resource === 'hourlyRates' ? state.hourlyRates : state.materialTemplates;
         if (entry.status === 'update') {

@@ -748,7 +748,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
   }
 
   return (
-    <div className="space-y-8 pt-20 lg:pt-0 xl:space-y-4 2xl:space-y-8">
+    <div className="space-y-8 xl:space-y-4 2xl:space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
         <PageHeader icon={Briefcase} title={terminology.work.managementLabel}>

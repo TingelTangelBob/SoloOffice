@@ -1160,7 +1160,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     <div className="space-y-3 lg:space-y-0">
       {/* Header */}
       <div className="p-1 lg:p-2">
-        <PageHeader title="Kalender" singleRow>
+        <PageHeader title="Kalender">
         <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
         <button
           type="button"

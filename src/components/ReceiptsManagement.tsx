@@ -1,34 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, FileScan, Link2, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowRight, CheckCircle2, FileScan, FileUp, Link2, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { EuerEntryPayload, Receipt, ReceiptExtractedData, ReceiptOcrStatus } from '../types';
-import { fileToBase64, formatFileSize } from '../utils/fileUtils';
+import { formatFileSize } from '../utils/fileUtils';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
-import { PageHeader } from './PageHeader';
+import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUpload';
 import { DialogShell } from './DialogShell';
+import { ImportWizard } from './ImportWizard';
+import { PageHeader } from './PageHeader';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string) => void;
   embedded?: boolean;
 }
 
+export interface ReceiptsManagementHandle {
+  openUpload: () => void;
+}
+
 type EditableReceiptField = 'vendorName' | 'documentDate' | 'documentNumber' | 'netAmount' | 'taxAmount' | 'grossAmount' | 'taxRate' | 'currency' | 'suggestedCategory';
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
-const supportedReceiptTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
-const receiptTypeByExtension: Record<string, string> = {
-  pdf: 'application/pdf',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
-const receiptAccept = 'application/pdf,image/jpeg,image/png,image/webp';
 const statusLabels: Record<ReceiptOcrStatus, string> = {
   pending: 'Wartet auf Erkennung',
   processing: 'Erkennung läuft',
-  completed: 'Erkennung abgeschlossen',
+  completed: 'Beleg erkannt',
   failed: 'Erkennung fehlgeschlagen',
 };
 
@@ -46,14 +42,10 @@ function normalizeOptionalNumber(value: string, locale: string, numberFormat?: '
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function getReceiptContentType(file: File) {
-  const declaredType = file.type.toLowerCase();
-  if (supportedReceiptTypes.has(declaredType)) return declaredType;
-  const extension = file.name.split('.').pop()?.toLowerCase() || '';
-  return receiptTypeByExtension[extension] || '';
-}
-
-export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsManagementProps) {
+export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
+  { onNavigate, embedded = false }: ReceiptsManagementProps,
+  ref: ForwardedRef<ReceiptsManagementHandle>,
+) {
   const { company } = useCompany();
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const locale = company.locale || 'de-DE';
@@ -67,7 +59,11 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
   const [savingReview, setSavingReview] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openUpload = useCallback(() => fileInputRef.current?.click(), []);
+  useImperativeHandle(ref, () => ({ openUpload }), [openUpload]);
 
   const loadReceipts = useCallback(async () => {
     setLoading(true);
@@ -110,38 +106,13 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
     setUploading(true);
     setError('');
     setNotice('');
-    let uploadedCount = 0;
-    const uploadErrors: string[] = [];
     try {
-      for (const file of files) {
-        const contentType = getReceiptContentType(file);
-        if (file.size > MAX_FILE_SIZE) {
-          uploadErrors.push(`„${file.name}“ ist zu groß. Die maximale Größe beträgt 25 MB.`);
-          continue;
-        }
-        if (!contentType) {
-          uploadErrors.push(`„${file.name}“ wird nicht unterstützt. Bitte PDF, JPG, PNG oder WEBP verwenden.`);
-          continue;
-        }
-
-        try {
-          const content = await fileToBase64(file);
-          const created = await apiService.createReceipt({
-            name: file.name,
-            content,
-            contentType,
-            size: file.size,
-          });
-          setReceipts(current => [created, ...current]);
-          uploadedCount += 1;
-        } catch (uploadError) {
-          uploadErrors.push(uploadError instanceof Error ? `„${file.name}“: ${uploadError.message}` : `„${file.name}“ konnte nicht hochgeladen werden.`);
-        }
+      const result = await uploadReceiptFiles(files);
+      if (result.created.length) {
+        setReceipts(current => [...result.created.slice().reverse(), ...current]);
+        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
       }
-      if (uploadedCount) {
-        setNotice(`${uploadedCount === 1 ? 'Beleg' : `${uploadedCount} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
-      }
-      if (uploadErrors.length) setError(uploadErrors.join(' '));
+      if (result.errors.length) setError(result.errors.join(' '));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Der Beleg konnte nicht hochgeladen werden.');
     } finally {
@@ -308,27 +279,36 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
     : undefined;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <>
+      <input ref={fileInputRef} type="file" accept={RECEIPT_UPLOAD_ACCEPT} capture="environment" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+      <div className="space-y-4 sm:space-y-6">
       {!embedded && <PageHeader icon={FileScan} title={receiptLabel} subtitle="Belege lokal einlesen, prüfen und mit EÜR-Buchungen verknüpfen">
         <button
           type="button"
           onClick={() => onNavigate?.('euer')}
-          className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-3 sm:min-w-0 sm:px-4"
+          className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4"
           aria-label="Zur EÜR öffnen"
           title="Zur EÜR öffnen"
         >
-          <span className="hidden sm:inline">Zur EÜR</span>
+          <span className="hidden md:inline xl:hidden">EÜR</span>
+          <span className="hidden xl:inline">Zur EÜR</span>
           <ArrowRight className="h-4 w-4" />
         </button>
-        <label
-          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl px-3 text-white transition-all hover:brightness-90 sm:min-w-0 sm:px-4"
+        <button
+          type="button"
+          onClick={openUpload}
+          disabled={uploading}
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
           aria-label={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
           title={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
         >
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          <span className="hidden sm:inline">{uploading ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
-          <input ref={fileInputRef} type="file" accept={receiptAccept} capture="environment" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+          <span className="hidden xl:inline">{uploading ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
+        </button>
+        <button type="button" onClick={() => setIsImportOpen(true)} className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4" aria-label="Ausgaben importieren" title="Ausgaben importieren">
+          <FileUp className="h-4 w-4" />
+          <span className="hidden xl:inline">Ausgaben importieren</span>
+        </button>
       </PageHeader>}
 
       {(error || notice) && (
@@ -361,16 +341,15 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
       <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-lg font-semibold text-gray-900">Meine {receiptLabel}</h2><p className="mt-1 text-sm text-gray-500">Öffne einen Beleg, prüfe die erkannten Felder und übernimm ihn optional als EÜR-Ausgabe.</p></div>
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Beleg hochladen</button>
+          <button type="button" onClick={openUpload} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Beleg hochladen</button>
         </div>
 
         {loading ? <div className="py-12 text-center text-sm text-gray-500">{receiptLabel} werden geladen …</div> : receipts.length === 0 ? (
-          <label className="mt-5 block cursor-pointer rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50">
+          <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
             <Upload className="mx-auto h-8 w-8 text-gray-400" />
-            <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>
-            <p className="mt-1 text-sm text-gray-500">Datei auswählen oder direkt mit der Kamera aufnehmen</p>
-            <input type="file" accept={receiptAccept} capture="environment" className="hidden" onChange={handleUpload} disabled={uploading} />
-          </label>
+            <span className="mt-3 block font-medium text-gray-800">Noch keine {receiptLabel}</span>
+            <span className="mt-1 block text-sm text-gray-500">Datei auswählen oder direkt mit der Kamera aufnehmen</span>
+          </button>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {receipts.map(receipt => {
@@ -392,12 +371,18 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
                   ? 'bg-rose-500'
                   : 'bg-amber-500';
               return (
-                <article key={receipt.id} className={`receipt-card flex h-full min-w-0 flex-col rounded-xl border p-4 transition ${selectedReceipt?.id === receipt.id ? 'border-primary-custom shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                <article key={receipt.id} className={`document-card flex h-full min-w-0 flex-col rounded-xl border p-4 transition ${selectedReceipt?.id === receipt.id ? 'border-primary-custom shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
                   <div className="flex min-w-0 items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileScan className="h-5 w-5" /></span><div className="min-w-0 flex-1"><h3 className="truncate font-medium text-gray-900" title={displayName}>{displayName}</h3><p className="truncate whitespace-nowrap text-xs text-gray-500" title={fileMeta}>{fileMeta}</p></div></div>
-                    <span className={`receipt-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${statusClassName}`} title={statusLabels[receipt.ocrStatus]} aria-label={`Status: ${statusLabels[receipt.ocrStatus]}`}>
-                      <span className={`receipt-card-status-dot h-2 w-2 shrink-0 rounded-full ${statusDotClassName}`} aria-hidden="true" />
-                      <span className="receipt-card-status-label">{statusLabels[receipt.ocrStatus]}</span>
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileScan className="h-5 w-5" /></span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="break-words font-medium leading-5 text-gray-900" title={displayName}>{displayName}</h3>
+                        <p className="mt-1 break-words text-xs leading-4 text-gray-500" title={fileMeta}>{fileMeta}</p>
+                      </div>
+                    </div>
+                    <span className={`document-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${statusClassName}`} title={statusLabels[receipt.ocrStatus]} aria-label={`Status: ${statusLabels[receipt.ocrStatus]}`}>
+                      <span className={`document-card-status-dot h-2 w-2 shrink-0 rounded-full ${statusDotClassName}`} aria-hidden="true" />
+                      <span className="document-card-status-label whitespace-nowrap">{statusLabels[receipt.ocrStatus]}</span>
                     </span>
                   </div>
                   <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
@@ -557,6 +542,15 @@ export function ReceiptsManagement({ onNavigate, embedded = false }: ReceiptsMan
           </div>
         </DialogShell>
       )}
-    </div>
+      {!embedded && (
+        <ImportWizard
+          resource="euerEntries"
+          isOpen={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          onImported={() => setNotice('Ausgaben wurden importiert und in der EÜR gespeichert.')}
+        />
+      )}
+      </div>
+    </>
   );
-}
+});

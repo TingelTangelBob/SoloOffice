@@ -138,6 +138,19 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'isDefault', label: 'Standard', aliases: ['isDefault', 'is_default', 'default', 'standard'] },
     ],
   },
+  euerEntries: {
+    resource: 'euerEntries',
+    label: 'Ausgaben',
+    description: 'Ausgaben aus CSV-, TSV- oder JSON-Exporten in die EÜR übernehmen. Excel-Dateien bitte als CSV UTF-8 exportieren.',
+    fields: [
+      { key: 'entryDate', label: 'Datum', aliases: ['entryDate', 'entry_date', 'date', 'datum', 'buchungsdatum', 'belegdatum'], required: true },
+      { key: 'description', label: 'Beschreibung', aliases: ['description', 'beschreibung', 'bezeichnung', 'text', 'verwendungszweck', 'zweck'], required: true },
+      { key: 'amount', label: 'Betrag', aliases: ['amount', 'betrag', 'brutto', 'grossAmount', 'gross_amount', 'ausgabe', 'ausgabenbetrag'], required: true },
+      { key: 'category', label: 'Kategorie', aliases: ['category', 'kategorie', 'ausgabenkategorie', 'kostenart'] },
+      { key: 'taxRate', label: 'MwSt.-Satz', aliases: ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'] },
+      { key: 'notes', label: 'Notizen', aliases: ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'] },
+    ],
+  },
 };
 
 const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
@@ -243,7 +256,7 @@ function extractJsonRows(value: unknown): unknown[] {
   if (!value || typeof value !== 'object') return [{ value }];
 
   const object = value as Record<string, unknown>;
-  const preferredKeys = ['data', 'items', 'records', 'customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials'];
+  const preferredKeys = ['data', 'items', 'records', 'customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries', 'expenses', 'ausgaben'];
   for (const key of preferredKeys) {
     if (Array.isArray(object[key])) return object[key] as unknown[];
   }

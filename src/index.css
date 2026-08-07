@@ -163,33 +163,127 @@
 }
 
 @layer components {
+  /* Gemeinsame Tab-Leiste für Einstellungen und Vorlagen. */
+  .theme-tab-bar {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #d1d5db;
+    border-radius: 0.75rem;
+    background: #ffffff;
+    padding: 0.25rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+    scrollbar-color: #cbd5e1 #f8fafc;
+    scrollbar-width: thin;
+  }
+
+  .theme-tab-bar::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .theme-tab-bar::-webkit-scrollbar-track {
+    background: #f8fafc;
+  }
+
+  .theme-tab-bar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+  }
+
+  .theme-tab-list {
+    display: flex;
+    min-width: max-content;
+    gap: 0.25rem;
+  }
+
+  .theme-tab-button {
+    display: inline-flex;
+    min-height: 2.75rem;
+    min-width: max-content;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    color: #374151;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .theme-tab-button:not(.theme-tab-active):hover {
+    background: #f3f4f6;
+    color: #111827;
+  }
+
+  .theme-tab-button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .theme-tab-active {
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.14);
+  }
+
+  .theme-tab-label {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .theme-tab-count {
+    min-width: 1.75rem;
+    border-radius: 9999px;
+    background: #f3f4f6;
+    padding: 0.125rem 0.5rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+  }
+
+  .theme-tab-active .theme-tab-count {
+    background: rgb(255 255 255 / 0.2);
+    color: inherit;
+  }
+
   /* Einheitliche Textaktionen in Karten und kompakten Listen */
   .action-button {
     @apply inline-flex min-h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors duration-200 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  /* Belegkarten verdichten den Status erst anhand der tatsächlichen Kartenbreite. */
-  .receipt-card {
+  /* Dokumentkarten teilen sich eine responsive Statusanzeige. */
+  .document-card {
     container-type: inline-size;
   }
 
-  .receipt-card-status-label {
+  .document-card-status-label {
     display: inline;
   }
 
-  @container (max-width: 32rem) {
-    .receipt-card-status {
+  @container (max-width: 20rem) {
+    .document-card-status {
+      width: 1.5rem;
+      height: 1.5rem;
+      justify-content: center;
       gap: 0;
-      border-color: transparent;
-      background-color: transparent;
-      padding: 0.25rem 0.125rem;
+      border-color: transparent !important;
+      background-color: transparent !important;
+      padding: 0 !important;
     }
 
-    .receipt-card-status-label {
+    .document-card-status-label {
       display: none;
     }
 
-    .receipt-card-status-dot {
+    .document-card-status-dot {
       height: 0.625rem;
       width: 0.625rem;
     }

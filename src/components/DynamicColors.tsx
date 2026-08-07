@@ -268,6 +268,14 @@ export function DynamicColors() {
           background-color: #374151 !important;
           color: #f9fafb !important;
         }
+        #app-shell[data-theme="dark"] .theme-tab-count {
+          background-color: #374151 !important;
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-active .theme-tab-count {
+          background-color: rgb(255 255 255 / 0.2) !important;
+          color: inherit !important;
+        }
         #app-shell[data-theme="dark"] .settings-save-bar {
           background-color: rgba(17, 24, 39, 0.95) !important;
           border-color: #4b5563 !important;

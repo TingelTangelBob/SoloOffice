@@ -16,6 +16,7 @@ import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { ImportWizard } from './ImportWizard';
 import { DialogShell } from './DialogShell';
+import { ThemeTabBar } from './ThemeTabBar';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
@@ -462,30 +463,19 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <div className={`theme-tab-bar ${embedded ? 'hidden' : ''} order-2 sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:-mx-6 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1`}>
-        <div className="flex gap-1 overflow-x-auto">
-          {[
-            { id: 'app' as const, label: 'App-Einstellungen' },
-            { id: 'general' as const, label: 'Allgemein' },
-            { id: 'invoices' as const, label: 'Rechnungen' },
-            { id: 'appearance' as const, label: 'Darstellung' },
-            { id: 'system' as const, label: 'E-Mail & Backup' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`theme-tab-button whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'theme-tab-active bg-primary-custom text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ThemeTabBar
+        className={`${embedded ? 'hidden ' : ''}order-2 sticky top-16 z-20 w-full lg:top-2`}
+        ariaLabel="Einstellungsbereiche"
+        activeTab={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: 'app' as const, label: 'App-Einstellungen' },
+          { id: 'general' as const, label: 'Allgemein' },
+          { id: 'invoices' as const, label: 'Rechnungen' },
+          { id: 'appearance' as const, label: 'Darstellung' },
+          { id: 'system' as const, label: 'E-Mail & Backup' },
+        ]}
+      />
 
       <form onSubmit={handleSubmit} className="order-4 space-y-8">
         {activeTab === 'app' && (

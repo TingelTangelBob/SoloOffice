@@ -2,9 +2,9 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
-## [Unreleased]
+## [v0.4] – Beta-Release
 
-Vorbereitung für den nächsten Beta-Release (`v0.2.0-beta.1`).
+Aktueller SoloOffice-Beta-Release mit erweitertem Identitäts-, Workspace-, eRechnungs-, Dokumenten- und Auftragsumfang.
 
 ### Neue Funktionen
 
@@ -58,5 +58,5 @@ Vorbereitung für den nächsten Beta-Release (`v0.2.0-beta.1`).
 
 Erster SoloOffice-Teststand mit Rechnungsverwaltung, E-Rechnung, Kunden- und Auftragsverwaltung, EÜR-Grundfunktionen, Belegverwaltung, Anlagenverzeichnis und lokalen Demo-Abläufen.
 
-[Unreleased]: https://github.com/TingelTangelBob/SoloOffice/compare/v0.1...HEAD
+[v0.4]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.4
 [0.1.0]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.1

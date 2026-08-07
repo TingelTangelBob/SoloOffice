@@ -17,6 +17,7 @@ import { getTerminology } from '../utils/terminology';
 import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
 import { apiService } from '../services/api';
 import { ImportWizard } from './ImportWizard';
+import { ThemeTabBar } from './ThemeTabBar';
 
 type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
 
@@ -671,27 +672,16 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
         subtitle="PDF-Layouts und Dokumentdesign zentral verwalten"
       />
 
-      <div className="theme-tab-bar sticky top-16 z-20 -mx-3 flex gap-1 overflow-x-auto border-b border-gray-200 bg-gray-50/95 p-1 shadow-sm backdrop-blur sm:-mx-4 sm:px-2 lg:top-2 lg:mx-0 lg:rounded-xl lg:border lg:bg-white lg:p-1">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setActiveTab(tab.id);
-                closeEditor();
-              }}
-              className={`theme-tab-button inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${activeTab === tab.id
-                ? 'theme-tab-active bg-primary-custom text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <ThemeTabBar
+        className="sticky top-16 z-20 w-full lg:top-2"
+        ariaLabel="Vorlagenbereiche"
+        activeTab={activeTab}
+        onChange={tab => {
+          setActiveTab(tab);
+          closeEditor();
+        }}
+        tabs={tabs}
+      />
 
       {activeTab === 'general' ? (
         <div className="space-y-6">

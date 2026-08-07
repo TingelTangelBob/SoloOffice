@@ -544,7 +544,7 @@ export type ExportFormat = 'zugferd' | 'xrechnung';
 // Import Types
 // ============================================================================
 
-export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials';
+export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials' | 'euerEntries';
 export type ImportDuplicateMode = 'skip' | 'update';
 export type ImportRowStatus = 'valid' | 'update' | 'duplicate' | 'warning' | 'error' | 'imported';
 

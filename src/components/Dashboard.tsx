@@ -413,7 +413,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   return (
-    <div className="space-y-8 pt-20 lg:pt-0">
+    <div className="space-y-8">
       {/* Page Header */}
       <PageHeader icon={Home} title="Dashboard" subtitle={`Übersicht über Ihre Rechnungen und ${terminology.entity.plural}`} />
 

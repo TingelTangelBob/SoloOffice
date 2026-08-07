@@ -5,7 +5,7 @@ import logger from '../utils/logger.js';
 import { hasPermission } from '../middleware/auth.js';
 
 const router = express.Router();
-const supportedResources = new Set(['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials']);
+const supportedResources = new Set(['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries']);
 const MAX_IMPORT_ROWS = 5000;
 const MAX_DETAIL_ROWS = 250;
 const MAX_IMPORT_CELL_LENGTH = 100000;
@@ -608,12 +608,123 @@ async function planPositions(client, rows, duplicateMode) {
   return { entries, positionTemplates: existing };
 }
 
+const euerCategories = new Set([
+  'other_income', 'materials', 'office', 'software', 'telecommunications',
+  'travel', 'vehicle', 'marketing', 'professional_services', 'insurance',
+  'bank_fees', 'other_expense',
+]);
+
+function normaliseEuerCategory(value) {
+  const source = normaliseKey(value);
+  const aliases = {
+    material: 'materials',
+    materialien: 'materials',
+    waren: 'materials',
+    office: 'office',
+    buero: 'office',
+    buerobedarf: 'office',
+    buerokosten: 'office',
+    burobedarf: 'office',
+    burokosten: 'office',
+    software: 'software',
+    lizenzen: 'software',
+    telefon: 'telecommunications',
+    internet: 'telecommunications',
+    telekommunikation: 'telecommunications',
+    reise: 'travel',
+    reisekosten: 'travel',
+    fahrzeug: 'vehicle',
+    fahrzeugkosten: 'vehicle',
+    werbung: 'marketing',
+    marketing: 'marketing',
+    beratung: 'professional_services',
+    dienstleistung: 'professional_services',
+    fremdleistung: 'professional_services',
+    fremdleistungen: 'professional_services',
+    versicherung: 'insurance',
+    versicherungen: 'insurance',
+    bankgebuehren: 'bank_fees',
+    bankgebuhren: 'bank_fees',
+    bankkosten: 'bank_fees',
+    sonstige: 'other_expense',
+    sonstigeausgabe: 'other_expense',
+    sonstigebetriebsausgaben: 'other_expense',
+    otherexpense: 'other_expense',
+  };
+  const candidate = aliases[source] || text(value);
+  return euerCategories.has(candidate) ? candidate : null;
+}
+
+async function planEuerEntries(client, rows) {
+  const existingResult = await client.query(`
+    SELECT entry_date, description, category, amount
+    FROM euer_entries
+    WHERE entry_type = 'expense' AND status = 'active'
+  `);
+  const existingIdentities = new Set(existingResult.rows.map(entry => `${entry.entry_date}|${normaliseKey(entry.description)}|${entry.category}|${Number(entry.amount).toFixed(2)}`));
+  const seen = new Set();
+  const entries = [];
+
+  rows.forEach((row, index) => {
+    const currentRow = rowNumber(row, index);
+    const entryDate = parseDate(pick(row, ['entryDate', 'entry_date', 'date', 'datum', 'buchungsdatum', 'belegdatum']));
+    const description = text(pick(row, ['description', 'beschreibung', 'bezeichnung', 'text', 'verwendungszweck', 'zweck']));
+    const amount = parseNumber(pick(row, ['amount', 'betrag', 'brutto', 'grossAmount', 'gross_amount', 'ausgabe', 'ausgabenbetrag']));
+    const categoryValue = text(pick(row, ['category', 'kategorie', 'ausgabenkategorie', 'kostenart']));
+    const category = normaliseEuerCategory(categoryValue) || 'other_expense';
+    const rawTaxRate = pick(row, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz']);
+    const taxRate = rawTaxRate === undefined ? 0 : parseNumber(rawTaxRate);
+
+    if (!entryDate) {
+      entries.push(resultEntry([currentRow], 'error', 'Datum der Ausgabe fehlt oder ist ungültig.'));
+      return;
+    }
+    if (!description || description.length > 255) {
+      entries.push(resultEntry([currentRow], 'error', 'Eine Beschreibung ist erforderlich und darf höchstens 255 Zeichen enthalten.'));
+      return;
+    }
+    if (amount === null || amount < 0) {
+      entries.push(resultEntry([currentRow], 'error', 'Betrag ist ungültig oder fehlt.'));
+      return;
+    }
+    if (taxRate === null || taxRate < 0 || taxRate > 100) {
+      entries.push(resultEntry([currentRow], 'error', 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.'));
+      return;
+    }
+
+    const identity = `${entryDate}|${normaliseKey(description)}|${category}|${amount.toFixed(2)}`;
+    if (seen.has(identity) || existingIdentities.has(identity)) {
+      entries.push(resultEntry([currentRow], 'duplicate', 'Diese Ausgabe ist bereits vorhanden oder doppelt in der Importdatei enthalten.'));
+      return;
+    }
+    seen.add(identity);
+
+    const warnings = [];
+    if (!categoryValue) warnings.push('Kategorie wird als sonstige Betriebsausgabe übernommen');
+    else if (!normaliseEuerCategory(categoryValue)) warnings.push('Unbekannte Kategorie wird als sonstige Betriebsausgabe übernommen');
+    if (rawTaxRate === undefined) warnings.push('MwSt.-Satz wird mit 0 % übernommen');
+    const data = {
+      entryType: 'expense',
+      entryDate,
+      description,
+      category,
+      amount,
+      taxRate,
+      notes: text(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'])) || null,
+      sourceType: 'manual',
+    };
+    entries.push(resultEntry([currentRow], warnings.length ? 'warning' : 'valid', warnings.length ? `${warnings.join(', ')}.` : 'Ausgabe kann angelegt werden.', data));
+  });
+  return { entries };
+}
+
 async function createPlan(client, resource, rows, duplicateMode) {
   switch (resource) {
     case 'customers': return planCustomers(client, rows, duplicateMode);
     case 'jobs': return planJobs(client, rows, duplicateMode);
     case 'quotes': return planQuotes(client, rows, duplicateMode);
     case 'positions': return planPositions(client, rows, duplicateMode);
+    case 'euerEntries': return planEuerEntries(client, rows);
     case 'hourlyRates':
     case 'materials':
       return planSimpleMaster(client, resource, rows, duplicateMode);
@@ -694,6 +805,17 @@ async function applyMaster(client, resource, entry) {
   } else {
     await client.query(`INSERT INTO ${table} (name, description, unit_price, unit, tax_rate, is_default) VALUES ($1, $2, $3, $4, $5, $6)`, [data.name, data.description || '', data.unitPrice, data.unit, data.taxRate, data.isDefault]);
   }
+  return 'created';
+}
+
+async function applyEuerEntry(client, entry) {
+  const data = entry.data;
+  await client.query(`
+    INSERT INTO euer_entries (
+      entry_type, entry_date, description, category, amount, tax_rate, notes,
+      source_type, source_id, status, correction_reason
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NULL, 'active', NULL)
+  `, [data.entryType, data.entryDate, data.description, data.category, data.amount, data.taxRate, data.notes || null]);
   return 'created';
 }
 
@@ -785,6 +907,7 @@ async function applyPlan(client, resource, plan) {
     if (resource === 'customers') results.push(await applyCustomer(client, entry));
     else if (resource === 'jobs') results.push(await applyJob(client, entry));
     else if (resource === 'quotes') results.push(await applyQuote(client, entry));
+    else if (resource === 'euerEntries') results.push(await applyEuerEntry(client, entry));
     else results.push(await applyMaster(client, resource, entry));
   }
   return results;
