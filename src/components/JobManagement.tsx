@@ -1378,7 +1378,11 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                                 <option value="invoiced">Abgerechnet</option>
                               </select>
                             </label>
-                            {job.recurrence && <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" title="Wiederkehrender Kurs" />}
+                            {job.recurrence && (
+                              <span title="Wiederkehrender Kurs">
+                                <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />
+                              </span>
+                            )}
                           </div>
                           <div className="2xl:hidden">
                             <ActionMenu
