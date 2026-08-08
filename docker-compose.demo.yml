@@ -35,10 +35,15 @@ services:
     # Die Demo verarbeitet keine Eingaben serverseitig – sie liefert nur
     # statische Dateien aus. Deshalb so eng wie möglich einschnüren.
     read_only: true
+    # uid/gid sind zwingend: Das Image läuft als Nutzer "nginx" (101:101) und
+    # das Dockerfile setzt die Rechte auf /var/cache/nginx korrekt. Ein tmpfs
+    # ohne diese Angaben legt sich aber als root-eigenes Dateisystem darüber
+    # und macht das wieder zunichte – nginx scheitert dann beim Start an
+    # "mkdir /var/cache/nginx/client_temp: Permission denied".
     tmpfs:
-      - /tmp
-      - /var/cache/nginx
-      - /var/run
+      - /tmp:uid=101,gid=101
+      - /var/cache/nginx:uid=101,gid=101
+      - /var/run:uid=101,gid=101
     security_opt:
       - no-new-privileges:true
     cap_drop:

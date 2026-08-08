@@ -2,6 +2,56 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## [v0.5] – Öffentliche Demo und Betriebsmodi
+
+Der Release ergänzt einen eigenständigen Demo-Betrieb sowie vorbereitete
+Container- und Deployment-Abläufe für eine öffentliche Vorführung und ein
+gehostetes Betriebsmodell.
+
+### Neue Funktionen
+
+- Eigenständiger Demo-Modus ohne Backend, Datenbank oder Secrets; die Demo hält
+  ihren Zustand ausschließlich im `localStorage` des Browsers.
+- Dauerhafter Demo-Hinweis mit Zurücksetzen der Testdaten und Verweis auf den
+  Quelltext der exakt laufenden Commit-Fassung.
+- Automatische Aktualisierung veralteter Demodaten nach 14 Tagen sowie ein
+  Hinweis mit manueller Auffrischung, wenn eigene Änderungen vorhanden sind.
+- Separate Docker-Compose-Konfiguration für die öffentliche Demo mit eigener
+  nginx-Konfiguration und Healthcheck.
+- SaaS-Compose-Override und `.env`-Vorlage für sichere Cookies, HSTS,
+  Einladungsbetrieb, E-Mail-Bestätigung, CORS und Ressourcenlimits.
+
+### Verbesserungen
+
+- GitHub-Actions-Workflow zum Prüfen, Bauen und Veröffentlichen des Demo-Images
+  in der GitHub Container Registry mit beweglichem `main`-Tag und
+  unveränderlichem Commit-Tag.
+- Pull-basiertes Server-Deployment mit systemd-Timer, Healthcheck,
+  versionsbezogenem Rollback und begrenzter Image-Bereinigung dokumentiert.
+- Demo-Container mit Read-only-Dateisystem, reduzierten Linux-Capabilities,
+  `no-new-privileges`, Speicherlimit und begrenzter Protokollierung gehärtet.
+- Demo-Datensätze verwenden nun Datums- und Jahresbezüge relativ zum aktuellen
+  Datum und bleiben dadurch auch über den Jahreswechsel konsistent.
+- Kontrastberechnung für dynamische Primärfarben an helle und dunkle Flächen
+  angepasst; Demo-Firmendaten werden vollständig vorbelegt.
+
+### Fehlerbehebungen
+
+- Veraltete Demo-Daten werden nach längerer Pause nicht mehr dauerhaft mit
+  überfälligen Terminen, Rechnungen und EÜR-Einträgen angezeigt.
+- Automatische Statusaktualisierungen werden nicht fälschlich als eigene
+  Änderungen des Besuchers gewertet.
+- Demo-Updates laden durch passende Cache-Regeln zuverlässig das aktuelle
+  Bundle; der Dienst kann über `/healthz` geprüft werden.
+
+### Bekannte Einschränkungen
+
+- Die SaaS-Konfiguration ist eine technische Vorbereitung und noch kein
+  vollständig buchbares Hosting-Produkt. Control Plane, Objektspeicher,
+  Offsite-Backups und ein vollständiger Multiuser-Laufzeitcheck fehlen noch.
+- Die öffentliche Demo ist eine Vorführung; ihre Daten bleiben lokal im Browser
+  und werden nicht an einen Server übertragen.
+
 ## [v0.4] – Beta-Release
 
 Aktueller SoloOffice-Beta-Release mit erweitertem Identitäts-, Workspace-, eRechnungs-, Dokumenten- und Auftragsumfang.
@@ -59,4 +109,5 @@ Aktueller SoloOffice-Beta-Release mit erweitertem Identitäts-, Workspace-, eRec
 Erster SoloOffice-Teststand mit Rechnungsverwaltung, E-Rechnung, Kunden- und Auftragsverwaltung, EÜR-Grundfunktionen, Belegverwaltung, Anlagenverzeichnis und lokalen Demo-Abläufen.
 
 [v0.4]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.4
+[v0.5]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.5
 [0.1.0]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.1
