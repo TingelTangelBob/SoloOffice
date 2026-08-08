@@ -1,0 +1,70 @@
+# Betriebsart „Demo" – öffentliche Vorführung unter demo.solooffice.de
+#
+# Diese Datei ist ABSICHTLICH eigenständig und erbt nichts von
+# docker-compose.yml. Grund: Docker Compose kann beim Zusammenführen mehrerer
+# Dateien Dienste hinzufügen und verändern, aber nicht ENTFERNEN. Ein Override
+# auf die Basis würde PostgreSQL und Backend trotzdem starten – beides braucht
+# die Demo nicht, sie hält ihren gesamten Zustand im localStorage des Browsers.
+#
+# Start:
+#   docker compose -f docker-compose.demo.yml up -d --build
+#
+# Es werden keine Datenbank, kein Backend, keine Volumes und keine Secrets
+# benötigt. Fällt der Container aus, gehen keine Daten verloren.
+
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+      args:
+        VITE_DEMO_MODE: "true"
+        VITE_COMMIT_SHA: ${VITE_COMMIT_SHA:-unknown}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-dev}
+    image: ${DEMO_IMAGE:-solooffice-demo:local}
+    container_name: solooffice-demo
+    restart: unless-stopped
+
+    # Nur an die Loopback-Adresse binden. So erreicht ein auf dem Host
+    # laufender Reverse-Proxy (Caddy, nginx) den Dienst, das Internet aber
+    # nicht direkt. Läuft der Proxy stattdessen selbst in Docker, diesen Block
+    # entfernen, `expose` verwenden und den Proxy ins selbe Netz hängen.
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-8081}:80"
+
+    # Die Demo verarbeitet keine Eingaben serverseitig – sie liefert nur
+    # statische Dateien aus. Deshalb so eng wie möglich einschnüren.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+    # Die Maschine teilt sich Arbeitsspeicher mit weiteren Diensten
+    # (Mattermost, n8n, LiteLLM, zwei PostgreSQL-Instanzen). Harte Obergrenze,
+    # damit die Demo im Fehlerfall keinen davon verdrängt.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

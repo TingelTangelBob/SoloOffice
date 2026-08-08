@@ -9,6 +9,8 @@ import { useQuotes } from '../context/QuoteContext';
 import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
 import { useAuth } from '../context/AuthContext';
+import { DemoNotice } from './DemoNotice';
+import { isDemoMode } from '../services/demoApi';
 
 interface LayoutProps {
   children: ReactNode;
@@ -450,7 +452,16 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             />
           </nav>
 
-          <main className="min-h-screen min-w-0 flex-1 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 safe-area-bottom">
+          {/* Im Demo-Modus steht unten eine fest positionierte Hinweisleiste.
+              Ohne zusätzlichen Abstand läge der letzte Inhalt darunter – auf
+              Mobilgeräten trifft das sonst genau die Schaltflächen am
+              Formularende. `demo-bar-space` ersetzt `safe-area-bottom`, statt
+              es zu ergänzen (siehe Begründung in index.css). */}
+          <main
+            className={`min-h-screen min-w-0 flex-1 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 ${
+              isDemoMode ? 'demo-bar-space' : 'safe-area-bottom'
+            }`}
+          >
             <div className={`mx-auto w-full ${contentWidthClass}`}>
               {!companySetupComplete && currentPage !== 'settings' && (
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
@@ -463,6 +474,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           </main>
         </div>
       </div>
+
+      {/* Rendert nur im Demo-Modus; im Self-Hosting gibt die Komponente
+          null zurück. */}
+      <DemoNotice />
     </>
   );
 }

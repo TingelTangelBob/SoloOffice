@@ -1,0 +1,20 @@
+# Zeilenenden im Repository immer LF – unabhängig vom Betriebssystem des
+# Beitragenden. Ohne diese Datei hat ein Ordnertransfer über Windows einmal
+# 138 Dateien auf CRLF umgestellt; der Diff umfasste 37.893 Zeilen ohne eine
+# einzige inhaltliche Änderung.
+* text=auto eol=lf
+
+# Shell-Skripte müssen LF haben, sonst scheitert die Ausführung im Container
+# mit „bad interpreter".
+*.sh text eol=lf
+
+# Binärdateien nie anfassen.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

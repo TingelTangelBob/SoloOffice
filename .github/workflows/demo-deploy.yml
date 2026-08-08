@@ -1,0 +1,99 @@
+# Baut das Demo-Image für demo.solooffice.de und veröffentlicht es in der
+# GitHub Container Registry (GHCR).
+#
+# BETRIEBSMODELL: Hol-Prinzip. Dieser Workflow deployt NICHT selbst – er baut
+# und veröffentlicht nur. Der Hetzner-Server prüft per systemd-Timer
+# regelmäßig, ob unter dem Tag "main" eine neue Fassung liegt, und tauscht sie
+# dann aus (siehe deploy/solooffice-demo-update.* im Repository).
+#
+# Warum so: Auf dem Server liegen weitere Projekte (Mattermost, n8n, LiteLLM,
+# Roomverse). Beim Gegenmodell müsste ein privater SSH-Schlüssel zu genau
+# dieser Maschine bei GitHub hinterlegt werden – ein kompromittiertes
+# GitHub-Konto hätte damit Zugriff auf alles, was dort läuft. So bleibt der
+# mögliche Schaden auf die Registry begrenzt.
+#
+# Der Bau läuft bewusst hier und nicht auf dem Server: npm-Installation, Lint,
+# Typecheck und Vite-Build belegen minutenlang CPU; auf dem geteilten CX33
+# würde das die Antwortzeiten der Nachbarprojekte drücken.
+#
+# Benötigte Secrets: KEINE. Die Anmeldung an GHCR läuft über den automatisch
+# bereitgestellten GITHUB_TOKEN.
+#
+# Voraussetzung auf Serverseite: Das Paket muss in GHCR auf „public" stehen,
+# sonst kann der Server es nicht ohne Zugangsdaten ziehen. Bei einer
+# AGPL-lizenzierten Anwendung ist das ohnehin stimmig.
+
+name: SoloOffice Demo-Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Zwei gleichzeitige Läufe würden denselben "main"-Tag überschreiben. Ein
+# bereits laufender Bau darf abgebrochen werden – sein Ergebnis wäre ohnehin
+# sofort veraltet, und der Server holt sich beim nächsten Durchlauf den
+# aktuellen Stand.
+concurrency:
+  group: demo-image
+  cancel-in-progress: true
+
+# Nur lesen und Pakete schreiben – mehr braucht dieser Workflow nicht.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/tingeltangelbob/solooffice-demo
+
+jobs:
+  build-und-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: App-Version aus package.json lesen
+        # Fließt nur als Anzeige-Version ins Bundle (VITE_APP_VERSION); die
+        # AGPL-relevante Nachverfolgbarkeit hängt an VITE_COMMIT_SHA weiter
+        # unten, nicht an dieser Versionsnummer.
+        id: version
+        run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Bei GHCR anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN reicht dank "packages: write" oben aus – ein
+          # zusätzliches Registry-Secret ist damit nicht nötig.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Demo-Image bauen und pushen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.demo
+          push: true
+          # Tag "main" ist der bewegliche Zeiger, dem der Server folgt.
+          # Zusätzlich der volle Commit-Hash als unveränderlicher Verweis auf
+          # genau diesen Bau – nötig für Rollbacks (Server-Timer auf einen
+          # festen Hash zeigen lassen) und für die Rückverfolgbarkeit nach
+          # AGPL § 13.
+          tags: |
+            ${{ env.IMAGE_NAME }}:main
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          build-args: |
+            VITE_DEMO_MODE=true
+            VITE_API_URL=/api
+            VITE_COMMIT_SHA=${{ github.sha }}
+            VITE_APP_VERSION=${{ steps.version.outputs.value }}
+          # GitHub-Actions-Cache statt Registry-Cache: kein zusätzliches
+          # Cache-Image nötig, und der Cache steht auch PRs/Forks ohne
+          # Push-Rechte zur Verfügung.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

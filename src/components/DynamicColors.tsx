@@ -67,6 +67,49 @@ export function DynamicColors() {
   const primaryMedium = lightenColor(primaryColor, 80);
   const secondaryLight = lightenColor(secondaryColor, 90);
 
+  /**
+   * Kontrastverhältnis nach WCAG zwischen zwei Farben.
+   */
+  const contrastRatio = (foreground: string, background: string) => {
+    const a = getLuminance(foreground);
+    const b = getLuminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+
+  /**
+   * Akzentfarbe so weit aufhellen bzw. abdunkeln, bis sie auf der jeweiligen
+   * Fläche lesbar ist (WCAG AA, 4,5:1 für Fließtext).
+   *
+   * Hintergrund: Die Akzentfarbe ist frei einstellbar und wurde bisher in
+   * beiden Themes unverändert als Textfarbe verwendet. Im Dunkelmodus ergab
+   * der Standardwert #2563eb auf den dunklen Flächen nur 2,84:1 – für Links
+   * und den aktiven Navigationseintrag deutlich zu wenig. Statt einzelne
+   * Regeln nachzubessern, wird der Wert hier einmal zentral tauglich gemacht.
+   */
+  const accessibleOn = (color: string, background: string, target = 4.5) => {
+    const toHex = (value: number) => Math.round(value).toString(16).padStart(2, '0');
+    const hex = color.replace('#', '');
+    const channels = [0, 2, 4].map(offset => parseInt(hex.substr(offset, 2), 16));
+    if (channels.some(Number.isNaN)) return color;
+
+    const backgroundIsDark = getLuminance(background) < 0.5;
+    let candidate = color;
+    // In 5-%-Schritten annähern; 20 Schritte reichen bis Weiß bzw. Schwarz.
+    for (let step = 0; step <= 20; step++) {
+      const mixed = channels.map(value => (backgroundIsDark
+        ? value + (255 - value) * (step * 0.05)
+        : value * (1 - step * 0.05)));
+      candidate = `#${mixed.map(toHex).join('')}`;
+      if (contrastRatio(candidate, background) >= target) return candidate;
+    }
+    return candidate;
+  };
+
+  // Flächen, auf denen die Akzentfarbe als Text erscheint: helle Karten (weiß)
+  // und dunkle Karten (#1f2937, siehe Regel für .bg-white im Dunkelmodus).
+  const primaryOnLightSurface = accessibleOn(primaryColor, '#ffffff');
+  const primaryOnDarkSurface = accessibleOn(primaryColor, '#1f2937');
+
   useEffect(() => {
     const appShell = document.getElementById('app-shell');
     if (!appShell) return undefined;
@@ -79,6 +122,12 @@ export function DynamicColors() {
         : 'light';
       appShell.dataset.theme = resolvedTheme;
       appShell.style.colorScheme = resolvedTheme;
+      // Muss beim Themenwechsel mitgeführt werden – deshalb hier und nicht
+      // einmalig weiter unten.
+      appShell.style.setProperty(
+        '--primary-on-surface',
+        resolvedTheme === 'dark' ? primaryOnDarkSurface : primaryOnLightSurface,
+      );
     };
 
     appShell.style.setProperty('--primary-color', primaryColor);
@@ -94,7 +143,7 @@ export function DynamicColors() {
     return () => {
       mediaQuery.removeEventListener('change', applyTheme);
     };
-  }, [company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, secondaryColor, secondaryLight, secondaryTextColor]);
+  }, [company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, primaryOnDarkSurface, primaryOnLightSurface, secondaryColor, secondaryLight, secondaryTextColor]);
 
   return (
     <style>
@@ -198,7 +247,7 @@ export function DynamicColors() {
         /* Navigation active state */
         #app-shell .nav-active {
           background-color: var(--primary-light) !important;
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
           border-right: 2px solid var(--primary-color) !important;
         }
         
@@ -210,15 +259,15 @@ export function DynamicColors() {
         /* Status colors - override for primary colored elements */
         #app-shell .status-sent {
           background-color: var(--primary-light) !important;
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
         }
         
         /* Links */
         #app-shell .link-primary {
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
         }
         #app-shell .link-primary:hover {
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
           filter: brightness(0.8) !important;
         }
 
@@ -365,7 +414,7 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .nav-active {
           background-color: #374151 !important;
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
           border-right-color: var(--primary-color) !important;
         }
         #app-shell[data-theme="dark"] .action-button {

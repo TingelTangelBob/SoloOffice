@@ -1,0 +1,78 @@
+# Betriebsart „Hosting-Abo" (SaaS) – Override auf docker-compose.yml
+#
+# Start:
+#   docker compose -f docker-compose.yml -f docker-compose.saas.yml up -d
+#
+# Anders als die Demo ist das KEIN eigener Stack, sondern dieselbe Anwendung
+# wie beim Self-Hosting mit anderer Konfiguration. Genau so ist es im
+# Betriebsmodell festgelegt: eine Codebasis, keine Funktionsunterschiede.
+#
+# ------------------------------------------------------------------------
+# WICHTIG – was diese Datei NICHT leistet
+#
+# Sie macht aus dem Stack kein buchbares Produkt. Es fehlen weiterhin:
+#   * Control Plane (Tarife, Abrechnung, Bereitstellung, Sperren)
+#   * Objektspeicher für Belege – diese liegen weiterhin als Base64 in der
+#     Datenbank (Audit 1 · B5). `STORAGE_DRIVER` existiert im Code NICHT.
+#   * Offsite-Backups – `BACKUP_TARGET` existiert im Code NICHT.
+#   * Der Multiuser-Durchlauf wurde nie zur Laufzeit geprüft. Im pooled
+#     Betrieb ist Row-Level Security das Einzige, was Kundendaten trennt.
+#     Das ist eine Startvoraussetzung, keine Fleißaufgabe.
+#
+# Hier stehen deshalb ausschließlich Schalter, die im Quelltext tatsächlich
+# ausgewertet werden.
+# ------------------------------------------------------------------------
+
+services:
+  backend:
+    environment:
+      # Sitzungscookies nur über HTTPS ausliefern (middleware/auth.js).
+      - COOKIE_SECURE=true
+      - COOKIE_SAME_SITE=${COOKIE_SAME_SITE:-lax}
+      # HSTS-Header setzen (server.js). Nur sinnvoll, wenn TLS wirklich steht –
+      # ein verfrühtes HSTS sperrt Besucher bei einem Zertifikatsfehler aus.
+      - ENABLE_HSTS=true
+      # Der Proxy setzt X-Forwarded-For; ohne das ist req.ip die Container-IP
+      # und die Anmeldedrosselung greift am falschen Schlüssel.
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+      # Öffentliche Registrierung gehört in den Control Plane. Bis dahin nur
+      # auf Einladung (auth.js wertet 'invite-only' aus).
+      - REGISTRATION_MODE=${REGISTRATION_MODE:-invite-only}
+      - REQUIRE_EMAIL_VERIFICATION=true
+      - CORS_ORIGIN=${CORS_ORIGIN:?CORS_ORIGIN muss die echte Adresse sein, z. B. https://app.solooffice.de}
+    deploy:
+      resources:
+        limits:
+          memory: ${BACKEND_MEMORY_LIMIT:-1g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  database:
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-1g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    # Im gehosteten Betrieb terminiert ein Reverse-Proxy TLS. Der Container
+    # darf deshalb NICHT direkt am öffentlichen Interface hängen – nur an
+    # Loopback, damit der Proxy ihn erreicht und sonst niemand.
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

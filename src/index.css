@@ -515,6 +515,25 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /*
+   * Freiraum unter dem Inhalt, wenn im Demo-Modus die feste Hinweisleiste
+   * steht.
+   *
+   * Bewusst eine eigene Regel statt `safe-area-bottom` plus `pb-16`: Beide
+   * setzen padding-bottom, und welche gewinnt, entscheidet allein die
+   * Reihenfolge im erzeugten CSS. Auf Geräten ohne Aussparung liefert
+   * env(safe-area-inset-bottom) den Wert 0 – der Inhalt lag dadurch unter der
+   * Leiste. calc() führt beides in einem einzigen Wert zusammen.
+   *
+   * Der Klassenname steht doppelt, um die Spezifität anzuheben: Sonst
+   * überschreibt die Kurzform `lg:p-6` des Elements den Wert ab dem
+   * lg-Haltepunkt wieder auf 24 px – zu wenig für die 57 px hohe Leiste.
+   * Ein `!important` wäre die Alternative, wirkt aber breiter als nötig.
+   */
+  .demo-bar-space.demo-bar-space {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
+  }
+
   .touch-target {
     min-height: 44px;
     min-width: 44px;

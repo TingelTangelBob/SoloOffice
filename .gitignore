@@ -1,5 +1,8 @@
 .env
 .env.*
+# Vorlagen ohne Geheimnisse gehören ins Repository – sie dokumentieren, welche
+# Variablen eine Betriebsart braucht.
+!.env.*.example
 .DS_Store
 *.backup
 node_modules

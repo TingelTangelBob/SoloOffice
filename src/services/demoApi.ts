@@ -22,6 +22,10 @@ interface DemoState {
   company: DemoRecord;
   seedProfile?: TerminologyProfile;
   seedVersion?: number;
+  /** Zeitpunkt der Erzeugung – Grundlage für die Alterungsprüfung. */
+  seededAt?: string;
+  /** true, sobald der Besucher selbst etwas geändert hat (siehe saveState). */
+  touched?: boolean;
 }
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
@@ -44,7 +48,64 @@ function getDemoDataStorageKey(): string {
   return workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`;
 }
 
-const DEMO_SEED_VERSION = 4;
+// Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
+// werden dadurch beim nächsten Laden neu aufgebaut.
+const DEMO_SEED_VERSION = 5;
+
+/**
+ * Nach dieser Zeit gelten die Demodaten als veraltet.
+ *
+ * Die Daten werden relativ zu „heute" erzeugt, aber im localStorage
+ * eingefroren. Ohne Alterungsprüfung sähe ein wiederkehrender Besucher nach
+ * Wochen einen leeren Kalender, längst überfällige Rechnungen und eine EÜR
+ * ohne aktuelle Buchungen.
+ */
+const DEMO_MAX_AGE_DAYS = 14;
+
+/**
+ * Wahr, wenn die gespeicherten Demodaten veraltet sind, der Besucher aber
+ * selbst etwas geändert hat. Dann wird NICHT automatisch neu aufgebaut – seine
+ * Arbeit soll nicht unangekündigt verschwinden. Die Oberfläche kann darauf
+ * einen Hinweis mit Angebot zum Zurücksetzen stützen.
+ */
+let demoDataStale = false;
+
+/**
+ * Ob die gerade laufende Anfrage den Zustand im Auftrag des Besuchers ändert.
+ * Wird zu Beginn jeder Anfrage gesetzt und von saveState ausgewertet.
+ */
+let currentRequestMutates = false;
+
+/**
+ * Ob eine Anfrage als Änderung *des Besuchers* zählt.
+ *
+ * Nicht jede schreibende Anfrage ist eine Nutzeraktion: Das Dashboard markiert
+ * beim Laden automatisch überfällige Rechnungen (Dashboard.tsx). Würde das als
+ * Änderung zählen, wäre jeder Zustand Sekunden nach dem ersten Aufruf „berührt"
+ * und die Auffrischung der Demodaten könnte nie greifen.
+ *
+ * Deshalb: Anlegen, Löschen und Teiländerungen zählen immer. Ein PUT zählt nur,
+ * wenn es mehr als den Status setzt – reine Statuswechsel stammen in aller
+ * Regel aus dieser automatischen Wartung.
+ */
+function isUserEdit(method: string, body: Record<string, unknown>): boolean {
+  if (method === 'GET') return false;
+  if (method === 'PUT') {
+    const keys = Object.keys(body || {});
+    return keys.length > 0 && keys.some(key => key !== 'status');
+  }
+  return true;
+}
+
+export function isDemoDataStale(): boolean {
+  return demoDataStale;
+}
+
+function ageInDays(iso: unknown): number {
+  const parsed = Date.parse(String(iso ?? ''));
+  if (!Number.isFinite(parsed)) return Number.POSITIVE_INFINITY;
+  return (Date.now() - parsed) / 86400000;
+}
 
 interface DemoProfileFixture {
   primaryColor: string;
@@ -126,7 +187,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     ];
     const totals = calculateItems(items);
     return {
-      id: generateUUID(), invoiceNumber: `RE-2026-${String(index + 1).padStart(3, '0')}`,
+      id: generateUUID(), invoiceNumber: `RE-${yearOf(-(index * 4 + 1))}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name,
       issueDate: isoDate(-(index * 4 + 1)), dueDate: isoDate(14 - index * 3),
       items, ...totals,
@@ -140,7 +201,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     const items = [makeItem(fixture.workTitles[(index + 2) % fixture.workTitles.length], 680 + index * 95, (index % 2) + 1, 0)];
     const totals = calculateItems(items);
     return {
-      id: generateUUID(), quoteNumber: `AN-2026-${String(index + 1).padStart(3, '0')}`,
+      id: generateUUID(), quoteNumber: `AN-${yearOf(-(index * 6 + 2))}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name, issueDate: isoDate(-(index * 6 + 2)), validUntil: isoDate(20 - index * 2),
       items, ...totals, status: (['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'][index]),
       notes: fixture.workDescription, createdAt: isoDate(-(index * 6 + 2)),
@@ -150,7 +211,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   const jobs: DemoRecord[] = Array.from({ length: 8 }, (_, index) => {
     const customer = customerAt(index + 1);
     return {
-      id: generateUUID(), jobNumber: `AU-2026-${String(index + 1).padStart(3, '0')}`,
+      id: generateUUID(), jobNumber: `AU-${yearOf(index - 3)}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name, customerAddress: customer.address,
       title: fixture.workTitles[index % fixture.workTitles.length], description: fixture.workDescription,
       date: isoDate(index - 3), startTime: ['08:00', '09:30', '10:30', '13:00'][index % 4], endTime: ['10:00', '11:30', '12:30', '15:00'][index % 4],
@@ -217,7 +278,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   }));
   state.receipts = Array.from({ length: 5 }, (_, index) => {
     const vendorName = ['Bürobedarf Schmidt', 'Stadtwerke', 'Cloud Services', 'Fachverlag', 'Reisebüro'][index];
-    const documentNumber = `BE-2026-${String(index + 1).padStart(3, '0')}`;
+    const documentNumber = `BE-${yearOf(-index * 9)}-${String(index + 1).padStart(3, '0')}`;
     const grossAmount = 49 + index * 57;
     const taxAmount = grossAmount * 0.19 / 1.19;
     const extractedData = {
@@ -240,7 +301,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   state.incomingEInvoices = Array.from({ length: 3 }, (_, index) => {
     const customer = customerAt(index + 2);
     const extractedData = {
-      invoiceNumber: `EINGANG-2026-${String(index + 1).padStart(3, '0')}`,
+      invoiceNumber: `EINGANG-${yearOf(-(index + 2) * 6)}-${String(index + 1).padStart(3, '0')}`,
       issueDate: dateOnly(isoDate(-(index + 2) * 6)),
       currency: 'EUR',
       supplierName: ['Nordlicht Büroservice', 'Klarwerk Software', 'Berg & Tal Immobilien'][index],
@@ -262,6 +323,8 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   };
   state.seedProfile = profile;
   state.seedVersion = DEMO_SEED_VERSION;
+  state.seededAt = isoDate();
+  state.touched = false;
   return state;
 }
 
@@ -270,6 +333,16 @@ const isoDate = (daysFromToday = 0) => {
   date.setDate(date.getDate() + daysFromToday);
   return date.toISOString();
 };
+
+/**
+ * Jahr des jeweiligen Belegdatums.
+ *
+ * Die Nummernkreise dürfen nicht auf einem festen Jahr stehen bleiben: Die
+ * Demodaten werden relativ zu „heute" erzeugt, eine fest verdrahtete Jahreszahl
+ * würde ab dem Jahreswechsel zu Belegnummern führen, die nicht zum Datum
+ * daneben passen.
+ */
+const yearOf = (daysFromToday = 0) => new Date(isoDate(daysFromToday)).getFullYear();
 
 function createInitialState(profile: TerminologyProfile = 'customers'): DemoState {
   const customers: DemoRecord[] = [
@@ -296,7 +369,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     const lineItem = item(index === 0 ? 'Beratung und Konzeption' : index === 1 ? 'Wartung und Support' : 'Materiallieferung', 450 + index * 125);
     const lineItemPrice = Number(lineItem.unitPrice || 0);
     return {
-      id: generateUUID(), invoiceNumber: `RE-2026-${String(index + 1).padStart(3, '0')}`,
+      id: generateUUID(), invoiceNumber: `RE-${yearOf(-index * 7)}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer(index).id, customerName: customer(index).name, issueDate: isoDate(-index * 7), dueDate: isoDate(14 - index * 7),
       items: [lineItem], subtotal: lineItemPrice, taxAmount: lineItemPrice * 0.19, total: lineItemPrice * 1.19,
       status: index === 0 ? 'draft' : index === 1 ? 'sent' : 'paid', notes: '', createdAt: isoDate(-index * 7),
@@ -304,7 +377,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
   });
 
   const jobs: DemoRecord[] = [0, 1, 2].map((index) => ({
-    id: generateUUID(), jobNumber: `AU-2026-${String(index + 1).padStart(3, '0')}`, customerId: customer(index).id,
+    id: generateUUID(), jobNumber: `AU-${yearOf(index - 1)}-${String(index + 1).padStart(3, '0')}`, customerId: customer(index).id,
     customerName: customer(index).name, customerAddress: customer(index).address, title: ['Website-Relaunch', 'Elektroinstallation', 'Wartungsvertrag'][index],
     description: 'Beispielauftrag für den lokalen Frontend-Test', date: isoDate(index - 1),
     startTime: ['08:00', '10:30', '14:00'][index], endTime: ['10:00', '13:30', '18:00'][index],
@@ -323,9 +396,15 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     fixedAssets: [],
     receipts: [],
     incomingEInvoices: [],
+    // Die Pflichtfelder müssen vollständig sein: Fehlt eines davon, blendet
+    // Layout.tsx auf JEDER Seite den Hinweis „Firmendaten vervollständigen"
+    // ein – in einer öffentlichen Demo der schlechteste erste Eindruck.
+    // Geprüft werden name, address, city, postalCode, email, taxId, bankAccount.
     company: {
       id: 'demo-company', name: 'Demo-Firma', address: 'Beispielstraße 1', city: 'Berlin', postalCode: '10115', country: 'Deutschland',
-      email: 'demo@example.com', primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
+      email: 'demo@example.com', phone: '030 1234567', website: 'demo.solooffice.de',
+      taxId: 'DE123456789', bankAccount: 'DE02 1203 0000 0000 2020 51', bic: 'BYLADEM1001',
+      primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
       reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
       locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
       invoiceTemplates: [], createdAt: isoDate(),
@@ -353,6 +432,24 @@ function readState(): DemoState {
       localStorage.setItem(storageKey, JSON.stringify(upgraded));
       return upgraded;
     }
+
+    // Alterungsprüfung: Die Daten sind relativ zu ihrem Erzeugungstag gebaut.
+    // Nach längerer Pause passen Kalender, Fälligkeiten und EÜR nicht mehr zum
+    // heutigen Datum.
+    if (ageInDays(parsed.seededAt) > DEMO_MAX_AGE_DAYS) {
+      if (parsed.touched) {
+        // Der Besucher hat eigene Einträge angelegt. Diese ungefragt zu
+        // verwerfen wäre übergriffig – stattdessen nur vermerken, damit die
+        // Oberfläche ein Zurücksetzen anbieten kann.
+        demoDataStale = true;
+      } else {
+        const refreshed = createInitialState(storedProfile);
+        refreshed.company = { ...refreshed.company, ...(parsed.company || {}), terminologyProfile: storedProfile };
+        localStorage.setItem(storageKey, JSON.stringify(refreshed));
+        return refreshed;
+      }
+    }
+
     return {
       ...parsed,
       yearlyInvoiceStartNumbers: parsed.yearlyInvoiceStartNumbers || [],
@@ -372,6 +469,11 @@ function readState(): DemoState {
 }
 
 function saveState(state: DemoState) {
+  // Nur echte Änderungen des Besuchers markieren. Manche Lesezugriffe
+  // schreiben ebenfalls (etwa wenn wiederkehrende Vorgänge fällig werden) –
+  // würden diese als „verändert" zählen, wäre jeder Zustand sofort nach dem
+  // ersten Seitenaufruf berührt und die Auffrischung könnte nie greifen.
+  if (currentRequestMutates) state.touched = true;
   localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(state));
 }
 
@@ -649,6 +751,10 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
         status: warnings.length ? 'warning' : 'valid',
         message: warnings.length ? `${warnings.join(', ')}.` : 'Ausgabe kann angelegt werden.',
         data: {
+          // `DemoRecord` verlangt eine id. Bei der Übernahme wird sie ohnehin
+          // durch eine frische ersetzt (siehe createdEntry weiter unten) – hier
+          // steht sie nur, damit die Vorschau dem Typ entspricht.
+          id: generateUUID(),
           entryType: 'expense', entryDate, description, category, amount, taxRate,
           notes: demoImportText(row.notes ?? row.note ?? row.notizen ?? row.bemerkung ?? row.anmerkung) || undefined,
           sourceType: 'manual',
@@ -806,6 +912,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const queryParams = new URLSearchParams(endpoint.split('?')[1] || '');
   const parts = path.split('/').filter(Boolean);
   const resource = parts[0];
+  currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
 
@@ -1510,7 +1617,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -1735,8 +1842,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
 export function resetDemoData() {
   localStorage.removeItem(getDemoDataStorageKey());
+  demoDataStale = false;
 }
 
 export function seedDemoData(profile: TerminologyProfile = 'customers') {
   localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(createInitialState(profile)));
+  demoDataStale = false;
 }
