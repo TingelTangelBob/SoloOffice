@@ -1997,8 +1997,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   if (id) {
     const index = items.findIndex(itemRecord => itemRecord.id === id);
     if (method === 'GET') {
-      const record = index >= 0 ? items[index] : {};
-      return (key === 'invoices' && index >= 0 ? withDemoPaymentState(state, record) : record) as unknown as T;
+      if (index < 0) return {} as T;
+      const record = items[index];
+      return (key === 'invoices' ? withDemoPaymentState(state, record) : record) as unknown as T;
     }
     if (method === 'PUT') {
       if (key === 'quotes' && (items[index]?.convertedToInvoiceId || items[index]?.status === 'billed')) {
