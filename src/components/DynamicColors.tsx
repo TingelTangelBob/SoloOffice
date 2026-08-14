@@ -354,6 +354,40 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-gray-50 {
           background-color: #111827 !important;
         }
+        #app-shell[data-theme="dark"] .page-header {
+          background-color: #111827 !important;
+          border-color: #273449 !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-toolbar-button,
+        #app-shell[data-theme="dark"] .calendar-period-label {
+          background-color: #1f2937 !important;
+          border-color: #475569 !important;
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-toolbar-button:hover,
+        #app-shell[data-theme="dark"] .calendar-period-label:hover {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-toolbar-outline {
+          background-color: transparent !important;
+          border-color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-toolbar-outline:hover {
+          background-color: #263244 !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-view-switcher {
+          background-color: #111827 !important;
+          border-color: #475569 !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-view-option:not(.bg-primary-custom) {
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .calendar-view-option:not(.bg-primary-custom):hover {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
         #app-shell[data-theme="dark"] .bg-gray-100 {
           background-color: #374151 !important;
         }
@@ -403,6 +437,7 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .border-slate-300 {
           border-color: #6b7280 !important;
         }
+        #app-shell[data-theme="dark"] .text-gray-950,
         #app-shell[data-theme="dark"] .text-gray-900,
         #app-shell[data-theme="dark"] .text-gray-800,
         #app-shell[data-theme="dark"] .text-gray-700 {
@@ -484,6 +519,31 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .action-icon-button:disabled {
           opacity: 0.45;
+        }
+        #app-shell[data-theme="dark"] .position-row-drag-handle {
+          color: #9ca3af !important;
+        }
+        #app-shell[data-theme="dark"] .position-row-drag-handle:hover {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell[data-theme="dark"] .position-row-action {
+          color: #d1d5db !important;
+        }
+        #app-shell[data-theme="dark"] .position-row-action:hover:not(:disabled) {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
+        }
+        #app-shell[data-theme="dark"] .position-row-delete {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .position-row-delete:hover:not(:disabled) {
+          background-color: #7f1d1d !important;
+          color: #fee2e2 !important;
+        }
+        #app-shell[data-theme="dark"] .quote-editor-option:hover {
+          background-color: #1e3a8a !important;
+          color: #eff6ff !important;
         }
         #app-shell[data-theme="dark"] .custom-checkbox:not(:checked),
         #app-shell[data-theme="dark"] .custom-radio:not(:checked) {
@@ -683,6 +743,11 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
           background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .document-preview-tool-button:hover,
+        #app-shell[data-theme="dark"] .document-preview-tool-button:focus-visible {
+          background-color: #374151 !important;
+          color: #f9fafb !important;
         }
         #app-shell[data-theme="dark"] .focus\\:bg-gray-50:focus {
           background-color: #374151 !important;

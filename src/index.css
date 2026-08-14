@@ -95,21 +95,6 @@
     user-select: none;
   }
 
-  .sidebar-brand .sidebar-toggle {
-    position: absolute;
-    left: calc(100% + 0.25rem);
-    top: 50%;
-    transform: translateY(-50%);
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .sidebar-brand:hover .sidebar-toggle,
-  .sidebar-brand:focus-within .sidebar-toggle {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
   /* Mindestgröße für Touch-Targets (44px) */
   button, 
   [role="button"], 
@@ -294,6 +279,65 @@
     @apply inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md shadow-sm transition-colors duration-200;
   }
 
+  /* Kompakte Aktionen in den Positionszeilen. Die globale Touch-Target-Regel
+     darf Drag-Handle und Pfeile nicht zu breiten bzw. hohen Leerflächen machen. */
+  .position-row-drag-handle,
+  .position-row-action {
+    @apply inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md transition-colors;
+  }
+
+  .position-row-drag-handle {
+    @apply text-gray-400;
+    cursor: move;
+    touch-action: none;
+  }
+
+  .position-row-drag-handle:hover {
+    @apply bg-gray-100 text-gray-600;
+  }
+
+  .position-row-action {
+    @apply text-gray-600;
+  }
+
+  .position-row-action:hover:not(:disabled) {
+    @apply bg-gray-100 text-gray-900;
+  }
+
+  .position-row-action:disabled {
+    @apply cursor-not-allowed opacity-30;
+  }
+
+  .position-row-delete {
+    @apply text-red-600;
+  }
+
+  .position-row-delete:hover:not(:disabled) {
+    @apply bg-red-50 text-red-700;
+  }
+
+  .position-row-drag-handle:focus-visible,
+  .position-row-action:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  /* Der Gesamtrabatt übernimmt auf großen Bildschirmen exakt das
+     Positionsraster; auf kleinen Bildschirmen darf er umbrechen. */
+  .quote-global-discount-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 1024px) {
+    .quote-global-discount-row {
+      display: grid;
+      grid-template-columns: var(--quote-position-grid-columns);
+    }
+  }
+
   /* Menu triggers are neutral actions and use the configured brand color. */
   .action-menu-trigger {
     background-color: var(--primary-light);
@@ -356,6 +400,35 @@
     display: none;
   }
 
+  /* Kalenderkopf und Steuerleiste nutzen dieselbe kompakte 40px-Rasterhöhe. */
+  .calendar-page-header {
+    min-width: 0;
+  }
+
+  .calendar-toolbar-control {
+    min-height: 2.5rem;
+  }
+
+  .calendar-toolbar-button {
+    background-color: #ffffff;
+    color: #475569;
+  }
+
+  .calendar-toolbar-button:hover {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  .calendar-toolbar-outline:hover {
+    background-color: var(--primary-light);
+  }
+
+  .calendar-view-option:focus-visible,
+  .calendar-toolbar-control:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
   /* Aktionsleiste am Ende von Formularen und Dialogen.
      Die Schaltflächen teilen sich auch auf schmalen Geräten eine Zeile und
      bleiben mittig beschriftet. Erst wenn die Beschriftungen nebeneinander
@@ -366,6 +439,393 @@
 
   .form-action-bar > button {
     @apply inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap sm:flex-none;
+  }
+
+  /* Kalender-Terminvorschau: bewusst als eigene Oberfläche statt als
+     generischen weißen Dialog gestalten. Die Detailansicht folgt einem
+     zweispaltigen Summary-Raster mit festen Zeilen und einer klaren
+     Kopf-/Fußzone. */
+  .calendar-job-preview-overlay {
+    background: rgb(2 8 23 / 0.76);
+    backdrop-filter: blur(5px);
+  }
+
+  .calendar-job-preview {
+    --calendar-preview-surface: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+    --calendar-preview-border: #cbd5e1;
+    --calendar-preview-divider: #e2e8f0;
+    --calendar-preview-heading: #0f172a;
+    --calendar-preview-body: #1e293b;
+    --calendar-preview-muted: #64748b;
+    --calendar-preview-accent: var(--primary-on-surface, var(--primary-color, #2563eb));
+    --calendar-preview-icon-surface: var(--primary-light, #eff6ff);
+    --calendar-preview-icon-border: var(--primary-color, #2563eb);
+    --calendar-preview-chip-surface: var(--primary-light, #eff6ff);
+    --calendar-preview-chip-border: var(--primary-color, #2563eb);
+    --calendar-preview-chip-text: var(--primary-on-surface, var(--primary-color, #2563eb));
+    --calendar-preview-footer: rgb(248 250 252 / 0.86);
+    display: flex;
+    width: 100%;
+    max-width: 1180px;
+    max-height: calc(100dvh - 4rem);
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--calendar-preview-border);
+    border-radius: 22px;
+    background: var(--calendar-preview-surface);
+    color: var(--calendar-preview-body);
+    box-shadow: 0 28px 90px rgb(0 0 0 / 0.45);
+  }
+
+  .calendar-job-preview-header {
+    position: relative;
+    padding: 2.25rem 2.5rem 1.25rem;
+  }
+
+  .calendar-job-preview-eyebrow {
+    color: var(--calendar-preview-accent);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  .calendar-job-preview-title {
+    margin-top: 0.75rem;
+    color: var(--calendar-preview-heading);
+    font-size: clamp(2rem, 3vw, 3rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+  }
+
+  .calendar-job-preview-subtitle {
+    margin-top: 0.55rem;
+    color: var(--calendar-preview-muted);
+    font-size: clamp(1rem, 1.5vw, 1.3rem);
+    line-height: 1.35;
+  }
+
+  .calendar-job-preview-close {
+    position: absolute;
+    right: 1.75rem;
+    top: 1.5rem;
+    display: inline-flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    min-height: 0;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.625rem;
+    color: var(--calendar-preview-muted);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  .calendar-job-preview-close:hover {
+    background: rgb(148 163 184 / 0.14);
+    color: var(--calendar-preview-heading);
+  }
+
+  .calendar-job-preview-header-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--calendar-preview-divider);
+  }
+
+  .calendar-job-preview-status,
+  .calendar-job-preview-date {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.55rem;
+    border-radius: 1rem;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+
+  .calendar-job-preview-status {
+    border: 1px solid var(--calendar-preview-chip-border);
+    background: var(--calendar-preview-chip-surface);
+    color: var(--calendar-preview-chip-text);
+    font-weight: 600;
+  }
+
+  .calendar-job-preview-date {
+    border: 1px solid var(--calendar-preview-border);
+    background: rgb(148 163 184 / 0.04);
+    color: var(--calendar-preview-body);
+  }
+
+  .calendar-job-preview-status svg,
+  .calendar-job-preview-date svg {
+    height: 1.25rem;
+    width: 1.25rem;
+    color: var(--calendar-preview-accent);
+  }
+
+  .calendar-job-preview-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 2.5rem;
+  }
+
+  .calendar-job-preview-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid var(--calendar-preview-divider);
+  }
+
+  .calendar-job-preview-detail-column {
+    padding: 0 2rem 0 0;
+  }
+
+  .calendar-job-preview-detail-column + .calendar-job-preview-detail-column {
+    border-left: 1px solid var(--calendar-preview-divider);
+    padding: 0 0 0 2rem;
+  }
+
+  .calendar-job-preview-detail-row {
+    display: flex;
+    min-height: 5.75rem;
+    align-items: center;
+    gap: 1.25rem;
+    border-bottom: 1px solid var(--calendar-preview-divider);
+  }
+
+  .calendar-job-preview-detail-row:last-child {
+    border-bottom: 0;
+  }
+
+  .calendar-job-preview-icon,
+  .calendar-job-preview-notes-icon {
+    display: inline-flex;
+    height: 3.5rem;
+    width: 3.5rem;
+    min-width: 3.5rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--calendar-preview-icon-border);
+    border-radius: 9999px;
+    background: var(--calendar-preview-icon-surface);
+    color: var(--calendar-preview-accent);
+  }
+
+  .calendar-job-preview-icon svg {
+    height: 1.6rem;
+    width: 1.6rem;
+    stroke-width: 1.8;
+  }
+
+  .calendar-job-preview-detail-label {
+    color: var(--calendar-preview-muted);
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  .calendar-job-preview-detail-value {
+    margin-top: 0.4rem;
+    color: var(--calendar-preview-heading);
+    font-size: 1.25rem;
+    line-height: 1.25;
+  }
+
+  .calendar-job-preview-notes {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.5rem 1.25rem 1.75rem;
+  }
+
+  .calendar-job-preview-notes-icon {
+    height: 2.75rem;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    border: 0;
+    background: transparent;
+  }
+
+  .calendar-job-preview-notes-icon svg {
+    height: 1.6rem;
+    width: 1.6rem;
+    stroke-width: 1.8;
+  }
+
+  .calendar-job-preview-notes-value {
+    margin-top: 0.45rem;
+    color: var(--calendar-preview-body);
+    font-size: 1.1rem;
+    line-height: 1.45;
+  }
+
+  .calendar-job-preview-footer {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    border-top: 1px solid var(--calendar-preview-divider);
+    background: var(--calendar-preview-footer);
+    padding: 1.25rem 2.5rem;
+  }
+
+  .calendar-job-preview-secondary-action,
+  .calendar-job-preview-primary-action {
+    display: inline-flex;
+    min-height: 3.25rem;
+    min-width: 10rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    border-radius: 0.75rem;
+    padding: 0.65rem 1.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 150ms ease, border-color 150ms ease, filter 150ms ease;
+  }
+
+  .calendar-job-preview-secondary-action {
+    border: 1px solid var(--calendar-preview-border);
+    background: transparent;
+    color: var(--calendar-preview-body);
+  }
+
+  .calendar-job-preview-secondary-action:hover {
+    background: rgb(148 163 184 / 0.12);
+  }
+
+  .calendar-job-preview-primary-action {
+    min-width: 15rem;
+    border: 1px solid var(--primary-color);
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+  }
+
+  .calendar-job-preview-primary-action:hover {
+    filter: brightness(0.9);
+  }
+
+  #app-shell[data-theme="dark"] .calendar-job-preview {
+    --calendar-preview-surface: linear-gradient(145deg, #0d1a2d 0%, #081321 100%);
+    --calendar-preview-border: #334155;
+    --calendar-preview-divider: #1f2d40;
+    --calendar-preview-heading: #f8fafc;
+    --calendar-preview-body: #dbe3ee;
+    --calendar-preview-muted: #a5b1c2;
+    --calendar-preview-accent: var(--primary-on-surface, #dbeafe);
+    --calendar-preview-icon-surface: color-mix(in srgb, var(--primary-color, #2563eb) 16%, #0f172a);
+    --calendar-preview-icon-border: color-mix(in srgb, var(--primary-color, #2563eb) 45%, #1f2d40);
+    --calendar-preview-chip-surface: color-mix(in srgb, var(--primary-color, #2563eb) 25%, #111827);
+    --calendar-preview-chip-border: var(--primary-color, #2563eb);
+    --calendar-preview-chip-text: var(--primary-on-surface, #dbeafe);
+    --calendar-preview-footer: rgb(8 19 33 / 0.82);
+  }
+
+  #app-shell[data-theme="dark"] .calendar-job-preview-overlay {
+    background: rgb(0 4 12 / 0.78);
+  }
+
+  @media (max-width: 767px) {
+    .calendar-job-preview {
+      max-height: calc(100dvh - 1.5rem);
+      border-radius: 20px;
+    }
+
+    .calendar-job-preview-header {
+      padding: 1.5rem 1.25rem 1.25rem;
+    }
+
+    .calendar-job-preview-close {
+      right: 0.75rem;
+      top: 0.75rem;
+    }
+
+    .calendar-job-preview-title {
+      max-width: calc(100% - 2.5rem);
+      margin-top: 0.75rem;
+      font-size: 2.25rem;
+    }
+
+    .calendar-job-preview-subtitle {
+      max-width: calc(100% - 1rem);
+      font-size: 1.1rem;
+    }
+
+    .calendar-job-preview-header-meta {
+      align-items: stretch;
+      flex-direction: column;
+      margin-top: 1.5rem;
+      padding-bottom: 1.25rem;
+    }
+
+    .calendar-job-preview-status,
+    .calendar-job-preview-date {
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .calendar-job-preview-body {
+      padding: 0 1.25rem;
+    }
+
+    .calendar-job-preview-details {
+      display: block;
+    }
+
+    .calendar-job-preview-detail-column,
+    .calendar-job-preview-detail-column + .calendar-job-preview-detail-column {
+      border-left: 0;
+      padding: 0;
+    }
+
+    .calendar-job-preview-detail-row {
+      min-height: 6.5rem;
+      gap: 1rem;
+    }
+
+    .calendar-job-preview-icon {
+      height: 3.5rem;
+      width: 3.5rem;
+      min-width: 3.5rem;
+    }
+
+    .calendar-job-preview-detail-label {
+      font-size: 1rem;
+    }
+
+    .calendar-job-preview-detail-value {
+      font-size: 1.25rem;
+    }
+
+    .calendar-job-preview-notes {
+      gap: 1rem;
+      padding: 1.5rem 0 1.75rem;
+    }
+
+    .calendar-job-preview-notes-value {
+      font-size: 1.05rem;
+    }
+
+    .calendar-job-preview-footer {
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 1rem 1.25rem 1.25rem;
+    }
+
+    .calendar-job-preview-secondary-action,
+    .calendar-job-preview-primary-action {
+      width: 100%;
+      min-width: 0;
+      min-height: 3.5rem;
+      font-size: 1.05rem;
+    }
   }
 
   /* Kurzrückmeldungen liegen oben mittig.

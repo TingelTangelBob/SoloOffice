@@ -12,6 +12,12 @@ import {
   Edit,
   Trash2,
   Download,
+  CalendarDays,
+  UserRound,
+  Clock3,
+  MapPin,
+  Monitor,
+  FileText,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -1152,7 +1158,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       <button
         type="button"
         onClick={openDatePicker}
-        className="min-h-0 inline-flex h-9 w-fit max-w-full min-w-0 items-center justify-center gap-1 rounded-lg px-3 text-center text-lg font-semibold capitalize text-gray-900 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-primary-custom lg:text-xl"
+        className="calendar-period-label calendar-toolbar-control min-h-0 inline-flex h-10 w-fit max-w-full min-w-0 items-center justify-center gap-1 rounded-lg px-3 text-center text-lg font-semibold capitalize text-gray-900 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-primary-custom lg:text-xl"
         aria-label="Monat und Jahr auswählen"
         aria-expanded={showDatePicker}
       >
@@ -1233,16 +1239,25 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     </div>
   );
 
+  const previewCustomerName = previewingJob
+    ? customers.find((customer) => customer.id === previewingJob.customerId)?.name || previewingJob.customerName || 'Nicht hinterlegt'
+    : '';
+  const previewLocation = previewingJob?.location?.trim() || 'Nicht hinterlegt';
+  const previewIsOnline = /online|teams|zoom|meet/i.test(previewLocation);
+  const previewType = previewIsOnline ? 'Online-Termin' : previewingJob?.location ? 'Vor-Ort-Termin' : 'Arbeitstermin';
+  const previewNotes = previewingJob?.notes?.trim() || previewingJob?.description?.trim() || 'Keine Notizen hinterlegt.';
+  const previewStatus = previewingJob?.status === 'draft' ? 'Geplant' : previewingJob ? getStatusLabel(previewingJob.status) : '';
+
   return (
-    <div className="space-y-3 lg:space-y-0">
+    <div className="space-y-3 lg:space-y-3">
       {/* Header */}
-      <div className="p-1 lg:p-2">
-        <PageHeader title="Kalender" actionsTakeOverRow={isSearchOpen}>
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none lg:shrink-0">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader icon={CalendarDays} title="Kalender" actionsTakeOverRow={isSearchOpen}>
+        <div className="calendar-toolbar-actions flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none lg:shrink-0">
         <button
           type="button"
           onClick={handleNewEntry}
-          className="order-3 inline-flex h-10 min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:min-h-0 sm:min-w-0 sm:px-4"
+          className="calendar-toolbar-control calendar-toolbar-outline order-3 inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:min-w-0 sm:px-4"
           aria-label="Neuen Eintrag erstellen"
           title="Neuen Eintrag erstellen"
         >
@@ -1252,7 +1267,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         <button
           type="button"
           onClick={() => setShowShareDialog(true)}
-          className="order-2 inline-flex h-10 min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-h-0 sm:min-w-0 sm:px-3"
+          className="calendar-toolbar-control calendar-toolbar-button order-2 inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-w-0 sm:px-3"
           aria-label="Kalender teilen"
           title="Kalender teilen"
         >
@@ -1299,7 +1314,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="min-h-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+              className="calendar-toolbar-control calendar-toolbar-button min-h-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
               aria-label={terminology.work.searchPlaceholder}
               title={terminology.work.searchPlaceholder}
             >
@@ -1360,26 +1375,26 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       </div>
 
       {/* Calendar Controls */}
-      <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="grid h-9 min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
+      <div className="calendar-controls rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">
+        <div className="calendar-controls-row flex flex-wrap items-center justify-between gap-2">
+          <div className="calendar-period-controls grid h-10 min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
             <button
               type="button"
               onClick={navigatePrevious}
-              className="min-h-0 inline-flex h-8 w-8 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
+              className="calendar-toolbar-control calendar-toolbar-button min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
               title="Vorheriger Zeitraum"
             >
               <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
 
-            {/* Feste Höhe von 36 Pixeln: Der Monatswähler ist eine Schaltfläche
-                mit h-9, die Titel der übrigen Ansichten sind nur Text in einer
+            {/* Feste Höhe von 40 Pixeln: Der Monatswähler ist eine Schaltfläche
+                mit h-10, die Titel der übrigen Ansichten sind nur Text in einer
                 kleineren Schrift. Ohne die Vorgabe springt die Zeile beim
                 Wechsel der Ansicht in der Höhe. */}
             {viewMode === 'month' ? (
               monthPicker
             ) : (
-              <h2 className="flex h-9 min-w-0 items-center justify-center px-1 text-center text-base font-semibold capitalize text-gray-900 lg:text-lg">
+              <h2 className="flex h-10 min-w-0 items-center justify-center px-1 text-center text-base font-semibold capitalize text-gray-900 lg:text-lg">
                 <span className="min-w-0 truncate">
                   {viewMode === 'week' || viewMode === 'workweek'
                     ? `KW ${getCalendarWeek(currentWeekStart)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
@@ -1391,7 +1406,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={navigateNext}
-              className="min-h-0 inline-flex h-8 w-8 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
+              className="calendar-toolbar-control calendar-toolbar-button min-h-0 inline-flex h-10 w-10 items-center justify-center border border-gray-300 p-1 hover:bg-gray-50 rounded-lg transition-colors"
               title="Nächster Zeitraum"
             >
               <ChevronRight className="h-4 w-4 text-gray-600" />
@@ -1399,8 +1414,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
           </div>
 
-          <div className="flex h-9 w-full min-w-0 items-center justify-end gap-1 sm:w-auto">
-            <div className="flex h-9 min-w-0 flex-1 items-stretch rounded-lg border border-gray-200 bg-gray-50 sm:flex-none" role="group" aria-label="Kalenderansicht">
+          <div className="calendar-view-controls flex h-10 w-full min-w-0 items-center justify-end gap-1 sm:w-auto">
+            <div className="calendar-view-switcher flex h-10 min-w-0 flex-1 items-stretch rounded-lg border border-gray-200 bg-gray-50 sm:flex-none" role="group" aria-label="Kalenderansicht">
               {([
                 ['day', 'Tag'],
                 ['week', 'Kalenderwoche'],
@@ -1411,7 +1426,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   key={mode}
                   type="button"
                   onClick={() => changeViewMode(mode)}
-                  className={`min-h-0 inline-flex h-full min-w-0 flex-1 items-center justify-center rounded-md px-1 text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
+                  className={`calendar-view-option min-h-0 inline-flex h-full min-w-0 flex-1 items-center justify-center rounded-md px-1 text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
                 >
                   <span className="sm:hidden">{mode === 'day' ? 'T' : mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : 'M'}</span>
                   <span className="hidden sm:inline xl:hidden">{mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : label}</span>
@@ -1422,7 +1437,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={goToToday}
-              className="min-h-0 h-9 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
+              className="calendar-toolbar-control calendar-toolbar-primary min-h-0 h-10 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
             >
               Heute
             </button>
@@ -2138,118 +2153,131 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
       {previewingJob && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          className="calendar-job-preview-overlay fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6"
           onClick={() => setPreviewingJob(null)}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="calendar-job-preview-title"
-            className="w-full max-w-xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+            className="calendar-job-preview"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
-              <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {terminology.work.managementLabel}
-                </p>
-                <h2 id="calendar-job-preview-title" className="mt-1 truncate text-lg font-semibold text-gray-900">
-                  {previewingJob.title}
-                </h2>
-                {previewingJob.jobNumber && (
-                  <p className="mt-1 text-sm text-gray-500">{previewingJob.jobNumber}</p>
-                )}
+            <header className="calendar-job-preview-header">
+              <div className="flex items-start justify-between gap-6">
+                <div className="min-w-0">
+                  <p className="calendar-job-preview-eyebrow">Termin</p>
+                  <h2 id="calendar-job-preview-title" className="calendar-job-preview-title">
+                    {previewingJob.title}
+                  </h2>
+                  <p className="calendar-job-preview-subtitle">
+                    Termin mit {previewCustomerName}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setPreviewingJob(null)}
-                className="shrink-0 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                className="calendar-job-preview-close"
                 aria-label={`${terminology.work.singular}-Übersicht schließen`}
               >
-                <X className="h-5 w-5" />
+                <X className="h-6 w-6" />
               </button>
-            </div>
+              <div className="calendar-job-preview-header-meta">
+                <span className="calendar-job-preview-status">
+                  <CalendarDays className="h-6 w-6" />
+                  {previewStatus}
+                </span>
+                <span className="calendar-job-preview-date">
+                  <CalendarDays className="h-6 w-6" />
+                  {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
+                </span>
+              </div>
+            </header>
 
-            <div className="space-y-5 px-5 py-5">
-              <div className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(previewingJob.status)}`}>
-                {getStatusLabel(previewingJob.status)}
+            <div className="calendar-job-preview-body">
+              <div className="calendar-job-preview-details">
+                <div className="calendar-job-preview-detail-column">
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><UserRound /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">{terminology.entity.singular}</p>
+                      <p className="calendar-job-preview-detail-value truncate">{previewCustomerName}</p>
+                    </div>
+                  </div>
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><CalendarDays /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Datum</p>
+                      <p className="calendar-job-preview-detail-value">
+                        {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><Clock3 /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Zeit</p>
+                      <p className="calendar-job-preview-detail-value">
+                        {getJobTimeLabel(previewingJob) || 'Keine Zeit hinterlegt'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="calendar-job-preview-detail-column">
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><Clock3 /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Dauer</p>
+                      <p className="calendar-job-preview-detail-value">
+                        {formatNumber(calculateTotalHours(previewingJob), locale, company?.numberFormat, 1)} h
+                      </p>
+                    </div>
+                  </div>
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><MapPin /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Ort</p>
+                      <p className="calendar-job-preview-detail-value truncate">{previewLocation}</p>
+                    </div>
+                  </div>
+                  <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><Monitor /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Typ</p>
+                      <p className="calendar-job-preview-detail-value">{previewType}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-gray-500">{terminology.entity.singular}</dt>
-                  <dd className="mt-1 truncate font-medium text-gray-900">
-                    {customers.find((customer) => customer.id === previewingJob.customerId)?.name || previewingJob.customerName}
-                  </dd>
+              <div className="calendar-job-preview-notes">
+                <span className="calendar-job-preview-notes-icon"><FileText /></span>
+                <div className="min-w-0">
+                  <p className="calendar-job-preview-detail-label">Notizen</p>
+                  <p className="calendar-job-preview-notes-value">{previewNotes}</p>
                 </div>
-                <div>
-                  <dt className="text-gray-500">Datum</dt>
-                  <dd className="mt-1 font-medium text-gray-900">
-                    {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-gray-500">Zeit</dt>
-                  <dd className="mt-1 font-medium text-gray-900">
-                    {getJobTimeLabel(previewingJob) || 'Keine Zeit hinterlegt'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-gray-500">Arbeitszeit</dt>
-                  <dd className="mt-1 font-medium text-gray-900">
-                    {formatNumber(calculateTotalHours(previewingJob), locale, company?.numberFormat, 1)} h
-                  </dd>
-                </div>
-                {previewingJob.externalJobNumber && (
-                  <div>
-                    <dt className="text-gray-500">Externe {terminology.work.numberLabel}</dt>
-                    <dd className="mt-1 truncate font-medium text-gray-900">{previewingJob.externalJobNumber}</dd>
-                  </div>
-                )}
-                {previewingJob.location && (
-                  <div>
-                    <dt className="text-gray-500">Ausführungsort</dt>
-                    <dd className="mt-1 truncate font-medium text-gray-900">{previewingJob.location}</dd>
-                  </div>
-                )}
-              </dl>
-
-              {previewingJob.description && (
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-medium text-gray-700">Beschreibung</h3>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">
-                    {previewingJob.description}
-                  </p>
-                </div>
-              )}
-
-              {previewingJob.notes && (
-                <div className="border-t border-gray-100 pt-4">
-                  <h3 className="text-sm font-medium text-gray-700">Notizen</h3>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">
-                    {previewingJob.notes}
-                  </p>
-                </div>
-              )}
+              </div>
             </div>
 
-            <div className="form-action-bar border-t border-gray-200 bg-gray-50 px-5 py-4">
+            <footer className="calendar-job-preview-footer">
               <button
                 type="button"
                 onClick={() => setPreviewingJob(null)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                className="calendar-job-preview-secondary-action"
               >
                 Schließen
               </button>
               <button
                 type="button"
                 onClick={() => handlePreviewEdit(previewingJob)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-custom/90"
+                className="calendar-job-preview-primary-action"
               >
-                <Edit className="h-4 w-4" />
-                Bearbeiten
+                <Edit className="h-6 w-6" />
+                Termin bearbeiten
               </button>
-            </div>
+            </footer>
           </div>
         </div>
       )}

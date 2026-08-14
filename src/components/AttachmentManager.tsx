@@ -28,6 +28,7 @@ interface AttachmentManagerProps {
   onSelectionChange?: (selectedIds: string[]) => void;
   maxFileSize?: number; // in MB
   title?: string;
+  uploadAreaClassName?: string;
   allowPreview?: boolean;
   onPreview?: (attachments: (JobAttachment | InvoiceAttachment)[], initialIndex: number) => void;
 }
@@ -41,6 +42,7 @@ export function AttachmentManager({
   onSelectionChange,
   maxFileSize = 25,
   title = 'Anhänge',
+  uploadAreaClassName = '',
   allowPreview = false,
   onPreview
 }: AttachmentManagerProps) {
@@ -204,7 +206,7 @@ export function AttachmentManager({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-900 flex items-center">
+        <h3 className="flex items-center text-lg font-semibold text-gray-900">
           <Paperclip className="h-5 w-5 mr-2" />
           {title}
           {attachments.length > 0 && (
@@ -238,7 +240,7 @@ export function AttachmentManager({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
-          className={`border-2 border-dashed rounded-lg p-3 sm:p-4 text-center transition-colors ${
+          className={`border-2 border-dashed rounded-lg p-3 sm:p-4 text-center transition-colors ${uploadAreaClassName} ${
             dragOver 
               ? 'border-primary-custom bg-primary-custom/5' 
               : 'border-gray-300 hover:border-gray-400'

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import logger from '../utils/logger';
-import { Save, Trash2, Calculator, ChevronUp, ChevronDown, GripVertical, Percent, Eye, FileText, Plus } from 'lucide-react';
+import { Save, Trash2, Calculator, GripVertical, Percent, Eye, FileText, Plus, Check, ChevronDown } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -45,10 +45,6 @@ interface SortableQuoteItemProps {
   index: number;
   onUpdate: (id: string, field: keyof QuoteItem, value: string | number | undefined) => void;
   onRemove: (id: string) => void;
-  onMoveUp: (id: string) => void;
-  onMoveDown: (id: string) => void;
-  isFirst: boolean;
-  isLast: boolean;
   isSmallBusiness: boolean;
   templateSuggestions: QuoteTemplateSuggestion[];
   onSelectTemplate: (itemId: string, suggestion: QuoteTemplateSuggestion) => void;
@@ -63,15 +59,129 @@ interface QuoteTemplateSuggestion {
   taxRate: number;
 }
 
+const getPositionGridTemplateColumns = (
+  isSmallBusiness: boolean,
+  discountsEnabled: boolean,
+) => {
+  const columns = [
+    '2rem',
+    'minmax(12rem, 3fr)',
+    'minmax(5rem, 1fr)',
+    'minmax(7rem, 1.25fr)',
+  ];
+
+  if (!isSmallBusiness) columns.push('minmax(5rem, 0.85fr)');
+  if (discountsEnabled) {
+    columns.push('minmax(8rem, 1.25fr)');
+  }
+
+  // Die Gesamtspalte bleibt immer gleich breit, damit sich die Tabelle beim
+  // Eingeben eines Rabatts nicht verschiebt. Die Aktionsspalte benötigt nur
+  // noch Platz für das Löschen-Icon.
+  columns.push('11rem', '2rem');
+  return columns.join(' ');
+};
+
+interface DiscountTypeDropdownProps {
+  value: 'percentage' | 'fixed' | '' | undefined;
+  currencySymbol: string;
+  onChange: (value: 'percentage' | 'fixed') => void;
+  onOpenChange?: (isOpen: boolean) => void;
+  tone?: 'default' | 'amber';
+}
+
+function DiscountTypeDropdown({ value, currencySymbol, onChange, onOpenChange, tone = 'default' }: DiscountTypeDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const selectedValue = value === 'fixed' ? 'fixed' : 'percentage';
+  const options = [
+    { value: 'percentage' as const, label: '%' },
+    { value: 'fixed' as const, label: currencySymbol },
+  ];
+  const triggerTone = tone === 'amber'
+    ? 'border-amber-200 bg-white text-amber-900 hover:bg-amber-100 focus:ring-amber-500'
+    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100 focus:ring-blue-500';
+  const menuBorder = tone === 'amber' ? 'border-amber-200' : 'border-gray-300';
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const closeDropdown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !dropdownRef.current?.contains(event.target)) {
+        setIsOpen(false);
+        onOpenChange?.(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeDropdown);
+    return () => document.removeEventListener('pointerdown', closeDropdown);
+  }, [isOpen]);
+
+  return (
+    <div ref={dropdownRef} className="absolute right-0 top-0 z-30 h-full">
+      <button
+        type="button"
+        onClick={() => {
+          const nextOpenState = !isOpen;
+          setIsOpen(nextOpenState);
+          onOpenChange?.(nextOpenState);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+            onOpenChange?.(false);
+          }
+        }}
+        className={`flex h-full min-h-0 w-12 items-center justify-center gap-0.5 rounded-r border px-1 text-sm font-medium transition-colors focus:z-10 focus:outline-none focus:ring-2 ${triggerTone}`}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label="Rabatteinheit auswählen"
+      >
+        <span>{options.find(option => option.value === selectedValue)?.label}</span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute right-0 top-full mt-1 w-12 overflow-hidden rounded-lg border bg-white p-1 shadow-xl ${menuBorder}`}
+          role="listbox"
+          aria-label="Rabatteinheit"
+        >
+          {options.map(option => {
+            const isSelected = option.value === selectedValue;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                  onOpenChange?.(false);
+                }}
+                className={`flex min-h-0 h-8 w-full items-center justify-between rounded-md px-1 text-sm font-medium transition-colors ${
+                  isSelected
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                }`}
+              >
+                <span>{option.label}</span>
+                {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortableQuoteItem({ 
   item, 
   index, 
   onUpdate, 
   onRemove, 
-  onMoveUp, 
-  onMoveDown, 
-  isFirst, 
-  isLast,
   isSmallBusiness,
   templateSuggestions,
   onSelectTemplate,
@@ -103,6 +213,7 @@ function SortableQuoteItem({
   const matchingTemplateSuggestions = itemDescription.trim().length >= 2
     ? templateSuggestions.filter(suggestion => suggestion.label.toLowerCase().includes(itemDescription.trim().toLowerCase())).slice(0, 5)
     : [];
+  const [isDiscountDropdownOpen, setIsDiscountDropdownOpen] = useState(false);
 
   const renderDescriptionField = (compact = false) => (
     <div className="relative">
@@ -129,7 +240,7 @@ function SortableQuoteItem({
                 onSelectTemplate(item.id, suggestion);
                 setShowSuggestions(false);
               }}
-              className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-blue-50"
+              className="quote-editor-option w-full rounded-md px-3 py-2 text-left text-sm hover:bg-blue-50"
             >
               <span className="block font-medium text-gray-900">{suggestion.label}</span>
               <span className="block text-xs text-gray-500">{suggestion.detail} · {formatCurrency(suggestion.unitPrice, company.locale, company.numberFormat, company.currency)}</span>
@@ -140,30 +251,26 @@ function SortableQuoteItem({
     </div>
   );
 
-  // Calculate grid columns dynamically based on isSmallBusiness and discountsEnabled
-  const getGridCols = () => {
-    if (isSmallBusiness) {
-      return discountsEnabled ? 'lg:grid-cols-10' : 'lg:grid-cols-8';
-    } else {
-      return discountsEnabled ? 'lg:grid-cols-10' : 'lg:grid-cols-9';
-    }
-  };
+  const gridTemplateColumns = getPositionGridTemplateColumns(
+    isSmallBusiness,
+    discountsEnabled,
+  );
 
   return (
     <div 
       ref={setNodeRef} 
       style={style}
-      className={`border border-gray-200 rounded-lg p-3 bg-white ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''}`}
+      className={`relative border border-gray-200 rounded-lg p-3 bg-white ${isDiscountDropdownOpen ? 'z-50' : ''} ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''}`}
     >
       {/* Desktop Layout - Single Row */}
-      <div className={`hidden lg:grid gap-3 items-end ${getGridCols()}`}>
+      <div className="hidden items-center gap-3 lg:grid" style={{ gridTemplateColumns }}>
         {/* Drag Handle */}
-        <div className="col-span-1 flex items-center justify-center">
+        <div className="flex items-center justify-center">
           <button
             type="button"
             {...attributes}
             {...listeners}
-            className="p-1.5 text-gray-400 hover:text-gray-600 cursor-move touch-none"
+            className="position-row-drag-handle"
             title="Verschieben"
           >
             <GripVertical className="w-5 h-5" />
@@ -171,16 +278,16 @@ function SortableQuoteItem({
         </div>
 
         {/* Beschreibung - 3 columns */}
-        <div className="col-span-3">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+        <div className="min-w-0">
+          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
             Beschreibung *
           </label>
           {renderDescriptionField()}
         </div>
         
         {/* Menge - 1 column */}
-        <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+        <div className="min-w-0">
+          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
             Menge *
           </label>
           <LocalizedNumberInput
@@ -196,8 +303,8 @@ function SortableQuoteItem({
         </div>
 
         {/* Einzelpreis - 1 column */}
-        <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+        <div className="min-w-0">
+          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
             Einzelpreis {currencySymbol}
           </label>
           <LocalizedNumberInput
@@ -214,8 +321,8 @@ function SortableQuoteItem({
 
         {/* MwSt - 1 column */}
         {!isSmallBusiness && (
-          <div className="col-span-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+          <div className="min-w-0">
+            <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
               MwSt %
             </label>
             <LocalizedNumberInput
@@ -233,95 +340,65 @@ function SortableQuoteItem({
 
         {/* Rabatt Type & Value - Combined */}
         {discountsEnabled && (
-          <div className={isSmallBusiness ? "col-span-2" : "col-span-1"}>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+          <div className="min-w-0">
+            <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
               Rabatt
             </label>
-            <div className="flex gap-1">
-              <select
-                value={item.discountType || ''}
-                onChange={(e) => {
-                  const newType = e.target.value as 'percentage' | 'fixed' | '';
-                  onUpdate(item.id, 'discountType', newType || undefined);
-                  if (!newType) {
-                    onUpdate(item.id, 'discountValue', undefined);
-                  }
+            <div className="relative min-w-0">
+              <LocalizedNumberInput
+                min="0"
+                max={item.discountType === 'fixed' ? undefined : '100'}
+                step="0.01"
+                value={item.discountValue ?? 0}
+                locale={company.locale || 'de-DE'}
+                numberFormat={company.numberFormat}
+                onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
+                className="w-full min-w-0 rounded border border-gray-300 px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
+              />
+              <DiscountTypeDropdown
+                value={item.discountType}
+                currencySymbol={currencySymbol}
+                onOpenChange={setIsDiscountDropdownOpen}
+                onChange={(value) => {
+                  onUpdate(item.id, 'discountType', value);
                 }}
-                className="w-16 px-1 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-</option>
-                <option value="percentage">%</option>
-                <option value="fixed">{currencySymbol}</option>
-              </select>
-              {item.discountType && (
-                <LocalizedNumberInput
-                  min="0"
-                  max={item.discountType === 'percentage' ? '100' : undefined}
-                  step="0.01"
-                  value={item.discountValue || ''}
-                  locale={company.locale || 'de-DE'}
-                  numberFormat={company.numberFormat}
-                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={item.discountType === 'percentage' ? '%' : currencySymbol}
-                />
-              )}
+              />
             </div>
           </div>
         )}
 
         {/* Gesamt - 1 column */}
-        <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Gesamt {currencySymbol}
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              disabled
-              value={formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
-              className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-gray-50 ${
-                discountAmount > 0 ? 'text-green-600 font-semibold' : ''
-              }`}
-            />
+        <div className="min-w-0">
+          <output
+            className={`flex min-h-[2.25rem] min-w-0 items-center justify-end gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-right text-sm ${
+              discountAmount > 0 ? 'text-green-600 font-semibold' : 'text-gray-900'
+            }`}
+            aria-label={`Gesamt ${currencySymbol}`}
+            title={discountAmount > 0 ? `Vor Rabatt: ${formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}` : undefined}
+          >
+            <span className="min-w-0 truncate">
+              {formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
+            </span>
             {discountAmount > 0 && (
-              <div className="absolute -top-5 right-0 text-xs text-gray-500 line-through">
+              <span className="shrink-0 whitespace-nowrap text-[10px] font-normal leading-4 text-gray-500 line-through">
                 {formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}
-              </div>
+              </span>
             )}
-          </div>
+          </output>
         </div>
 
         {/* Actions - 1 column */}
-        <div className={isSmallBusiness ? "col-span-1" : "col-span-1"}>
-          <div className="flex gap-1 justify-end">
-            <button
-              type="button"
-              onClick={() => onMoveUp(item.id)}
-              disabled={isFirst}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Nach oben verschieben"
-            >
-              <ChevronUp className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onMoveDown(item.id)}
-              disabled={isLast}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Nach unten verschieben"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(item.id)}
-              className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-              title="Position löschen"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => onRemove(item.id)}
+            className="position-row-action position-row-delete"
+            title="Position löschen"
+            aria-label="Position löschen"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -334,7 +411,7 @@ function SortableQuoteItem({
               type="button"
               {...attributes}
               {...listeners}
-              className="p-1.5 text-gray-400 hover:text-gray-600 cursor-move touch-none"
+              className="position-row-drag-handle"
             >
               <GripVertical className="w-5 h-5" />
             </button>
@@ -343,24 +420,10 @@ function SortableQuoteItem({
           <div className="flex gap-1">
             <button
               type="button"
-              onClick={() => onMoveUp(item.id)}
-              disabled={isFirst}
-              className="p-1.5 text-gray-600 hover:text-gray-900 rounded disabled:opacity-30"
-            >
-              <ChevronUp className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onMoveDown(item.id)}
-              disabled={isLast}
-              className="p-1.5 text-gray-600 hover:text-gray-900 rounded disabled:opacity-30"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
               onClick={() => onRemove(item.id)}
-              className="p-1.5 text-red-600 hover:text-red-700 rounded"
+              className="position-row-action position-row-delete"
+              title="Position löschen"
+              aria-label="Position löschen"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -376,7 +439,7 @@ function SortableQuoteItem({
             {renderDescriptionField(true)}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Menge *
@@ -411,7 +474,7 @@ function SortableQuoteItem({
           </div>
 
           {!isSmallBusiness && (
-            <div>
+            <div className="col-span-2 md:col-span-1">
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 MwSt %
               </label>
@@ -428,48 +491,40 @@ function SortableQuoteItem({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Rabatt
-            </label>
-            <div className="flex gap-2">
-              <select
-                value={item.discountType || ''}
-                onChange={(e) => {
-                  const newType = e.target.value as 'percentage' | 'fixed' | '';
-                  onUpdate(item.id, 'discountType', newType || undefined);
-                  if (!newType) {
-                    onUpdate(item.id, 'discountValue', undefined);
-                  }
-                }}
-                className="w-24 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Kein</option>
-                <option value="percentage">Prozent</option>
-                <option value="fixed">Euro</option>
-              </select>
-              {item.discountType && (
+          {discountsEnabled && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Rabatt
+              </label>
+              <div className="relative min-w-0">
                 <LocalizedNumberInput
                   min="0"
-                  max={item.discountType === 'percentage' ? '100' : undefined}
+                  max={item.discountType === 'fixed' ? undefined : '100'}
                   step="0.01"
-                  value={item.discountValue || ''}
+                  value={item.discountValue ?? 0}
                   locale={company.locale || 'de-DE'}
                   numberFormat={company.numberFormat}
-                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
-                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={item.discountType === 'percentage' ? 'Prozentsatz' : `Betrag in ${currencySymbol}`}
+                  onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
+                  className="w-full min-w-0 rounded border border-gray-300 px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
                 />
-              )}
+                <DiscountTypeDropdown
+                  value={item.discountType}
+                  currencySymbol={currencySymbol}
+                  onOpenChange={setIsDiscountDropdownOpen}
+                  onChange={(value) => {
+                    onUpdate(item.id, 'discountType', value);
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="pt-2 border-t border-gray-200">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-700">Gesamt:</span>
-              <div className="text-right">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] items-start gap-3 border-t border-gray-200 pt-2">
+              <span className="pt-1 text-sm font-medium text-gray-700">Gesamt:</span>
+              <div className="min-w-0 text-right">
                 {discountAmount > 0 && (
-                  <div className="text-xs text-gray-500 line-through">
+                  <div className="min-h-4 whitespace-nowrap text-xs leading-4 text-gray-500 line-through">
                     {formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}
                   </div>
                 )}
@@ -477,7 +532,6 @@ function SortableQuoteItem({
                   {formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
                 </div>
               </div>
-            </div>
           </div>
         </div>
       </div>
@@ -517,16 +571,23 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const [notes, setNotes] = useState('');
   const [globalDiscountType, setGlobalDiscountType] = useState<'percentage' | 'fixed' | ''>('');
   const [globalDiscountValue, setGlobalDiscountValue] = useState<string>('');
+  const [showGlobalDiscountRow, setShowGlobalDiscountRow] = useState(false);
   const [attachments, setAttachments] = useState<QuoteAttachment[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const customerFieldRef = useRef<HTMLDivElement>(null);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
   const [previewInitialIndex, setPreviewInitialIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [redirectModalType, setRedirectModalType] = useState<'hourlyRates' | 'materials' | null>(null);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const positionGridTemplateColumns = getPositionGridTemplateColumns(
+    company.isSmallBusiness || false,
+    discountsEnabled,
+  );
+  const discountColumnStart = company.isSmallBusiness ? 5 : 6;
 
   // Drag & Drop sensors
   const sensors = useSensors(
@@ -539,6 +600,19 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  useEffect(() => {
+    if (!showCustomerDropdown) return undefined;
+
+    const closeCustomerDropdown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !customerFieldRef.current?.contains(event.target)) {
+        setShowCustomerDropdown(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeCustomerDropdown);
+    return () => document.removeEventListener('pointerdown', closeCustomerDropdown);
+  }, [showCustomerDropdown]);
 
   // Calculate valid until date (30 days by default)
   function calculateValidUntil(issueDate: string) {
@@ -556,11 +630,11 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       taxRate: company.isSmallBusiness ? 0 : 19,
       total: 0,
       order: order,
-      discountType: undefined,
-      discountValue: undefined,
+      discountType: discountsEnabled ? 'percentage' : undefined,
+      discountValue: discountsEnabled ? 0 : undefined,
       discountAmount: 0
     };
-  }, [company.isSmallBusiness]);
+  }, [company.isSmallBusiness, discountsEnabled]);
 
   // Initialize form
   useEffect(() => {
@@ -570,13 +644,21 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setSelectedCustomerId(quote.customerId);
       setIssueDate(new Date(quote.issueDate).toISOString().split('T')[0]);
       setValidUntil(new Date(quote.validUntil).toISOString().split('T')[0]);
-      const existingItems = quote.items || [];
+      const existingItems = (quote.items || []).map(item => discountsEnabled
+        ? {
+            ...item,
+            discountType: item.discountType || 'percentage',
+            discountValue: item.discountValue ?? 0,
+          }
+        : item
+      );
       setItems(existingItems.length > 0 && String(existingItems[existingItems.length - 1].description || '').trim()
         ? [...existingItems, createEmptyItem(existingItems.length + 1)]
         : existingItems);
       setNotes(quote.notes || '');
       setGlobalDiscountType(quote.globalDiscountType || '');
       setGlobalDiscountValue(quote.globalDiscountValue?.toString() || '');
+      setShowGlobalDiscountRow(Boolean(quote.globalDiscountType || quote.globalDiscountValue));
       setAttachments(quote.attachments || []);
       
       // Set customer search term
@@ -590,10 +672,13 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setIssueDate(today);
       setValidUntil(calculateValidUntil(today));
       setQuoteNumber('');
+      setGlobalDiscountType('');
+      setGlobalDiscountValue('');
+      setShowGlobalDiscountRow(false);
       setItems([createEmptyItem(1)]);
     }
     setIsDirty(false);
-  }, [quote, customers, createEmptyItem]);
+  }, [quote, customers, createEmptyItem, discountsEnabled]);
 
   const requestClose = () => {
     if (isDirty) {
@@ -601,6 +686,20 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       return;
     }
     onClose();
+  };
+
+  const addGlobalDiscountRow = () => {
+    setIsDirty(true);
+    setShowGlobalDiscountRow(true);
+    setGlobalDiscountType(previousType => previousType || 'percentage');
+    setGlobalDiscountValue(previousValue => previousValue || '0');
+  };
+
+  const removeGlobalDiscountRow = () => {
+    setIsDirty(true);
+    setShowGlobalDiscountRow(false);
+    setGlobalDiscountType('');
+    setGlobalDiscountValue('');
   };
 
 
@@ -627,6 +726,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   );
 
   const updateItem = (id: string, field: keyof QuoteItem, value: string | number | undefined) => {
+    setIsDirty(true);
     setItems(currentItems => {
       const nextItems = currentItems.map(item => {
       if (item.id === id) {
@@ -635,7 +735,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
         // Convert numeric fields to numbers
         if (['quantity', 'unitPrice', 'taxRate', 'discountValue'].includes(field)) {
           if (value === undefined || value === '' || value === null) {
-            parsedValue = field === 'discountValue' ? undefined : 0;
+            parsedValue = 0;
           } else {
             parsedValue = parseFloat(String(value));
             if (isNaN(parsedValue)) {
@@ -643,11 +743,14 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
             }
           }
         }
+
+        if (field === 'discountType' && !parsedValue) {
+          parsedValue = 'percentage';
+        }
         
         const updatedItem = {
           ...item,
           [field]: parsedValue,
-          ...(field === 'discountType' && !parsedValue ? { discountValue: undefined } : {})
         };
         
         // Recalculate total and discount when relevant fields change
@@ -715,38 +818,15 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       taxRate,
       total: unitPrice,
       order: currentItems.length + 1,
+      discountType: discountsEnabled ? 'percentage' : undefined,
+      discountValue: discountsEnabled ? 0 : undefined,
+      discountAmount: 0,
     }]);
     setShowTemplateDropdown(false);
   };
 
   const removeItem = (id: string) => {
     setItems(prev => prev.filter(item => item.id !== id));
-  };
-
-  const moveItemUp = (id: string) => {
-    const index = items.findIndex(item => item.id === id);
-    if (index > 0) {
-      const newItems = [...items];
-      [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
-      // Update order values
-      newItems.forEach((item, idx) => {
-        item.order = idx + 1;
-      });
-      setItems(newItems);
-    }
-  };
-
-  const moveItemDown = (id: string) => {
-    const index = items.findIndex(item => item.id === id);
-    if (index < items.length - 1) {
-      const newItems = [...items];
-      [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
-      // Update order values
-      newItems.forEach((item, idx) => {
-        item.order = idx + 1;
-      });
-      setItems(newItems);
-    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -922,8 +1002,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
         taxRate: suggestion.taxRate,
         total: item.quantity * suggestion.unitPrice,
         discountAmount: 0,
-        discountType: undefined,
-        discountValue: undefined,
+        discountType: discountsEnabled ? 'percentage' : undefined,
+        discountValue: discountsEnabled ? 0 : undefined,
       } : item);
       return nextItems[nextItems.length - 1]?.id === itemId
         ? [...nextItems, createEmptyItem(nextItems.length + 1)]
@@ -991,11 +1071,11 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           </>
         )}
       >
-        <div className="space-y-6 pb-2">
+        <div className="space-y-4 pb-2 sm:space-y-5">
           {/* Basic Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+            <div className="col-span-2 min-[480px]:col-span-1 md:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Angebotsnummer
               </label>
               <input
@@ -1011,8 +1091,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               </p>
             </div>
 
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div ref={customerFieldRef} className="relative col-span-2 min-[480px]:col-span-1 md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 {terminology.entity.singular} *
               </label>
               <div className="relative">
@@ -1021,8 +1101,12 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                   required
                   value={customerSearchTerm}
                   onChange={handleCustomerSearchChange}
-                  onFocus={() => setShowCustomerDropdown(true)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setShowCustomerDropdown(false);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={terminology.entity.searchPlaceholder}
                 />
                 
@@ -1034,7 +1118,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                           key={customer.id}
                           type="button"
                           onClick={() => handleCustomerSelect(customer)}
-                          className="w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
+                          className="quote-editor-option w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
                         >
                           <div className="font-medium text-gray-900">
                             {formatCustomerNumber(customer.customerNumber)} - {customer.name}
@@ -1067,9 +1151,9 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Datum *
               </label>
               <input
@@ -1081,12 +1165,12 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                   setIssueDate(e.target.value);
                   setValidUntil(calculateValidUntil(e.target.value));
                 }}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Gültig bis *
               </label>
               <input
@@ -1095,7 +1179,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 required
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -1107,7 +1191,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 <Calculator className="w-5 h-5 text-blue-600" />
                 Positionen
               </h3>
-              <div className="hidden">
+              <div className="flex items-center gap-2">
                 <div className="relative">
                   <button
                     type="button"
@@ -1137,7 +1221,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                                 key={template.id}
                                 type="button"
                                 onClick={() => addItemFromTemplate('hourly', template.id)}
-                                className="w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
+                                className="quote-editor-option w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
                               >
                                 <div className="font-medium text-gray-900">
                                   {templateName}
@@ -1166,7 +1250,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                                 key={template.id}
                                 type="button"
                                 onClick={() => addItemFromTemplate('material', template.id)}
-                                className="w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
+                                className="quote-editor-option w-full px-3 py-2 text-left hover:bg-blue-50 rounded transition-colors"
                               >
                                 <div className="font-medium text-gray-900">
                                   {templateName}
@@ -1209,6 +1293,19 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                   <Plus className="w-4 h-4" />
                   <span className="hidden sm:inline">Position</span>
                 </button>
+
+                {discountsEnabled && (
+                  <button
+                    type="button"
+                    onClick={addGlobalDiscountRow}
+                    disabled={showGlobalDiscountRow}
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    title={showGlobalDiscountRow ? 'Rabattzeile ist bereits vorhanden' : 'Gesamtrabatt hinzufügen'}
+                  >
+                    <Percent className="h-4 w-4" />
+                    <span className="hidden sm:inline">Rabatt</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1217,6 +1314,20 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
+              <div
+                className="position-table-header -mb-1 hidden items-center gap-3 px-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid"
+                style={{ gridTemplateColumns: positionGridTemplateColumns }}
+                aria-hidden="true"
+              >
+                <div />
+                <div>Beschreibung</div>
+                <div>Menge</div>
+                <div>Einzelpreis {currencySymbol}</div>
+                {!company.isSmallBusiness && <div>MwSt %</div>}
+                {discountsEnabled && <div>Rabatt</div>}
+                <div>Gesamt {currencySymbol}</div>
+                <div />
+              </div>
               <SortableContext
                 items={items.map(item => item.id)}
                 strategy={verticalListSortingStrategy}
@@ -1229,10 +1340,6 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                       index={index}
                       onUpdate={updateItem}
                       onRemove={removeItem}
-                      onMoveUp={moveItemUp}
-                      onMoveDown={moveItemDown}
-                      isFirst={index === 0}
-                      isLast={index === items.length - 1}
                       isSmallBusiness={company.isSmallBusiness || false}
                       templateSuggestions={templateSuggestions}
                       onSelectTemplate={selectTemplateForItem}
@@ -1255,78 +1362,73 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 </button>
               </div>
             )}
-          </div>
 
-          {/* Global Discount */}
-          {discountsEnabled && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
-              <div className="flex items-center gap-3 mb-3">
-                <Percent className="w-5 h-5 text-orange-600" />
-                <h3 className="text-sm font-semibold text-gray-900">Rabattzeile</h3>
-              </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Rabattart
-                </label>
-                <select
-                  value={globalDiscountType}
-                  onChange={(e) => {
-                    setGlobalDiscountType(e.target.value as 'percentage' | 'fixed' | '');
-                    if (!e.target.value) {
-                      setGlobalDiscountValue('');
-                    }
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+            {discountsEnabled && showGlobalDiscountRow && (
+              <div
+                className="quote-global-discount-row relative z-40 rounded-lg border border-gray-200 bg-gray-50 p-3"
+                style={{ '--quote-position-grid-columns': positionGridTemplateColumns } as React.CSSProperties}
+              >
+                <div
+                  className="flex min-w-0 items-center gap-2"
+                  style={{ gridColumn: `1 / ${discountColumnStart}` }}
                 >
-                  <option value="">Kein Rabatt</option>
-                  <option value="percentage">Prozentual (%)</option>
-                  <option value="fixed">Festbetrag ({currencySymbol})</option>
-                </select>
-              </div>
+                  <Percent className="h-5 w-5 shrink-0 text-amber-600" />
+                  <p className="truncate text-sm font-semibold text-gray-800" title="Auf die Zwischensumme nach Positionsrabatten">
+                    Gesamtrabatt
+                  </p>
+                </div>
 
-              {globalDiscountType && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      {globalDiscountType === 'percentage' ? 'Prozentsatz' : `Betrag in ${currencySymbol}`}
-                    </label>
-                    <LocalizedNumberInput
-                      min="0"
-                      max={globalDiscountType === 'percentage' ? '100' : undefined}
-                      step="0.01"
-                      value={globalDiscountValue}
-                      locale={company.locale}
-                      numberFormat={company.numberFormat}
-                      onValueChange={(value) => setGlobalDiscountValue(value === '' ? '' : String(value))}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      placeholder={globalDiscountType === 'percentage' ? '0-100' : '0.00'}
-                    />
-                  </div>
+                <div
+                  className="relative min-w-0 flex-[1_1_9rem]"
+                  style={{ gridColumn: discountColumnStart }}
+                >
+                  <LocalizedNumberInput
+                    id="global-discount-value"
+                    aria-label="Gesamtrabattwert"
+                    min="0"
+                    max={globalDiscountType === 'percentage' ? '100' : undefined}
+                    step="0.01"
+                    value={globalDiscountValue === '' ? 0 : Number(globalDiscountValue)}
+                    locale={company.locale}
+                    numberFormat={company.numberFormat}
+                    onValueChange={(value) => setGlobalDiscountValue(value === '' ? '0' : String(value))}
+                    className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                  <DiscountTypeDropdown
+                    value={globalDiscountType}
+                    currencySymbol={currencySymbol}
+                    onChange={(value) => {
+                      setIsDirty(true);
+                      setGlobalDiscountType(value);
+                    }}
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Rabattbetrag
-                    </label>
-                    <div className="px-3 py-2 text-sm bg-orange-100 text-orange-900 font-semibold rounded-lg border border-orange-200">
-                      -{formatMoney(totals.globalDiscountAmount)}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+                <div
+                  className="min-w-0 flex-[1_1_8rem] rounded border border-gray-300 bg-gray-100 px-2 py-1.5 text-right text-sm font-semibold text-gray-900"
+                  style={{ gridColumn: discountColumnStart + 1 }}
+                  aria-label={`Rabattbetrag -${formatMoney(totals.globalDiscountAmount)}`}
+                >
+                  -{formatMoney(totals.globalDiscountAmount)}
+                </div>
 
-            {globalDiscountType && globalDiscountValue && (
-              <div className="mt-3 text-xs text-gray-600 bg-white/50 rounded p-2">
-                <strong>Hinweis:</strong> Der Gesamtrabatt wird auf die Zwischensumme nach Positionsrabatten angewendet.
+                <button
+                  type="button"
+                  onClick={removeGlobalDiscountRow}
+                  className="position-row-action position-row-delete"
+                  style={{ gridColumn: discountColumnStart + 2 }}
+                  title="Rabattzeile entfernen"
+                  aria-label="Rabattzeile entfernen"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
               </div>
             )}
-            </div>
-          )}
+          </div>
 
           {/* Totals */}
-          <div className="theme-gradient-surface theme-gradient-surface-totals rounded-lg border p-6 space-y-3">
+          <div className="theme-gradient-surface theme-gradient-surface-totals space-y-3 rounded-lg border p-6 lg:pr-14">
             <div className="flex justify-between text-sm">
               <span className="theme-gradient-label">Zwischensumme:</span>
               <span className="theme-gradient-value font-medium">{formatMoney(totals.subtotal)}</span>
@@ -1379,30 +1481,32 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
             )}
           </div>
 
-          {/* Attachments */}
-          <div>
-            <AttachmentManager
-              attachments={attachments}
-              onAttachmentsChange={setAttachments}
-              allowUpload={true}
-              title="Anhangs-Dokumente"
-              allowPreview={true}
-              onPreview={handlePreview}
-            />
-          </div>
+          {/* Notes & Attachments */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5 lg:grid-cols-10">
+            <div className="md:col-span-3 lg:col-span-7">
+              <h3 className="mb-4 text-lg font-semibold text-gray-900">
+                Notizen / Hinweise
+              </h3>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={4}
+                className="min-h-[14rem] w-full resize-none rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Optional: Zusätzliche Informationen für das Angebot..."
+              />
+            </div>
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notizen / Hinweise
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              placeholder="Optional: Zusätzliche Informationen für das Angebot..."
-            />
+            <div className="md:col-span-2 lg:col-span-3">
+              <AttachmentManager
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+                allowUpload={true}
+                title="Anhangs-Dokumente"
+                uploadAreaClassName="flex min-h-[14rem] flex-col justify-center"
+                allowPreview={true}
+                onPreview={handlePreview}
+              />
+            </div>
           </div>
 
         </div>

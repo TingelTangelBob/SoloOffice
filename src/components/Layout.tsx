@@ -79,7 +79,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const taxAreaActive = currentPage === 'taxes' || taxSubPageIds.includes(currentPage);
   const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
   const taxAreaWasActive = useRef(taxAreaActive);
-  const isSidebarCompact = sidebarSettings.collapsed || sidebarSettings.width <= SIDEBAR_COMPACT_BREAKPOINT;
+  // Die mobile Drawer-Navigation bleibt immer beschriftet. Die kompakte
+  // Icon-Leiste ist eine Desktop-Variante und darf nicht in den Drawer
+  // hineinlaufen, wenn sie zuvor als Desktop-Präferenz gespeichert wurde.
+  const isSidebarCompact = !isMobileMenuOpen && (sidebarSettings.collapsed || sidebarSettings.width <= SIDEBAR_COMPACT_BREAKPOINT);
   const companySetupComplete = [
     company.name,
     company.address,
@@ -267,9 +270,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       <DynamicColors />
       <div id="app-shell" className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
-          {/* Nur zum Öffnen. Geschlossen wird die Seitenleiste über die
-              Schaltfläche in ihrer eigenen Kopfzeile – dort steht sie in
-              derselben Zeile wie das Logo und ist damit sauber ausgerichtet. */}
+          {/* Mobile Seitenleiste öffnen. Auf Desktop bleibt der Umschalter
+              dauerhaft am oberen Rand der Seitenleiste sichtbar. */}
           {!isMobileMenuOpen && (
             <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 lg:hidden">
               <button
@@ -298,8 +300,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
           >
-            <div className="flex h-full flex-col p-4">
-              <div className={`sidebar-brand relative mb-4 flex items-center gap-2 border-b border-gray-200 pb-2 ${isSidebarCompact ? 'justify-center' : 'justify-between'}`}>
+            <div className={`flex h-full flex-col ${isSidebarCompact ? 'p-2' : 'p-4'}`}>
+              <div className={`sidebar-brand mb-4 flex items-center justify-between border-b border-gray-200 pb-2 ${isSidebarCompact ? 'gap-1' : 'gap-2'}`}>
                 <button
                   type="button"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -314,16 +316,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   aria-label="Übersicht öffnen"
                 >
                   {company.icon ? (
-                    <img src={company.icon} alt="Company Icon" className={`h-8 w-8 rounded ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded ${isSidebarCompact ? '' : 'mr-3'}`} />
                   ) : (
-                    <Building2 className={`h-8 w-8 text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
                   )}
                   <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
                 </button>
                 <button
                   type="button"
                   onClick={toggleSidebar}
-                  className="sidebar-toggle hidden h-9 w-9 min-h-0 min-w-0 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm transition hover:bg-gray-100 hover:text-gray-900 focus-visible:opacity-100 lg:inline-flex"
+                  aria-pressed={isSidebarCompact}
+                  className={`sidebar-toggle hidden min-h-0 min-w-0 shrink-0 items-center justify-center border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom/40 lg:inline-flex ${
+                    isSidebarCompact ? 'h-7 w-7 rounded-md' : 'h-9 w-9 rounded-lg'
+                  }`}
                   aria-label={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
                   title={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
                 >

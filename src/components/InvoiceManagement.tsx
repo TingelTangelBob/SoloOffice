@@ -330,6 +330,18 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     });
   };
 
+  const handlePreviewEdit = (document: PreviewDocument) => {
+    if (!document.invoice) return;
+    handleClosePreview();
+    handleOpenEditor(document.invoice);
+  };
+
+  const handlePreviewSend = (document: PreviewDocument) => {
+    if (!document.invoice || document.invoice.status !== 'draft') return;
+    handleClosePreview();
+    void handleSendEmail(document.invoice);
+  };
+
   const handleDownloadConfirm = async (formats: ('zugferd' | 'xrechnung')[], markAsSent: boolean, selectedAttachmentIds: string[] = []) => {
     if (!downloadModal.invoice) return;
     
@@ -1038,9 +1050,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       type="button"
-                      onClick={() => handleOpenEditor(invoice)}
+                      onClick={() => handlePreview(invoice)}
                       className="link-primary rounded-sm text-left font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
-                      aria-label={`Rechnung ${invoice.invoiceNumber} öffnen`}
+                      aria-label={`Rechnung ${invoice.invoiceNumber} als Vorschau öffnen`}
                     >
                       {invoice.invoiceNumber}
                     </button>
@@ -1157,7 +1169,16 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         {/* Mobile Card View */}
         <div className="tablet:hidden">
           {filteredInvoices.map((invoice) => (
-            <div key={invoice.id} className="p-4 border-b border-gray-200 last:border-b-0">
+            <div
+              key={invoice.id}
+              onClick={event => {
+                // Klicks auf Bedienelemente in der Karte behalten ihre eigene
+                // Wirkung; nur der freie Bereich öffnet die Vorschau.
+                if ((event.target as HTMLElement).closest('button, a, input, select, label')) return;
+                handlePreview(invoice);
+              }}
+              className="cursor-pointer border-b border-gray-200 p-4 last:border-b-0 hover:bg-gray-50"
+            >
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -1171,9 +1192,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <div className="flex items-start justify-between gap-3">
                     <button
                       type="button"
-                      onClick={() => handleOpenEditor(invoice)}
+                      onClick={() => handlePreview(invoice)}
                       className="link-primary min-w-0 truncate rounded-sm text-left text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
-                      aria-label={`Rechnung ${invoice.invoiceNumber} öffnen`}
+                      aria-label={`Rechnung ${invoice.invoiceNumber} als Vorschau öffnen`}
                     >
                       {invoice.invoiceNumber}
                     </button>
@@ -1286,6 +1307,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         onClose={handleClosePreview}
         documents={documentPreview.documents}
         initialIndex={documentPreview.initialIndex}
+        onEdit={handlePreviewEdit}
+        onSend={handlePreviewSend}
       />
 
       {/* Customer Creation Modal */}

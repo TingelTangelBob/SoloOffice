@@ -370,6 +370,28 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     setPreviewDocuments([]);
   };
 
+  const handlePreviewEdit = (document: PreviewDocument) => {
+    if (!document.quote) return;
+    handleClosePreview();
+    handleOpenEditor(document.quote);
+  };
+
+  const handlePreviewReject = async (document: PreviewDocument) => {
+    const quote = document.quote;
+    if (!quote || quote.status !== 'sent') return;
+
+    try {
+      await apiService.updateQuote(quote.id, { status: 'rejected' });
+      await loadQuotes();
+      handleClosePreview();
+      notify({ variant: 'success', message: 'Angebot wurde als abgelehnt markiert.' });
+    } catch (error) {
+      logger.error('Error rejecting quote from preview:', error);
+      notify({ variant: 'error', message: 'Das Angebot konnte nicht als abgelehnt markiert werden.' });
+      throw error;
+    }
+  };
+
   const handleDownloadPDF = async (quote: Quote) => {
     setIsExporting(quote.id);
     try {
@@ -1025,9 +1047,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           onClose={handleClosePreview}
           documents={previewDocuments}
           initialIndex={0}
+          onEdit={handlePreviewEdit}
+          onReject={handlePreviewReject}
         />
       )}
     </div>
   );
 }
-

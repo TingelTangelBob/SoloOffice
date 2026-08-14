@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Edit,
   ExternalLink,
   File,
   FileText,
@@ -12,6 +13,7 @@ import {
   Minimize,
   RotateCcw,
   RotateCw,
+  Send,
   X,
   ZoomIn,
   ZoomOut,
@@ -28,6 +30,9 @@ interface DocumentPreviewProps {
   onClose: () => void;
   documents?: PreviewDocument[];
   initialIndex?: number;
+  onEdit?: (document: PreviewDocument) => void;
+  onSend?: (document: PreviewDocument) => void;
+  onReject?: (document: PreviewDocument) => void | Promise<void>;
 }
 
 interface PreparedDocument {
@@ -35,7 +40,7 @@ interface PreparedDocument {
   fileName: string;
 }
 
-const TOOL_BUTTON = 'inline-flex h-10 w-10 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-40';
+const TOOL_BUTTON = 'document-preview-tool-button inline-flex h-10 w-10 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-40';
 
 function attachmentBlob(document: PreviewDocument): Blob {
   if (!document.content) throw new Error('Der Dateiinhalt fehlt.');
@@ -73,7 +78,7 @@ function FileTypeIcon({ contentType, className = 'h-5 w-5' }: { contentType: str
   return <File className={className} aria-hidden="true" />;
 }
 
-export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex = 0 }: DocumentPreviewProps) {
+export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex = 0, onEdit, onSend, onReject }: DocumentPreviewProps) {
   const { company } = useCompany();
   const { customers } = useCustomers();
   const terminology = getTerminology(company.terminologyProfile);
@@ -94,15 +99,18 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
   const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isActionPending, setIsActionPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
   const currentDocument = documents[currentIndex];
   const contentType = effectiveContentType(currentDocument);
   const isPdf = contentType === 'application/pdf';
   const isImage = contentType.startsWith('image/');
   const isText = contentType.startsWith('text/') || contentType === 'application/xml';
   const canPreview = isPdf || isImage || isText;
+  const canEdit = Boolean(onEdit && currentDocument && currentDocument.type !== 'attachment' && isPdf);
+  const canSend = Boolean(onSend && currentDocument?.type === 'invoice-pdf' && currentDocument.invoice?.status === 'draft');
+  const canReject = Boolean(onReject && currentDocument?.type === 'quote-pdf' && currentDocument.quote?.status === 'sent');
 
   const releasePreview = useCallback(() => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -289,6 +297,28 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
     if (openedWindow) openedWindow.opener = null;
   };
 
+  const handleEdit = () => {
+    if (currentDocument && onEdit) onEdit(currentDocument);
+  };
+
+  const handleSend = () => {
+    if (currentDocument && onSend) onSend(currentDocument);
+  };
+
+  const handleReject = async () => {
+    if (!currentDocument || !onReject || isActionPending) return;
+    setIsActionPending(true);
+    setError(null);
+    try {
+      await onReject(currentDocument);
+    } catch (actionError) {
+      logger.error('Fehler beim Ändern des Dokumentstatus:', actionError);
+      setError(actionError instanceof Error ? actionError.message : 'Der Dokumentstatus konnte nicht geändert werden.');
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const sizeLabel = formatFileSize(currentDocument?.size || previewBlobRef.current?.size);
@@ -316,12 +346,9 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             <FileTypeIcon contentType={contentType} />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="truncate text-sm font-semibold text-gray-950 sm:text-base">
+            <h2 id={titleId} className="truncate text-sm font-semibold text-gray-900 sm:text-base">
               {currentDocument?.name || 'Dokumentvorschau'}
             </h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              {documents.length > 1 ? `Dokument ${currentIndex + 1} von ${documents.length}` : fileTypeLabel(contentType)}
-            </p>
           </div>
           <button ref={closeButtonRef} type="button" onClick={onClose} className={TOOL_BUTTON} title="Vorschau schließen" aria-label="Vorschau schließen">
             <X className="h-5 w-5" />
@@ -346,7 +373,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
                 <button type="button" onClick={() => setZoom(value => Math.max(value - 25, 25))} disabled={zoom <= 25} className={TOOL_BUTTON} title="Verkleinern" aria-label="Verkleinern">
                   <ZoomOut className="h-5 w-5" />
                 </button>
-                <button type="button" onClick={() => setZoom(100)} className="h-10 min-h-0 min-w-[3.5rem] shrink-0 rounded-lg px-2 text-xs font-medium tabular-nums text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" title="Originalgröße">
+                <button type="button" onClick={() => setZoom(100)} className="document-preview-tool-button h-10 min-h-0 min-w-[3.5rem] shrink-0 rounded-lg px-2 text-xs font-medium tabular-nums text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" title="Originalgröße">
                   {zoom} %
                 </button>
                 <button type="button" onClick={() => setZoom(value => Math.min(value + 25, 300))} disabled={zoom >= 300} className={TOOL_BUTTON} title="Vergrößern" aria-label="Vergrößern">
@@ -372,6 +399,24 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            {canEdit && (
+              <button type="button" onClick={handleEdit} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="Bearbeiten" aria-label="Bearbeiten">
+                <Edit className="h-5 w-5" />
+                <span className="hidden whitespace-nowrap sm:inline">Bearbeiten</span>
+              </button>
+            )}
+            {canSend && (
+              <button type="button" onClick={handleSend} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="Rechnung versenden" aria-label="Rechnung versenden">
+                <Send className="h-5 w-5" />
+                <span className="hidden whitespace-nowrap sm:inline">Versenden</span>
+              </button>
+            )}
+            {canReject && (
+              <button type="button" onClick={() => void handleReject()} disabled={isActionPending} className={`${TOOL_BUTTON} gap-2 px-2.5 text-rose-600 hover:text-rose-700 sm:w-auto`} title="Als abgelehnt markieren" aria-label="Als abgelehnt markieren">
+                <X className="h-5 w-5" />
+                <span className="hidden whitespace-nowrap sm:inline">Ablehnen</span>
+              </button>
+            )}
             <button type="button" onClick={() => setIsExpanded(value => !value)} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'} aria-label={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'}>
               {isExpanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </button>
@@ -394,7 +439,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             <div className="flex h-full items-center justify-center">
               <div className="max-w-md rounded-xl border border-rose-200 bg-white p-6 text-center shadow-sm">
                 <File className="mx-auto h-10 w-10 text-rose-500" />
-                <h3 className="mt-3 font-semibold text-gray-950">Vorschau nicht verfügbar</h3>
+                <h3 className="mt-3 font-semibold text-gray-900">Vorschau nicht verfügbar</h3>
                 <p className="mt-1 text-sm text-gray-600">{error}</p>
                 <button type="button" onClick={() => void loadDocument()} className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-medium text-white hover:bg-rose-700">
                   Erneut versuchen
@@ -411,7 +456,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             <div className="flex h-full items-center justify-center">
               <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
                 <FileTypeIcon contentType={contentType} className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-3 font-semibold text-gray-950">Keine integrierte Vorschau</h3>
+                <h3 className="mt-3 font-semibold text-gray-900">Keine integrierte Vorschau</h3>
                 <p className="mt-1 text-sm text-gray-600">Dieser Dateityp kann hier nicht sicher angezeigt werden. Die Datei kann direkt heruntergeladen werden.</p>
               </div>
             </div>
@@ -436,7 +481,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
                 <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-light-custom text-primary-custom">
                   <FileText className="h-8 w-8" />
                 </span>
-                <h3 className="mt-4 truncate font-semibold text-gray-950">{currentDocument.name}</h3>
+                <h3 className="mt-4 truncate font-semibold text-gray-900">{currentDocument.name}</h3>
                 <p className="mt-2 text-sm leading-6 text-gray-600">Mobile Browser zeigen eingebettete PDFs nicht zuverlässig. Öffnen Sie das Dokument in einem neuen Tab oder laden Sie es herunter.</p>
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                   <button type="button" onClick={openInNewTab} className="btn-primary inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-white">
@@ -450,12 +495,15 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             </div>
           )}
 
+          {/* Das PDF-Modul des Browsers stellt häufig ein leeres contentDocument
+              bereit, obwohl die Vorschau bereits sichtbar ist. Deshalb wird
+              die Einbettung nicht per Timeout ersetzt. */}
           {!isLoading && !error && previewUrl && isPdf && !isCompact && (
-            <object data={`${previewUrl}#view=FitH&toolbar=1&navpanes=0`} type="application/pdf" className="h-full w-full rounded-lg bg-white shadow-sm" aria-label={`Vorschau von ${currentDocument.name}`}>
-              <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-gray-600">
-                Die PDF-Vorschau wird von diesem Browser nicht unterstützt.
-              </div>
-            </object>
+            <iframe
+              src={`${previewUrl}#view=FitH&toolbar=1&navpanes=0`}
+              className="h-full w-full rounded-lg border-0 shadow-sm"
+              title={`Vorschau von ${currentDocument.name}`}
+            />
           )}
 
           {!isLoading && !error && previewUrl && isText && (
