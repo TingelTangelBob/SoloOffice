@@ -17,6 +17,7 @@ import { fileToBase64, formatFileSize, validateFile, generateUniqueFileName } fr
 import { generateUUID } from '../utils/uuid';
 import { useCompany } from '../context/CompanyContext';
 import { formatDate } from '../utils/formatters';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface AttachmentManagerProps {
   attachments: (JobAttachment | InvoiceAttachment)[];
@@ -43,6 +44,7 @@ export function AttachmentManager({
   allowPreview = false,
   onPreview
 }: AttachmentManagerProps) {
+  const { notify } = useFeedback();
   const { company } = useCompany();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -157,7 +159,7 @@ export function AttachmentManager({
       URL.revokeObjectURL(url);
     } catch (error) {
       logger.error('Fehler beim Download des Anhangs:', error);
-      alert('Fehler beim Download der Datei');
+      notify({ variant: 'error', message: 'Fehler beim Download der Datei' });
     }
   };
 

@@ -14,13 +14,32 @@ import type { PreviewDocument } from '../utils/previewDocuments';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
+import { useFeedback } from '../context/FeedbackContext';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
 type FormDraft = { customerId: string; invoiceId: string; reason: string; issueDate: string; items: ItemDraft[] };
 const emptyItem = (): ItemDraft => ({ description: '', quantity: '1', unitPrice: '0', taxRate: '19' });
 const emptyForm = (): FormDraft => ({ customerId: '', invoiceId: '', reason: '', issueDate: new Date().toISOString().slice(0, 10), items: [emptyItem()] });
 
+/**
+ * Spaltenmaße der Gutschriftentabelle: Nummer 128, Datum 96, Betrag 112,
+ * Status 112 und Ursprungsrechnung 176 Pixel. Ein Entwurf zeigt höchstens fünf
+ * Icon-Aktionen.
+ */
+const CREDIT_NOTE_TABLE_LAYOUT = listTableLayout({
+  baseColumnsWidth: 128 + 96 + 112 + 112 + 176,
+  flexibleColumnMinWidth: 176,
+  maxActions: 5,
+});
+
+const creditNoteStatusLabel = (status: CreditNote['status']) =>
+  status === 'draft' ? 'Entwurf' : status === 'sent' ? 'Versendet' : status;
+
 export function CreditNoteManagement() {
+  const { confirm } = useFeedback();
   const { customers } = useCustomers();
   const { invoices } = useInvoices();
   const { company } = useCompany();
@@ -35,6 +54,8 @@ export function CreditNoteManagement() {
   const [busy, setBusy] = useState<string | null>(null);
   const [previewDocument, setPreviewDocument] = useState<PreviewDocument | null>(null);
   const locale = company?.locale || 'de-DE';
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= CREDIT_NOTE_TABLE_LAYOUT.inlineActionsMinWidth;
 
   const load = async () => { setLoading(true); setError(''); try { setNotes(await apiService.getCreditNotes()); } catch (e) { setError(e instanceof Error ? e.message : 'Gutschriften konnten nicht geladen werden.'); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
@@ -70,7 +91,16 @@ export function CreditNoteManagement() {
       setOpen(false); setEditingNote(null); setNotice(editingNote ? 'Gutschrift-Entwurf gespeichert.' : 'Gutschrift als negativer Beleg angelegt.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Gutschrift konnte nicht gespeichert werden.'); } finally { setBusy(null); }
   };
-  const remove = async (note: CreditNote) => { if (note.status !== 'draft' || !window.confirm(`Gutschrift ${note.invoiceNumber || ''} löschen?`)) return; setBusy(note.id); try { await apiService.deleteCreditNote(note.id); setNotes(items => items.filter(item => item.id !== note.id)); } catch (e) { setError(e instanceof Error ? e.message : 'Gutschrift konnte nicht gelöscht werden.'); } finally { setBusy(null); } };
+  const remove = async (note: CreditNote) => {
+    if (note.status !== 'draft') return;
+    const confirmed = await confirm({
+      title: 'Gutschrift löschen',
+      message: `Gutschrift ${note.invoiceNumber || ''} wirklich löschen?`.replace('  ', ' '),
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setBusy(note.id); try { await apiService.deleteCreditNote(note.id); setNotes(items => items.filter(item => item.id !== note.id)); } catch (e) { setError(e instanceof Error ? e.message : 'Gutschrift konnte nicht gelöscht werden.'); } finally { setBusy(null); } };
   const markSent = async (note: CreditNote) => { setBusy(note.id); try { const updated = await apiService.updateCreditNote(note.id, { status: 'sent' }); setNotes(items => items.map(item => item.id === note.id ? updated : item)); setNotice('Gutschrift wurde als versendet markiert.'); } catch (e) { setError(e instanceof Error ? e.message : 'Status konnte nicht geändert werden.'); } finally { setBusy(null); } };
   const getCustomer = (note: CreditNote) => customers.find(customer => customer.id === note.customerId);
   const download = async (note: CreditNote) => {
@@ -96,7 +126,110 @@ export function CreditNoteManagement() {
 
   return <div className="space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Korrekturen und Rückerstattungen nachvollziehbar verwalten."><button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Gutschrift erstellen" title="Gutschrift erstellen"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neu</span></button></PageHeader>
     {notice && <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}{error && <div className="flex justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><XCircle className="h-4 w-4" /></button></div>}
-    {loading ? <div className="rounded-lg bg-white p-10 text-center text-gray-500">Gutschriften werden geladen …</div> : notes.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">Noch keine Gutschriften vorhanden.</div> : <div className="overflow-x-auto rounded-lg bg-white shadow-sm"><table className="min-w-full divide-y divide-gray-200 text-sm"><thead className="bg-gray-50"><tr>{['Nummer', terminology.entity.singular, 'Datum', 'Betrag', 'Status', 'Ursprungsrechnung', 'Aktionen'].map(label => <th key={label} className="px-4 py-3 text-left font-medium text-gray-500">{label}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{notes.map(note => <tr key={note.id}><td className="px-4 py-3 font-medium">{note.invoiceNumber || '–'}</td><td className="px-4 py-3">{customerName(note.customerId)}</td><td className="px-4 py-3">{formatDate(note.issueDate, locale, company?.dateFormat)}</td><td className="px-4 py-3 font-medium">−{formatCurrency(total(note), locale, company?.numberFormat, company?.currency)}</td><td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2 py-1 text-xs">{note.status === 'draft' ? 'Entwurf' : note.status === 'sent' ? 'Versendet' : note.status}</span></td><td className="px-4 py-3">{(note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId ? invoices.find(invoice => invoice.id === (note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId)?.invoiceNumber || (note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId : '–'}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-2">{note.status === 'draft' && <><button onClick={() => openEdit(note)} className="action-button"><FilePlus2 className="h-4 w-4" />Bearbeiten</button><button onClick={() => void markSent(note)} disabled={busy === note.id} className="action-button text-primary-custom"><Check className="h-4 w-4" />Versendet</button></>}<button onClick={() => void preview(note)} disabled={busy === `preview-${note.id}`} className="action-button"><Eye className="h-4 w-4" />Vorschau</button><button onClick={() => void download(note)} disabled={busy === `download-${note.id}`} className="action-button"><Download className="h-4 w-4" />PDF</button>{note.status === 'draft' && <button onClick={() => void remove(note)} disabled={busy === note.id} className="action-button text-red-600"><Trash2 className="h-4 w-4" />Löschen</button>}</div></td></tr>)}</tbody></table></div>}
+    {loading ? <div className="rounded-lg bg-white p-10 text-center text-gray-500">Gutschriften werden geladen …</div> : notes.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">Noch keine Gutschriften vorhanden.</div> : (() => {
+      const referenceNumber = (note: CreditNote) => {
+        const referenceId = (note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId;
+        if (!referenceId) return '–';
+        return invoices.find(invoice => invoice.id === referenceId)?.invoiceNumber || referenceId;
+      };
+      const amount = (note: CreditNote) => `−${formatCurrency(total(note), locale, company?.numberFormat, company?.currency)}`;
+      const actionItems = (note: CreditNote) => (
+        <>
+          {note.status === 'draft' && (
+            <>
+              <ActionMenuItem icon={<FilePlus2 className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(note)}>Bearbeiten</ActionMenuItem>
+              <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => void markSent(note)} disabled={busy === note.id}>Als versendet markieren</ActionMenuItem>
+            </>
+          )}
+          <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => void preview(note)} disabled={busy === `preview-${note.id}`}>Vorschau anzeigen</ActionMenuItem>
+          <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => void download(note)} disabled={busy === `download-${note.id}`}>Herunterladen</ActionMenuItem>
+          {note.status === 'draft' && (
+            <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(note)} disabled={busy === note.id}>Löschen</ActionMenuItem>
+          )}
+        </>
+      );
+
+      return (
+        <div className="overflow-hidden rounded-lg bg-white shadow-sm">
+          <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+            <table className="w-full table-fixed text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-32 px-4 py-3 text-left font-medium text-gray-500">Nummer</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">{terminology.entity.singular}</th>
+                  <th className="w-24 px-4 py-3 text-left font-medium text-gray-500">Datum</th>
+                  <th className="w-28 px-4 py-3 text-right font-medium text-gray-500">Betrag</th>
+                  <th className="w-28 px-4 py-3 text-left font-medium text-gray-500">Status</th>
+                  <th className="w-44 px-4 py-3 text-left font-medium text-gray-500">Ursprungsrechnung</th>
+                  <th
+                    style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
+                    className={`sticky right-0 z-20 bg-gray-50 py-3 text-left font-medium text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}
+                  >
+                    <span className="sr-only">Aktionen</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {notes.map(note => (
+                  <tr key={note.id} className="group hover:bg-gray-50">
+                    <td className="w-32 truncate px-4 py-3 font-medium">{note.invoiceNumber || '–'}</td>
+                    <td className="max-w-0 px-4 py-3"><span className="block truncate">{customerName(note.customerId)}</span></td>
+                    <td className="w-24 whitespace-nowrap px-4 py-3">{formatDate(note.issueDate, locale, company?.dateFormat)}</td>
+                    <td className="w-28 whitespace-nowrap px-4 py-3 text-right font-medium">{amount(note)}</td>
+                    <td className="w-28 px-4 py-3"><span className="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs">{creditNoteStatusLabel(note.status)}</span></td>
+                    <td className="w-44 max-w-0 px-4 py-3"><span className="block truncate">{referenceNumber(note)}</span></td>
+                    <td
+                      style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
+                      className={`sticky right-0 z-10 bg-white py-3 transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
+                    >
+                      {showInlineActions ? (
+                        <div className="flex flex-nowrap items-center gap-1">
+                          {note.status === 'draft' && (
+                            <>
+                              <button type="button" onClick={() => openEdit(note)} className="action-icon-button action-icon-indigo" title="Bearbeiten" aria-label="Bearbeiten"><FilePlus2 className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => void markSent(note)} disabled={busy === note.id} className="action-icon-button action-icon-green" title="Als versendet markieren" aria-label="Als versendet markieren"><Check className="h-4 w-4" /></button>
+                            </>
+                          )}
+                          <button type="button" onClick={() => void preview(note)} disabled={busy === `preview-${note.id}`} className="action-icon-button action-icon-blue" title="Vorschau anzeigen" aria-label="Vorschau anzeigen"><Eye className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => void download(note)} disabled={busy === `download-${note.id}`} className="action-icon-button action-icon-green" title="Herunterladen" aria-label="Herunterladen"><Download className="h-4 w-4" /></button>
+                          {note.status === 'draft' && (
+                            <button type="button" onClick={() => void remove(note)} disabled={busy === note.id} className="action-icon-button action-icon-red" title="Löschen" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+                          )}
+                        </div>
+                      ) : (
+                        <ActionMenu triggerClassName="action-icon-button action-icon-blue">{actionItems(note)}</ActionMenu>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="divide-y divide-gray-100 tablet:hidden">
+            {notes.map(note => (
+              <article key={note.id} className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">{note.invoiceNumber || 'Gutschrift'}</h3>
+                      <p className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">{amount(note)}</p>
+                    </div>
+                    <p className="mt-1 truncate text-sm text-gray-600">{customerName(note.customerId)}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                      <span className="inline-flex shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold">{creditNoteStatusLabel(note.status)}</span>
+                      <span>{formatDate(note.issueDate, locale, company?.dateFormat)}</span>
+                      <span className="truncate">Zu: {referenceNumber(note)}</span>
+                    </div>
+                  </div>
+                  <ActionMenu containerClassName="shrink-0" triggerClassName="action-icon-button action-icon-blue">{actionItems(note)}</ActionMenu>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      );
+    })()}
     {open && (
       <DialogShell
         titleId="credit-note-dialog-title"

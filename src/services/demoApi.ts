@@ -1,6 +1,7 @@
 import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
+import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 
@@ -16,6 +17,7 @@ interface DemoState {
   calendarEvents: DemoRecord[];
   euerEntries: DemoRecord[];
   euerEntryHistory: DemoRecord[];
+  invoiceHistory: DemoRecord[];
   fixedAssets: DemoRecord[];
   receipts: DemoRecord[];
   incomingEInvoices: DemoRecord[];
@@ -50,7 +52,7 @@ function getDemoDataStorageKey(): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 5;
+const DEMO_SEED_VERSION = 6;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -393,6 +395,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     calendarEvents: [],
     euerEntries: [],
     euerEntryHistory: [],
+    invoiceHistory: [],
     fixedAssets: [],
     receipts: [],
     incomingEInvoices: [],
@@ -406,6 +409,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       taxId: 'DE123456789', bankAccount: 'DE02 1203 0000 0000 2020 51', bic: 'BYLADEM1001',
       primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
       reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
+      invoiceNumberPattern: 'RE-{YYYY}-{NNN}', creditNoteNumberPattern: 'GS-{YYYY}-{NNN}',
       locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
       invoiceTemplates: [], createdAt: isoDate(),
     },
@@ -457,6 +461,7 @@ function readState(): DemoState {
       recurringInvoices: parsed.recurringInvoices || [],
       euerEntries: parsed.euerEntries || [],
       euerEntryHistory: parsed.euerEntryHistory || [],
+      invoiceHistory: parsed.invoiceHistory || [],
       fixedAssets: parsed.fixedAssets || [],
       receipts: (parsed.receipts || []).map(receipt => ({ ...receipt, ocrExtractedData: receipt.ocrExtractedData || receipt.extractedData || {} })),
       incomingEInvoices: parsed.incomingEInvoices || [],
@@ -562,6 +567,7 @@ function validateDemoEuerSource(state: DemoState, data: DemoRecord, currentId?: 
     if (data.entryType !== 'income') throw new Error('Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.');
     const invoice = state.invoices.find(item => item.id === sourceId && item.documentType !== 'credit_note');
     if (!invoice) throw new Error('Die zugeordnete Rechnung wurde nicht gefunden.');
+    if (invoice.status === 'draft') throw new Error('Für einen Rechnungsentwurf kann noch keine Zahlung erfasst werden.');
     const allocated = state.euerEntries
       .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === sourceId && entry.status !== 'voided' && entry.id !== currentId)
       .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
@@ -905,6 +911,83 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
   };
 }
 
+/**
+ * Bildet im Demo-Modus nach, was im produktiven Betrieb der Datenbank-Trigger
+ * aus `029_invoice_audit` erledigt.
+ */
+function recordInvoiceHistory(
+  state: DemoState,
+  invoice: DemoRecord | undefined,
+  action: 'created' | 'updated' | 'deleted',
+  oldData: DemoRecord | null,
+  newData: DemoRecord | null,
+) {
+  if (!invoice) return;
+  state.invoiceHistory.push({
+    id: generateUUID(),
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    recordType: 'invoice',
+    action,
+    oldData: oldData ? { ...oldData } : null,
+    newData: newData ? { ...newData } : null,
+    changedAt: isoDate(),
+    changedBy: null,
+  });
+}
+
+function demoPaidAmount(state: DemoState, invoice: DemoRecord): number {
+  const total = Number(invoice.total || 0);
+  const booked = state.euerEntries
+    .filter(entry => entry.sourceType === 'invoice_payment'
+      && entry.sourceId === invoice.id
+      && entry.status !== 'voided')
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  return Math.min(total, Math.max(booked, invoice.status === 'paid' ? total : 0));
+}
+
+function withDemoPaymentState(state: DemoState, invoice: DemoRecord): DemoRecord {
+  const paidAmount = demoPaidAmount(state, invoice);
+  return {
+    ...invoice,
+    paidAmount,
+    outstandingAmount: invoice.status === 'paid'
+      ? 0
+      : Math.max(Number(invoice.total || 0) - paidAmount, 0),
+  };
+}
+
+function syncDemoInvoicePaymentStatus(state: DemoState, invoiceId: unknown): void {
+  if (!invoiceId) return;
+  const invoice = state.invoices.find(item => item.id === String(invoiceId) && item.documentType !== 'credit_note');
+  if (!invoice) return;
+  const booked = state.euerEntries
+    .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status !== 'voided')
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  if (booked >= Number(invoice.total || 0) - 0.005) invoice.status = 'paid';
+  else if (invoice.status === 'paid') invoice.status = dateOnly(invoice.dueDate) < dateOnly(isoDate()) ? 'overdue' : 'sent';
+  invoice.updatedAt = isoDate();
+}
+
+function nextDemoInvoiceNumber(state: DemoState, issueDate: unknown, documentType: 'invoice' | 'credit_note' = 'invoice'): string {
+  const canonicalDate = dateOnly(issueDate || isoDate());
+  const [year, month, day] = canonicalDate.split('-').map(Number);
+  const patternValue = String(documentType === 'credit_note' ? state.company.creditNoteNumberPattern || 'GS-{YYYY}-{NNN}' : state.company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}');
+  const pattern = validateInvoiceNumberPattern(patternValue) ? (documentType === 'credit_note' ? 'GS-{YYYY}-{NNN}' : 'RE-{YYYY}-{NNN}') : patternValue;
+  const startNumber = Number(state.yearlyInvoiceStartNumbers.find(item => Number(item.year) === year)?.start_number || state.company.invoiceStartNumber || 1);
+  const reserved = new Set([
+    ...state.invoices.map(invoice => String(invoice.invoiceNumber || '')),
+    ...state.invoiceHistory.map(entry => String(entry.invoiceNumber || '')),
+  ].filter(Boolean));
+  let counter = Math.max(1, startNumber);
+  let candidate = formatInvoiceNumberPattern(pattern, new Date(year, month - 1, day), counter);
+  while (reserved.has(candidate)) {
+    counter += 1;
+    candidate = formatInvoiceNumberPattern(pattern, new Date(year, month - 1, day), counter);
+  }
+  return candidate;
+}
+
 export async function demoRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const state = readState();
   const method = options.method || 'GET';
@@ -915,6 +998,201 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'invoices' && parts[2] === 'payments' && id && method === 'POST') {
+    const invoice = state.invoices.find(item => item.id === id && item.documentType !== 'credit_note');
+    if (!invoice) throw new Error('Rechnung nicht gefunden.');
+    if (invoice.status === 'draft') throw new Error('Für einen Entwurf kann noch kein Zahlungseingang erfasst werden.');
+
+    const amount = Number(data.amount);
+    const entryDate = assertDemoDate(data.entryDate, 'Das Zahlungsdatum');
+    const notes = String(data.notes || '').trim();
+    const paidAmount = demoPaidAmount(state, { ...invoice, status: invoice.status === 'paid' ? 'sent' : invoice.status });
+    const remaining = Math.max(Number(invoice.total || 0) - paidAmount, 0);
+    if (invoice.status === 'paid' || remaining < 0.005) throw new Error('Die Rechnung ist bereits vollständig bezahlt.');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Der Zahlungsbetrag muss größer als 0 sein.');
+    if (amount > remaining + 0.005) throw new Error(`Der Zahlungsbetrag überschreitet den offenen Betrag von ${remaining.toFixed(2)} €.`);
+    if (notes.length > 500) throw new Error('Die Notiz darf höchstens 500 Zeichen enthalten.');
+
+    const subtotal = Number(invoice.subtotal || 0);
+    const payment: DemoRecord = {
+      id: generateUUID(),
+      entryType: 'income',
+      entryDate,
+      description: `Zahlung Rechnung ${invoice.invoiceNumber}`,
+      category: 'other_income',
+      amount,
+      taxRate: subtotal > 0 ? Number(invoice.taxAmount || 0) / subtotal * 100 : 0,
+      notes: notes || undefined,
+      sourceType: 'invoice_payment',
+      sourceId: invoice.id,
+      status: 'active',
+      createdAt: isoDate(),
+      updatedAt: isoDate(),
+    };
+    state.euerEntries.push(payment);
+    state.euerEntryHistory.push({
+      id: generateUUID(), euerEntryId: payment.id, action: 'created', reason: '',
+      oldData: null, newData: { ...payment }, changedAt: isoDate(),
+    });
+
+    if (remaining - amount < 0.005) {
+      const previous = { ...invoice };
+      invoice.status = 'paid';
+      invoice.updatedAt = isoDate();
+      recordInvoiceHistory(state, invoice, 'updated', previous, invoice);
+    }
+    saveState(state);
+    return { payment, invoice: withDemoPaymentState(state, invoice) } as unknown as T;
+  }
+
+  // Änderungsverlauf einer Rechnung. Im Demo-Modus übernimmt diese Funktion,
+  // was im produktiven Betrieb ein Datenbank-Trigger erledigt.
+  if (resource === 'invoices' && parts[2] === 'history') {
+    return state.invoiceHistory
+      .filter(entry => entry.invoiceId === parts[1])
+      .sort((a, b) => String(b.changedAt).localeCompare(String(a.changedAt))) as unknown as T;
+  }
+
+  if (resource === 'reminders' && parts[1] === 'eligible' && method === 'GET') {
+    if (state.company.remindersEnabled === false) return [] as unknown as T;
+    const daysAfterDue = Number(state.company.reminderDaysAfterDue ?? 7);
+    const daysBetween = Number(state.company.reminderDaysBetween ?? 7);
+    const todayDate = new Date(`${dateOnly(isoDate())}T00:00:00Z`);
+    return state.invoices
+      .filter(invoice => invoice.documentType !== 'credit_note' && ['sent', 'overdue', 'reminded_1x', 'reminded_2x'].includes(String(invoice.status)))
+      .map(invoice => withDemoPaymentState(state, invoice))
+      .filter(invoice => Number(invoice.outstandingAmount || 0) >= 0.005)
+      .map(invoice => {
+        const dueDate = new Date(`${dateOnly(invoice.dueDate)}T00:00:00Z`);
+        const daysSinceDue = Math.floor((todayDate.getTime() - dueDate.getTime()) / 86400000);
+        const lastDate = invoice.lastReminderDate ? new Date(`${dateOnly(invoice.lastReminderDate)}T00:00:00Z`) : null;
+        const daysSinceLastReminder = lastDate ? Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000) : undefined;
+        const nextStage = invoice.status === 'reminded_1x' ? 2 : invoice.status === 'reminded_2x' ? 3 : 1;
+        const waitDays = nextStage === 1 ? daysAfterDue : daysBetween;
+        const elapsed = nextStage === 1 ? daysSinceDue : (daysSinceLastReminder ?? -1);
+        const isEligible = elapsed >= waitDays;
+        const baseDate = nextStage === 1 ? dueDate : lastDate;
+        const nextEligibleDate = !isEligible && baseDate
+          ? new Date(baseDate.getTime() + waitDays * 86400000).toISOString()
+          : undefined;
+        return {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          customerId: invoice.customerId,
+          customerName: invoice.customerName,
+          dueDate: invoice.dueDate,
+          total: Number(invoice.total || 0),
+          paidAmount: Number(invoice.paidAmount || 0),
+          outstandingAmount: Number(invoice.outstandingAmount || 0),
+          currentStatus: invoice.status,
+          nextStage,
+          daysSinceDue,
+          daysSinceLastReminder,
+          isEligible,
+          nextEligibleDate,
+        };
+      }) as unknown as T;
+  }
+
+  if (resource === 'reminders' && parts[1] === 'history' && method === 'GET') {
+    return state.invoices
+      .filter(invoice => invoice.documentType !== 'credit_note' && invoice.lastReminderDate)
+      .map(invoice => withDemoPaymentState(state, invoice))
+      .sort((a, b) => String(b.lastReminderSentAt || '').localeCompare(String(a.lastReminderSentAt || ''))) as unknown as T;
+  }
+
+  if (resource === 'reminders' && parts[1] === 'send' && parts[2] && method === 'POST') {
+    const invoice = state.invoices.find(item => item.id === parts[2] && item.documentType !== 'credit_note');
+    if (!invoice) throw new Error('Rechnung nicht gefunden.');
+    if (Number(withDemoPaymentState(state, invoice).outstandingAmount || 0) < 0.005) throw new Error('Die Rechnung ist bereits vollständig bezahlt.');
+    const stage = Number(data.stage);
+    if (![1, 2, 3].includes(stage)) throw new Error('Ungültige Mahnstufe.');
+    const previous = { ...invoice };
+    if (data.updateStatus) invoice.status = `reminded_${stage}x`;
+    invoice.lastReminderDate = dateOnly(isoDate());
+    invoice.lastReminderSentAt = isoDate();
+    invoice.maxReminderStage = Math.max(Number(invoice.maxReminderStage || 0), stage);
+    invoice.updatedAt = isoDate();
+    recordInvoiceHistory(state, invoice, 'updated', previous, invoice);
+    saveState(state);
+    return { success: true, invoiceId: invoice.id } as unknown as T;
+  }
+
+  if (resource === 'receipts' && parts[2] === 'create-invoice' && id && method === 'POST') {
+    const receipt = state.receipts.find(item => item.id === id);
+    if (!receipt) throw new Error('Beleg nicht gefunden.');
+    if (receipt.billedInvoiceId) throw new Error('Der Beleg wurde bereits weiterberechnet.');
+    const customer = state.customers.find(item => item.id === String(data.customerId));
+    if (!customer) throw new Error('Bitte einen gültigen Kunden auswählen.');
+    const description = String(data.description || '').trim();
+    const quantity = Number(data.quantity ?? 1);
+    const unitPrice = Number(data.unitPrice);
+    const taxRate = Number(data.taxRate ?? 0);
+    if (!description || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+      throw new Error('Bitte Beschreibung, Menge, Nettopreis und MwSt.-Satz prüfen.');
+    }
+    const items = [{ id: generateUUID(), description, quantity, unitPrice, taxRate, total: quantity * unitPrice, order: 1 }];
+    const totals = calculateItems(items);
+    const invoice: DemoRecord = {
+      id: generateUUID(),
+      invoiceNumber: nextDemoInvoiceNumber(state, isoDate()),
+      customerId: customer.id,
+      customerName: customer.name,
+      issueDate: dateOnly(isoDate()),
+      dueDate: dateOnly(isoDate(Number(state.company.defaultPaymentDays || 30))),
+      items,
+      attachments: receipt.content ? [{ id: generateUUID(), name: receipt.name, content: receipt.content, contentType: receipt.contentType, size: receipt.size, uploadedAt: isoDate() }] : [],
+      ...totals,
+      status: 'draft',
+      notes: String(data.notes || ''),
+      documentType: 'invoice',
+      createdAt: isoDate(),
+      updatedAt: isoDate(),
+    };
+    state.invoices.push(invoice);
+    receipt.billedInvoiceId = invoice.id;
+    receipt.updatedAt = isoDate();
+    recordInvoiceHistory(state, invoice, 'created', null, invoice);
+    saveState(state);
+    return { invoice: withDemoPaymentState(state, invoice), receipt } as unknown as T;
+  }
+
+  // Unterschrift eines Auftrags: eigener Endpunkt, deshalb vor der generischen
+  // Ressourcenbehandlung.
+  if (resource === 'jobs' && parts[2] === 'signature') {
+    const index = state.jobs.findIndex(item => item.id === parts[1]);
+    if (index < 0) throw new Error('Auftrag nicht gefunden');
+
+    if (method === 'DELETE') {
+      state.jobs[index] = { ...state.jobs[index], signature: null, updatedAt: isoDate() };
+      saveState(state);
+      return { message: 'Unterschrift entfernt', job: state.jobs[index] } as unknown as T;
+    }
+
+    const signatureData = String(data.signatureData || '');
+    const customerName = String(data.customerName || '').trim();
+    if (!signatureData) throw new Error('Unterschrift fehlt');
+    if (!customerName) throw new Error('Name fehlt');
+    if (customerName.length > 200) throw new Error('Der Name ist zu lang');
+    if (!signatureData.startsWith('data:image/png;base64,')) throw new Error('Ungültiges Unterschriftsformat');
+    if (signatureData.length > 1_800_022) throw new Error('Die Unterschrift ist zu groß');
+    if (state.jobs[index].status === 'invoiced') throw new Error('Abgerechnete Einheiten können nicht mehr unterschrieben werden');
+
+    state.jobs[index] = {
+      ...state.jobs[index],
+      status: 'completed',
+      signature: {
+        id: generateUUID(),
+        customerName,
+        signatureData,
+        signedAt: isoDate(),
+      },
+      updatedAt: isoDate(),
+    };
+    saveState(state);
+    return { message: 'Unterschrift gespeichert', job: state.jobs[index] } as unknown as T;
+  }
 
   if (resource === 'imports') {
     const importResource = parts[1];
@@ -928,6 +1206,15 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       return (!start || date >= start) && (!end || date <= end);
     };
     const reportableInvoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note');
+    /**
+     * Teilzahlungen liegen als EÜR-Buchung mit sourceType 'invoice_payment'.
+     * Ohne sie gilt eine Rechnung mit Anzahlung als vollständig offen.
+     * Der Status 'paid' bleibt die Obergrenze, damit ältere Rechnungen ohne
+     * erfasste Zahlung weiterhin als bezahlt zählen.
+     */
+    const paidAmountOf = (invoice: DemoRecord) => demoPaidAmount(state, invoice);
+    const outstandingAmountOf = (invoice: DemoRecord) =>
+      invoice.status === 'paid' ? 0 : Math.max(Number(invoice.total || 0) - paidAmountOf(invoice), 0);
     if (path.includes('invoice-journal')) {
       const startDate = queryParams.get('startDate') || undefined;
       const endDate = queryParams.get('endDate') || undefined;
@@ -944,9 +1231,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         taxAmount: Number(invoice.taxAmount || 0),
         total: Number(invoice.total || 0),
         status: invoice.status,
-        paidAmount: invoice.status === 'paid' ? Number(invoice.total || 0) : 0,
-        overdueAmount: invoice.status === 'overdue' ? Number(invoice.total || 0) : 0,
-        outstandingAmount: ['draft', 'sent'].includes(String(invoice.status)) ? Number(invoice.total || 0) : 0,
+        paidAmount: paidAmountOf(invoice),
+        overdueAmount: invoice.status === 'overdue' ? outstandingAmountOf(invoice) : 0,
+        outstandingAmount: outstandingAmountOf(invoice),
         createdAt: invoice.createdAt,
       }));
 
@@ -974,8 +1261,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         subtotalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
         taxSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
         totalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        paidSum: monthInvoices.filter(invoice => invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        overdueSum: monthInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        paidSum: monthInvoices.reduce((sum, invoice) => sum + paidAmountOf(invoice), 0),
+        overdueSum: monthInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + outstandingAmountOf(invoice), 0),
       };
     });
     const customerTotals = new Map<string, DemoRecord[]>();
@@ -1009,8 +1296,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         totalSubtotal,
         totalTax,
         totalAmount,
-        paidAmount: yearInvoices.filter(invoice => invoice.status === 'paid').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        overdueAmount: yearInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+        paidAmount: yearInvoices.reduce((sum, invoice) => sum + paidAmountOf(invoice), 0),
+        overdueAmount: yearInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + outstandingAmountOf(invoice), 0),
         avgInvoiceAmount: yearInvoices.length ? totalAmount / yearInvoices.length : 0,
       },
     } as T;
@@ -1018,6 +1305,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'company') {
     if (method === 'PUT') {
+      const invoicePatternError = data.invoiceNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.invoiceNumberPattern));
+      const creditNotePatternError = data.creditNoteNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.creditNoteNumberPattern));
+      if (invoicePatternError || creditNotePatternError) throw new Error(invoicePatternError || creditNotePatternError || 'Ungültiges Nummernmuster.');
       const requestedProfile = typeof data.terminologyProfile === 'string' && data.terminologyProfile in demoProfileFixtures
         ? data.terminologyProfile as TerminologyProfile
         : String(state.company.terminologyProfile || 'customers') as TerminologyProfile;
@@ -1050,7 +1340,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const issueDate = dateOnly(isoDate());
     const invoice: DemoRecord = {
       id: generateUUID(),
-      invoiceNumber: `RE-${new Date(`${issueDate}T00:00:00`).getFullYear()}-${String(state.invoices.length + 1).padStart(3, '0')}`,
+      invoiceNumber: nextDemoInvoiceNumber(state, issueDate),
       customerId: quote.customerId,
       customerName: quote.customerName,
       issueDate,
@@ -1109,7 +1399,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       sourceJobs: sourceJobSources,
       customerId: customer.id,
       customerName: customer.name,
-      invoiceNumber: `RE-${new Date().getFullYear()}-${String(state.invoices.length + 1).padStart(3, '0')}`,
+      invoiceNumber: nextDemoInvoiceNumber(state, data.issueDate || isoDate()),
       issueDate: dateOnly(data.issueDate || isoDate()),
       dueDate: dateOnly(data.dueDate || isoDate(30)),
       items,
@@ -1183,6 +1473,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       };
       entries.push(record);
       addHistory(record, 'created', record.correctionReason as string | undefined, undefined);
+      if (record.sourceType === 'invoice_payment') syncDemoInvoicePaymentStatus(state, record.sourceId);
       saveState(state);
       return record as unknown as T;
     }
@@ -1208,6 +1499,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         updated.status = 'active';
         entries[index] = updated;
         addHistory(updated, 'updated', String(data.correctionReason || ''), oldData);
+        if (oldEntry.sourceType === 'invoice_payment') syncDemoInvoicePaymentStatus(state, oldEntry.sourceId);
+        if (updated.sourceType === 'invoice_payment' && updated.sourceId !== oldEntry.sourceId) syncDemoInvoicePaymentStatus(state, updated.sourceId);
         saveState(state);
         return updated as unknown as T;
       }
@@ -1221,6 +1514,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           if (receipt?.linkedEuerEntryId === id) receipt.linkedEuerEntryId = null;
         }
         addHistory(updated, 'voided', updated.correctionReason as string, oldData);
+        if (updated.sourceType === 'invoice_payment') syncDemoInvoicePaymentStatus(state, updated.sourceId);
         saveState(state);
         return undefined as T;
       }
@@ -1436,10 +1730,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         order: Number(item.order || 0),
       }));
       const totals = calculateItems(invoiceItems);
-      const invoiceYear = new Date(`${runDate}T00:00:00`).getFullYear();
       const invoice: DemoRecord = {
         id: generateUUID(),
-        invoiceNumber: `RE-${invoiceYear}-${String(state.invoices.length + 1).padStart(3, '0')}`,
+        invoiceNumber: nextDemoInvoiceNumber(state, runDate),
         customerId: recurring.customerId,
         customerName: recurring.customerName,
         issueDate: runDate,
@@ -1549,11 +1842,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         return { ...item, id: generateUUID(), quantity, unitPrice, total: quantity * unitPrice, order: Number(item.order || 0) };
       });
       const totals = calculateItems(items);
-      const year = new Date(String(data.issueDate || isoDate())).getFullYear();
       const record: DemoRecord = {
         ...data,
         id: generateUUID(),
-        invoiceNumber: `GS-${year}-${String(creditNotes.length + 1).padStart(3, '0')}`,
+        invoiceNumber: nextDemoInvoiceNumber(state, data.issueDate || isoDate(), 'credit_note'),
         customerId: customer.id,
         customerName: customer.name,
         issueDate: dateOnly(data.issueDate || isoDate()),
@@ -1663,7 +1955,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       : key === 'customers' && queryParams.get('includeArchived') !== 'true'
         ? items.filter(item => item.isActive !== false)
         : items;
-    return collectionResponse<T>(visibleItems);
+    return collectionResponse<T>(key === 'invoices'
+      ? visibleItems.map(invoice => withDemoPaymentState(state, invoice))
+      : visibleItems);
   }
   if (method === 'POST' && !id) {
     if (key === 'jobs') {
@@ -1691,13 +1985,21 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     const record: DemoRecord = { ...data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() };
     if (key === 'customers') record.customerNumber = String(1001 + items.length);
+    if (key === 'invoices') {
+      record.invoiceNumber = nextDemoInvoiceNumber(state, data.issueDate || isoDate());
+      record.documentType = 'invoice';
+    }
     items.push(record);
+    if (key === 'invoices') recordInvoiceHistory(state, record, 'created', null, record);
     saveState(state);
-    return record as unknown as T;
+    return (key === 'invoices' ? withDemoPaymentState(state, record) : record) as unknown as T;
   }
   if (id) {
     const index = items.findIndex(itemRecord => itemRecord.id === id);
-    if (method === 'GET') return (index >= 0 ? items[index] : {}) as unknown as T;
+    if (method === 'GET') {
+      const record = index >= 0 ? items[index] : {};
+      return (key === 'invoices' && index >= 0 ? withDemoPaymentState(state, record) : record) as unknown as T;
+    }
     if (method === 'PUT') {
       if (key === 'quotes' && (items[index]?.convertedToInvoiceId || items[index]?.status === 'billed')) {
         throw new Error('Ein bereits abgerechnetes Angebot kann nicht mehr geändert werden.');
@@ -1810,10 +2112,24 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           return records[0] as unknown as T;
         }
       }
+      if (key === 'invoices' && index >= 0 && data.status === 'paid' && items[index].status !== 'paid') {
+        const booked = state.euerEntries
+          .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === id && entry.status !== 'voided')
+          .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+        const targetTotal = Number(data.total ?? items[index].total ?? 0);
+        if (booked < targetTotal - 0.005) {
+          throw new Error('Bitte den Zahlungseingang an der Rechnung erfassen. Der Status wird nach vollständiger Zahlung automatisch gesetzt.');
+        }
+      }
+      const previous = index >= 0 ? { ...items[index] } : null;
       const updated = { ...(items[index] || { id }), ...data, id, updatedAt: isoDate() };
       if (index >= 0) items[index] = updated; else items.push(updated);
+      if (key === 'invoices' && state.euerEntries.some(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === id && entry.status !== 'voided')) {
+        syncDemoInvoicePaymentStatus(state, id);
+      }
+      if (key === 'invoices') recordInvoiceHistory(state, updated, previous ? 'updated' : 'created', previous, updated);
       saveState(state);
-      return updated as unknown as T;
+      return (key === 'invoices' ? withDemoPaymentState(state, updated) : updated) as unknown as T;
     }
     if (method === 'DELETE') {
       if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
@@ -1825,6 +2141,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
             job.updatedAt = isoDate();
           }
         });
+      }
+      if (key === 'invoices' && index >= 0) {
+        recordInvoiceHistory(state, items[index], 'deleted', { ...items[index] }, null);
       }
       const remainingItems = items.filter(itemRecord => itemRecord.id !== id);
       state[key] = remainingItems as DemoState[typeof key];

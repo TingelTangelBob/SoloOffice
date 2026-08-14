@@ -2,6 +2,7 @@ import { pool } from '../database.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
 import logger from '../utils/logger.js';
 import { validateDiscountFields } from '../utils/validation.js';
+import { counterMatcher, formatNumberPattern, invoiceDateParts, numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -9,52 +10,76 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice',
   const client = clientOverride || await pool.connect();
   try {
     // Use the year from the issue date instead of current system year
-    const invoiceYear = new Date(issueDate).getFullYear();
-    const prefix = documentType === 'credit_note' ? 'GS' : 'RE';
+    const date = invoiceDateParts(issueDate);
+    if (!date) {
+      const error = new Error('Ungültiges Rechnungsdatum.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const invoiceYear = date.year;
     const workspaceResult = await client.query("SELECT COALESCE(NULLIF(current_setting('app.workspace_id', true), ''), 'global') AS workspace_id");
     const workspaceId = workspaceResult.rows[0]?.workspace_id || 'global';
     // The number is derived from the current maximum, so concurrent requests
     // must share a transaction-scoped advisory lock.
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-      [`solooffice:invoice-number:${workspaceId}:${invoiceYear}:${prefix}`]
+      [`solooffice:invoice-number:${workspaceId}:${invoiceYear}:${documentType}`]
     );
-    const yearPattern = `${prefix}-${invoiceYear}-%`;
-    const lastInvoiceResult = await client.query(`
-      SELECT invoice_number
-      FROM invoices
-      WHERE invoice_number LIKE $1
-      ORDER BY NULLIF(SUBSTRING(invoice_number FROM '[0-9]+$'), '')::INTEGER DESC NULLS LAST
-      LIMIT 1
-    `, [yearPattern]);
 
     // Get the year-specific start number, falling back to the company default.
     const yearlyStartResult = await client.query('SELECT start_number FROM yearly_invoice_start_numbers WHERE year = $1', [invoiceYear]);
-    const companyStartResult = await client.query("SELECT invoice_start_number FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
+    const companyStartResult = await client.query(`
+      SELECT invoice_start_number, invoice_number_pattern, credit_note_number_pattern
+      FROM company
+      WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
+    `);
     const companyStartNumber = companyStartResult.rows[0]?.invoice_start_number || 1;
     const yearStartNumber = yearlyStartResult.rows.length > 0 ? yearlyStartResult.rows[0].start_number : companyStartNumber;
+    const defaultPattern = documentType === 'credit_note' ? 'GS-{YYYY}-{NNN}' : 'RE-{YYYY}-{NNN}';
+    const configuredPattern = documentType === 'credit_note'
+      ? companyStartResult.rows[0]?.credit_note_number_pattern
+      : companyStartResult.rows[0]?.invoice_number_pattern;
+    const pattern = numberPatternError(configuredPattern) ? defaultPattern : configuredPattern.trim();
 
-    let invoiceNumber;
-    if (lastInvoiceResult.rows.length === 0) {
-      // No invoices for this year found - start with year-specific start number
-      invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
-    } else {
-      const lastInvoiceNumber = lastInvoiceResult.rows[0].invoice_number;
-      if (lastInvoiceNumber && lastInvoiceNumber.startsWith(`${prefix}-${invoiceYear}-`)) {
-        const numberPart = lastInvoiceNumber.substring(`${prefix}-${invoiceYear}-`.length); // Remove prefix
-        const lastNumber = parseInt(numberPart);
-        if (!isNaN(lastNumber)) {
-          // Continue from last number, but respect year start number as minimum
-          const nextNumber = Math.max(lastNumber + 1, yearStartNumber);
-          invoiceNumber = `${prefix}-${invoiceYear}-${String(nextNumber).padStart(3, '0')}`;
-        } else {
-          invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
-        }
-      } else {
-        invoiceNumber = `${prefix}-${invoiceYear}-${String(yearStartNumber).padStart(3, '0')}`;
+    // Auch gelöschte Entwürfe bleiben durch die Historie reserviert. Dadurch
+    // wird eine einmal vergebene Nummer nicht später erneut verwendet.
+    const reservedResult = await client.query(`
+      SELECT invoice_number
+      FROM invoices
+      WHERE EXTRACT(YEAR FROM issue_date) = $1
+        AND COALESCE(document_type, 'invoice') = $2
+      UNION
+      SELECT invoice_number
+      FROM invoice_history
+      WHERE record_type = 'invoice'
+        AND COALESCE(new_data->>'issue_date', old_data->>'issue_date', '') LIKE $3
+        AND COALESCE(new_data->>'document_type', old_data->>'document_type', 'invoice') = $2
+    `, [invoiceYear, documentType, `${invoiceYear}-%`]);
+    const reserved = new Set(reservedResult.rows.map(row => String(row.invoice_number || '')).filter(Boolean));
+    const matcher = counterMatcher(pattern, date);
+    let highestCounter = Number(yearStartNumber) - 1;
+    for (const number of reserved) {
+      const currentPatternMatch = number.match(matcher);
+      if (currentPatternMatch) {
+        highestCounter = Math.max(highestCounter, Number(currentPatternMatch[1]));
+        continue;
       }
+      // Kompatibilität mit dem bisherigen Format bei einem Musterwechsel.
+      const legacyCounter = number.match(/(\d+)$/);
+      if (legacyCounter) highestCounter = Math.max(highestCounter, Number(legacyCounter[1]));
     }
 
+    let counter = highestCounter + 1;
+    let invoiceNumber = formatNumberPattern(pattern, date, counter);
+    while (reserved.has(invoiceNumber)) {
+      counter += 1;
+      invoiceNumber = formatNumberPattern(pattern, date, counter);
+    }
+    if (invoiceNumber.length > 50) {
+      const error = new Error('Das Rechnungsnummern-Muster erzeugt mehr als 50 Zeichen.');
+      error.statusCode = 400;
+      throw error;
+    }
     return invoiceNumber;
   } finally {
     if (!clientOverride) client.release();
@@ -378,7 +403,7 @@ export async function updateInvoice(id, data) {
     const updateData = data;
 
     // First, get the current invoice to preserve existing values
-    const currentInvoice = await client.query('SELECT * FROM invoices WHERE id = $1', [id]);
+    const currentInvoice = await client.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [id]);
 
     if (currentInvoice.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -475,6 +500,27 @@ export async function updateInvoice(id, data) {
       sourceQuoteId: current.source_quote_id,
       items: updateData.items // items are handled separately
     };
+
+    const paymentResult = await client.query(`
+      SELECT COALESCE(SUM(amount), 0) AS amount
+      FROM euer_entries
+      WHERE source_type = 'invoice_payment' AND source_id = $1 AND status = 'active'
+    `, [id]);
+    const activePaymentAmount = Number(paymentResult.rows[0]?.amount || 0);
+    if (mergedData.status === 'paid' && current.status !== 'paid' && activePaymentAmount < Number(mergedData.total) - 0.005) {
+        const error = new Error('Bitte den Zahlungseingang an der Rechnung erfassen. Der Status wird nach vollständiger Zahlung automatisch gesetzt.');
+        error.statusCode = 409;
+        throw error;
+    }
+    if (activePaymentAmount > 0) {
+      if (activePaymentAmount >= Number(mergedData.total) - 0.005) mergedData.status = 'paid';
+      else if (current.status === 'paid') {
+        const dueDate = new Date(`${String(mergedData.dueDate).slice(0, 10)}T00:00:00Z`);
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        mergedData.status = dueDate < today ? 'overdue' : 'sent';
+      }
+    }
 
     // Update invoice
     await client.query(`

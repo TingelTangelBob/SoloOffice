@@ -85,7 +85,7 @@ function instrumentClient(client) {
   if (contextAwareClients.has(client)) return client;
 
   const originalQuery = client.query.bind(client);
-  client.query = (config, values) => {
+  client.query = (...args) => {
     const context = getRequestContext();
     const workspaceId = context?.workspaceId || '';
     const userId = context?.userId || '';
@@ -95,16 +95,30 @@ function instrumentClient(client) {
     // uses it. Avoid issuing two extra SQL round-trips for every query while
     // still switching the context whenever the connection changes owners.
     if (clientContextKeys.get(client) === contextKey) {
-      return originalQuery(config, values);
+      return originalQuery(...args);
     }
 
-    return originalQuery(
+    // `pg` supports both a promise and a callback form, and `pool.query()`
+    // internally uses the callback form only. Dropping that callback would
+    // leave the caller waiting forever and would never release the pooled
+    // connection, so it has to be carried through explicitly.
+    const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+    const applyContext = originalQuery(
       'SELECT set_config($1, $2, false), set_config($3, $4, false)',
       ['app.workspace_id', workspaceId, 'app.user_id', userId]
     ).then(() => {
       clientContextKeys.set(client, contextKey);
-      return originalQuery(config, values);
     });
+
+    if (!callback) {
+      return applyContext.then(() => originalQuery(...args));
+    }
+
+    applyContext.then(
+      () => originalQuery(...args, callback),
+      error => callback(error)
+    );
+    return undefined;
   };
 
   contextAwareClients.add(client);

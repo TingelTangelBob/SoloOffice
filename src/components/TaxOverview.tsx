@@ -3,7 +3,7 @@ import { ArrowRight, Boxes, Calculator, CheckCircle2, FileSpreadsheet, ReceiptTe
 import { useCompany } from '../context/CompanyContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
-import type { CreditNote } from '../types';
+import type { CreditNote, EuerEntry } from '../types';
 import { PageHeader } from './PageHeader';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
@@ -16,27 +16,40 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   const { invoices } = useInvoices();
   const { company } = useCompany();
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
   const year = new Date().getFullYear();
   const [noticeDismissed, setNoticeDismissed] = useState(() => isNoticeDismissed('tax-euer-preparation'));
   const locale = company?.locale || 'de-DE';
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
 
   useEffect(() => {
-    void apiService.getCreditNotes().then(setCreditNotes).catch(() => setCreditNotes([]));
-  }, []);
+    void Promise.allSettled([apiService.getCreditNotes(), apiService.getEuerEntries(year)]).then(([notesResult, entriesResult]) => {
+      setCreditNotes(notesResult.status === 'fulfilled' ? notesResult.value : []);
+      setEuerEntries(entriesResult.status === 'fulfilled' ? entriesResult.value : []);
+    });
+  }, [year]);
 
   const paidInvoiceSummary = useMemo(() => {
-    const paidDocuments = [...invoices, ...creditNotes].filter(invoice => new Date(invoice.issueDate).getFullYear() === year && invoice.status === 'paid');
-    const income = paidDocuments.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-    return { count: paidDocuments.length, income };
-  }, [creditNotes, invoices, year]);
+    const payments = euerEntries.filter(entry => entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId);
+    const linkedInvoiceIds = new Set(payments.map(entry => entry.sourceId));
+    const legacyPaidInvoices = invoices.filter(invoice => (
+      invoice.status === 'paid'
+      && new Date(invoice.issueDate).getFullYear() === year
+      && !linkedInvoiceIds.has(invoice.id)
+    ));
+    const paidCreditNotes = creditNotes.filter(note => new Date(note.issueDate).getFullYear() === year && note.status === 'paid');
+    const income = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+      + legacyPaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
+      + paidCreditNotes.reduce((sum, note) => sum + Number(note.total || 0), 0);
+    return { count: linkedInvoiceIds.size + legacyPaidInvoices.length, income };
+  }, [creditNotes, euerEntries, invoices, year]);
 
   return <div className="space-y-6">
     <PageHeader icon={Calculator} title="Steuern" subtitle="Steuerübersicht und Einnahmenüberschussrechnung" />
 
     {!noticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice('tax-euer-preparation'); setNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis ausblenden"><X className="h-5 w-5" /></button>
-      <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">EÜR einfach online vorbereiten</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-blue-900">Einnahmen aus bezahlten Rechnungen werden automatisch berücksichtigt. Sonstige Einnahmen und Ausgaben können Sie in der EÜR ergänzen und anschließend für Ihren Steuerberater exportieren.</p><p className="mt-2 text-xs text-blue-800">Die ELSTER-Übertragung ist bewusst noch nicht aktiv und wird separat geprüft.</p></div></div>
+      <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">EÜR einfach online vorbereiten</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-blue-900">Erfasste Zahlungseingänge und Teilzahlungen werden automatisch berücksichtigt. Sonstige Einnahmen und Ausgaben können Sie in der EÜR ergänzen und anschließend für Ihren Steuerberater exportieren.</p><p className="mt-2 text-xs text-blue-800">Die ELSTER-Übertragung ist bewusst noch nicht aktiv und wird separat geprüft.</p></div></div>
     </section>}
 
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

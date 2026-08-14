@@ -12,6 +12,7 @@ import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue } 
 import { getTerminology } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiService } from '../services/api';
+import { useFeedback } from '../context/FeedbackContext';
 
 export type JobInvoiceGenerationType = 'single' | 'course' | 'daily' | 'weekly' | 'monthly';
 
@@ -28,6 +29,7 @@ export function JobInvoiceGenerator({
   onInvoiceGenerated,
   initialGenerationType = 'single',
 }: JobInvoiceGeneratorProps) {
+  const { notify } = useFeedback();
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
   const { jobEntries: jobs, refreshJobEntries } = useJobs();
@@ -93,7 +95,7 @@ export function JobInvoiceGenerator({
       onClose();
     } catch (error) {
       logger.error('Error generating invoice:', error);
-      alert('Fehler beim Erstellen der Rechnung. Bitte versuchen Sie es erneut.');
+      notify({ variant: 'error', message: 'Fehler beim Erstellen der Rechnung. Bitte versuchen Sie es erneut.' });
     } finally {
       setIsGenerating(false);
     }

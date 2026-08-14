@@ -16,7 +16,7 @@ type DocumentKind = Exclude<DocumentsTab, 'all'>;
 
 interface DocumentsManagementProps {
   initialTab?: string;
-  onNavigate?: (page: string, filter?: string, searchTerm?: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
 }
 
 interface UnifiedDocument {

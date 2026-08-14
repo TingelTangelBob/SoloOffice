@@ -43,6 +43,22 @@ function toHistory(row) {
   };
 }
 
+async function syncInvoicePaymentStatus(client, invoiceId) {
+  if (!invoiceId) return;
+  await client.query(`
+    UPDATE invoices i
+    SET status = CASE
+      WHEN COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+        WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0) >= i.total - 0.005
+        THEN 'paid'
+      WHEN i.status = 'paid' AND i.due_date < CURRENT_DATE THEN 'overdue'
+      WHEN i.status = 'paid' THEN 'sent'
+      ELSE i.status
+    END
+    WHERE i.id = $1 AND COALESCE(i.document_type, 'invoice') = 'invoice'
+  `, [invoiceId]);
+}
+
 function validateEntry(data) {
   const entryType = String(data.entryType || '');
   const entryDate = String(data.entryDate || '');
@@ -77,13 +93,14 @@ async function validateSource(data, currentId = null, executor = query) {
   if (sourceType === 'invoice_payment') {
     if (data.entryType !== 'income') return 'Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.';
     const invoiceResult = await executor(`
-      SELECT total, document_type
+      SELECT total, document_type, status
       FROM invoices
       WHERE id = $1
       FOR UPDATE
     `, [sourceId]);
     const invoice = invoiceResult.rows[0];
     if (!invoice || (invoice.document_type && invoice.document_type !== 'invoice')) return 'Die zugeordnete Rechnung wurde nicht gefunden.';
+    if (invoice.status === 'draft') return 'Für einen Rechnungsentwurf kann noch keine Zahlung erfasst werden.';
 
     const paymentResult = await executor(`
       SELECT COALESCE(SUM(amount), 0) AS amount
@@ -218,6 +235,7 @@ router.post('/', async (req, res, next) => {
         throw conflict;
       }
     }
+    if (sourceType === 'invoice_payment') await syncInvoicePaymentStatus(client, sourceId);
     await client.query('COMMIT');
     res.status(201).json(toEntry(result.rows[0]));
   } catch (error) {
@@ -278,7 +296,7 @@ router.put('/:id', async (req, res, next) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Die Buchung ist nicht mehr aktiv.' });
     }
-    const previousSource = current.source_type === 'receipt' ? current.source_id : null;
+    const previousSource = currentRow.source_type === 'receipt' ? currentRow.source_id : null;
     if (previousSource && (merged.sourceType !== 'receipt' || merged.sourceId !== previousSource)) {
       await client.query('UPDATE receipts SET linked_euer_entry_id = NULL, updated_at = NOW() WHERE id = $1 AND linked_euer_entry_id = $2', [previousSource, req.params.id]);
     }
@@ -298,6 +316,11 @@ router.put('/:id', async (req, res, next) => {
         throw conflict;
       }
     }
+    const previousInvoiceSource = currentRow.source_type === 'invoice_payment' ? currentRow.source_id : null;
+    if (previousInvoiceSource) await syncInvoicePaymentStatus(client, previousInvoiceSource);
+    if (merged.sourceType === 'invoice_payment' && merged.sourceId !== previousInvoiceSource) {
+      await syncInvoicePaymentStatus(client, merged.sourceId);
+    }
     await client.query('COMMIT');
     res.json(toEntry(result.rows[0]));
   } catch (error) {
@@ -312,7 +335,7 @@ router.delete('/:id', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const currentResult = await client.query('SELECT id, source_type, status FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const currentResult = await client.query('SELECT id, source_type, source_id, status FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (currentResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
@@ -333,6 +356,9 @@ router.delete('/:id', async (req, res, next) => {
     }
     if (currentResult.rows[0].source_type === 'receipt') {
       await client.query('UPDATE receipts SET linked_euer_entry_id = NULL, updated_at = NOW() WHERE linked_euer_entry_id = $1', [req.params.id]);
+    }
+    if (currentResult.rows[0].source_type === 'invoice_payment') {
+      await syncInvoicePaymentStatus(client, currentResult.rows[0].source_id);
     }
     await client.query('COMMIT');
     res.status(204).send();

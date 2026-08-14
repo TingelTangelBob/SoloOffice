@@ -260,6 +260,8 @@ export const defaultCompany: Company = {
   defaultPaymentDays: 30,
   immediatePaymentClause: 'Rechnung ist per sofort fällig, ohne Abzug',
   invoiceStartNumber: 1,
+  invoiceNumberPattern: 'RE-{YYYY}-{NNN}',
+  creditNoteNumberPattern: 'GS-{YYYY}-{NNN}',
   showCombinedDropdowns: false,
   isSmallBusiness: false,
   companyHeaderTwoLine: false,
@@ -592,4 +594,3 @@ export function useCompany(): CompanyContextType {
   }
   return context;
 }
-

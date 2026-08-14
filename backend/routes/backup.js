@@ -16,6 +16,7 @@ const JSONB_COLUMNS = {
   'company': ['payment_methods', 'invoice_templates', 'document_templates'],
   'receipts': ['extracted_data', 'ocr_extracted_data'],
   'euer_entry_history': ['old_data', 'new_data'],
+  'invoice_history': ['old_data', 'new_data'],
   'incoming_e_invoices': ['extracted_data']
 };
 
@@ -42,6 +43,7 @@ const BACKUP_TABLES = [
   'yearly_invoice_start_numbers',
   'euer_entries',
   'euer_entry_history',
+  'invoice_history',
   'fixed_assets',
   'receipts',
   'email_history',
@@ -52,6 +54,11 @@ const BACKUP_TABLES = [
   'incoming_e_invoices'
 ];
 
+// Änderungshistorien stehen bewusst nicht in dieser Liste. Sie sind per
+// Datenbank-Trigger gegen UPDATE und DELETE gesperrt – ein Löschversuch würde
+// die gesamte Wiederherstellung abbrechen. Fachlich passt es ebenfalls: Der
+// Nachweis, wer wann was geändert hat, darf durch das Einspielen einer
+// Sicherung nicht verschwinden. Die Sätze aus der Sicherung kommen hinzu.
 const RESTORE_CLEAR_TABLES = [
   'email_history', 'customer_emails', 'customer_hourly_rates',
   'customer_specific_hourly_rates', 'customer_specific_materials',
@@ -60,7 +67,7 @@ const RESTORE_CLEAR_TABLES = [
   'quote_attachments', 'quote_items', 'quotes',
   'invoice_attachments', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices',
   'hourly_rates', 'material_templates', 'customers', 'company',
-  'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entry_history', 'euer_entries', 'incoming_e_invoices'
+  'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entries', 'incoming_e_invoices'
 ];
 
 const RESTORE_ORDER = [
@@ -70,7 +77,6 @@ const RESTORE_ORDER = [
   'euer_entries',
   'euer_entry_history',
   'fixed_assets',
-  'receipts',
   'hourly_rates',
   'material_templates',
   'customer_hourly_rates',
@@ -79,7 +85,9 @@ const RESTORE_ORDER = [
   'recurring_invoices',
   'calendar_events',
   'invoices',
+  'receipts',
   'invoice_items',
+  'invoice_history',
   'invoice_attachments',
   'recurring_invoice_runs',
   'quotes',
@@ -95,6 +103,18 @@ const RESTORE_ORDER = [
   'incoming_e_invoices'
 ];
 
+/**
+ * Tabellen mit protokollierenden Triggern. Während der Wiederherstellung
+ * werden sie stillgelegt: Sonst erzeugt jeder eingespielte Datensatz einen
+ * frischen Historieneintrag und täuscht eine Änderung vor, die nie stattfand.
+ */
+async function setAuditSuppressed(client, suppressed) {
+  // Transaktionslokale Sitzungsvariable statt ALTER TABLE ... DISABLE TRIGGER:
+  // Das funktioniert ohne Tabellenbesitzer-Rechte und kann nach einem Fehler
+  // nicht versehentlich für die nächste Pool-Verbindung aktiv bleiben.
+  await client.query("SELECT set_config('app.audit_disabled', $1, true)", [suppressed ? 'true' : 'false']);
+}
+
 const WORKSPACE_SCOPED_TABLES = new Set([
   'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_job_sources',
   'quotes', 'quote_items', 'quote_attachments', 'job_recurrences', 'job_entries', 'job_attachments',
@@ -102,6 +122,7 @@ const WORKSPACE_SCOPED_TABLES = new Set([
   'yearly_invoice_start_numbers', 'euer_entries', 'euer_entry_history', 'fixed_assets',
   'receipts', 'email_history', 'smtp_settings', 'customer_hourly_rates',
   'customer_specific_hourly_rates', 'customer_specific_materials', 'incoming_e_invoices',
+  'invoice_history',
 ]);
 
 function prepareBackupRecord(table, record) {
@@ -227,7 +248,10 @@ async function restoreBackupTables(client, backupData, workspaceId) {
         const values = columns.map(column => column === 'workspace_id'
           ? workspaceId
           : processValueForRestore(table, column, record[column]));
-        await client.query(`INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})`, values);
+        const conflictClause = table === 'euer_entry_history' || table === 'invoice_history'
+          ? ' ON CONFLICT (id) DO NOTHING'
+          : '';
+        await client.query(`INSERT INTO ${table} (${columnNames}) VALUES (${placeholders})${conflictClause}`, values);
       }
       restoredRecords += records.length;
     }
@@ -432,6 +456,7 @@ router.post('/restore', async (req, res) => {
     let restoredRecords = 0;
 
     logger.info('Clearing data for the active workspace only...');
+    await setAuditSuppressed(client, true);
     await clearWorkspaceData(client, req.auth.workspaceId);
 
     logger.info('Restoring JSON data with schema allow-list...');
@@ -595,6 +620,8 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
     }
 
     // Commit transaction
+    // Protokollierung wieder aktivieren, bevor die Transaktion endet.
+    await setAuditSuppressed(client, false);
     await client.query('COMMIT');
     
     logger.info(`Restore completed: ${restoredTables} tables, ${restoredRecords} records`);
@@ -872,6 +899,7 @@ router.post('/restore-zip', async (req, res) => {
 
       // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
       logger.info('Clearing data for the active workspace only...');
+      await setAuditSuppressed(client, true);
       await clearWorkspaceData(client, req.auth.workspaceId);
       logger.info('Restoring data with schema allow-list...');
       ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId));
@@ -1034,6 +1062,8 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
       }
 
       // Commit transaction
+      // Protokollierung wieder aktivieren, bevor die Transaktion endet.
+      await setAuditSuppressed(client, false);
       await client.query('COMMIT');
       
       // Clean up uploaded file

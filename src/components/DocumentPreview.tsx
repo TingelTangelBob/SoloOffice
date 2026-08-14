@@ -1,25 +1,27 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import logger from '../utils/logger';
-import { 
-  X, 
-  Download, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw,
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  File,
   FileText,
   Image,
-  File,
-  Eye,
+  Loader2,
   Maximize,
   Minimize,
-  ChevronLeft,
-  ChevronRight
+  RotateCcw,
+  RotateCw,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { generateInvoicePDF, generateJobPDF, generateQuotePDF, downloadBlob } from '../utils/pdfGenerator';
-import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
-import { getTerminology } from '../utils/terminology';
+import { useCustomers } from '../context/CustomerContext';
+import { downloadBlob, generateInvoicePDF, generateJobPDF, generateQuotePDF } from '../utils/pdfGenerator';
 import type { PreviewDocument } from '../utils/previewDocuments';
+import { getTerminology } from '../utils/terminology';
+import logger from '../utils/logger';
 
 interface DocumentPreviewProps {
   isOpen: boolean;
@@ -27,555 +29,445 @@ interface DocumentPreviewProps {
   documents?: PreviewDocument[];
   initialIndex?: number;
 }
+
+interface PreparedDocument {
+  blob: Blob;
+  fileName: string;
+}
+
+const TOOL_BUTTON = 'inline-flex h-10 w-10 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-40';
+
+function attachmentBlob(document: PreviewDocument): Blob {
+  if (!document.content) throw new Error('Der Dateiinhalt fehlt.');
+  const binary = atob(document.content);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: document.contentType || 'application/octet-stream' });
+}
+
+function effectiveContentType(document?: PreviewDocument): string {
+  if (!document) return '';
+  if (document.type === 'invoice-pdf' && document.pdfFormat === 'xrechnung') return 'application/xml';
+  if (document.type !== 'attachment') return 'application/pdf';
+  return document.contentType || '';
+}
+
+function formatFileSize(bytes?: number): string | null {
+  if (!bytes || bytes < 0) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function fileTypeLabel(contentType: string): string {
+  if (contentType === 'application/pdf') return 'PDF';
+  if (contentType === 'application/xml' || contentType === 'text/xml') return 'XML';
+  if (contentType.startsWith('image/')) return 'Bild';
+  if (contentType.startsWith('text/')) return 'Textdatei';
+  return contentType || 'Datei';
+}
+
+function FileTypeIcon({ contentType, className = 'h-5 w-5' }: { contentType: string; className?: string }) {
+  if (contentType.startsWith('image/')) return <Image className={className} aria-hidden="true" />;
+  if (contentType === 'application/pdf' || contentType.includes('xml')) return <FileText className={className} aria-hidden="true" />;
+  return <File className={className} aria-hidden="true" />;
+}
+
 export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex = 0 }: DocumentPreviewProps) {
   const { company } = useCompany();
-  const terminology = getTerminology(company.terminologyProfile);
   const { customers } = useCustomers();
+  const terminology = getTerminology(company.terminologyProfile);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewBlobRef = useRef<Blob | null>(null);
+  const loadedFileNameRef = useRef<string | null>(null);
+  const loadedDocumentIdRef = useRef<string | null>(null);
+  const loadSequenceRef = useRef(0);
+
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [iframeKey, setIframeKey] = useState(0); // For forcing iframe reload
-  const previewUrlRef = useRef<string | null>(null);
-  
-  const modalRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  // Mobile detection
-  const isMobile = () => {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-           (window.innerWidth <= 768);
-  };
 
   const currentDocument = documents[currentIndex];
+  const contentType = effectiveContentType(currentDocument);
+  const isPdf = contentType === 'application/pdf';
+  const isImage = contentType.startsWith('image/');
+  const isText = contentType.startsWith('text/') || contentType === 'application/xml';
+  const canPreview = isPdf || isImage || isText;
 
-  // Handle escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
+  const releasePreview = useCallback(() => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    previewBlobRef.current = null;
+    loadedFileNameRef.current = null;
+    loadedDocumentIdRef.current = null;
+    setPreviewUrl(null);
+  }, []);
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
+  const prepareDocument = useCallback(async (document: PreviewDocument): Promise<PreparedDocument> => {
+    if (document.type === 'attachment') {
+      return { blob: attachmentBlob(document), fileName: document.name };
     }
 
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen, onClose]);
+    if (document.type === 'invoice-pdf' && document.invoice) {
+      const customer = customers.find(entry => entry.id === document.invoice?.customerId);
+      if (!customer) throw new Error(`${terminology.entity.singular} nicht gefunden.`);
+      const format = document.pdfFormat || 'zugferd';
+      const blob = await generateInvoicePDF(document.invoice, { format, company, customer });
+      const fileName = format === 'xrechnung'
+        ? `${document.invoice.invoiceNumber}_xrechnung.xml`
+        : `${document.invoice.invoiceNumber}${format === 'zugferd' ? '' : `_${format}`}.pdf`;
+      return { blob, fileName };
+    }
 
-  // Cleanup URL when component unmounts or closes
-  useEffect(() => {
-    return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
+    if (document.type === 'job-pdf' && document.job) {
+      const customer = customers.find(entry => entry.id === document.job?.customerId);
+      if (!customer) throw new Error(`${terminology.entity.singular} nicht gefunden.`);
+      const blob = await generateJobPDF(document.job, { company, customer });
+      const number = document.job.jobNumber || document.job.id.slice(-8).toUpperCase();
+      return { blob, fileName: `${terminology.work.confirmationLabel}_${number}.pdf` };
+    }
 
-  const loadDocumentContent = useCallback(async () => {
-    if (!currentDocument) return;
+    if (document.type === 'quote-pdf' && document.quote) {
+      const customer = customers.find(entry => entry.id === document.quote?.customerId);
+      if (!customer) throw new Error(`${terminology.entity.singular} nicht gefunden.`);
+      const blob = await generateQuotePDF(document.quote, { company, customer });
+      return { blob, fileName: `${document.quote.quoteNumber.replace(/\//g, '-')}.pdf` };
+    }
 
+    throw new Error('Das Dokument enthält keine gültigen Vorschaudaten.');
+  }, [company, customers, terminology]);
+
+  const loadDocument = useCallback(async () => {
+    if (!currentDocument) {
+      releasePreview();
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    const sequence = ++loadSequenceRef.current;
+    releasePreview();
     setIsLoading(true);
     setError(null);
-    
-    // Cleanup previous URL before creating new one (prevent memory leaks)
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = null;
-      setPreviewUrl(null);
-    }
 
     try {
-      let blob: Blob;
+      const prepared = await prepareDocument(currentDocument);
+      if (sequence !== loadSequenceRef.current) return;
+      const url = URL.createObjectURL(prepared.blob);
+      previewUrlRef.current = url;
+      previewBlobRef.current = prepared.blob;
+      loadedFileNameRef.current = prepared.fileName;
+      loadedDocumentIdRef.current = currentDocument.id;
+      setPreviewUrl(url);
+    } catch (loadError) {
+      if (sequence !== loadSequenceRef.current) return;
+      logger.error('Fehler beim Laden der Dokumentvorschau:', loadError);
+      setError(loadError instanceof Error ? loadError.message : 'Das Dokument konnte nicht geladen werden.');
+    } finally {
+      if (sequence === loadSequenceRef.current) setIsLoading(false);
+    }
+  }, [currentDocument, prepareDocument, releasePreview]);
 
-      if (currentDocument.type === 'attachment' && currentDocument.content) {
-        // Handle attachment preview
-        const binaryString = atob(currentDocument.content);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        blob = new Blob([bytes], { type: currentDocument.contentType || 'application/octet-stream' });
-      } else if (currentDocument.type === 'invoice-pdf' && currentDocument.invoice) {
-        // Generate invoice PDF
-        const customer = customers.find(c => c.id === currentDocument.invoice!.customerId);
-        if (!customer || !company) {
-          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
-        }
+  const navigateDocument = useCallback((direction: -1 | 1) => {
+    setCurrentIndex(index => Math.min(Math.max(index + direction, 0), Math.max(documents.length - 1, 0)));
+  }, [documents.length]);
 
-        blob = await generateInvoicePDF(currentDocument.invoice, {
-          format: currentDocument.pdfFormat || 'zugferd',
-          company,
-          customer
-        });
-      } else if (currentDocument.type === 'job-pdf' && currentDocument.job) {
-        // Generate job PDF
-        const customer = customers.find(c => c.id === currentDocument.job!.customerId);
-        if (!customer || !company) {
-          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
-        }
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const updateCompactState = () => setIsCompact(mediaQuery.matches);
+    updateCompactState();
+    mediaQuery.addEventListener('change', updateCompactState);
+    return () => mediaQuery.removeEventListener('change', updateCompactState);
+  }, []);
 
-        blob = await generateJobPDF(currentDocument.job, {
-          company,
-          customer
-        });
-      } else if (currentDocument.type === 'quote-pdf' && currentDocument.quote) {
-        // Generate quote PDF
-        const customer = customers.find(c => c.id === currentDocument.quote!.customerId);
-        if (!customer) {
-          throw new Error(`${terminology.entity.singular} nicht gefunden`);
-        }
-        if (!company) {
-          throw new Error(`${terminology.organization.dataLabel} nicht geladen`);
-        }
+  useEffect(() => {
+    if (!isOpen) return;
+    setCurrentIndex(Math.min(Math.max(initialIndex, 0), Math.max(documents.length - 1, 0)));
+    setIsExpanded(false);
+  }, [documents.length, initialIndex, isOpen]);
 
-        blob = await generateQuotePDF(currentDocument.quote, {
-          company,
-          customer
-        });
-      } else {
-        throw new Error('Ungültiger Dokumenttyp oder fehlende Daten');
+  useEffect(() => {
+    setZoom(100);
+    setRotation(0);
+    if (isOpen) void loadDocument();
+    return () => { loadSequenceRef.current += 1; };
+  }, [currentDocument?.id, isOpen, loadDocument]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    loadSequenceRef.current += 1;
+    releasePreview();
+    setError(null);
+  }, [isOpen, releasePreview]);
+
+  useEffect(() => () => {
+    loadSequenceRef.current += 1;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
       }
 
-      const url = URL.createObjectURL(blob);
-      previewUrlRef.current = url;
-      setPreviewUrl(url);
-      setIframeKey(prev => prev + 1); // Force iframe reload
-    } catch (err) {
-      logger.error('Fehler beim Laden des Dokuments:', err);
-      setError(err instanceof Error ? err.message : 'Fehler beim Laden des Dokuments');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [company, currentDocument, customers, terminology]);
+      if (event.key === 'Tab') {
+        const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], iframe, object, [tabindex]:not([tabindex="-1"])',
+        ) || []).filter(element => !element.hasAttribute('hidden'));
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
 
-  // Load document content when current document changes
-  useEffect(() => {
-    if (!isOpen || !currentDocument) return;
+      const target = event.target as HTMLElement | null;
+      const isEditing = target?.matches('input, textarea, select, [contenteditable="true"]');
+      if (isEditing || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key === 'ArrowLeft' && currentIndex > 0) navigateDocument(-1);
+      if (event.key === 'ArrowRight' && currentIndex < documents.length - 1) navigateDocument(1);
+    };
 
-    void loadDocumentContent();
-  }, [currentDocument, isOpen, loadDocumentContent]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, documents.length, isOpen, navigateDocument, onClose]);
 
   const handleDownload = async () => {
-    if (!currentDocument) return;
-
+    if (!currentDocument || isDownloading) return;
+    setIsDownloading(true);
+    setError(null);
     try {
-      setIsLoading(true);
-      
-      let blob: Blob;
-      let filename: string;
-
-      if (currentDocument.type === 'attachment' && currentDocument.content) {
-        const binaryString = atob(currentDocument.content);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        blob = new Blob([bytes], { type: currentDocument.contentType || 'application/octet-stream' });
-        filename = currentDocument.name;
-      } else if (currentDocument.type === 'invoice-pdf' && currentDocument.invoice) {
-        const customer = customers.find(c => c.id === currentDocument.invoice!.customerId);
-        if (!customer || !company) {
-          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
-        }
-
-        blob = await generateInvoicePDF(currentDocument.invoice, {
-          format: currentDocument.pdfFormat || 'zugferd',
-          company,
-          customer
-        });
-
-        const format = currentDocument.pdfFormat || 'zugferd';
-        if (format === 'xrechnung') {
-          filename = `${currentDocument.invoice.invoiceNumber}_xrechnung.xml`;
-        } else {
-          const formatSuffix = format === 'zugferd' ? '' : `_${format}`;
-          filename = `${currentDocument.invoice.invoiceNumber}${formatSuffix}.pdf`;
-        }
-      } else if (currentDocument.type === 'job-pdf' && currentDocument.job) {
-        const customer = customers.find(c => c.id === currentDocument.job!.customerId);
-        if (!customer || !company) {
-          throw new Error(`Fehlende ${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel}`);
-        }
-
-        blob = await generateJobPDF(currentDocument.job, {
-          company,
-          customer
-        });
-        
-        const jobNumber = currentDocument.job.jobNumber || currentDocument.job.id.slice(-8).toUpperCase();
-        filename = `${terminology.work.confirmationLabel}_${jobNumber}.pdf`;
-      } else if (currentDocument.type === 'quote-pdf' && currentDocument.quote) {
-        const customer = customers.find(c => c.id === currentDocument.quote!.customerId);
-        if (!customer) {
-          throw new Error(`${terminology.entity.singular} nicht gefunden`);
-        }
-        if (!company) {
-          throw new Error(`${terminology.organization.dataLabel} nicht geladen`);
-        }
-
-        blob = await generateQuotePDF(currentDocument.quote, {
-          company,
-          customer
-        });
-        
-        filename = `${currentDocument.quote.quoteNumber.replace(/\//g, '-')}.pdf`;
-      } else {
-        throw new Error('Ungültiger Dokumenttyp');
-      }
-
-      downloadBlob(blob, filename);
-    } catch (err) {
-      logger.error('Fehler beim Download:', err);
-      setError(err instanceof Error ? err.message : 'Fehler beim Download');
+      const prepared = loadedDocumentIdRef.current === currentDocument.id && previewBlobRef.current && loadedFileNameRef.current
+        ? { blob: previewBlobRef.current, fileName: loadedFileNameRef.current }
+        : await prepareDocument(currentDocument);
+      downloadBlob(prepared.blob, prepared.fileName);
+    } catch (downloadError) {
+      logger.error('Fehler beim Herunterladen des Dokuments:', downloadError);
+      setError(downloadError instanceof Error ? downloadError.message : 'Das Dokument konnte nicht heruntergeladen werden.');
     } finally {
-      setIsLoading(false);
+      setIsDownloading(false);
     }
   };
 
-  const navigateDocument = (direction: 'prev' | 'next') => {
-    if (direction === 'prev' && currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    } else if (direction === 'next' && currentIndex < documents.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
-  };
-
-  const handleZoom = (direction: 'in' | 'out' | 'reset') => {
-    switch (direction) {
-      case 'in':
-        setZoom(prev => Math.min(prev + 25, 300));
-        break;
-      case 'out':
-        setZoom(prev => Math.max(prev - 25, 25));
-        break;
-      case 'reset':
-        setZoom(100);
-        break;
-    }
-  };
-
-  const handleRotate = () => {
-    setRotation(prev => (prev + 90) % 360);
-  };
-
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
-  };
-
-  const getFileIcon = (contentType?: string) => {
-    if (!contentType) return <File className="w-4 h-4" />;
-    
-    if (contentType.startsWith('image/')) {
-      return <Image className="w-4 h-4" />;
-    } else if (contentType === 'application/pdf' || contentType.includes('pdf')) {
-      return <FileText className="w-4 h-4" />;
-    } else {
-      return <File className="w-4 h-4" />;
-    }
-  };
-
-  const openPDFInNewTab = () => {
-    if (previewUrl) {
-      window.open(previewUrl, '_blank');
-    }
-  };
-
-  const canPreview = (contentType?: string) => {
-    // For generated PDFs (invoice-pdf, job-pdf, quote-pdf), we can always preview
-    if (currentDocument?.type === 'invoice-pdf' || currentDocument?.type === 'job-pdf' || currentDocument?.type === 'quote-pdf') {
-      return true;
-    }
-    
-    // For attachments, check content type
-    if (!contentType) return false;
-    
-    return (
-      contentType === 'application/pdf' ||
-      contentType.startsWith('image/') ||
-      contentType.startsWith('text/')
-    );
+  const openInNewTab = () => {
+    if (!previewUrl) return;
+    const openedWindow = window.open(previewUrl, '_blank', 'noopener,noreferrer');
+    if (openedWindow) openedWindow.opener = null;
   };
 
   if (!isOpen) return null;
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  const handleModalClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
+  const sizeLabel = formatFileSize(currentDocument?.size || previewBlobRef.current?.size);
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60]"
-      onClick={handleOverlayClick}
+    <div
+      className="fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden bg-gray-950/70 backdrop-blur-[2px] sm:p-4"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <div 
-        ref={modalRef}
-        className={`bg-white rounded-lg shadow-xl flex flex-col ${
-          isFullscreen ? 'w-full h-full' : 'w-11/12 h-5/6 max-w-6xl max-h-screen'
+      <section
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={isLoading}
+        className={`grid min-h-0 w-full grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-white shadow-2xl ${
+          isExpanded
+            ? 'h-[100dvh] max-w-none rounded-none'
+            : 'h-[100dvh] max-w-7xl rounded-none sm:h-[calc(100dvh-2rem)] sm:rounded-2xl'
         }`}
-        onClick={handleModalClick}
+        onMouseDown={event => event.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-lg">
-          <div className="flex items-center space-x-3">
-            {getFileIcon(currentDocument?.contentType)}
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                {currentDocument?.name || 'Unbekanntes Dokument'}
-              </h3>
-              {documents.length > 1 && (
-                <p className="text-sm text-gray-500">
-                  {currentIndex + 1} von {documents.length} Dokumenten
-                </p>
-              )}
-            </div>
+        <header className="flex min-w-0 items-center gap-3 border-b border-gray-200 bg-white px-3 py-2.5 sm:px-5 sm:py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-light-custom text-primary-custom">
+            <FileTypeIcon contentType={contentType} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id={titleId} className="truncate text-sm font-semibold text-gray-950 sm:text-base">
+              {currentDocument?.name || 'Dokumentvorschau'}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {documents.length > 1 ? `Dokument ${currentIndex + 1} von ${documents.length}` : fileTypeLabel(contentType)}
+            </p>
           </div>
+          <button ref={closeButtonRef} type="button" onClick={onClose} className={TOOL_BUTTON} title="Vorschau schließen" aria-label="Vorschau schließen">
+            <X className="h-5 w-5" />
+          </button>
+        </header>
 
-          <div className="flex items-center space-x-2">
-            {/* Navigation buttons */}
+        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-2 py-1.5 sm:px-4">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-0.5">
             {documents.length > 1 && (
-              <>
-                <button
-                  onClick={() => navigateDocument('prev')}
-                  disabled={currentIndex === 0}
-                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Vorheriges Dokument"
-                >
-                  <ChevronLeft className="w-5 h-5" />
+              <div className="flex shrink-0 items-center gap-1 border-r border-gray-200 pr-2">
+                <button type="button" onClick={() => navigateDocument(-1)} disabled={currentIndex === 0} className={TOOL_BUTTON} title="Vorheriges Dokument" aria-label="Vorheriges Dokument">
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
-                <button
-                  onClick={() => navigateDocument('next')}
-                  disabled={currentIndex === documents.length - 1}
-                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Nächstes Dokument"
-                >
-                  <ChevronRight className="w-5 h-5" />
+                <button type="button" onClick={() => navigateDocument(1)} disabled={currentIndex === documents.length - 1} className={TOOL_BUTTON} title="Nächstes Dokument" aria-label="Nächstes Dokument">
+                  <ChevronRight className="h-5 w-5" />
                 </button>
-                <div className="w-px h-6 bg-gray-300 mx-2" />
-              </>
+              </div>
             )}
 
-            {/* Control buttons - Hide zoom/rotate controls on mobile for PDFs */}
-            {canPreview(currentDocument?.contentType) && 
-             !(isMobile() && (currentDocument?.type === 'invoice-pdf' || currentDocument?.type === 'job-pdf' || currentDocument?.type === 'quote-pdf' || currentDocument?.contentType?.includes('pdf'))) && (
-              <>
-                <button
-                  onClick={() => handleZoom('out')}
-                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded"
-                  title="Verkleinern"
-                >
-                  <ZoomOut className="w-5 h-5" />
+            {isImage && canPreview && (
+              <div className="flex shrink-0 items-center gap-1 border-r border-gray-200 pr-2">
+                <button type="button" onClick={() => setZoom(value => Math.max(value - 25, 25))} disabled={zoom <= 25} className={TOOL_BUTTON} title="Verkleinern" aria-label="Verkleinern">
+                  <ZoomOut className="h-5 w-5" />
                 </button>
-                <span className="text-sm text-gray-600 min-w-[3rem] text-center">
-                  {zoom}%
-                </span>
-                <button
-                  onClick={() => handleZoom('in')}
-                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded"
-                  title="Vergrößern"
-                >
-                  <ZoomIn className="w-5 h-5" />
+                <button type="button" onClick={() => setZoom(100)} className="h-10 min-h-0 min-w-[3.5rem] shrink-0 rounded-lg px-2 text-xs font-medium tabular-nums text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" title="Originalgröße">
+                  {zoom} %
                 </button>
-                <button
-                  onClick={handleRotate}
-                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded"
-                  title="Drehen"
-                >
-                  <RotateCw className="w-5 h-5" />
+                <button type="button" onClick={() => setZoom(value => Math.min(value + 25, 300))} disabled={zoom >= 300} className={TOOL_BUTTON} title="Vergrößern" aria-label="Vergrößern">
+                  <ZoomIn className="h-5 w-5" />
                 </button>
-                <div className="w-px h-6 bg-gray-300 mx-2" />
-              </>
+                <button type="button" onClick={() => setRotation(value => (value + 90) % 360)} className={TOOL_BUTTON} title="Im Uhrzeigersinn drehen" aria-label="Im Uhrzeigersinn drehen">
+                  <RotateCw className="h-5 w-5" />
+                </button>
+                {(zoom !== 100 || rotation !== 0) && (
+                  <button type="button" onClick={() => { setZoom(100); setRotation(0); }} className={TOOL_BUTTON} title="Ansicht zurücksetzen" aria-label="Ansicht zurücksetzen">
+                    <RotateCcw className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
             )}
 
-            {/* Mobile PDF - Show open in new tab button in header */}
-            {isMobile() && canPreview(currentDocument?.contentType) && 
-             (currentDocument?.type === 'invoice-pdf' || currentDocument?.type === 'job-pdf' || currentDocument?.type === 'quote-pdf' || currentDocument?.contentType?.includes('pdf')) && (
-              <>
-                <button
-                  onClick={openPDFInNewTab}
-                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
-                  title="In neuem Tab öffnen"
-                >
-                  <Eye className="w-5 h-5" />
-                </button>
-                <div className="w-px h-6 bg-gray-300 mx-2" />
-              </>
-            )}
-
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded"
-              title={isFullscreen ? "Vollbild verlassen" : "Vollbild"}
-            >
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-            </button>
-
-            <button
-              onClick={handleDownload}
-              disabled={isLoading}
-              className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded disabled:opacity-50"
-              title="Herunterladen"
-            >
-              <Download className="w-5 h-5" />
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded"
-              title="Schließen"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 flex items-center justify-center p-4 bg-gray-100">
-          {isLoading && (
-            <div className="flex flex-col items-center space-y-3">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-              <p className="text-gray-600">Dokument wird geladen...</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex flex-col items-center space-y-3 text-red-600">
-              <File className="w-16 h-16" />
-              <p className="text-center">{error}</p>
-              <button
-                onClick={loadDocumentContent}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Erneut versuchen
+            {previewUrl && canPreview && (
+              <button type="button" onClick={openInNewTab} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
+                <ExternalLink className="h-5 w-5" />
+                <span className="hidden whitespace-nowrap sm:inline">Neuer Tab</span>
               </button>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" onClick={() => setIsExpanded(value => !value)} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'} aria-label={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'}>
+              {isExpanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+            </button>
+            <button type="button" onClick={() => void handleDownload()} disabled={isDownloading || !currentDocument} className="btn-primary inline-flex h-10 min-h-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50" title="Dokument herunterladen">
+              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline">Herunterladen</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="relative min-h-0 overflow-hidden bg-gray-200 p-2 sm:p-4">
+          {isLoading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-gray-100/90 text-gray-600" role="status">
+              <Loader2 className="h-9 w-9 animate-spin text-primary-custom" />
+              <p className="text-sm">Dokument wird vorbereitet …</p>
             </div>
           )}
 
-          {!isLoading && !error && currentDocument && !canPreview(currentDocument.contentType) && (
-            <div className="flex flex-col items-center space-y-3 text-gray-600">
-              {getFileIcon(currentDocument.contentType)}
-              <p className="text-center">
-                Vorschau für diesen Dateityp nicht verfügbar.<br />
-                Klicken Sie auf "Herunterladen", um die Datei zu öffnen.
-              </p>
+          {!isLoading && error && (
+            <div className="flex h-full items-center justify-center">
+              <div className="max-w-md rounded-xl border border-rose-200 bg-white p-6 text-center shadow-sm">
+                <File className="mx-auto h-10 w-10 text-rose-500" />
+                <h3 className="mt-3 font-semibold text-gray-950">Vorschau nicht verfügbar</h3>
+                <p className="mt-1 text-sm text-gray-600">{error}</p>
+                <button type="button" onClick={() => void loadDocument()} className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-medium text-white hover:bg-rose-700">
+                  Erneut versuchen
+                </button>
+              </div>
             </div>
           )}
 
-          {!isLoading && !error && previewUrl && canPreview(currentDocument?.contentType) && (
-            <div className="w-full h-full flex items-center justify-center">
-              {currentDocument?.contentType?.startsWith('image/') ? (
-                <div
-                  style={{
-                    transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-                    transition: 'transform 0.2s ease-in-out',
-                  }}
-                >
-                  <img
-                    src={previewUrl}
-                    alt={currentDocument.name}
-                    className="max-w-full max-h-full object-contain"
-                  />
+          {!isLoading && !error && !currentDocument && (
+            <div className="flex h-full items-center justify-center text-sm text-gray-600">Kein Dokument ausgewählt.</div>
+          )}
+
+          {!isLoading && !error && currentDocument && !canPreview && (
+            <div className="flex h-full items-center justify-center">
+              <div className="max-w-md rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+                <FileTypeIcon contentType={contentType} className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-3 font-semibold text-gray-950">Keine integrierte Vorschau</h3>
+                <p className="mt-1 text-sm text-gray-600">Dieser Dateityp kann hier nicht sicher angezeigt werden. Die Datei kann direkt heruntergeladen werden.</p>
+              </div>
+            </div>
+          )}
+
+          {!isLoading && !error && previewUrl && isImage && (
+            <div className="h-full overflow-auto rounded-lg bg-[linear-gradient(45deg,#e5e7eb_25%,transparent_25%),linear-gradient(-45deg,#e5e7eb_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e7eb_75%),linear-gradient(-45deg,transparent_75%,#e5e7eb_75%)] bg-[length:20px_20px] bg-[position:0_0,0_10px,10px_-10px,-10px_0px] p-6">
+              <div className="flex min-h-full min-w-full items-center justify-center">
+                <img
+                  src={previewUrl}
+                  alt={currentDocument.name}
+                  className="max-w-none rounded-sm bg-white shadow-lg transition-transform duration-200"
+                  style={{ width: `${zoom}%`, transform: `rotate(${rotation}deg)` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {!isLoading && !error && previewUrl && isPdf && isCompact && (
+            <div className="flex h-full items-center justify-center">
+              <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+                <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-light-custom text-primary-custom">
+                  <FileText className="h-8 w-8" />
+                </span>
+                <h3 className="mt-4 truncate font-semibold text-gray-950">{currentDocument.name}</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-600">Mobile Browser zeigen eingebettete PDFs nicht zuverlässig. Öffnen Sie das Dokument in einem neuen Tab oder laden Sie es herunter.</p>
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                  <button type="button" onClick={openInNewTab} className="btn-primary inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-white">
+                    <ExternalLink className="h-4 w-4" /> Öffnen
+                  </button>
+                  <button type="button" onClick={() => void handleDownload()} disabled={isDownloading} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                    <Download className="h-4 w-4" /> Herunterladen
+                  </button>
                 </div>
-              ) : (
-                <>
-                  {/* Mobile PDF Handling */}
-                  {isMobile() && (currentDocument?.type === 'invoice-pdf' || currentDocument?.type === 'job-pdf' || currentDocument?.type === 'quote-pdf' || currentDocument?.contentType?.includes('pdf')) ? (
-                    <div className="flex flex-col items-center space-y-4 text-center p-6">
-                      <FileText className="w-16 h-16 text-blue-600" />
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                          {currentDocument.name}
-                        </h3>
-                        <p className="text-gray-600 mb-4">
-                          PDF-Vorschau ist auf mobilen Geräten eingeschränkt.<br />
-                          Öffnen Sie das PDF in einem neuen Tab für die beste Ansicht aller Seiten.
-                        </p>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                          onClick={openPDFInNewTab}
-                          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                        >
-                          <Eye className="w-5 h-5" />
-                          <span>In neuem Tab öffnen</span>
-                        </button>
-                        <button
-                          onClick={handleDownload}
-                          disabled={isLoading}
-                          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
-                        >
-                          <Download className="w-5 h-5" />
-                          <span>Herunterladen</span>
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Desktop PDF Handling */
-                    <div 
-                      className="w-full h-full flex items-center justify-center"
-                      style={{
-                        transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-                        transition: 'transform 0.2s ease-in-out',
-                      }}
-                    >
-                      <iframe
-                        key={iframeKey}
-                        ref={iframeRef}
-                        src={previewUrl}
-                        className="w-full h-full border-0"
-                        title={currentDocument?.name}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
+              </div>
             </div>
+          )}
+
+          {!isLoading && !error && previewUrl && isPdf && !isCompact && (
+            <object data={`${previewUrl}#view=FitH&toolbar=1&navpanes=0`} type="application/pdf" className="h-full w-full rounded-lg bg-white shadow-sm" aria-label={`Vorschau von ${currentDocument.name}`}>
+              <div className="flex h-full items-center justify-center bg-white p-6 text-center text-sm text-gray-600">
+                Die PDF-Vorschau wird von diesem Browser nicht unterstützt.
+              </div>
+            </object>
+          )}
+
+          {!isLoading && !error && previewUrl && isText && (
+            <iframe src={previewUrl} sandbox="" className="h-full w-full rounded-lg border-0 bg-white shadow-sm" title={`Vorschau von ${currentDocument.name}`} />
           )}
         </div>
 
-        {/* Footer with document info */}
-        {currentDocument && (
-          <div className="px-4 py-2 bg-gray-50 border-t text-sm text-gray-600 rounded-b-lg">
-            <div className="flex justify-between items-center">
-              <span>
-                {currentDocument.type === 'attachment' && currentDocument.size && (
-                  `Größe: ${(currentDocument.size / 1024 / 1024).toFixed(2)} MB`
-                )}
-                {currentDocument.contentType && (
-                  <span className="ml-2">
-                    Typ: {currentDocument.contentType}
-                  </span>
-                )}
-              </span>
-              
-              {documents.length > 1 && (
-                <span className="hidden sm:inline">
-                  Verwenden Sie die Pfeiltasten oder die Navigationsbuttons zum Wechseln zwischen Dokumenten
-                </span>
-              )}
-              {documents.length > 1 && (
-                <span className="sm:hidden">
-                  Verwenden Sie die Navigationsbuttons zum Wechseln zwischen Dokumenten
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+        <footer className="flex min-h-10 items-center justify-between gap-3 border-t border-gray-200 bg-white px-3 py-2 text-xs text-gray-500 sm:px-5">
+          <span className="min-w-0 truncate">{[fileTypeLabel(contentType), sizeLabel].filter(Boolean).join(' · ')}</span>
+          {documents.length > 1 && <span className="hidden shrink-0 md:inline">Mit ← und → zwischen Dokumenten wechseln</span>}
+        </footer>
+      </section>
     </div>
   );
 }

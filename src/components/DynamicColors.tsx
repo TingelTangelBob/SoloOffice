@@ -106,9 +106,12 @@ export function DynamicColors() {
   };
 
   // Flächen, auf denen die Akzentfarbe als Text erscheint: helle Karten (weiß)
-  // und dunkle Karten (#1f2937, siehe Regel für .bg-white im Dunkelmodus).
+  // und dunkle Karten. Maßgeblich ist im Dunkelmodus nicht die Karte selbst
+  // (#1f2937), sondern die hellste Fläche, auf der Akzenttext vorkommt: die
+  // Markierung des ausgewählten Tages im Kalender (#374151). Gegen alle
+  // dunkleren Flächen bleibt der Wert dadurch besser als gefordert.
   const primaryOnLightSurface = accessibleOn(primaryColor, '#ffffff');
-  const primaryOnDarkSurface = accessibleOn(primaryColor, '#1f2937');
+  const primaryOnDarkSurface = accessibleOn(primaryColor, '#374151');
 
   useEffect(() => {
     const appShell = document.getElementById('app-shell');
@@ -244,11 +247,14 @@ export function DynamicColors() {
           border-color: var(--secondary-color) !important;
         }
         
-        /* Navigation active state */
+        /* Navigation active state.
+           Die Markierung liegt als innerer Schatten links im Element: Eine
+           echte Rahmenkante würde an den abgerundeten Ecken als abgeschnittener
+           Bogen neben dem Menüpunkt stehen. */
         #app-shell .nav-active {
           background-color: var(--primary-light) !important;
           color: var(--primary-on-surface) !important;
-          border-right: 2px solid var(--primary-color) !important;
+          box-shadow: inset 3px 0 0 0 var(--primary-color) !important;
         }
         
         /* Loading spinner */
@@ -415,7 +421,7 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .nav-active {
           background-color: #374151 !important;
           color: var(--primary-on-surface) !important;
-          border-right-color: var(--primary-color) !important;
+          box-shadow: inset 3px 0 0 0 var(--primary-color) !important;
         }
         #app-shell[data-theme="dark"] .action-button {
           background-color: #1f2937 !important;
@@ -428,6 +434,56 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .action-button.text-rose-700 {
           color: #fecaca !important;
+        }
+        /* Die Akzentfarbe ist auf helle Flächen abgestimmt. Als Text auf einer
+           dunklen Karte erreicht sie nur rund 2:1. Die Variable
+           --primary-on-surface ist dieselbe Farbe, so weit aufgehellt, dass
+           4,5:1 erreicht werden. */
+        #app-shell[data-theme="dark"] .text-primary-custom {
+          color: var(--primary-on-surface) !important;
+        }
+        #app-shell[data-theme="dark"] .bg-primary-custom .text-primary-custom,
+        #app-shell[data-theme="dark"] .btn-primary .text-primary-custom {
+          color: var(--primary-text-color) !important;
+        }
+        /* Die Icon-Aktionen setzen ihre Farben über @apply zusammen. Dabei
+           landen die Deklarationen direkt in .action-icon-*, die weiter unten
+           stehenden Regeln für .bg-blue-100 & Co. greifen also nicht. Der
+           Dunkelmodus braucht deshalb eigene Regeln. */
+        #app-shell[data-theme="dark"] .action-icon-blue {
+          background-color: #1e3a8a !important;
+          color: #bfdbfe !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-blue:hover {
+          background-color: #1d4ed8 !important;
+          color: #eff6ff !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-green {
+          background-color: #14532d !important;
+          color: #bbf7d0 !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-green:hover {
+          background-color: #15803d !important;
+          color: #f0fdf4 !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-red {
+          background-color: #7f1d1d !important;
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-red:hover {
+          background-color: #b91c1c !important;
+          color: #fef2f2 !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-indigo {
+          background-color: #312e81 !important;
+          color: #c7d2fe !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-indigo:hover {
+          background-color: #4338ca !important;
+          color: #eef2ff !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-button:disabled {
+          opacity: 0.45;
         }
         #app-shell[data-theme="dark"] .custom-checkbox:not(:checked),
         #app-shell[data-theme="dark"] .custom-radio:not(:checked) {
@@ -548,12 +604,14 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-blue-950,
         #app-shell[data-theme="dark"] .text-blue-900,
         #app-shell[data-theme="dark"] .text-blue-800,
-        #app-shell[data-theme="dark"] .text-blue-700 {
+        #app-shell[data-theme="dark"] .text-blue-700,
+        #app-shell[data-theme="dark"] .text-blue-600 {
           color: #dbeafe !important;
         }
         #app-shell[data-theme="dark"] .text-green-900,
         #app-shell[data-theme="dark"] .text-green-800,
-        #app-shell[data-theme="dark"] .text-green-700 {
+        #app-shell[data-theme="dark"] .text-green-700,
+        #app-shell[data-theme="dark"] .text-green-600 {
           color: #bbf7d0 !important;
         }
         #app-shell[data-theme="dark"] .text-red-900,
@@ -565,9 +623,25 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-yellow-900,
         #app-shell[data-theme="dark"] .text-yellow-800,
         #app-shell[data-theme="dark"] .text-yellow-700,
+        #app-shell[data-theme="dark"] .text-yellow-600,
         #app-shell[data-theme="dark"] .text-amber-900,
         #app-shell[data-theme="dark"] .text-amber-800 {
           color: #fde68a !important;
+        }
+        /* Statusabzeichen nutzen die 600er-Stufe als Textfarbe. Ohne eigene
+           Regel bleibt sie dunkel und steht auf der abgedunkelten Fläche bei
+           knapp 3:1. */
+        #app-shell[data-theme="dark"] .text-purple-900,
+        #app-shell[data-theme="dark"] .text-purple-800,
+        #app-shell[data-theme="dark"] .text-purple-700,
+        #app-shell[data-theme="dark"] .text-purple-600 {
+          color: #e9d5ff !important;
+        }
+        #app-shell[data-theme="dark"] .text-indigo-900,
+        #app-shell[data-theme="dark"] .text-indigo-800,
+        #app-shell[data-theme="dark"] .text-indigo-700,
+        #app-shell[data-theme="dark"] .text-indigo-600 {
+          color: #c7d2fe !important;
         }
         #app-shell[data-theme="dark"] .text-orange-950,
         #app-shell[data-theme="dark"] .text-orange-900,

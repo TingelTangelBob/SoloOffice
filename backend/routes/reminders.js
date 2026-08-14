@@ -30,11 +30,17 @@ router.get('/eligible', async (req, res) => {
       SELECT 
         i.*,
         c.name as customer_name,
-        c.email as customer_email
+        c.email as customer_email,
+        COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0) AS paid_amount,
+        GREATEST(i.total - COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0), 0) AS outstanding_amount
       FROM invoices i
       JOIN customers c ON i.customer_id = c.id
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
         AND i.status IN ('sent', 'overdue', 'reminded_1x', 'reminded_2x')
+        AND i.total > COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0)
       ORDER BY i.due_date ASC
     `);
     
@@ -99,6 +105,8 @@ router.get('/eligible', async (req, res) => {
         customerName: invoice.customer_name,
         dueDate: invoice.due_date,
         total: parseFloat(invoice.total),
+        paidAmount: parseFloat(invoice.paid_amount || 0),
+        outstandingAmount: parseFloat(invoice.outstanding_amount),
         currentStatus: invoice.status,
         nextStage,
         daysSinceDue,
@@ -127,6 +135,10 @@ router.get('/history', async (req, res) => {
         i.*,
         c.name as customer_name,
         c.email as customer_email,
+        COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0) AS paid_amount,
+        CASE WHEN i.status = 'paid' THEN 0 ELSE GREATEST(i.total - COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0), 0) END AS outstanding_amount,
         ARRAY_AGG(
           json_build_object(
             'id', ii.id,
@@ -161,6 +173,8 @@ router.get('/history', async (req, res) => {
       subtotal: parseFloat(row.subtotal),
       taxAmount: parseFloat(row.tax_amount),
       total: parseFloat(row.total),
+      paidAmount: parseFloat(row.paid_amount || 0),
+      outstandingAmount: parseFloat(row.outstanding_amount),
       status: row.status,
       notes: row.notes,
       globalDiscountType: row.global_discount_type,
@@ -193,13 +207,22 @@ router.post('/send/:invoiceId', async (req, res) => {
     }
     
     // Get the invoice
-    const invoiceResult = await client.query("SELECT * FROM invoices WHERE id = $1 AND COALESCE(document_type, 'invoice') = 'invoice'", [invoiceId]);
+    const invoiceResult = await client.query(`
+      SELECT i.*,
+        GREATEST(i.total - COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0), 0) AS outstanding_amount
+      FROM invoices i
+      WHERE i.id = $1 AND COALESCE(i.document_type, 'invoice') = 'invoice'
+    `, [invoiceId]);
     
     if (invoiceResult.rows.length === 0) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
     
     const invoice = invoiceResult.rows[0];
+    if (Number(invoice.outstanding_amount || 0) < 0.005) {
+      return res.status(409).json({ error: 'Die Rechnung ist bereits vollständig bezahlt.' });
+    }
     
     // Validate stage transition
     if (stage === 1 && !['sent', 'overdue'].includes(invoice.status)) {
@@ -247,4 +270,3 @@ router.post('/send/:invoiceId', async (req, res) => {
 });
 
 export default router;
-

@@ -5,7 +5,7 @@ import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
-import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
 import { PageHeader } from './PageHeader';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -14,6 +14,9 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { DialogShell } from './DialogShell';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
+import { useFeedback } from '../context/FeedbackContext';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -22,11 +25,21 @@ const formatCustomerAddress = (customer: Customer) => (
   ].filter(Boolean).join(', ')
 );
 
+/**
+ * Die Kundentabelle wächst mit ihrem Inhalt und hat laut `min-w-[680px]` eine
+ * Mindestbreite. Ausgeschriebene Icon-Aktionen brauchen den Unterschied
+ * zwischen Aktionsspalte und Menüspalte zusätzlich.
+ */
+const CUSTOMER_INLINE_ACTIONS_MIN_WIDTH = 680 + actionColumnWidth(2) - ACTION_MENU_COLUMN_WIDTH;
+
 export function CustomerManagement() {
+  const { confirm, notify } = useFeedback();
   const { customers, addCustomer, updateCustomer, archiveCustomer, restoreCustomer, refreshCustomers } = useCustomers();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= CUSTOMER_INLINE_ACTIONS_MIN_WIDTH;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -229,10 +242,12 @@ export function CustomerManagement() {
     const existingCustomer = findDuplicateCustomer(customers, formData, editingCustomer?.id);
     
     if (existingCustomer) {
-      const shouldContinue = showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
-      if (!shouldContinue) {
-        return; // Nur abbrechen wenn der Benutzer "Abbrechen" wählt
-      }
+      const shouldContinue = await confirm({
+        title: `${terminology.entity.singular} existiert bereits`,
+        message: `${buildDuplicateCustomerMessage(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''))}\n\nMöchten Sie trotzdem speichern?`,
+        confirmText: 'Trotzdem speichern',
+      });
+      if (!shouldContinue) return;
     }
     
     try {
@@ -293,7 +308,7 @@ export function CustomerManagement() {
       }
     } catch (error) {
       logger.error('Error saving customer:', error);
-      alert(`Fehler beim Speichern des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
+      notify({ variant: 'error', message: `Fehler beim Speichern des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
     }
   };
 
@@ -323,13 +338,13 @@ export function CustomerManagement() {
 
   const handleAddEmail = async () => {
     if (!newEmailData.email.trim()) {
-      alert('Bitte geben Sie eine E-Mail-Adresse ein.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie eine E-Mail-Adresse ein.' });
       return;
     }
 
     // Check if email already exists
     if (additionalEmails.some(email => email.email === newEmailData.email.trim())) {
-      alert('Diese E-Mail-Adresse wurde bereits hinzugefügt.');
+      notify({ variant: 'warning', message: 'Diese E-Mail-Adresse wurde bereits hinzugefügt.' });
       return;
     }
 
@@ -344,7 +359,7 @@ export function CustomerManagement() {
         setAdditionalEmails([...additionalEmails, newEmail]);
       } catch (error) {
         logger.error('Error adding email:', error);
-        alert('Fehler beim Hinzufügen der E-Mail-Adresse.');
+        notify({ variant: 'error', message: 'Fehler beim Hinzufügen der E-Mail-Adresse.' });
       }
     } else {
       // Add to local state for new customer
@@ -369,7 +384,7 @@ export function CustomerManagement() {
         setAdditionalEmails(additionalEmails.filter(email => email.id !== emailId));
       } catch (error) {
         logger.error('Error removing email:', error);
-        alert('Fehler beim Entfernen der E-Mail-Adresse.');
+        notify({ variant: 'error', message: 'Fehler beim Entfernen der E-Mail-Adresse.' });
       }
     } else {
       // Remove from local state
@@ -379,7 +394,7 @@ export function CustomerManagement() {
 
   const handleCreateHourlyRate = async () => {
     if (!newHourlyRateData.name || newHourlyRateData.rate <= 0) {
-      alert('Bitte geben Sie mindestens einen Namen und einen gültigen Stundensatz ein.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Stundensatz ein.' });
       return;
     }
 
@@ -399,7 +414,7 @@ export function CustomerManagement() {
         await refreshCustomers(); // Refresh AppContext
       } catch (error) {
         logger.error('Error creating customer hourly rate:', error);
-        alert('Fehler beim Erstellen des Stundensatzes.');
+        notify({ variant: 'error', message: 'Fehler beim Erstellen des Stundensatzes.' });
         return;
       }
     } else {
@@ -478,7 +493,7 @@ export function CustomerManagement() {
         await refreshCustomers(); // Refresh AppContext
       } catch (error) {
         logger.error('Error updating customer hourly rate:', error);
-        alert('Fehler beim Aktualisieren des Stundensatzes.');
+        notify({ variant: 'error', message: 'Fehler beim Aktualisieren des Stundensatzes.' });
         return;
       }
     } else {
@@ -500,7 +515,13 @@ export function CustomerManagement() {
   };
 
   const handleDeleteHourlyRate = async (rateId: string) => {
-    if (window.confirm('Möchten Sie diesen Stundensatz wirklich löschen?')) {
+    const confirmed = await confirm({
+      title: 'Stundensatz löschen',
+      message: 'Möchten Sie diesen Stundensatz wirklich löschen?',
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (confirmed) {
       if (editingCustomer && !rateId.startsWith('temp-')) {
         // Delete from backend if editing existing customer and not temporary
         try {
@@ -509,7 +530,7 @@ export function CustomerManagement() {
           await refreshCustomers(); // Refresh AppContext
         } catch (error) {
           logger.error('Error deleting customer hourly rate:', error);
-          alert('Fehler beim Löschen des Stundensatzes.');
+          notify({ variant: 'error', message: 'Fehler beim Löschen des Stundensatzes.' });
         }
       } else {
         // Remove from local state (temporary or new customer)
@@ -521,7 +542,7 @@ export function CustomerManagement() {
   // Material handlers
   const handleCreateMaterial = async () => {
     if (!newMaterialData.name || newMaterialData.unitPrice <= 0) {
-      alert('Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.' });
       return;
     }
 
@@ -541,7 +562,7 @@ export function CustomerManagement() {
         await refreshCustomers(); // Refresh AppContext
       } catch (error) {
         logger.error('Error creating customer material:', error);
-        alert('Fehler beim Erstellen des Materials.');
+        notify({ variant: 'error', message: 'Fehler beim Erstellen des Materials.' });
         return;
       }
     } else {
@@ -624,7 +645,7 @@ export function CustomerManagement() {
         await refreshCustomers(); // Refresh AppContext
       } catch (error) {
         logger.error('Error updating customer material:', error);
-        alert('Fehler beim Aktualisieren des Materials.');
+        notify({ variant: 'error', message: 'Fehler beim Aktualisieren des Materials.' });
         return;
       }
     } else {
@@ -646,7 +667,13 @@ export function CustomerManagement() {
   };
 
   const handleDeleteMaterial = async (materialId: string) => {
-    if (window.confirm('Möchten Sie dieses Material wirklich löschen?')) {
+    const confirmed = await confirm({
+      title: 'Material löschen',
+      message: 'Möchten Sie dieses Material wirklich löschen?',
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (confirmed) {
       if (editingCustomer && !materialId.startsWith('temp-')) {
         // Delete from backend if editing existing customer and not temporary
         try {
@@ -655,7 +682,7 @@ export function CustomerManagement() {
           await refreshCustomers(); // Refresh AppContext
         } catch (error) {
           logger.error('Error deleting customer material:', error);
-          alert('Fehler beim Löschen des Materials.');
+          notify({ variant: 'error', message: 'Fehler beim Löschen des Materials.' });
         }
       } else {
         // Remove from local state (temporary or new customer)
@@ -714,7 +741,7 @@ export function CustomerManagement() {
       {/* Customer List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {/* Desktop Table View */}
-        <div className="hidden tablet:block w-full min-w-0 max-w-full overflow-x-auto">
+        <div ref={tableRef} className="hidden tablet:block w-full min-w-0 max-w-full overflow-x-auto">
           <table className="w-full min-w-[680px]">
             <thead className="bg-gray-50">
               <tr>
@@ -727,7 +754,10 @@ export function CustomerManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Adresse
                 </th>
-                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-24 2xl:px-6">
+                <th
+                  style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }}
+                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}
+                >
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
@@ -752,8 +782,12 @@ export function CustomerManagement() {
                   <td className="px-6 py-4">
                     <div className="break-words text-sm text-gray-900">{formatCustomerAddress(customer)}</div>
                   </td>
-                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium 2xl:w-24 2xl:px-6">
-                    <div className="hidden 2xl:flex space-x-2">
+                  <td
+                    style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }}
+                    className={`sticky right-0 z-10 bg-white py-4 whitespace-nowrap text-sm font-medium ${showInlineActions ? 'px-3' : 'px-2'}`}
+                  >
+                    {showInlineActions ? (
+                    <div className="flex flex-nowrap items-center gap-1">
                       <button
                         type="button"
                         onClick={() => handleOpenModal(customer)}
@@ -771,7 +805,8 @@ export function CustomerManagement() {
                         {customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                       </button>
                     </div>
-                    <ActionMenu containerClassName="hidden tablet:block 2xl:hidden" menuClassName="min-w-40">
+                    ) : (
+                    <ActionMenu menuClassName="min-w-40">
                       <ActionMenuItem
                         icon={<Edit className="h-4 w-4" />}
                         tone="indigo"
@@ -787,6 +822,7 @@ export function CustomerManagement() {
                         {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                       </ActionMenuItem>
                     </ActionMenu>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -798,16 +834,16 @@ export function CustomerManagement() {
         <div className="tablet:hidden">
           {filteredCustomers.map((customer) => (
             <div key={customer.id} className="p-4 border-b border-gray-200 last:border-b-0">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-gray-900">{customer.name}</h3>
-                  <p className="text-xs text-gray-500">{terminology.entity.numberShortLabel} {customer.customerNumber}</p>
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-sm font-medium text-gray-900">{customer.name}</h3>
+                  <p className="truncate text-xs text-gray-500">{terminology.entity.numberShortLabel} {customer.customerNumber}</p>
                   {customer.taxId && (
-                    <p className="text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
+                    <p className="truncate text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
                   )}
-                  {customer.leitwegId && <p className="text-xs text-gray-500">Leitweg-ID: {customer.leitwegId}</p>}
+                  {customer.leitwegId && <p className="truncate text-xs text-gray-500">Leitweg-ID: {customer.leitwegId}</p>}
                 </div>
-                <ActionMenu containerClassName="relative ml-2" menuClassName="min-w-40">
+                <ActionMenu containerClassName="shrink-0" menuClassName="min-w-40">
                   <ActionMenuItem
                     icon={<Edit className="h-4 w-4" />}
                     tone="indigo"
@@ -1556,6 +1592,7 @@ interface HourlyRateEditFormProps {
 }
 
 function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave, onCancel }: HourlyRateEditFormProps) {
+  const { notify } = useFeedback();
   const [formData, setFormData] = useState({
     name: rate.name,
     description: rate.description || '',
@@ -1566,7 +1603,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
 
   const handleSave = () => {
     if (!formData.name || formData.rate <= 0) {
-      alert('Bitte geben Sie mindestens einen Namen und einen gültigen Stundensatz ein.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Stundensatz ein.' });
       return;
     }
     onSave(formData);
@@ -1671,6 +1708,7 @@ interface MaterialEditFormProps {
 }
 
 function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSave, onCancel }: MaterialEditFormProps) {
+  const { notify } = useFeedback();
   const [formData, setFormData] = useState({
     name: material.name,
     description: material.description || '',
@@ -1682,7 +1720,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
 
   const handleSave = () => {
     if (!formData.name || formData.unitPrice <= 0) {
-      alert('Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.' });
       return;
     }
     onSave(formData);

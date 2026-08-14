@@ -1,6 +1,7 @@
 import express from 'express';
 import { pool, query } from '../database.js';
 import { decodeBase64Content, runLocalOcr } from '../services/ocrService.js';
+import { createInvoice } from '../services/invoiceService.js';
 
 const router = express.Router();
 const MAX_RECEIPT_SIZE = 25 * 1024 * 1024;
@@ -9,7 +10,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 const receiptFields = `
   id, name, content_type, size, ocr_status, ocr_text, ocr_confidence,
-  ocr_error, extracted_data, ocr_extracted_data, linked_euer_entry_id, created_at, updated_at
+  ocr_error, extracted_data, ocr_extracted_data, linked_euer_entry_id, billed_invoice_id, created_at, updated_at
 `;
 
 function toReceipt(row, includeContent = false) {
@@ -26,6 +27,7 @@ function toReceipt(row, includeContent = false) {
     extractedData: row.extracted_data || {},
     ocrExtractedData: row.ocr_extracted_data || row.extracted_data || {},
     linkedEuerEntryId: row.linked_euer_entry_id,
+    billedInvoiceId: row.billed_invoice_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -303,6 +305,73 @@ router.post('/:id/create-euer', async (req, res, next) => {
   }
 });
 
+router.post('/:id/create-invoice', async (req, res, next) => {
+  try {
+    const receipt = await findReceipt(req.params.id, true);
+    if (!receipt) return res.status(404).json({ error: 'Beleg nicht gefunden.' });
+    if (receipt.billed_invoice_id) return res.status(409).json({ error: 'Der Beleg wurde bereits weiterberechnet.' });
+
+    const customerId = String(req.body?.customerId || '');
+    const description = String(req.body?.description || '').trim();
+    const quantity = req.body?.quantity === undefined ? 1 : Number(req.body.quantity);
+    const unitPrice = Number(req.body?.unitPrice);
+    const taxRate = Number(req.body?.taxRate ?? 0);
+    const notes = String(req.body?.notes || '').trim();
+    if (!UUID_PATTERN.test(customerId)) return res.status(400).json({ error: 'Bitte einen gültigen Kunden auswählen.' });
+    if (!description || description.length > 500) return res.status(400).json({ error: 'Die Beschreibung ist erforderlich und darf höchstens 500 Zeichen enthalten.' });
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      return res.status(400).json({ error: 'Bitte Menge und Nettopreis prüfen.' });
+    }
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return res.status(400).json({ error: 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.' });
+    if (notes.length > 2000) return res.status(400).json({ error: 'Die Notiz darf höchstens 2.000 Zeichen enthalten.' });
+
+    const companyResult = await query('SELECT default_payment_days FROM company ORDER BY id LIMIT 1');
+    const configuredPaymentDays = Number(companyResult.rows[0]?.default_payment_days ?? 30);
+    const paymentDays = Number.isInteger(configuredPaymentDays) && configuredPaymentDays >= 0 && configuredPaymentDays <= 3650
+      ? configuredPaymentDays
+      : 30;
+    const issueDate = new Date().toISOString().slice(0, 10);
+    const dueDate = new Date(`${issueDate}T00:00:00Z`);
+    dueDate.setUTCDate(dueDate.getUTCDate() + paymentDays);
+
+    const invoice = await createInvoice({
+      customerId,
+      issueDate,
+      dueDate: dueDate.toISOString().slice(0, 10),
+      status: 'draft',
+      notes,
+      items: [{ description, quantity, unitPrice, taxRate, order: 1 }],
+      attachments: [{
+        id: req.params.id,
+        name: receipt.name,
+        content: receipt.content,
+        contentType: receipt.content_type,
+        size: Number(receipt.size),
+        uploadedAt: new Date(),
+      }],
+    }, async (client, createdInvoice) => {
+      const lockedReceipt = await client.query('SELECT billed_invoice_id FROM receipts WHERE id = $1 FOR UPDATE', [req.params.id]);
+      if (!lockedReceipt.rows.length) {
+        const error = new Error('Beleg nicht gefunden.');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (lockedReceipt.rows[0].billed_invoice_id) {
+        const error = new Error('Der Beleg wurde bereits weiterberechnet.');
+        error.statusCode = 409;
+        throw error;
+      }
+      await client.query('UPDATE receipts SET billed_invoice_id = $1, updated_at = NOW() WHERE id = $2', [createdInvoice.id, req.params.id]);
+    });
+
+    const updatedReceipt = await findReceipt(req.params.id);
+    res.status(201).json({ invoice, receipt: toReceipt(updatedReceipt) });
+  } catch (error) {
+    if (error.statusCode === 404 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.post('/:id/link-euer', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -348,9 +417,12 @@ router.post('/:id/link-euer', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const linked = await query('SELECT linked_euer_entry_id FROM receipts WHERE id = $1', [req.params.id]);
+    const linked = await query('SELECT linked_euer_entry_id, billed_invoice_id FROM receipts WHERE id = $1', [req.params.id]);
     if (linked.rows[0]?.linked_euer_entry_id) {
       return res.status(409).json({ error: 'Der Beleg ist mit einer EÜR-Buchung verknüpft. Bitte die Buchung zuerst stornieren.' });
+    }
+    if (linked.rows[0]?.billed_invoice_id) {
+      return res.status(409).json({ error: 'Der Beleg wurde bereits weiterberechnet und bleibt als Nachweis erhalten.' });
     }
     const result = await query('DELETE FROM receipts WHERE id = $1', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Beleg nicht gefunden.' });

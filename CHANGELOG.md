@@ -2,6 +2,92 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## [v0.6] – Zahlungen, Dokumentfluss und Revisionssicherheit
+
+Der Release schließt zentrale Abläufe zwischen Rechnungen, Zahlungseingängen,
+Belegen, Mahnungen, Angeboten und Aufträgen. Gleichzeitig werden die
+Dokumentvorschau, mobile Bedienung, Auswertungen und technische
+Änderungsnachweise deutlich erweitert.
+
+### Neue Funktionen
+
+- Zahlungseingänge können direkt an einer Rechnung erfasst werden. Teil- und
+  Vollzahlungen werden als verknüpfte EÜR-Einnahmen gespeichert; Restbetrag
+  und Rechnungsstatus aktualisieren sich automatisch.
+- Mahnungen berücksichtigen bereits geleistete Zahlungen und weisen im Dialog
+  sowie im Mahnungs-PDF nur den offenen Betrag zuzüglich Mahngebühren aus.
+- Belege lassen sich als Rechnungsentwurf weiterberechnen. Der Originalbeleg
+  wird als Anlage übernommen und eine doppelte Weiterberechnung verhindert.
+- Konfigurierbare Nummernmuster für Rechnungen und Gutschriften mit Platzhaltern
+  für Jahr, Monat und Zähler sowie einer Vorschau in den Einstellungen.
+- Unveränderbare Änderungshistorie für Rechnungen und Rechnungspositionen mit
+  Zeitstempel, Benutzerreferenz und eigenem Verlaufsdialog.
+- Sichtbare Dokumentherkunft zwischen Angeboten, Rechnungen, Gutschriften und
+  Aufträgen sowie Navigation zum jeweiligen Ursprungs- oder Folgedokument.
+- Zeilenklick-Vorschau für Rechnungen und Angebote; abgerechnete Aufträge zeigen
+  die zugehörige Rechnung und können sie direkt öffnen.
+- Kalenderexport als RFC-5545-konforme ICS-Datei für Aufträge und Abwesenheiten.
+- CSV-Exporte für Rechnungsjournal, Monatsumsätze und Kundenumsätze mit
+  deutschsprachigem Tabellenformat und Schutz vor Formeleinschleusung.
+- Unterschriften können direkt am Auftrag mit Maus, Stift oder Finger erfasst
+  und anschließend in die Auftragsbestätigung übernommen werden.
+
+### Verbesserungen
+
+- Dokument- und PDF-Vorschau vollständig überarbeitet: responsive Darstellung,
+  Fokusführung, Tastatursteuerung, Bildzoom und -drehung, zuverlässige
+  Blob-Verwaltung sowie geeignete PDF-Behandlung auf Mobilgeräten.
+- Dashboard, Steuerübersicht, Rechnungsjournal sowie Monats- und Jahresberichte
+  werten Teilzahlungen und offene Beträge konsistent aus.
+- Rechnungsnummern werden innerhalb einer Transaktion und eines
+  Workspace-/Jahresbereichs gesperrt vergeben. Bereits protokollierte Nummern
+  gelöschter Entwürfe werden nicht erneut verwendet.
+- Backup, Wiederherstellung und Workspace-Löschung berücksichtigen die neuen
+  Rechnungsverläufe und Belegverknüpfungen, ohne künstliche Historieneinträge zu
+  erzeugen oder bestehende Nachweise zu überschreiben.
+- Rechnungs-, Angebots-, Kunden-, Auftrags-, Beleg-, EÜR-, Anlagen-, Kalender-,
+  Vorlagen- und Einstellungsansichten für schmale und breite Fenster weiter
+  vereinheitlicht und in ihrer Bedienung verdichtet.
+- Dialoge, Aktionsmenüs, Rückmeldungen, Auswahlleisten, dynamische Farben und
+  Seitentitel konsistenter und zugänglicher gestaltet.
+- Demo-Modus bildet Zahlungseingänge, Mahnungen, Rechnungshistorien,
+  Belegweiterberechnung, Nummernmuster und Unterschriften ohne Backend nach.
+
+### Fehlerbehebungen
+
+- Teilzahlungen erscheinen nicht mehr als vollständig offene Rechnungen in
+  Auswertungen, Dashboard und Mahnwesen.
+- Manuelle Statusänderungen können eine Rechnung nicht mehr ohne vollständig
+  erfassten Zahlungseingang auf „bezahlt“ setzen.
+- Korrekturen und Stornierungen verknüpfter EÜR-Zahlungen öffnen oder schließen
+  die zugehörige Rechnung wieder passend zum tatsächlichen Zahlungsstand.
+- Rechnungshistorien sind über PostgreSQL Row-Level Security auf den aktiven
+  Workspace begrenzt; Restore- und Löschabläufe umgehen den Schutz nur
+  transaktionslokal für den jeweils ausdrücklich vorgesehenen Vorgang.
+- Eine offene Datenbanktransaktion bei ungültigen Unterschriftsdaten sowie eine
+  nicht gelöste Belegverknüpfung nach einer EÜR-Korrektur wurden behoben.
+- Sammelmahnungen verwenden beim PDF-Download für jede Rechnung den richtigen
+  Kunden statt den Kunden der ersten Auswahl.
+- Negative CSV-Beträge bleiben berechenbare Zahlen; Datumswerte verschieben sich
+  beim Export nicht mehr abhängig von der lokalen Zeitzone.
+- Kalenderdateien halten die maximale Zeilenlänge auch bei Umlauten ein und
+  korrigieren ungültige Enddaten auf einen gültigen ganztägigen Zeitraum.
+- Die Unterschriftsfläche verliert bei einer Größenänderung nicht mehr
+  ungefragt ihren Inhalt und liefert auf hochauflösenden Displays schärfere
+  Ergebnisse.
+
+### Bekannte Einschränkungen
+
+- Die Rechnungshistorie ist ein technischer, unveränderbarer Änderungsnachweis,
+  aber keine eigenständige GoBD-Zertifizierung des Gesamtsystems.
+- Kalender werden als Datei exportiert. Ein abonnierbarer Kalenderfeed mit
+  öffentlichem, abgesichertem Endpunkt ist noch nicht enthalten.
+- DATEV-Buchungsstapel, Bankabgleich und ELSTER-Übertragung sind weiterhin nicht
+  enthalten; EÜR und Steuerübersichten bleiben vorbereitende Arbeitsunterlagen.
+- Die neuen Datenbankmigrationen müssen vor dem Produktivbetrieb einmal gegen
+  eine PostgreSQL-Testdatenbank einschließlich Backup und Restore geprüft
+  werden.
+
 ## [v0.5] – Öffentliche Demo und Betriebsmodi
 
 Der Release ergänzt einen eigenständigen Demo-Betrieb sowie vorbereitete
@@ -110,4 +196,5 @@ Erster SoloOffice-Teststand mit Rechnungsverwaltung, E-Rechnung, Kunden- und Auf
 
 [v0.4]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.4
 [v0.5]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.5
+[v0.6]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.6
 [0.1.0]: https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.1

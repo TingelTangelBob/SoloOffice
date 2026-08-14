@@ -34,6 +34,9 @@ import * as migration025 from './025_security_and_compliance.js';
 import * as migration026 from './026_incoming_e_invoices.js';
 import * as migration027 from './027_draft_jobs.js';
 import * as migration028 from './028_time_zones.js';
+import * as migration029 from './029_invoice_audit.js';
+import * as migration030 from './030_receipt_billing.js';
+import * as migration031 from './031_invoice_number_patterns.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -65,6 +68,9 @@ const migrations = [
   migration026,
   migration027,
   migration028,
+  migration029,
+  migration030,
+  migration031,
 ];
 
 /**
@@ -183,4 +189,3 @@ export default {
   rollbackLastMigration,
   getMigrationStatus,
 };
-

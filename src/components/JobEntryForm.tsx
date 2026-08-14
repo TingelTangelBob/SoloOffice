@@ -11,7 +11,7 @@ import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
 import { ConfirmationModal } from './ConfirmationModal';
 import { createDefaultTimeEntry } from '../utils/jobUtils';
-import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
 import { formatCurrency, formatNumber, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { LocalizedDateInput } from './LocalizedDateInput';
@@ -20,6 +20,7 @@ import { getTerminology } from '../utils/terminology';
 import { getIsoWeekday, getJobRecurrenceDates, getRecurrenceWeekdayLabel, RECURRENCE_WEEKDAYS } from '../utils/jobRecurrence';
 import { DialogShell } from './DialogShell';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface JobEntryFormProps {
   job?: JobEntry | null;
@@ -90,6 +91,7 @@ function SelectWithChevron({ className = '', containerClassName = '', children, 
 }
 
 export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
+  const { notify } = useFeedback();
   const { addCustomer, refreshCustomers } = useCustomers();
   const { company, hourlyRates } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -673,7 +675,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     e.preventDefault();
 
     if (!onSubmitVacation || !vacationForm.title.trim() || vacationForm.endDate < vacationForm.startDate) {
-      alert('Bitte geben Sie eine Bezeichnung und einen gültigen Zeitraum an.');
+      notify({ variant: 'warning', message: 'Bitte geben Sie eine Bezeichnung und einen gültigen Zeitraum an.' });
       return;
     }
 
@@ -1697,7 +1699,11 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
               const existingCustomer = findDuplicateCustomer(customers, newCustomerData);
               
               if (existingCustomer) {
-                showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
+                notify({
+                  variant: 'warning',
+                  title: `${terminology.entity.singular} existiert bereits`,
+                  message: buildDuplicateCustomerMessage(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, '')),
+                });
                 return;
               }
               
@@ -1726,7 +1732,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Error creating customer:', error);
-                alert(`Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
+                notify({ variant: 'error', message: `Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
               }
             }} className="space-y-4">
               <div>
@@ -1825,7 +1831,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <div className="form-action-bar pt-4">
                 <button
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
@@ -1873,7 +1879,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
                 Du hast Eingaben im Formular geändert. Sollen sie gespeichert werden, bevor du die Verwaltung öffnest?
               </p>
             </div>
-            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 p-4 sm:flex-row sm:justify-end sm:p-5">
+            <div className="form-action-bar border-t border-gray-200 p-4 sm:p-5">
               <button
                 type="button"
                 onClick={() => setPendingRateNavigation(null)}

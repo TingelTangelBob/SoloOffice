@@ -1,4 +1,4 @@
-import { Customer, Invoice, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -328,6 +328,13 @@ class ApiService {
     return this.request<Invoice>(`/invoices/${id}`, {
       method: 'PUT',
       body: JSON.stringify(invoice),
+    });
+  }
+
+  async recordInvoicePayment(id: string, payment: InvoicePaymentPayload): Promise<InvoicePaymentResult> {
+    return this.request<InvoicePaymentResult>(`/invoices/${id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(payment),
     });
   }
 
@@ -960,6 +967,10 @@ class ApiService {
     });
   }
 
+  async getInvoiceHistory(id: string): Promise<InvoiceHistoryEntry[]> {
+    return this.request<InvoiceHistoryEntry[]>(`/invoices/${id}/history`);
+  }
+
   async getEuerEntryHistory(id: string): Promise<EuerEntryHistory[]> {
     return this.request<EuerEntryHistory[]>(`/euer-entries/${id}/history`);
   }
@@ -1024,6 +1035,13 @@ class ApiService {
     return this.request<Receipt>(`/receipts/${receiptId}/link-euer`, {
       method: 'POST',
       body: JSON.stringify({ euerEntryId }),
+    });
+  }
+
+  async createInvoiceFromReceipt(receiptId: string, payload: ReceiptInvoicePayload): Promise<{ invoice: Invoice; receipt: Receipt }> {
+    return this.request<{ invoice: Invoice; receipt: Receipt }>(`/receipts/${receiptId}/create-invoice`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

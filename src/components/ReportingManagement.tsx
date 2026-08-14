@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Filter,
   X,
-  AlertCircle
+  AlertCircle,
+  Table2
 } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
@@ -27,6 +28,8 @@ import {
 } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
+import { csvFileName, downloadCsv } from '../utils/csvExport';
+import type { CsvColumn } from '../utils/csvExport';
 
 interface ReportingManagementProps {
   onNavigate?: (page: string) => void;
@@ -38,6 +41,59 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const formatAmount = (amount: number) => formatCurrency(amount, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
+  const csvDate = (value: Date | string) => {
+    if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return new Date(value);
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  };
+
+  /**
+   * Die Ausgaben sind bewusst roh: Beträge ohne Währungssymbol und Datum als
+   * Datum, damit die Zieltabelle damit rechnen kann. Formatiert wird erst in
+   * der Tabellenkalkulation.
+   */
+  const journalCsvColumns: CsvColumn<InvoiceJournalEntry>[] = [
+    { header: 'Rechnungsnummer', value: entry => entry.invoiceNumber },
+    { header: 'Rechnungsdatum', value: entry => csvDate(entry.issueDate) },
+    { header: 'Fällig am', value: entry => csvDate(entry.dueDate) },
+    { header: terminology.entity.numberLabel, value: entry => entry.customerNumber || '' },
+    { header: terminology.entity.singular, value: entry => entry.customerName },
+    { header: 'Status', value: entry => getStatusText(entry.status) },
+    { header: 'Nettobetrag', value: entry => entry.subtotal, decimals: 2 },
+    { header: 'Steuerbetrag', value: entry => entry.taxAmount, decimals: 2 },
+    { header: 'Bruttobetrag', value: entry => entry.total, decimals: 2 },
+    { header: 'Bezahlt', value: entry => entry.paidAmount, decimals: 2 },
+    { header: 'Offen', value: entry => entry.outstandingAmount, decimals: 2 },
+  ];
+
+  const handleExportJournalCsv = () => {
+    if (!journalData?.invoices.length) return;
+    downloadCsv(csvFileName('Rechnungsjournal'), journalData.invoices, journalCsvColumns);
+  };
+
+  const handleExportStatisticsCsv = () => {
+    if (!statistics) return;
+    downloadCsv(csvFileName(`Monatsumsaetze-${statistics.year}`), statistics.monthlyRevenue, [
+      { header: 'Monat', value: row => row.month },
+      { header: 'Rechnungen', value: row => row.invoiceCount },
+      { header: 'Nettobetrag', value: row => row.subtotalSum, decimals: 2 },
+      { header: 'Steuerbetrag', value: row => row.taxSum, decimals: 2 },
+      { header: 'Bruttobetrag', value: row => row.totalSum, decimals: 2 },
+      { header: 'Bezahlt', value: row => row.paidSum, decimals: 2 },
+      { header: 'Überfällig', value: row => row.overdueSum, decimals: 2 },
+    ]);
+  };
+
+  const handleExportCustomersCsv = () => {
+    if (!statistics?.topCustomers.length) return;
+    downloadCsv(csvFileName(`${terminology.entity.plural}-Umsatz-${statistics.year}`), statistics.topCustomers, [
+      { header: terminology.entity.singular, value: row => row.customerName },
+      { header: 'Rechnungen', value: row => row.invoiceCount },
+      { header: 'Umsatz', value: row => row.totalRevenue, decimals: 2 },
+      { header: 'Durchschnitt', value: row => row.avgInvoiceAmount, decimals: 2 },
+    ]);
+  };
   
   // State for invoice journal
   const [journalData, setJournalData] = useState<InvoiceJournalResponse | null>(null);
@@ -355,15 +411,26 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
         {/* Invoice Journal Section */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 lg:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <FileText className="h-5 w-5 text-primary-custom mr-2" />
-                <h2 className="text-lg font-semibold text-gray-900">Rechnungsjournal</h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center">
+                <FileText className="h-5 w-5 shrink-0 text-primary-custom mr-2" />
+                <h2 className="min-w-0 truncate text-lg font-semibold text-gray-900">Rechnungsjournal</h2>
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportJournalCsv}
+                disabled={journalLoading || !journalData?.invoices.length}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
+              >
+                <Table2 className="h-4 w-4" />
+                <span>CSV</span>
+              </button>
               <button
                 onClick={handleGeneratePDF}
                 disabled={generatingPDF || journalLoading || !journalData}
-                className="btn-primary text-white px-4 py-2 rounded-lg hover:brightness-90 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                className="btn-primary flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-white transition-colors hover:brightness-90 disabled:opacity-50"
               >
                 {generatingPDF ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -372,6 +439,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 )}
                 <span>{generatingPDF ? 'Erstelle PDF...' : 'PDF Export'}</span>
               </button>
+              </div>
             </div>
 
             {/* Filter Section */}
@@ -623,9 +691,21 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   })}
                 </select>
                 <button
+                type="button"
+                onClick={handleExportStatisticsCsv}
+                disabled={statisticsLoading || !statistics?.monthlyRevenue.length}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
+              >
+                <Table2 className="h-4 w-4" />
+                <span>CSV</span>
+              </button>
+                <button
                   onClick={loadStatistics}
                   disabled={statisticsLoading}
                   className="text-primary-custom hover:text-primary-custom/80"
+                  aria-label="Statistik neu laden"
+                  title="Statistik neu laden"
                 >
                   <RefreshCw className={`h-4 w-4 ${statisticsLoading ? 'animate-spin' : ''}`} />
                 </button>
@@ -676,9 +756,21 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
 
           {/* Top Customers */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
-            <div className="flex items-center mb-4">
-              <Users className="h-5 w-5 text-primary-custom mr-2" />
-              <h2 className="text-lg font-semibold text-gray-900">Top {terminology.entity.plural} {selectedYear}</h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center">
+                <Users className="h-5 w-5 text-primary-custom mr-2 shrink-0" />
+                <h2 className="min-w-0 truncate text-lg font-semibold text-gray-900">Top {terminology.entity.plural} {selectedYear}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportCustomersCsv}
+                disabled={!statistics?.topCustomers.length}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
+              >
+                <Table2 className="h-4 w-4" />
+                <span>CSV</span>
+              </button>
             </div>
 
             {statistics?.topCustomers.length ? (

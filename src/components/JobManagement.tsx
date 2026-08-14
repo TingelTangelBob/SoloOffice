@@ -22,6 +22,8 @@ import {
   Repeat2,
   Info,
   ChevronDown,
+  ChevronUp,
+  PenLine,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
@@ -40,10 +42,15 @@ import { generateJobPDF, downloadBlob } from '../utils/pdfGenerator';
 import { calculateTotalHours } from '../utils/jobUtils';
 import { formatDate, formatNumber } from '../utils/formatters';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { SignaturePad } from './SignaturePad';
+import { apiService } from '../services/api';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { generateUUID } from '../utils/uuid';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -69,12 +76,23 @@ type DisplayedJob = {
   isGroupHeader?: boolean;
 };
 
+/**
+ * Die Auftragstabelle wächst mit ihrem Inhalt und hat laut `min-w-[820px]` eine
+ * Mindestbreite. Eine Zeile zeigt höchstens sieben Icon-Aktionen; dazu kommt
+ * der Statuspunkt links davon (14 Pixel plus 8 Pixel Abstand).
+ */
+const JOB_STATUS_INDICATOR_WIDTH = 22;
+const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
+
 export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManagementProps = {}) {
+  const { notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
   const { jobEntries, addJobEntry, updateJobEntry, deleteJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= JOB_INLINE_ACTIONS_MIN_WIDTH;
 
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
@@ -305,7 +323,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
             await deleteJobEntry(job.id);
           } catch (error) {
             logger.error('Error deleting invoiced job:', error);
-            alert(error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.');
+            notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.' });
           } finally {
             setConfirmModal(prev => ({ ...prev, isOpen: false }));
           }
@@ -323,7 +341,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
             await deleteJobEntry(job.id);
           } catch (error) {
             logger.error('Error deleting job:', error);
-            alert(error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.');
+            notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.' });
           } finally {
             setConfirmModal(prev => ({ ...prev, isOpen: false }));
           }
@@ -392,6 +410,28 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
       case 'completed': return 'Abgeschlossen';
       case 'invoiced': return 'Abgerechnet';
       default: return status;
+    }
+  };
+
+  /**
+   * Unterschrift vor Ort. Datenmodell, Backend-Endpunkt und PDF-Ausgabe waren
+   * bereits vorhanden, es fehlte nur der Einstieg in der Oberfläche.
+   */
+  const [signingJob, setSigningJob] = useState<JobEntry | null>(null);
+
+  const handleSaveSignature = async (signatureData: string, customerName: string) => {
+    if (!signingJob) return;
+    try {
+      await apiService.addJobSignature(signingJob.id, signatureData, customerName);
+      await refreshJobEntries();
+      setSigningJob(null);
+      notify({ variant: 'success', message: 'Unterschrift wurde gespeichert.' });
+    } catch (error) {
+      logger.error('Error saving job signature:', error);
+      notify({
+        variant: 'error',
+        message: error instanceof Error ? error.message : 'Die Unterschrift konnte nicht gespeichert werden.',
+      });
     }
   };
 
@@ -596,10 +636,10 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
         }
       }
       setSelectedJobIds([]);
-      alert(`${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich heruntergeladen.`);
+      notify({ variant: 'success', message: `${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich heruntergeladen.` });
     } catch (error) {
       logger.error('Error downloading jobs:', error);
-          alert(`Fehler beim Herunterladen der ${terminology.work.plural}.`);
+          notify({ variant: 'error', message: `Fehler beim Herunterladen der ${terminology.work.plural}.` });
     } finally {
       setIsBulkOperation(false);
     }
@@ -619,10 +659,10 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
             await deleteJobEntry(jobId);
           }
           setSelectedJobIds([]);
-          alert(`${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich gelöscht.`);
+          notify({ variant: 'success', message: `${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich gelöscht.` });
         } catch (error) {
           logger.error('Error deleting jobs:', error);
-          alert(`Fehler beim Löschen der ${terminology.work.plural}.`);
+          notify({ variant: 'error', message: `Fehler beim Löschen der ${terminology.work.plural}.` });
         } finally {
           setIsBulkOperation(false);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -636,7 +676,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
     try {
       const customer = customers.find(c => c.id === job.customerId);
       if (!customer || !company) {
-        alert(`${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel} nicht gefunden`);
+        notify({ variant: 'error', message: `${terminology.entity.dataLabel} oder ${terminology.organization.dataLabel} nicht gefunden` });
         return;
       }
 
@@ -649,7 +689,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
       downloadBlob(pdfBlob, filename);
     } catch (error) {
       logger.error(`Fehler beim Erstellen der ${terminology.work.singular}-PDF:`, error);
-      alert('Fehler beim Erstellen der PDF. Bitte versuchen Sie es erneut.');
+      notify({ variant: 'error', message: 'Fehler beim Erstellen der PDF. Bitte versuchen Sie es erneut.' });
     }
   };
 
@@ -919,9 +959,13 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
           type="button"
           onClick={() => setShowAllStats((isExpanded) => !isExpanded)}
           aria-label={showAllStats ? 'Statistik-Karten zuklappen' : 'Weitere Statistik-Karten anzeigen'}
-          className="order-6 flex min-h-[76px] min-w-0 items-center justify-center rounded-xl border border-gray-100 bg-white px-1.5 text-[10px] font-semibold leading-tight text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
+          className="order-6 flex min-h-[76px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl border border-gray-100 bg-white px-1.5 text-[10px] font-semibold leading-tight text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
         >
-          {showAllStats ? 'Zuklappen' : '…'}
+          {/* Ohne Symbol und Beschriftung wirkt die Karte wie eine leere Fläche. */}
+          {showAllStats
+            ? <ChevronUp className="h-4 w-4 shrink-0" aria-hidden="true" />
+            : <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          <span>{showAllStats ? 'Weniger' : 'Mehr'}</span>
         </button>
       </div>
 
@@ -1176,6 +1220,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                               <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
                             <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                            <ActionMenuItem icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
                             <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
                             <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                           </ActionMenu>
@@ -1232,7 +1277,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden tablet:block w-full max-w-full overflow-x-auto">
+            <div ref={tableRef} className="hidden tablet:block w-full max-w-full overflow-x-auto">
               <table className="w-full min-w-[820px]">
                 <thead className="bg-gray-50">
                   <tr>
@@ -1360,7 +1405,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                       <td className="px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 w-20">
                         <span className="text-sm text-gray-900">{formatNumber(calculateTotalHours(job), locale, company?.numberFormat, 1)}h</span>
                       </td>
-                      <td className="sticky right-0 z-10 bg-white px-3 py-4 xl:px-2 xl:py-2 2xl:px-3 2xl:py-4 text-right w-24 2xl:w-44">
+                      <td style={{ width: (showInlineActions ? actionColumnWidth(7) : ACTION_MENU_COLUMN_WIDTH) + JOB_STATUS_INDICATOR_WIDTH }} className="sticky right-0 z-10 bg-white px-3 py-4 text-right xl:py-2 2xl:py-4">
                         <div className="flex items-center justify-end gap-2">
                           <div className="flex shrink-0 items-center gap-2" title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}>
                             <label className="relative inline-flex h-8 w-3.5 shrink-0 cursor-pointer items-center justify-center">
@@ -1384,7 +1429,8 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                               </span>
                             )}
                           </div>
-                          <div className="2xl:hidden">
+                          {!showInlineActions && (
+                          <div>
                             <ActionMenu
                               ariaLabel={`Aktionen für ${job.title}`}
                               triggerClassName="action-icon-button bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -1403,11 +1449,14 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                               <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
                             <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
-                              <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
+                              <ActionMenuItem icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
+                            <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
                               <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                             </ActionMenu>
                           </div>
-                          <div className="hidden 2xl:flex justify-end space-x-1">
+                          )}
+                          {showInlineActions && (
+                          <div className="flex flex-nowrap items-center justify-end gap-1">
                           <button
                             onClick={() => handleExportJobPDF(job)}
                             className="action-icon-button action-icon-blue"
@@ -1471,6 +1520,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                             <Trash2 className="h-4 w-4" />
                           </button>
                           </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1486,6 +1536,14 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
       </div>
 
       {/* Confirmation Modal */}
+      <SignaturePad
+        isOpen={Boolean(signingJob)}
+        onClose={() => setSigningJob(null)}
+        onSave={handleSaveSignature}
+        title={`Unterschrift · ${signingJob?.title || ''}`}
+        initialCustomerName={signingJob?.customerName || ''}
+      />
+
       <StatusChangeFeedbackModal
         feedback={statusChangeFeedback}
         terminology={terminology}
@@ -1624,7 +1682,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <div className="form-action-bar pt-4">
                 <button
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"

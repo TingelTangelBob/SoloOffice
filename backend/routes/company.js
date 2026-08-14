@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
+import { numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const router = express.Router();
 const LOCALES = new Set(['de-DE', 'en-US', 'fr-FR', 'es-ES']);
@@ -69,6 +70,8 @@ function mapCompanyRow(row) {
     defaultPaymentDays: row.default_payment_days ?? 30,
     immediatePaymentClause: row.immediate_payment_clause,
     invoiceStartNumber: row.invoice_start_number || 1,
+    invoiceNumberPattern: row.invoice_number_pattern || 'RE-{YYYY}-{NNN}',
+    creditNoteNumberPattern: row.credit_note_number_pattern || 'GS-{YYYY}-{NNN}',
     remindersEnabled: row.reminders_enabled ?? false,
     reminderDaysAfterDue: row.reminder_days_after_due ?? 7,
     reminderDaysBetween: row.reminder_days_between ?? 7,
@@ -326,6 +329,18 @@ router.put('/', async (req, res) => {
     if (req.body.invoiceStartNumber !== undefined) {
       updates.push(`invoice_start_number = $${paramIndex++}`);
       values.push(req.body.invoiceStartNumber);
+    }
+    if (req.body.invoiceNumberPattern !== undefined) {
+      const error = numberPatternError(req.body.invoiceNumberPattern);
+      if (error) return res.status(400).json({ error });
+      updates.push(`invoice_number_pattern = $${paramIndex++}`);
+      values.push(String(req.body.invoiceNumberPattern).trim());
+    }
+    if (req.body.creditNoteNumberPattern !== undefined) {
+      const error = numberPatternError(req.body.creditNoteNumberPattern);
+      if (error) return res.status(400).json({ error });
+      updates.push(`credit_note_number_pattern = $${paramIndex++}`);
+      values.push(String(req.body.creditNoteNumberPattern).trim());
     }
     if (req.body.invoiceTemplates !== undefined) {
       if (!Array.isArray(req.body.invoiceTemplates)) {

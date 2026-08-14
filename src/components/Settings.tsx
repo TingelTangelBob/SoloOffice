@@ -18,6 +18,8 @@ import { ImportWizard } from './ImportWizard';
 import { DialogShell } from './DialogShell';
 import { ThemeTabBar } from './ThemeTabBar';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
+import { useFeedback } from '../context/FeedbackContext';
+import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
@@ -118,6 +120,7 @@ function TerminologyPreview({ profile }: { profile: TerminologyDefinition }) {
 }
 
 export function Settings({ initialTab = 'app', embedded = false, onNavigate }: SettingsProps) {
+  const { confirm } = useFeedback();
   const {
     company,
     updateCompany,
@@ -155,6 +158,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const terminology = getTerminology(formData.terminologyProfile);
   const hasUnsavedChanges = JSON.stringify(formData) !== JSON.stringify(company);
   const terminologyColorSource = formData.terminologyColorSource || 'profile';
+  const invoiceNumberPattern = formData.invoiceNumberPattern || 'RE-{YYYY}-{NNN}';
+  const creditNoteNumberPattern = formData.creditNoteNumberPattern || 'GS-{YYYY}-{NNN}';
+  const invoiceNumberPatternError = validateInvoiceNumberPattern(invoiceNumberPattern);
+  const creditNoteNumberPatternError = validateInvoiceNumberPattern(creditNoteNumberPattern);
 
   const handleTerminologyProfileSelect = (profile: typeof terminologyProfiles[number]) => {
     setFormData(previous => {
@@ -233,10 +240,13 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  const handleResetToDefaults = () => {
-    if (!window.confirm('Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.')) {
-      return;
-    }
+  const handleResetToDefaults = async () => {
+    const confirmed = await confirm({
+      title: 'Einstellungen zurücksetzen',
+      message: 'Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.',
+      confirmText: 'Zurücksetzen',
+    });
+    if (!confirmed) return;
 
     setFormData({
       ...defaultCompany,
@@ -350,6 +360,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (invoiceNumberPatternError || creditNoteNumberPatternError) {
+      setFeedback({ type: 'error', text: invoiceNumberPatternError || creditNoteNumberPatternError || 'Bitte die Nummernmuster prüfen.' });
+      return;
+    }
     setIsSaving(true);
     
     try {
@@ -448,11 +462,16 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Alle lokalen Demo-Daten wirklich löschen?')) {
-                    resetDemoData();
-                    window.location.reload();
-                  }
+                onClick={async () => {
+                  const confirmed = await confirm({
+                    title: 'Demo-Daten löschen',
+                    message: 'Alle lokalen Demo-Daten wirklich löschen? Die Anwendung wird anschließend neu geladen.',
+                    confirmText: 'Löschen',
+                    isDestructive: true,
+                  });
+                  if (!confirmed) return;
+                  resetDemoData();
+                  window.location.reload();
                 }}
                 className="px-3 py-2 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50"
               >
@@ -1467,12 +1486,37 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <h4 className="font-medium text-blue-900 mb-2">💡 Hinweis zur Start-Rechnungsnummer</h4>
             <p className="text-sm text-blue-800">
               Die Start-Rechnungsnummer wird nur bei neuen Systemen oder beim Jahreswechsel verwendet. 
-              Wenn bereits Rechnungen existieren, wird immer von der höchsten vorhandenen Nummer weiter gezählt.
-              Format: RE-{new Date().getFullYear()}-XXX (z.B. RE-{new Date().getFullYear()}-56)
+              Bereits vergebene Nummern werden weitergezählt und auch nach dem Löschen eines Entwurfs nicht erneut verwendet.
+              Das Muster kann unten angepasst werden.
             </p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2 grid gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 md:grid-cols-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Muster für Rechnungen
+                <input
+                  value={invoiceNumberPattern}
+                  maxLength={50}
+                  onChange={event => setFormData(previous => ({ ...previous, invoiceNumberPattern: event.target.value }))}
+                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${invoiceNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
+                  aria-invalid={Boolean(invoiceNumberPatternError)}
+                />
+                <span className={`mt-1 block text-xs ${invoiceNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{invoiceNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(invoiceNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
+              </label>
+              <label className="block text-sm font-medium text-gray-700">
+                Muster für Gutschriften
+                <input
+                  value={creditNoteNumberPattern}
+                  maxLength={50}
+                  onChange={event => setFormData(previous => ({ ...previous, creditNoteNumberPattern: event.target.value }))}
+                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${creditNoteNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
+                  aria-invalid={Boolean(creditNoteNumberPatternError)}
+                />
+                <span className={`mt-1 block text-xs ${creditNoteNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{creditNoteNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(creditNoteNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
+              </label>
+              <p className="text-xs leading-5 text-gray-500 md:col-span-2">Platzhalter: <code>{'{YYYY}'}</code> Jahr, <code>{'{YY}'}</code> Kurzjahr, <code>{'{MM}'}</code> Monat und genau ein fortlaufender Zähler von <code>{'{N}'}</code> bis <code>{'{NNNNNNNN}'}</code>. Mehrere N bestimmen die Mindestbreite.</p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Standard-Zahlungsziel (Tage) *
@@ -1764,7 +1808,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </div>
               
               <p className="text-xs text-gray-500 mt-2">
-                Definieren Sie spezifische Start-Nummern für bestimmte Jahre. Alle anderen Jahre beginnen automatisch bei 001.
+                Definieren Sie spezifische Startnummern für bestimmte Jahre. Alle anderen Jahre verwenden die Fallback-Startnummer oben.
               </p>
             </div>
           </div>
@@ -2062,25 +2106,25 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Save Button */}
-        <div className="settings-save-bar sticky bottom-0 z-10 -mx-3 flex flex-col gap-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:flex-row sm:items-center sm:justify-end sm:px-4 lg:-mx-6 lg:px-6">
+        <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
           {feedback && (
-            <div className={`text-sm sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+            <div className={`w-full text-sm sm:w-auto sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
               {feedback.text}
             </div>
           )}
           <button
             type="button"
             onClick={handleResetToDefaults}
-            className="px-4 lg:px-6 py-2 rounded-xl border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-300"
+            className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 lg:px-6"
           >
             Zurücksetzen
           </button>
           <button
             type="submit"
             disabled={isSaving || !hasUnsavedChanges}
-            className="btn-primary text-white px-4 lg:px-6 py-2 rounded-xl hover:brightness-90 transition-all duration-300 hover:scale-105 flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+            className="btn-primary rounded-xl px-4 py-2 text-white transition-colors hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 lg:px-6"
           >
-            <Save className="h-4 w-4" />
+            <Save className="h-4 w-4 shrink-0" />
             <span>{isSaving ? 'Speichert...' : 'Speichern'}</span>
           </button>
         </div>

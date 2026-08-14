@@ -69,17 +69,41 @@ router.get('/invoice-journal', async (req, res) => {
         i.status,
         i.created_at,
         c.customer_number,
-        CASE 
-          WHEN i.status = 'paid' THEN i.total 
-          ELSE 0 
-        END as paid_amount,
-        CASE 
-          WHEN i.status = 'overdue' THEN i.total 
-          ELSE 0 
+        -- Teilzahlungen werden als EÜR-Buchung mit source_type
+        -- 'invoice_payment' erfasst. Ohne sie zählt eine Rechnung mit
+        -- Anzahlung als vollständig offen, obwohl das Geld eingegangen ist.
+        LEAST(
+          i.total,
+          GREATEST(
+            COALESCE((
+              SELECT SUM(e.amount)
+              FROM euer_entries e
+              WHERE e.source_type = 'invoice_payment'
+                AND e.source_id = i.id
+                AND COALESCE(e.status, 'active') <> 'voided'
+            ), 0),
+            CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END
+          )
+        ) as paid_amount,
+        CASE
+          WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
+          ELSE 0
         END as overdue_amount,
-        CASE 
-          WHEN i.status IN ('draft', 'sent') THEN i.total 
-          ELSE 0 
+        CASE
+          WHEN i.status = 'paid' THEN 0
+          ELSE GREATEST(i.total - COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
         END as outstanding_amount,
         (
           SELECT COALESCE(SUM(COALESCE(discount_amount, 0)), 0)
@@ -192,17 +216,41 @@ router.post('/invoice-journal/pdf', async (req, res) => {
         i.status,
         i.created_at,
         c.customer_number,
-        CASE 
-          WHEN i.status = 'paid' THEN i.total 
-          ELSE 0 
-        END as paid_amount,
-        CASE 
-          WHEN i.status = 'overdue' THEN i.total 
-          ELSE 0 
+        -- Teilzahlungen werden als EÜR-Buchung mit source_type
+        -- 'invoice_payment' erfasst. Ohne sie zählt eine Rechnung mit
+        -- Anzahlung als vollständig offen, obwohl das Geld eingegangen ist.
+        LEAST(
+          i.total,
+          GREATEST(
+            COALESCE((
+              SELECT SUM(e.amount)
+              FROM euer_entries e
+              WHERE e.source_type = 'invoice_payment'
+                AND e.source_id = i.id
+                AND COALESCE(e.status, 'active') <> 'voided'
+            ), 0),
+            CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END
+          )
+        ) as paid_amount,
+        CASE
+          WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
+          ELSE 0
         END as overdue_amount,
-        CASE 
-          WHEN i.status IN ('draft', 'sent') THEN i.total 
-          ELSE 0 
+        CASE
+          WHEN i.status = 'paid' THEN 0
+          ELSE GREATEST(i.total - COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
         END as outstanding_amount,
         (
           SELECT COALESCE(SUM(COALESCE(discount_amount, 0)), 0)
@@ -426,8 +474,20 @@ router.get('/statistics', async (req, res) => {
         ) as subtotal_sum,
         SUM(i.tax_amount) as tax_sum,
         SUM(i.total) as total_sum,
-        SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END) as paid_sum,
-        SUM(CASE WHEN i.status = 'overdue' THEN i.total ELSE 0 END) as overdue_sum
+        SUM(LEAST(i.total, GREATEST(COALESCE((
+          SELECT SUM(e.amount)
+          FROM euer_entries e
+          WHERE e.source_type = 'invoice_payment'
+            AND e.source_id = i.id
+            AND COALESCE(e.status, 'active') <> 'voided'
+        ), 0), CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END))) as paid_sum,
+        SUM(CASE WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
+          SELECT SUM(e.amount)
+          FROM euer_entries e
+          WHERE e.source_type = 'invoice_payment'
+            AND e.source_id = i.id
+            AND COALESCE(e.status, 'active') <> 'voided'
+        ), 0), 0) ELSE 0 END) as overdue_sum
       FROM invoices i
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
         AND EXTRACT(YEAR FROM i.issue_date) = $1
@@ -478,8 +538,20 @@ router.get('/statistics', async (req, res) => {
         ) as total_subtotal,
         SUM(i.tax_amount) as total_tax,
         SUM(i.total) as total_amount,
-        SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END) as paid_amount,
-        SUM(CASE WHEN i.status = 'overdue' THEN i.total ELSE 0 END) as overdue_amount,
+        SUM(LEAST(i.total, GREATEST(COALESCE((
+          SELECT SUM(e.amount)
+          FROM euer_entries e
+          WHERE e.source_type = 'invoice_payment'
+            AND e.source_id = i.id
+            AND COALESCE(e.status, 'active') <> 'voided'
+        ), 0), CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END))) as paid_amount,
+        SUM(CASE WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
+          SELECT SUM(e.amount)
+          FROM euer_entries e
+          WHERE e.source_type = 'invoice_payment'
+            AND e.source_id = i.id
+            AND COALESCE(e.status, 'active') <> 'voided'
+        ), 0), 0) ELSE 0 END) as overdue_amount,
         AVG(i.total) as avg_invoice_amount
       FROM invoices i
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'

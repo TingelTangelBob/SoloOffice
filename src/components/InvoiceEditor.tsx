@@ -30,12 +30,13 @@ import { calculateInvoiceWithDiscounts, updateItemWithDiscount, formatDiscountDi
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
-import { findDuplicateCustomer, showDuplicateCustomerAlert, formatCustomerNumber } from '../utils/customerUtils';
+import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
 import { generateUUID } from '../utils/uuid';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
+import { useFeedback } from '../context/FeedbackContext';
 
 // Sortable Item Component for Drag & Drop
 interface SortableInvoiceItemProps {
@@ -464,6 +465,7 @@ interface InvoiceEditorProps {
 }
 
 export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: InvoiceEditorProps) {
+  const { confirm, notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { addInvoice, updateInvoice, refreshInvoices } = useInvoices();
   const {
@@ -900,13 +902,13 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (items.length === 0) {
-      alert('Bitte fügen Sie mindestens eine Position hinzu.');
+      notify({ variant: 'warning', message: 'Bitte fügen Sie mindestens eine Position hinzu.' });
       return;
     }
 
     const customer = customers.find(c => c.id === formData.customerId);
     if (!customer) {
-      alert(`Bitte wählen Sie einen ${terminology.entity.accusative} aus.`);
+      notify({ variant: 'warning', message: `Bitte wählen Sie einen ${terminology.entity.accusative} aus.` });
       return;
     }
 
@@ -1006,7 +1008,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
               />
               <p className="text-xs text-gray-500 mt-1">
-                {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : "Die Rechnungsnummer wird beim Speichern automatisch generiert (Format: RE-YYYY-XXX)"}
+                {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Die Rechnungsnummer wird beim Speichern nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
               </p>
             </div>
             <div>
@@ -1420,10 +1422,10 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end sm:gap-0 sm:space-x-4">
+        <div className="form-action-bar">
           <button
             type="submit"
-            className="w-full sm:w-auto px-6 py-3 sm:py-2 btn-primary rounded-lg transition-colors flex items-center justify-center space-x-2 order-1 sm:order-2"
+            className="btn-primary order-2 rounded-lg px-6 py-3 transition-colors sm:py-2"
           >
             <Save className="h-4 w-4" />
             <span>{invoice ? 'Aktualisieren' : 'Erstellen'}</span>
@@ -1431,7 +1433,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           <button
             type="button"
             onClick={onClose}
-            className="w-full sm:w-auto px-6 py-3 sm:py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors order-2 sm:order-1"
+            className="order-1 rounded-lg border border-gray-300 px-6 py-3 text-gray-700 transition-colors hover:bg-gray-50 sm:py-2"
           >
             Abbrechen
           </button>
@@ -1452,7 +1454,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               const existingCustomer = findDuplicateCustomer(customers, newCustomerData);
               
               if (existingCustomer) {
-                showDuplicateCustomerAlert(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''));
+                notify({
+                  variant: 'warning',
+                  title: `${terminology.entity.singular} existiert bereits`,
+                  message: buildDuplicateCustomerMessage(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, '')),
+                });
                 return;
               }
               
@@ -1481,7 +1487,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Failed to create customer', { error: (error as Error).message });
-                alert(`Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.`);
+                notify({ variant: 'error', message: `Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
               }
             }} className="space-y-4">
               <div>
@@ -1592,7 +1598,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <div className="form-action-bar pt-4">
                 <button
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
@@ -1627,7 +1633,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               e.preventDefault();
               
               if (!newInvoiceTemplateData.name || newInvoiceTemplateData.unitPrice <= 0) {
-                alert('Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.');
+                notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.' });
                 return;
               }
 
@@ -1639,7 +1645,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               );
 
               if (existingTemplate) {
-                alert(`Eine Rechnungsvorlage mit dem Namen "${newInvoiceTemplateData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
+                notify({ variant: 'warning', message: `Eine Rechnungsvorlage mit dem Namen "${newInvoiceTemplateData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.` });
                 return;
               }
 
@@ -1663,7 +1669,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 setShowInvoiceTemplateForm(false);
               } catch (error) {
                 console.error('Error saving invoice template:', error);
-                alert('Fehler beim Speichern der Rechnungsvorlage. Bitte versuchen Sie es erneut.');
+                notify({ variant: 'error', message: 'Fehler beim Speichern der Rechnungsvorlage. Bitte versuchen Sie es erneut.' });
               }
             }} className="space-y-5 pb-2">
               <div>
@@ -1753,7 +1759,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 </label>
               </div>
               
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <div className="form-action-bar pt-4">
                 <button
                   type="submit"
                   className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-lg hover:bg-primary-custom/90 transition-colors"
@@ -1843,13 +1849,18 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       </button>
                       <button
                         onClick={async () => {
-                          if (confirm(`Möchten Sie die Vorlage "${template.name}" wirklich löschen?`)) {
-                            try {
-                              await deleteInvoiceTemplate(template.id);
-                            } catch (error) {
-                              console.error('Error deleting template:', error);
-                              alert('Fehler beim Löschen der Vorlage.');
-                            }
+                          const confirmed = await confirm({
+                            title: 'Rechnungsvorlage löschen',
+                            message: `Möchten Sie die Vorlage „${template.name}“ wirklich löschen?`,
+                            confirmText: 'Löschen',
+                            isDestructive: true,
+                          });
+                          if (!confirmed) return;
+                          try {
+                            await deleteInvoiceTemplate(template.id);
+                          } catch (error) {
+                            logger.error('Error deleting template:', error);
+                            notify({ variant: 'error', message: 'Fehler beim Löschen der Vorlage.' });
                           }
                         }}
                         className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition-colors"

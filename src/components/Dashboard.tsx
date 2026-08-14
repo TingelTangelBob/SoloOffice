@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { CalendarDays, Check, CheckCircle, ChevronRight, Clock, GraduationCap, Home, Send } from 'lucide-react';
+import { AlertTriangle, Banknote, CalendarDays, CheckCircle, ChevronRight, FileText, GraduationCap, Home, Send } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -15,8 +15,9 @@ import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
 import type { Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
 import { PageHeader } from './PageHeader';
-import { ActionMenu, ActionMenuItem } from './ActionMenu';
+
 import { getTerminology } from '../utils/terminology';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface DashboardProps {
   onNavigate: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -100,6 +101,7 @@ function getJobStatusLabel(status: JobEntry['status']): string {
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
+  const { notify } = useFeedback();
   const { customers } = useCustomers();
   const { invoices, updateInvoice } = useInvoices();
   const { jobEntries } = useJobs();
@@ -177,12 +179,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const handleSendEmail = async (invoice: Invoice) => {
     const customer = customers.find(c => c.id === invoice.customerId);
     if (!customer) {
-      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
+      notify({ variant: 'error', message: `${terminology.entity.dataLabel} nicht gefunden.` });
       return;
     }
 
     if (!customer.email) {
-      alert(terminology.entity.emailMissingMessage);
+      notify({ variant: 'warning', message: terminology.entity.emailMissingMessage });
       return;
     }
 
@@ -207,14 +209,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       const allEmails = [...(selectedEmails || []), ...(manualEmails?.filter(email => email.trim()) || [])];
       
       if (allEmails.length === 0) {
-        alert('Bitte wählen Sie mindestens eine E-Mail-Adresse aus.');
+        notify({ variant: 'warning', message: 'Bitte wählen Sie mindestens eine E-Mail-Adresse aus.' });
         return;
       }
 
       // Generate PDFs for each format and send emails
       const customer = customers.find(c => c.id === emailModal.invoice!.customerId);
       if (!customer) {
-      alert(`${terminology.entity.dataLabel} nicht gefunden.`);
+      notify({ variant: 'error', message: `${terminology.entity.dataLabel} nicht gefunden.` });
         return;
       }
 
@@ -225,7 +227,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           processedAttachments = await processAttachments(attachments);
         } catch (error) {
           logger.error('Fehler beim Verarbeiten der Anhänge:', error);
-          alert('Fehler beim Verarbeiten der Anhänge');
+          notify({ variant: 'error', message: 'Fehler beim Verarbeiten der Anhänge' });
           return;
         }
       }
@@ -289,7 +291,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
         : '';
       
-      alert(`Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}`);
+      notify({ variant: 'success', message: `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
       
       // Automatically mark as sent if it was draft
       if (emailModal.invoice.status === 'draft') {
@@ -300,7 +302,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       setEmailModal({ isOpen: false, invoice: null, customer: null });
     } catch (error) {
       logger.error('Fehler beim E-Mail-Versand:', error);
-      alert('Fehler beim E-Mail-Versand: ' + (error as Error).message);
+      notify({ variant: 'error', message: 'Fehler beim E-Mail-Versand: ' + (error as Error).message });
     } finally {
       setIsSendingEmail(null);
     }
@@ -379,6 +381,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     return new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' }).format(new Date(year, month - 1, 1));
   };
 
+  const sumOf = (status: Invoice['status']) => invoices
+    .filter(invoice => invoice.status === status)
+    .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const paidAmount = invoices.reduce((sum, invoice) => (
+    sum + Number(invoice.paidAmount ?? (invoice.status === 'paid' ? invoice.total : 0))
+  ), 0);
+  const overdueAmount = invoices
+    .filter(invoice => invoice.status === 'overdue')
+    .reduce((sum, invoice) => sum + Number(invoice.outstandingAmount ?? invoice.total), 0);
+
   const stats = {
     totalInvoices: invoices.length,
     totalCustomers: customers.length,
@@ -386,9 +398,52 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     paidInvoices: invoices.filter(invoice => invoice.status === 'paid').length,
     draftInvoices: invoices.filter(invoice => invoice.status === 'draft').length,
     overdueInvoices: invoices.filter(invoice => invoice.status === 'overdue').length,
+    paidAmount,
+    draftAmount: sumOf('draft'),
+    overdueAmount,
   };
 
-  const recentInvoices = invoices
+  /**
+   * Die Kennzahlen führen den Betrag mit: Für eine Rechnungsanwendung ist die
+   * offene Summe die eigentliche Aussage, die reine Anzahl sagt wenig.
+   */
+  const summaryCards = [
+    {
+      id: 'draft',
+      label: 'Entwürfe',
+      hint: 'Noch nicht versendet',
+      count: stats.draftInvoices,
+      amount: stats.draftAmount,
+      icon: FileText,
+      accent: 'bg-amber-500',
+      iconClass: 'text-amber-600',
+      filter: 'draft',
+    },
+    {
+      id: 'overdue',
+      label: 'Überfällig',
+      hint: 'Zahlungsziel überschritten',
+      count: stats.overdueInvoices,
+      amount: stats.overdueAmount,
+      icon: AlertTriangle,
+      accent: 'bg-red-500',
+      iconClass: 'text-red-600',
+      filter: 'overdue',
+    },
+    {
+      id: 'paid',
+      label: 'Bezahlt',
+      hint: 'Zahlungseingang verbucht',
+      count: stats.paidInvoices,
+      amount: stats.paidAmount,
+      icon: CheckCircle,
+      accent: 'bg-green-500',
+      iconClass: 'text-green-600',
+      filter: 'paid',
+    },
+  ];
+
+  const recentInvoices = [...invoices]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
@@ -415,51 +470,39 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <PageHeader icon={Home} title="Dashboard" subtitle={`Übersicht über Ihre Rechnungen und ${terminology.entity.plural}`} />
+      {/* Der Navigationspunkt heißt „Übersicht“; die Seitenüberschrift folgt
+          derselben Bezeichnung. */}
+      <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
 
-      {/* Action Cards */}
+      {/* Kennzahlen. Der farbige Streifen am oberen Rand ersetzt die früheren
+          Farbflächen: Er ordnet die Karte einem Status zu, ohne den Inhalt
+          einzufärben, und trägt in beiden Farbmodi. */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div 
-          className="theme-gradient-surface theme-gradient-surface-orange group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
-          onClick={() => onNavigate('invoices', 'draft')}
-        >
-          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
-            <div className="shrink-0 rounded-lg bg-orange-500 p-1.5 transition-colors group-hover:bg-orange-600 sm:p-2">
-              <Clock className="h-4 w-4 text-white sm:h-5 sm:w-5" />
-            </div>
-            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Entwürfe</h3>
-          </div>
-          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.draftInvoices}</p>
-          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Noch nicht versendet</p>
-        </div>
-
-        <div 
-          className="theme-gradient-surface theme-gradient-surface-green group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
-          onClick={() => onNavigate('invoices', 'paid')}
-        >
-          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
-            <div className="shrink-0 rounded-lg bg-green-500 p-1.5 transition-colors group-hover:bg-green-600 sm:p-2">
-              <CheckCircle className="h-4 w-4 text-white sm:h-5 sm:w-5" />
-            </div>
-            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Bezahlt</h3>
-          </div>
-          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.paidInvoices}</p>
-          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Erfolgreich abgeschlossen</p>
-        </div>
-
-        <div 
-          className="theme-gradient-surface theme-gradient-surface-red group min-w-0 cursor-pointer rounded-xl border p-2 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-lg sm:p-3"
-          onClick={() => onNavigate('invoices', 'overdue')}
-        >
-          <div className="mb-2 flex min-w-0 flex-col items-center gap-1 sm:flex-row sm:justify-center">
-            <div className="shrink-0 rounded-lg bg-red-500 p-1.5 transition-colors group-hover:bg-red-600 sm:p-2">
-              <Clock className="h-4 w-4 text-white sm:h-5 sm:w-5" />
-            </div>
-            <h3 className="theme-gradient-heading min-w-0 max-w-full truncate text-center text-xs font-semibold sm:text-lg">Überfällig</h3>
-          </div>
-          <p className="theme-gradient-value mb-1 text-xl font-bold sm:text-xl">{stats.overdueInvoices}</p>
-          <p className="theme-gradient-muted hidden truncate text-center text-[11px] sm:block">Benötigt Aufmerksamkeit</p>
-        </div>
+        {summaryCards.map(({ id, label, hint, count, amount, icon: CardIcon, accent, iconClass, filter }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onNavigate('invoices', filter)}
+            className="group relative min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 sm:p-4"
+          >
+            <span className={`absolute inset-x-0 top-0 h-1 ${accent}`} aria-hidden="true" />
+            {/* Symbol und Einheit weichen auf schmalen Geräten: Bei drei Spalten
+                auf 375 Pixeln bliebe die Beschriftung sonst abgeschnitten. Der
+                farbige Streifen trägt die Statuszuordnung ohnehin. */}
+            <span className="flex min-w-0 items-center gap-1.5 pt-1">
+              <CardIcon className={`hidden h-4 w-4 shrink-0 sm:block ${iconClass}`} aria-hidden="true" />
+              <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</span>
+            </span>
+            <span className="mt-2 flex min-w-0 items-baseline gap-1.5">
+              <span className="text-2xl font-bold leading-none text-gray-900 sm:text-3xl">{count}</span>
+              <span className="hidden min-w-0 truncate text-[11px] text-gray-500 sm:inline">{count === 1 ? 'Rechnung' : 'Rechnungen'}</span>
+            </span>
+            <span className="mt-2 block truncate text-sm font-semibold text-gray-900">
+              {formatCurrency(amount, locale, company?.numberFormat, company?.currency)}
+            </span>
+            <span className="mt-0.5 hidden truncate text-[11px] text-gray-500 sm:block">{hint}</span>
+          </button>
+        ))}
       </div>
 
       {/* Termine der aktuellen Kalenderwoche */}
@@ -488,7 +531,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
           {currentWeekJobs.length > 0 ? (
             <div className="overflow-x-auto">
-              <div className="grid min-w-[840px] grid-cols-7 divide-x divide-gray-200">
+              <div className="grid min-w-[700px] grid-cols-7 divide-x divide-gray-200">
                 {currentWeekDays.map(({ date, jobs }) => {
                   const isToday = date.getTime() === parseLocalJobDate(today).getTime();
 
@@ -502,27 +545,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                           {formatDate(date, locale, company?.dateFormat)}
                         </div>
                       </div>
-                      <div className="min-h-[11rem] space-y-2 p-2">
+                      <div className="min-h-[5.5rem] space-y-2 p-2">
                         {jobs.length > 0 ? jobs.map((job) => (
                           <button
                             key={job.id}
                             type="button"
                             onClick={() => onNavigate('jobs', undefined, job.jobNumber)}
-                            className="group w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-2 text-left transition-colors hover:border-primary-custom hover:bg-primary-custom/5"
-                            aria-label={`${job.title} am ${formatDate(date, locale, company?.dateFormat)} öffnen`}
+                            className="group relative w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 py-2 pl-3 pr-2 text-left transition-colors hover:border-primary-custom hover:bg-primary-custom/5"
+                            aria-label={`${job.title} am ${formatDate(date, locale, company?.dateFormat)} · ${getJobStatusLabel(job.status)} öffnen`}
+                            title={getJobStatusLabel(job.status)}
                           >
-                            <span className="flex min-w-0 items-start gap-1.5">
-                              <span
-                                className={`mt-1 h-2 w-2 shrink-0 rounded-full ${getJobStatusDotColor(job.status)}`}
-                                title={getJobStatusLabel(job.status)}
-                                aria-label={getJobStatusLabel(job.status)}
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-semibold text-gray-900 group-hover:text-primary-custom">{job.title}</span>
-                                <span className="mt-1 block truncate text-[11px] text-gray-500">{job.customerName}</span>
-                                <span className="mt-1 block truncate text-[11px] text-gray-500">
-                                  {getJobTimeRange(job, locale, company?.timeFormat, company?.numberFormat)}
-                                </span>
+                            {/* Der Status liegt als Streifen am linken Rand statt
+                                als Punkt in der Zeile: In den schmalen Tagesspalten
+                                bleibt so die volle Breite für Titel und Kunde. */}
+                            <span
+                              className={`absolute inset-y-0 left-0 w-1 ${getJobStatusDotColor(job.status)}`}
+                              aria-hidden="true"
+                            />
+                            <span className="block min-w-0">
+                              <span className="block truncate text-xs font-semibold text-gray-900 group-hover:text-primary-custom">{job.title}</span>
+                              <span className="mt-1 block truncate text-[11px] text-gray-500">{job.customerName}</span>
+                              <span className="mt-1 block truncate text-[11px] text-gray-500">
+                                {getJobTimeRange(job, locale, company?.timeFormat, company?.numberFormat)}
                               </span>
                             </span>
                           </button>
@@ -548,7 +592,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <h3 className="text-base lg:text-lg font-semibold text-gray-900">Aktuelle Rechnungen</h3>
           <button
             onClick={() => onNavigate('invoices')}
-            className="text-sm text-primary-custom hover:text-primary-custom/80 font-medium transition-colors self-start sm:self-auto"
+            className="hidden text-sm text-primary-custom hover:text-primary-custom/80 font-medium transition-colors tablet:inline-block"
           >
             Alle anzeigen →
           </button>
@@ -599,29 +643,19 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-900">
                     {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                   </td>
-                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap 2xl:w-44 2xl:px-3">
+                  {/* Eine Zeile hat höchstens eine Aktion. Ein Drei-Punkte-Menü
+                      würde bei bezahlten Rechnungen leer aufklappen. */}
+                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap">
                     <div
-                      className="flex items-center gap-1"
+                      className="flex items-center justify-end gap-1"
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
-                      <ActionMenu containerClassName="2xl:hidden" triggerClassName="action-icon-button action-icon-indigo">
-                          {invoice.status === 'draft' && (
-                            <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
-                              Versenden
-                            </ActionMenuItem>
-                          )}
-                          {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                            <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
-                              Als bezahlt markieren
-                            </ActionMenuItem>
-                          )}
-                      </ActionMenu>
-                      <div className="hidden 2xl:flex space-x-1">
                       {invoice.status === 'draft' && (
                         <button
                           type="button"
                           className="action-icon-button action-icon-blue"
                           title="Per E-Mail versenden"
+                          aria-label="Per E-Mail versenden"
                           onClick={() => handleSendEmail(invoice)}
                         >
                           <Send className="h-4 w-4" />
@@ -631,13 +665,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                         <button
                           type="button"
                           className="action-icon-button action-icon-green"
-                          title="Als bezahlt markieren"
-                          onClick={() => updateInvoice(invoice.id, { status: 'paid' })}
+                          title="Zahlungseingang in der Rechnung erfassen"
+                          aria-label="Zahlungseingang erfassen"
+                          onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
                         >
-                          <Check className="h-4 w-4" />
+                          <Banknote className="h-4 w-4" />
                         </button>
                       )}
-                      </div>
                     </div>
                   </td>
                 </tr>
@@ -676,22 +710,44 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     <span className="min-w-0 text-right text-sm font-medium text-gray-900">
                       {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                     </span>
-                    <ActionMenu containerClassName="relative shrink-0" triggerClassName="action-icon-button action-icon-indigo h-7 w-7">
-                          {invoice.status === 'draft' && (
-                            <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>
-                              Versenden
-                            </ActionMenuItem>
-                          )}
-                          {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                            <ActionMenuItem icon={<Check className="h-4 w-4" />} tone="green" onClick={() => updateInvoice(invoice.id, { status: 'paid' })}>
-                              Als bezahlt markieren
-                            </ActionMenuItem>
-                          )}
-                    </ActionMenu>
+                    {invoice.status === 'draft' && (
+                      <button
+                        type="button"
+                        className="action-icon-button action-icon-blue shrink-0"
+                        title="Per E-Mail versenden"
+                        aria-label="Per E-Mail versenden"
+                        onClick={() => handleSendEmail(invoice)}
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    )}
+                    {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                      <button
+                        type="button"
+                        className="action-icon-button action-icon-green shrink-0"
+                        title="Zahlungseingang in der Rechnung erfassen"
+                        aria-label="Zahlungseingang erfassen"
+                        onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                      >
+                        <Banknote className="h-4 w-4" />
+                      </button>
+                    )}
                 </div>
               </div>
             </div>
           ))}
+          {recentInvoices.length > 0 && (
+            <div className="flex justify-end px-3 py-3 sm:px-4">
+              <button
+                type="button"
+                onClick={() => onNavigate('invoices')}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
+              >
+                Alle Rechnungen
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
 
         {recentInvoices.length === 0 && (
@@ -800,6 +856,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 </div>
               );
             })}
+            {company.reportingEnabled && (
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('reporting')}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
+                >
+                  Zu den Auswertungen
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="py-8 text-center text-gray-500">

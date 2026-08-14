@@ -39,6 +39,19 @@ import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorag
 import { Notice } from './Notice';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { DialogShell } from './DialogShell';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
+import { useFeedback } from '../context/FeedbackContext';
+
+/**
+ * Spaltenmaße der Buchungstabelle: Datum 112, Kategorie 160, Quelle 144 und
+ * Betrag 128 Pixel. Eine Zeile zeigt höchstens vier Icon-Aktionen.
+ */
+const EUER_TABLE_LAYOUT = listTableLayout({
+  baseColumnsWidth: 112 + 160 + 144 + 128,
+  flexibleColumnMinWidth: 200,
+  maxActions: 4,
+});
 
 type EntryDraft = {
   entryType: EuerEntryType;
@@ -132,10 +145,13 @@ interface EuerManagementProps {
 }
 
 export function EuerManagement({ onNavigate }: EuerManagementProps) {
+  const { confirm } = useFeedback();
   const { invoices } = useInvoices();
   const { company } = useCompany();
   const currentYear = new Date().getFullYear();
   const locale = company?.locale || 'de-DE';
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= EUER_TABLE_LAYOUT.inlineActionsMinWidth;
   const [year, setYear] = useState(currentYear);
   const [entries, setEntries] = useState<EuerEntry[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
@@ -351,7 +367,14 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
   };
 
   const remove = async (entry: EuerRow) => {
-    if (entry.automatic || !window.confirm(`„${entry.description}“ stornieren? Die Buchung bleibt in der Historie erhalten.`)) return;
+    if (entry.automatic) return;
+    const confirmed = await confirm({
+      title: 'Buchung stornieren',
+      message: `„${entry.description}“ stornieren? Die Buchung bleibt in der Historie erhalten.`,
+      confirmText: 'Stornieren',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await apiService.deleteEuerEntry(entry.id, 'Stornierung durch Benutzer');
@@ -535,10 +558,10 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p></div>
       {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">EÜR-Buchungen werden geladen …</div> : rows.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Für {year} sind noch keine Buchungen vorhanden.</div> : <>
-        <div className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
-            <thead className="bg-gray-50"><tr><th className="w-28 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 2xl:w-56 2xl:px-4"><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{rows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 text-sm transition-colors group-hover:bg-gray-50 2xl:w-56 2xl:px-4">{entry && <><div className="hidden 2xl:flex flex-wrap justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button><button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div><ActionMenu containerClassName="hidden tablet:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu></>}</td></tr>; })}</tbody>
+            <thead className="bg-gray-50"><tr><th className="w-28 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
+            <tbody className="divide-y divide-gray-200 bg-white">{rows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button><button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>
         </div>
         <div className="divide-y divide-gray-100 tablet:hidden">{rows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}</article>; })}</div>

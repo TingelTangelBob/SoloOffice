@@ -85,7 +85,7 @@ export function DemoNotice() {
       )}
 
       <div
-        className="demo-bar fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-gray-700 bg-gray-900 px-3 py-1.5 text-xs text-gray-300 sm:px-4"
+        className="demo-bar fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-300 sm:px-4"
         data-testid="demo-bar"
       >
         <p className="min-w-0 truncate">
@@ -102,10 +102,10 @@ export function DemoNotice() {
             type="button"
             onClick={handleReset}
             disabled={resetting}
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-gray-800 hover:text-white disabled:opacity-60"
+            className="inline-flex min-h-0 items-center gap-1.5 rounded px-2 py-0.5 hover:bg-gray-800 hover:text-white disabled:opacity-60"
             title="Testdaten auf den Ausgangszustand zurücksetzen"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
+            <RotateCcw className="h-3 w-3" />
             <span className="hidden sm:inline">Zurücksetzen</span>
           </button>
 
@@ -113,14 +113,14 @@ export function DemoNotice() {
             href={sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-gray-800 hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 hover:bg-gray-800 hover:text-white"
             title="Quelltext genau dieser Fassung ansehen"
           >
             <span className="hidden sm:inline">Quelltext</span>
             {versionLabel && (
               <span className="font-mono text-[11px] text-gray-500">{versionLabel}</span>
             )}
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className="h-3 w-3" />
           </a>
         </div>
       </div>

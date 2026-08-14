@@ -233,16 +233,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     : [];
 
   const handlePageChange = (page: string) => {
-    if (page === 'invoices') {
-      setIsInvoiceMenuOpen(open => !open);
-      setIsTaxMenuOpen(false);
-    } else if (invoiceSubPageIds.includes(page)) {
+    if (page === 'invoices' || invoiceSubPageIds.includes(page)) {
       setIsInvoiceMenuOpen(true);
       setIsTaxMenuOpen(false);
-    } else if (page === 'taxes') {
-      setIsTaxMenuOpen(open => !open);
-      setIsInvoiceMenuOpen(false);
-    } else if (taxSubPageIds.includes(page)) {
+    } else if (page === 'taxes' || taxSubPageIds.includes(page)) {
       setIsTaxMenuOpen(true);
       setIsInvoiceMenuOpen(false);
     } else {
@@ -253,20 +247,40 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     setIsMobileMenuOpen(false);
   };
 
+  /**
+   * Untermenüs werden über eine eigene Schaltfläche auf- und zugeklappt. Das
+   * Aufklappen ist damit keine Navigation und schließt die mobile Seitenleiste
+   * nicht.
+   */
+  const toggleSubMenu = (itemId: string) => {
+    if (itemId === 'invoices') {
+      setIsInvoiceMenuOpen(open => !open);
+      setIsTaxMenuOpen(false);
+    } else if (itemId === 'taxes') {
+      setIsTaxMenuOpen(open => !open);
+      setIsInvoiceMenuOpen(false);
+    }
+  };
+
   return (
     <>
       <DynamicColors />
       <div id="app-shell" className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
-          <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 lg:hidden">
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="pointer-events-auto absolute left-3 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700"
-              aria-label={isMobileMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
-            >
-              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
+          {/* Nur zum Öffnen. Geschlossen wird die Seitenleiste über die
+              Schaltfläche in ihrer eigenen Kopfzeile – dort steht sie in
+              derselben Zeile wie das Logo und ist damit sauber ausgerichtet. */}
+          {!isMobileMenuOpen && (
+            <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 lg:hidden">
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="pointer-events-auto absolute left-3 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Menü öffnen"
+              >
+                <Menu className="h-6 w-6" />
+              </button>
+            </div>
+          )}
 
           {isMobileMenuOpen && (
             <div
@@ -285,10 +299,18 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           `}
           >
             <div className="flex h-full flex-col p-4">
-              <div className={`sidebar-brand relative mb-4 flex items-center border-b border-gray-200 pb-2 ${isSidebarCompact ? 'justify-center' : 'justify-between'}`}>
+              <div className={`sidebar-brand relative mb-4 flex items-center gap-2 border-b border-gray-200 pb-2 ${isSidebarCompact ? 'justify-center' : 'justify-between'}`}>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="inline-flex h-12 w-12 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 lg:hidden"
+                  aria-label="Menü schließen"
+                >
+                  <X className="h-6 w-6" />
+                </button>
                 <button
                   onClick={() => handlePageChange('dashboard')}
-                  className={`flex items-center py-2 hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0' : 'min-w-0 flex-1 pl-12 lg:pl-2'}`}
+                  className={`flex items-center py-2 hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0' : 'min-w-0 flex-1 lg:pl-2'}`}
                   aria-label="Übersicht öffnen"
                 >
                   {company.icon ? (
@@ -353,31 +375,46 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   const Icon = item.icon;
                   const isParentActive = currentPage === item.id || item.children?.some(child => child.id === currentPage);
                   const isExpanded = item.id === 'invoices' ? isInvoiceMenuOpen : item.id === 'taxes' ? isTaxMenuOpen : isParentActive;
+                  const subMenuItems = isSidebarCompact ? undefined : item.children;
                   return (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => handlePageChange(item.id)}
-                        aria-label={item.label}
-                        aria-current={isParentActive ? 'page' : undefined}
-                        title={isSidebarCompact ? item.label : undefined}
-                        className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
+                      <div
+                        className={`flex items-center rounded-lg transition-colors ${
                           isParentActive
                             ? 'nav-active'
                             : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
-                        <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
-                        {item.children && !isSidebarCompact && (
-                          isExpanded
-                            ? <ChevronDown className="ml-auto h-4 w-4" />
-                            : <ChevronRight className="ml-auto h-4 w-4" />
-                        )}
-                      </button>
-                      {item.children && isExpanded && !isSidebarCompact && (
-                        <ul className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
-                          {item.children.map((child) => (
+                        <button
+                          type="button"
+                          onClick={() => handlePageChange(item.id)}
+                          aria-label={item.label}
+                          aria-current={isParentActive ? 'page' : undefined}
+                          title={isSidebarCompact ? item.label : undefined}
+                          className={`flex min-w-0 flex-1 items-center py-2 text-left text-sm ${isSidebarCompact ? 'justify-center px-2' : 'pl-4 pr-2'}`}
+                        >
+                          <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                          <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
+                        </button>
+                        {subMenuItems?.length ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleSubMenu(item.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={`nav-submenu-${item.id}`}
+                            aria-label={`${item.label}: Untermenü ${isExpanded ? 'zuklappen' : 'aufklappen'}`}
+                            title={isExpanded ? 'Untermenü zuklappen' : 'Untermenü aufklappen'}
+                            className="mr-2 inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md text-current transition-colors hover:bg-black/5"
+                          >
+                            {isExpanded
+                              ? <ChevronDown className="h-4 w-4" />
+                              : <ChevronRight className="h-4 w-4" />}
+                          </button>
+                        ) : null}
+                      </div>
+                      {subMenuItems?.length && isExpanded ? (
+                        <ul id={`nav-submenu-${item.id}`} className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                          {subMenuItems.map((child) => (
                             <li key={child.id}>
                               <button
                                 type="button"
@@ -394,7 +431,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                             </li>
                           ))}
                         </ul>
-                      )}
+                      ) : null}
                     </li>
                   );
                 })}

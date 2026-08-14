@@ -1,6 +1,8 @@
 import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, FileScan, FileUp, Link2, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, FilePlus2, FileScan, FileUp, Link2, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
+import { useCustomers } from '../context/CustomerContext';
+import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
 import type { EuerEntryPayload, Receipt, ReceiptExtractedData, ReceiptOcrStatus } from '../types';
 import { formatFileSize } from '../utils/fileUtils';
@@ -9,9 +11,11 @@ import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUploa
 import { DialogShell } from './DialogShell';
 import { ImportWizard } from './ImportWizard';
 import { PageHeader } from './PageHeader';
+import { useFeedback } from '../context/FeedbackContext';
+import { ReceiptBillingDialog } from './ReceiptBillingDialog';
 
 interface ReceiptsManagementProps {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
   embedded?: boolean;
 }
 
@@ -46,7 +50,10 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   { onNavigate, embedded = false }: ReceiptsManagementProps,
   ref: ForwardedRef<ReceiptsManagementHandle>,
 ) {
+  const { confirm } = useFeedback();
   const { company } = useCompany();
+  const { customers } = useCustomers();
+  const { setInvoices } = useInvoices();
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const locale = company.locale || 'de-DE';
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -60,6 +67,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [billingReceipt, setBillingReceipt] = useState<Receipt | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const openUpload = useCallback(() => fileInputRef.current?.click(), []);
@@ -249,8 +257,31 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     }
   };
 
+  const openBillingDialog = async () => {
+    if (!selectedReceipt) return;
+    setSavingReview(true);
+    setError('');
+    try {
+      const updated = await persistReview();
+      if (updated) {
+        setSelectedReceipt(null);
+        setBillingReceipt(updated);
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Die Belegprüfung konnte nicht gespeichert werden.');
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
   const deleteReceipt = async (receipt: Receipt) => {
-    if (!window.confirm(`„${receipt.name}“ wirklich löschen?`)) return;
+    const confirmed = await confirm({
+      title: 'Beleg löschen',
+      message: `„${receipt.name}“ wirklich löschen? Verknüpfte EÜR-Buchungen bleiben bestehen.`,
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     setBusyId(receipt.id);
     setError('');
     try {
@@ -386,8 +417,8 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                     </span>
                   </div>
                   <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
-                  {receipt.linkedEuerEntryId && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-700"><Link2 className="h-3.5 w-3.5" />Mit EÜR verknüpft</p>}
-                  <div className="mt-auto flex items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button><button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50" disabled={busy} aria-label={`${displayName} löschen`} title="Löschen"><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
+                  <div className="mt-3 space-y-1.5">{receipt.linkedEuerEntryId && <p className="flex items-center gap-1.5 text-xs font-medium text-blue-700"><Link2 className="h-3.5 w-3.5" />Mit EÜR verknüpft</p>}{receipt.billedInvoiceId && <button type="button" onClick={() => onNavigate?.('invoices', 'all', undefined, receipt.billedInvoiceId || undefined)} className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:underline"><FilePlus2 className="h-3.5 w-3.5" />Weiterberechnete Rechnung öffnen</button>}</div>
+                  <div className="mt-auto flex items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button><button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || Boolean(receipt.billedInvoiceId)} aria-label={`${displayName} löschen`} title={receipt.billedInvoiceId ? 'Weiterberechnete Belege bleiben als Nachweis erhalten' : 'Löschen'}><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
                 </article>
               );
             })}
@@ -406,6 +437,15 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           zIndexClassName="z-[1100]"
           footer={(
             <>
+              <button
+                type="button"
+                onClick={() => void openBillingDialog()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={Boolean(selectedReceipt.billedInvoiceId) || savingReview || busyId === selectedReceipt.id}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                {selectedReceipt.billedInvoiceId ? 'Bereits weiterberechnet' : 'Weiterberechnen'}
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedReceipt(null)}
@@ -542,6 +582,17 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           </div>
         </DialogShell>
       )}
+      <ReceiptBillingDialog
+        receipt={billingReceipt}
+        customers={customers}
+        onClose={() => setBillingReceipt(null)}
+        onCreated={(invoice, updatedReceipt) => {
+          updateReceiptInState(updatedReceipt);
+          setInvoices(current => current.some(item => item.id === invoice.id) ? current : [invoice, ...current]);
+          setBillingReceipt(null);
+          setNotice(`Rechnungsentwurf ${invoice.invoiceNumber} wurde erstellt. Du kannst ihn unter Rechnungen prüfen und versenden.`);
+        }}
+      />
       {!embedded && (
         <ImportWizard
           resource="euerEntries"

@@ -3,8 +3,10 @@ import { Check, Copy, LogOut, Plus, Shield, UserRound, Users } from 'lucide-reac
 import { useAuth } from '../context/AuthContext';
 import type { WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '../types';
 import { PageHeader } from './PageHeader';
+import { useFeedback } from '../context/FeedbackContext';
 
 export function ProfileManagement() {
+  const { confirm } = useFeedback();
   const {
     user,
     workspace,
@@ -106,7 +108,13 @@ export function ProfileManagement() {
   };
 
   const handleDeleteAccount = () => run(async () => {
-    if (!window.confirm('Konto und eigene Workspaces endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.')) return;
+    const confirmed = await confirm({
+      title: 'Konto endgültig löschen',
+      message: 'Konto und eigene Workspaces endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.',
+      confirmText: 'Endgültig löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     await deleteAccount(deletePassword);
   }, 'Konto gelöscht.');
 

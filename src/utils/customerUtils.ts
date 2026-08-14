@@ -29,13 +29,24 @@ export function findDuplicateCustomer(
   }) || null;
 }
 
-export function showDuplicateCustomerAlert(
+/**
+ * Beschreibt den gefundenen Doppeleintrag. Die Funktion baut nur den Text; ob
+ * er als Rückfrage oder als Hinweis erscheint, entscheidet die aufrufende
+ * Ansicht.
+ */
+export function buildDuplicateCustomerMessage(
   duplicateCustomer: Customer,
   entityLabel: string,
   numberLabel: string
-): boolean {
-  const message = `Ein ${entityLabel} mit identischen Daten existiert bereits:\n\nName: ${duplicateCustomer.name}\nAdresse: ${duplicateCustomer.address}, ${duplicateCustomer.postalCode} ${duplicateCustomer.city}\nE-Mail: ${duplicateCustomer.email || 'Nicht angegeben'}\n${numberLabel}: ${formatCustomerNumber(duplicateCustomer.customerNumber)}\n\nMöchten Sie trotzdem fortfahren?`;
-  return window.confirm(message);
+): string {
+  return [
+    `Ein ${entityLabel} mit identischen Daten existiert bereits:`,
+    '',
+    `Name: ${duplicateCustomer.name}`,
+    `Adresse: ${duplicateCustomer.address}, ${duplicateCustomer.postalCode} ${duplicateCustomer.city}`,
+    `E-Mail: ${duplicateCustomer.email || 'Nicht angegeben'}`,
+    `${numberLabel}: ${formatCustomerNumber(duplicateCustomer.customerNumber)}`,
+  ].join('\n');
 }
 
 /**

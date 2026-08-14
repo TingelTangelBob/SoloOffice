@@ -11,6 +11,7 @@ import logger from '../utils/logger';
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { getTerminology } from '../utils/terminology';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface ReminderSendModalProps {
   isOpen: boolean;
@@ -33,6 +34,7 @@ export function ReminderSendModal({
   isBulkMode = false,
   bulkInvoices = []
 }: ReminderSendModalProps) {
+  const { notify } = useFeedback();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const { customers } = useCustomers();
@@ -72,7 +74,11 @@ export function ReminderSendModal({
     return totalFees;
   })();
 
-  const totalWithFee = invoice.total + cumulativeFee;
+  const outstandingAmountOf = (item: Invoice) => Math.max(0, Number(item.outstandingAmount ?? (
+    item.status === 'paid' ? 0 : item.total - Number(item.paidAmount || 0)
+  )));
+  const outstandingAmount = outstandingAmountOf(invoice);
+  const totalWithFee = outstandingAmount + cumulativeFee;
   const nextStatus = `reminded_${stage}x` as Invoice['status'];
 
   useEffect(() => {
@@ -145,7 +151,7 @@ export function ReminderSendModal({
       });
     } catch (error) {
       logger.error('Error generating reminder preview:', error);
-      alert('Fehler beim Erstellen der Vorschau');
+      notify({ variant: 'error', message: 'Fehler beim Erstellen der Vorschau' });
     }
   };
 
@@ -159,6 +165,10 @@ export function ReminderSendModal({
       const invoicesToProcess = isBulkMode ? bulkInvoices : [invoice];
       
       for (const inv of invoicesToProcess) {
+        const invCustomer = customers.find(entry => entry.id === inv.customerId);
+        if (!invCustomer) {
+          throw new Error(`${terminology.entity.singular} für ${inv.invoiceNumber} nicht gefunden.`);
+        }
         const pdfBlob = await generateReminderPDF(
           inv,
           stage,
@@ -167,7 +177,7 @@ export function ReminderSendModal({
           {
             format: 'zugferd',
             company,
-            customer
+            customer: invCustomer,
           }
         );
 
@@ -193,7 +203,7 @@ export function ReminderSendModal({
       onClose();
     } catch (error) {
       logger.error('Error downloading reminder PDF:', error);
-      alert('Fehler beim Herunterladen der Mahnung');
+      notify({ variant: 'error', message: 'Fehler beim Herunterladen der Mahnung' });
     } finally {
       setIsLoading(false);
     }
@@ -317,15 +327,15 @@ export function ReminderSendModal({
       }
 
       if (successCount > 0) {
-        alert(`${successCount} Mahnung(en) erfolgreich versendet!`);
+        notify({ variant: 'success', message: `${successCount} Mahnung(en) erfolgreich versendet!` });
         onSuccess();
         onClose();
       } else {
-        alert('Fehler beim Versenden der Mahnungen');
+        notify({ variant: 'error', message: 'Fehler beim Versenden der Mahnungen' });
       }
     } catch (error) {
       logger.error('Error sending reminder emails:', error);
-      alert('Fehler beim Versenden der Mahnung per E-Mail');
+      notify({ variant: 'error', message: 'Fehler beim Versenden der Mahnung per E-Mail' });
     } finally {
       setIsLoading(false);
     }
@@ -339,7 +349,7 @@ export function ReminderSendModal({
     if (email && !existingEmails.includes(email) && !selectedEmails.includes(email)) {
       // Simple email validation
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        alert('Bitte geben Sie eine gültige E-Mail-Adresse ein.');
+        notify({ variant: 'warning', message: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.' });
         return;
       }
       
@@ -403,7 +413,7 @@ export function ReminderSendModal({
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Gesamtbetrag (exkl. Gebühren)</p>
-                      <p className="font-medium">{formatCurrency(bulkInvoices.reduce((sum, inv) => sum + inv.total, 0), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                      <p className="font-medium">{formatCurrency(bulkInvoices.reduce((sum, inv) => sum + outstandingAmountOf(inv), 0), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                     </div>
                   </div>
                   <div className="max-h-32 overflow-y-auto border-t border-gray-200 pt-2 mt-2">
@@ -411,7 +421,7 @@ export function ReminderSendModal({
                     {bulkInvoices.map(inv => (
                       <div key={inv.id} className="text-xs text-gray-700 flex justify-between py-1">
                         <span>{inv.invoiceNumber}</span>
-                        <span className="text-gray-500">{formatCurrency(inv.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</span>
+                        <span className="text-gray-500">{formatCurrency(outstandingAmountOf(inv), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</span>
                       </div>
                     ))}
                   </div>
@@ -427,8 +437,8 @@ export function ReminderSendModal({
                     <p className="font-medium">{customer.name}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Rechnungsbetrag</p>
-                    <p className="font-medium">{formatCurrency(invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                    <p className="text-sm text-gray-600">Offener Rechnungsbetrag</p>
+                    <p className="font-medium">{formatCurrency(outstandingAmount, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                   </div>
                   {cumulativeFee > 0 && (
                     <div>

@@ -21,6 +21,8 @@ function mapInvoice(row) {
     subtotal: parseFloat(row.subtotal),
     taxAmount: parseFloat(row.tax_amount),
     total: parseFloat(row.total),
+    paidAmount: parseFloat(row.paid_amount || 0),
+    outstandingAmount: parseFloat(row.outstanding_amount ?? row.total),
     status: row.status,
     notes: row.notes,
     globalDiscountType: row.global_discount_type,
@@ -46,6 +48,19 @@ const itemSelect = `
     'externalJobNumber', ijs.external_job_number, 'title', ijs.title,
     'jobDate', ijs.job_date, 'recurrenceIndex', ijs.recurrence_index
   ) ORDER BY ijs.job_date, ijs.job_number) FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id), '[]'::jsonb) AS source_jobs
+  , LEAST(
+      i.total,
+      GREATEST(
+        COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0),
+        CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END
+      )
+    ) AS paid_amount
+  , CASE WHEN i.status = 'paid' THEN 0 ELSE GREATEST(
+      i.total - COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+        WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0),
+      0
+    ) END AS outstanding_amount
 `;
 
 export async function findAllInvoices() {

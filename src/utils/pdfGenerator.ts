@@ -1385,6 +1385,24 @@ export async function generateReminderPDF(
   pdf.text(originalAmount, colAmountX + 20 - originalAmountWidth, yPos);
   
   yPos += 7;
+
+  const paidAmountValue = Math.min(
+    Number(invoice.total || 0),
+    Math.max(0, Number(invoice.paidAmount ?? (invoice.status === 'paid' ? invoice.total : 0))),
+  );
+  const outstandingAmountValue = Math.max(
+    0,
+    Number(invoice.outstandingAmount ?? Number(invoice.total || 0) - paidAmountValue),
+  );
+  if (paidAmountValue > 0) {
+    pdf.setTextColor(60, 60, 60);
+    pdf.text('Bereits bezahlt:', colLabelX, yPos);
+    pdf.setTextColor(22, 120, 75);
+    const paidAmount = `- ${formatCurrency(paidAmountValue, locale, options.company.numberFormat, options.company.currency)}`;
+    const paidAmountWidth = pdf.getTextWidth(paidAmount);
+    pdf.text(paidAmount, colAmountX + 20 - paidAmountWidth, yPos);
+    yPos += 7;
+  }
   
   if (cumulativeFee > 0) {
     pdf.setTextColor(60, 60, 60);
@@ -1406,7 +1424,7 @@ export async function generateReminderPDF(
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text('Zu zahlender Gesamtbetrag:', colLabelX, yPos);
-  const totalAmount = formatCurrency(invoice.total + cumulativeFee, locale, options.company.numberFormat, options.company.currency);
+  const totalAmount = formatCurrency(outstandingAmountValue + cumulativeFee, locale, options.company.numberFormat, options.company.currency);
   const totalAmountWidth = pdf.getTextWidth(totalAmount);
   pdf.text(totalAmount, colAmountX + 20 - totalAmountWidth, yPos);
   

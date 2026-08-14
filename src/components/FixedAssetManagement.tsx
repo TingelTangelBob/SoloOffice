@@ -7,7 +7,10 @@ import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/forma
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { PageHeader } from './PageHeader';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
 import { DialogShell } from './DialogShell';
+import { useFeedback } from '../context/FeedbackContext';
 
 type AssetDraft = {
   name: string;
@@ -31,10 +34,20 @@ const emptyDraft = (): AssetDraft => ({
   notes: '',
 });
 
+/**
+ * Die Anlagentabelle wächst mit ihrem Inhalt und hat laut `min-w-[850px]` eine
+ * Mindestbreite. Ausgeschriebene Icon-Aktionen brauchen den Unterschied
+ * zwischen Aktionsspalte und Menüspalte zusätzlich.
+ */
+const FIXED_ASSET_INLINE_ACTIONS_MIN_WIDTH = 850 + actionColumnWidth(2) - ACTION_MENU_COLUMN_WIDTH;
+
 export function FixedAssetManagement() {
+  const { confirm } = useFeedback();
   const { company } = useCompany();
   const locale = company?.locale || 'de-DE';
   const currentYear = new Date().getFullYear();
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= FIXED_ASSET_INLINE_ACTIONS_MIN_WIDTH;
   const [assets, setAssets] = useState<FixedAsset[]>([]);
   const [year, setYear] = useState(currentYear);
   const [loading, setLoading] = useState(true);
@@ -138,7 +151,13 @@ export function FixedAssetManagement() {
   };
 
   const remove = async (asset: FixedAsset) => {
-    if (!window.confirm(`„${asset.name}“ wirklich aus dem Anlagenverzeichnis entfernen?`)) return;
+    const confirmed = await confirm({
+      title: 'Anlage entfernen',
+      message: `„${asset.name}“ wirklich aus dem Anlagenverzeichnis entfernen?`,
+      confirmText: 'Entfernen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await apiService.deleteFixedAsset(asset.id);
@@ -167,10 +186,10 @@ export function FixedAssetManagement() {
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><div className="flex items-center gap-2"><Boxes className="h-5 w-5 text-primary-custom" /><h2 className="text-lg font-semibold text-gray-900">Erfasste Anlagegüter</h2></div></div>
       {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">Anlagen werden geladen …</div> : assets.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Noch keine Anlagegüter erfasst.</div> : <>
-        <div className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full min-w-[850px]">
-            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bezeichnung</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Anschaffung</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Kosten</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">AfA {year}</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th><th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 2xl:w-32 2xl:px-4"><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{depreciation.map(({ asset, amount }) => <tr key={asset.id} className="group hover:bg-gray-50"><td className="max-w-0 px-4 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={asset.name}>{asset.name}</div>{asset.notes && <div className="mt-1 truncate text-xs text-gray-500" title={asset.notes}>{asset.notes}</div>}</td><td className="px-4 py-4 text-sm text-gray-600">{asset.category}</td><td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">{formatDate(asset.acquisitionDate, locale, company?.dateFormat)}</td><td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium text-gray-900">{formatAmount(asset.acquisitionCost)}</td><td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium text-primary-custom">{formatAmount(amount)}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${asset.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{asset.status === 'active' ? 'Aktiv' : 'Abgegangen'}</span></td><td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 text-sm transition-colors group-hover:bg-gray-50 2xl:w-32 2xl:px-4"><div className="hidden 2xl:flex justify-end gap-1"><button type="button" onClick={() => openEdit(asset)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => void remove(asset)} className="action-icon-button action-icon-red" title="Entfernen" disabled={busy}><Trash2 className="h-4 w-4" /></button></div><ActionMenu containerClassName="hidden tablet:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(asset)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(asset)} disabled={busy}>Entfernen</ActionMenuItem></ActionMenu></td></tr>)}</tbody>
+            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bezeichnung</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Anschaffung</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Kosten</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">AfA {year}</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th><th style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
+            <tbody className="divide-y divide-gray-200 bg-white">{depreciation.map(({ asset, amount }) => <tr key={asset.id} className="group hover:bg-gray-50"><td className="max-w-0 px-4 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={asset.name}>{asset.name}</div>{asset.notes && <div className="mt-1 truncate text-xs text-gray-500" title={asset.notes}>{asset.notes}</div>}</td><td className="px-4 py-4 text-sm text-gray-600">{asset.category}</td><td className="whitespace-nowrap px-4 py-4 text-sm text-gray-600">{formatDate(asset.acquisitionDate, locale, company?.dateFormat)}</td><td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium text-gray-900">{formatAmount(asset.acquisitionCost)}</td><td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium text-primary-custom">{formatAmount(amount)}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${asset.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{asset.status === 'active' ? 'Aktiv' : 'Abgegangen'}</span></td><td style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(asset)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => void remove(asset)} className="action-icon-button action-icon-red" title="Entfernen" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(asset)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(asset)} disabled={busy}>Entfernen</ActionMenuItem></ActionMenu>}</td></tr>)}</tbody>
           </table>
         </div>
         <div className="divide-y divide-gray-100 tablet:hidden">{depreciation.map(({ asset, amount }) => <article key={asset.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-medium text-gray-900" title={asset.name}>{asset.name}</h3><p className="mt-1 truncate text-xs text-gray-500">{asset.category} · {formatDate(asset.acquisitionDate, locale, company?.dateFormat)}</p></div><div className="flex shrink-0 items-start gap-2"><span className={`rounded-full px-2 py-1 text-xs font-medium ${asset.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{asset.status === 'active' ? 'Aktiv' : 'Abgegangen'}</span><ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(asset)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(asset)} disabled={busy}>Entfernen</ActionMenuItem></ActionMenu></div></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Anschaffungskosten</p><p className="mt-1 font-medium text-gray-900">{formatAmount(asset.acquisitionCost)}</p></div><div><p className="text-xs text-gray-500">AfA {year}</p><p className="mt-1 font-medium text-primary-custom">{formatAmount(amount)}</p></div></div>{asset.notes && <p className="mt-3 line-clamp-2 text-xs text-gray-500">{asset.notes}</p>}</article>)}</div>

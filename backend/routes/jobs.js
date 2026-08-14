@@ -1032,46 +1032,69 @@ router.delete('/', async (req, res) => {
 
 // Add signature to job
 router.post('/:id/signature', async (req, res) => {
+  const { id } = req.params;
+  const signatureData = typeof req.body.signatureData === 'string' ? req.body.signatureData : '';
+  const customerName = typeof req.body.customerName === 'string' ? req.body.customerName.trim() : '';
+  const signaturePrefix = 'data:image/png;base64,';
+
+  // Vor dem Öffnen einer Transaktion validieren. Ein früher Return nach BEGIN
+  // würde andernfalls eine offene Transaktion an den Pool zurückgeben.
+  if (!signatureData || !customerName) {
+    logger.warn('Signature upload failed - missing required fields', {
+      jobId: id,
+      hasSignatureData: Boolean(signatureData),
+      hasCustomerName: Boolean(customerName),
+    });
+    return res.status(400).json({
+      error: 'Missing required fields',
+      details: {
+        signatureData: !signatureData ? 'Signature data is required' : null,
+        customerName: !customerName ? 'Customer name is required' : null,
+      },
+    });
+  }
+
+  if (customerName.length > 200) {
+    return res.status(400).json({ error: 'Customer name is too long' });
+  }
+
+  if (!signatureData.startsWith(signaturePrefix)) {
+    logger.warn('Signature upload failed - invalid data format', {
+      jobId: id,
+      signatureDataPrefix: signatureData.substring(0, 30),
+    });
+    return res.status(400).json({
+      error: 'Invalid signature data format',
+      details: { signatureData: 'Signature data must be a valid PNG data URL' },
+    });
+  }
+
+  const encodedSignature = signatureData.slice(signaturePrefix.length);
+  if (!encodedSignature || encodedSignature.length > 1_800_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encodedSignature)) {
+    return res.status(400).json({ error: 'Invalid or oversized signature data' });
+  }
+
+  const decodedSignature = Buffer.from(encodedSignature, 'base64');
+  const isPng = decodedSignature.length >= 8
+    && decodedSignature.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (!isPng) {
+    return res.status(400).json({ error: 'Signature data is not a valid PNG image' });
+  }
+
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
-    const { id } = req.params;
-    const { signatureData, customerName } = req.body;
-    
+
     logger.debug('Adding signature for job', {
       jobId: id,
       customerName,
-      signatureDataLength: signatureData ? signatureData.length : 0,
-      hasValidSignature: signatureData && signatureData.startsWith('data:image/')
+      signatureDataLength: signatureData.length,
+      hasValidSignature: true,
     });
-    
-    // Validate required fields
-    if (!signatureData || !customerName) {
-      logger.warn('Signature upload failed - missing required fields', { jobId: id, hasSignatureData: !!signatureData, hasCustomerName: !!customerName });
-      return res.status(400).json({ 
-        error: 'Missing required fields', 
-        details: {
-          signatureData: !signatureData ? 'Signature data is required' : null,
-          customerName: !customerName ? 'Customer name is required' : null
-        }
-      });
-    }
-    
-    // Additional validation for signature data format
-    if (!signatureData.startsWith('data:image/png;base64,')) {
-      logger.warn('Signature upload failed - invalid data format', { jobId: id, signatureDataPrefix: signatureData ? signatureData.substring(0, 30) : 'null' });
-      return res.status(400).json({ 
-        error: 'Invalid signature data format',
-        details: {
-          signatureData: 'Signature data must be a valid PNG data URL'
-        }
-      });
-    }
-    
+
     // Check if job exists
-    const currentJobResult = await client.query('SELECT status FROM job_entries WHERE id = $1', [id]);
+    const currentJobResult = await client.query('SELECT status FROM job_entries WHERE id = $1 FOR UPDATE', [id]);
     
     if (currentJobResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -1093,7 +1116,7 @@ router.post('/:id/signature', async (req, res) => {
     // Create signature object
     const signature = {
       id: randomUUID(),
-      customerName: customerName.trim(),
+      customerName,
       signatureData,
       signedAt: new Date().toISOString(),
       ipAddress: req.ip || req.connection.remoteAddress

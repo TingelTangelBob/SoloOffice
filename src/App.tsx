@@ -1,9 +1,10 @@
-import { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect } from 'react';
 import { AppProvider, useLoading } from './context/AppContext';
 import { Layout } from './components/Layout';
 import { useCompany } from './context/CompanyContext';
 import { useQuotes } from './context/QuoteContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { FeedbackProvider } from './context/FeedbackContext';
 import { AuthPage } from './components/AuthPage';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
@@ -56,10 +57,28 @@ function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
   );
 }
 
+/**
+ * Seiten abgeschalteter Module dürfen nicht gerendert werden. Die Prüfung
+ * liegt bewusst außerhalb des Renderns, damit die Umleitung als Effekt läuft
+ * und nicht während des Renderns den Zustand der Elternkomponente ändert.
+ */
+function isModuleDisabled(page: string, company: ReturnType<typeof useCompany>['company']): boolean {
+  if (page === 'jobs' || page === 'calendar') return !company.jobTrackingEnabled;
+  if (page === 'quotes' || page === 'quote-editor') return !company.quotesEnabled;
+  if (page === 'reporting') return !company.reportingEnabled;
+  if (page === 'reminders') return !company.remindersEnabled;
+  return false;
+}
+
 function AppContent({ currentPageState, onPageChange }: AppContentProps) {
   const { loading, error } = useLoading();
   const { company } = useCompany();
   const { quotes } = useQuotes();
+  const moduleDisabled = !loading && isModuleDisabled(currentPageState.page, company);
+
+  useEffect(() => {
+    if (moduleDisabled) onPageChange('settings');
+  }, [moduleDisabled, onPageChange]);
 
   const renderPage = () => {
     // Show loading state while data is being fetched
@@ -78,24 +97,20 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       );
     }
 
+    // Die Umleitung eines abgeschalteten Moduls läuft im Effekt oben; bis sie
+    // greift, wird nur der Ladezustand gezeigt.
+    if (moduleDisabled) {
+      return <PageLoading />;
+    }
+
     switch (currentPageState.page) {
       case 'dashboard':
         return <Dashboard onNavigate={onPageChange} />;
       case 'customers':
         return <CustomerManagement />;
       case 'jobs':
-        // Redirect to settings if job tracking is not enabled
-        if (!company.jobTrackingEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         return <JobManagement onNavigate={onPageChange} initialRecurringGroupId={currentPageState.jobSeriesId} />;
       case 'calendar':
-        // Redirect to settings if job tracking is not enabled
-        if (!company.jobTrackingEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         return <Calendar onNavigate={onPageChange} />;
       case 'invoices':
         return <InvoiceManagement initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.searchTerm} initialInvoiceId={currentPageState.invoiceId} onNavigate={onPageChange} />;
@@ -115,18 +130,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'incoming-e-invoices':
         return <DocumentsManagement initialTab={currentPageState.filter} onNavigate={onPageChange} />;
       case 'quotes':
-        // Redirect to settings if quotes module is not enabled
-        if (!company.quotesEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         return <QuoteManagement onNavigate={onPageChange} />;
       case 'quote-editor': {
-        // Redirect to settings if quotes module is not enabled
-        if (!company.quotesEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         const quoteToEdit = currentPageState.quoteId
           ? quotes.find(q => q.id === currentPageState.quoteId) || null
           : null;
@@ -138,18 +143,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         />;
       }
       case 'reporting':
-        // Redirect to settings if reporting is not enabled
-        if (!company.reportingEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         return <ReportingManagement onNavigate={onPageChange} />;
       case 'reminders':
-        // Redirect to settings if reminders module is not enabled
-        if (!company.remindersEnabled) {
-          onPageChange('settings');
-          return <Settings />;
-        }
         return <ReminderManagement />;
       case 'settings':
         return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : undefined} onNavigate={onPageChange} />;
@@ -195,10 +190,10 @@ function App() {
     return { page: 'dashboard' };
   });
 
-  const handlePageChange = (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => {
+  const handlePageChange = useCallback((page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => {
     const newState = normalizePageState(page, filter, searchTerm, invoiceId, jobSeriesId);
     setCurrentPageState(newState);
-    
+
     // Update URL hash
     let hash = page;
     if (filter) hash += `/${filter}`;
@@ -215,7 +210,7 @@ function App() {
       hash += `/${jobSeriesId}`;
     }
     window.location.hash = hash;
-  };
+  }, []);
 
   // Listen to browser back/forward buttons
   useEffect(() => {
@@ -234,9 +229,11 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <AuthenticatedShell currentPageState={currentPageState} onPageChange={handlePageChange} />
-    </AuthProvider>
+    <FeedbackProvider>
+      <AuthProvider>
+        <AuthenticatedShell currentPageState={currentPageState} onPageChange={handlePageChange} />
+      </AuthProvider>
+    </FeedbackProvider>
   );
 }
 

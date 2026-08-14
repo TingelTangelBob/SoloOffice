@@ -28,6 +28,7 @@ import type {
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
+import { useFeedback } from '../context/FeedbackContext';
 
 type ItemDraft = {
   description: string;
@@ -104,6 +105,7 @@ const controlClassName = 'mt-1.5 block min-h-10 w-full rounded-lg border border-
 const textAreaClassName = `${controlClassName} min-h-24 resize-y`;
 
 export function RecurringInvoiceManagement() {
+  const { confirm } = useFeedback();
   const { customers } = useCustomers();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
@@ -298,7 +300,13 @@ export function RecurringInvoiceManagement() {
   };
 
   const remove = async (entry: RecurringInvoice) => {
-    if (!window.confirm(`„${entry.name}“ wirklich löschen?`)) return;
+    const confirmed = await confirm({
+      title: 'Wiederkehrende Rechnung löschen',
+      message: `„${entry.name}“ wirklich löschen? Bereits erzeugte Rechnungen bleiben erhalten.`,
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     setBusy(entry.id);
     try {
       await apiService.deleteRecurringInvoice(entry.id);

@@ -20,12 +20,30 @@ import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
+import { useElementWidth } from '../hooks/useElementWidth';
+import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
 }
 
+/**
+ * Spaltenmaße der Angebotstabelle: Auswahl 64, Datum 96, Angebotsnummer 144,
+ * Gültig bis 96 und Betrag 96 Pixel. Eine Zeile zeigt höchstens sechs
+ * Icon-Aktionen (Versendet-Status: annehmen, ablehnen, bearbeiten, Vorschau,
+ * herunterladen, löschen).
+ */
+const QUOTE_TABLE_LAYOUT = listTableLayout({
+  baseColumnsWidth: 64 + 96 + 144 + 96 + 96,
+  flexibleColumnMinWidth: 176,
+  maxActions: 6,
+  statusLabelWidth: 128,
+  statusDotWidth: 32,
+});
+
 export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
+  const { notify } = useFeedback();
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
   const { company } = useCompany();
@@ -53,7 +71,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [showPreview, setShowPreview] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
-  
+  const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showInlineActions = tableWidth >= QUOTE_TABLE_LAYOUT.inlineActionsMinWidth;
+  const showStatusLabel = tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelMinWidth;
+
   // Get locale from company settings, default to 'de-DE'
   const locale = company?.locale || 'de-DE';
   
@@ -200,7 +221,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
   const handleConvertToInvoice = async (quote: Quote) => {
     if (quote.status !== 'accepted') {
-      alert('Nur akzeptierte Angebote können in Rechnungen umgewandelt werden.');
+      notify({ variant: 'warning', message: 'Nur akzeptierte Angebote können in Rechnungen umgewandelt werden.' });
       return;
     }
 
@@ -213,13 +234,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           await apiService.convertQuoteToInvoice(quote.id);
           await loadQuotes();
           await refreshInvoices(); // Refresh invoices list
-          alert('Angebot wurde erfolgreich in eine Rechnung umgewandelt!');
+          notify({ variant: 'success', message: 'Angebot wurde erfolgreich in eine Rechnung umgewandelt!' });
           if (onNavigate) {
             onNavigate('invoices');
           }
         } catch (error) {
           logger.error('Error converting quote to invoice:', error);
-          alert('Fehler beim Umwandeln des Angebots.');
+          notify({ variant: 'error', message: 'Fehler beim Umwandeln des Angebots.' });
         }
       },
     });
@@ -252,10 +273,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       }
       await loadQuotes();
       setSelectedQuoteIds([]);
-      alert(`${selectedQuoteIds.length} Angebot(e) erfolgreich aktualisiert.`);
+      notify({ variant: 'success', message: `${selectedQuoteIds.length} Angebot(e) erfolgreich aktualisiert.` });
     } catch (error) {
       logger.error('Error updating quote statuses:', error);
-      alert('Fehler beim Aktualisieren der Angebote.');
+      notify({ variant: 'error', message: 'Fehler beim Aktualisieren der Angebote.' });
     } finally {
       setIsBulkOperation(false);
     }
@@ -291,10 +312,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           }
         }
       }
-      alert(`${selectedQuoteIds.length} Angebot(e) erfolgreich heruntergeladen.`);
+      notify({ variant: 'success', message: `${selectedQuoteIds.length} Angebot(e) erfolgreich heruntergeladen.` });
     } catch (error) {
       logger.error('Error downloading quotes:', error);
-      alert('Fehler beim Herunterladen der Angebote.');
+      notify({ variant: 'error', message: 'Fehler beim Herunterladen der Angebote.' });
     } finally {
       setIsExporting(null);
     }
@@ -354,13 +375,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     try {
       const customer = customers.find(c => c.id === quote.customerId);
       if (!customer) {
-        alert(`${terminology.entity.singular} nicht gefunden.`);
+        notify({ variant: 'error', message: `${terminology.entity.singular} nicht gefunden.` });
         setIsExporting(null);
         return;
       }
 
       if (!company) {
-        alert(`${terminology.organization.dataLabel} nicht geladen.`);
+        notify({ variant: 'error', message: `${terminology.organization.dataLabel} nicht geladen.` });
         setIsExporting(null);
         return;
       }
@@ -376,7 +397,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       logger.info('Quote PDF downloaded', { quoteId: quote.id, quoteNumber: quote.quoteNumber });
     } catch (error) {
       logger.error('Error generating quote PDF:', error);
-      alert('Fehler beim Erstellen des PDFs. Bitte versuchen Sie es erneut.');
+      notify({ variant: 'error', message: 'Fehler beim Erstellen des PDFs. Bitte versuchen Sie es erneut.' });
     } finally {
       setIsExporting(null);
     }
@@ -385,12 +406,12 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const handleSendEmail = async (quote: Quote) => {
     const customer = customers.find(c => c.id === quote.customerId);
     if (!customer) {
-      alert(`${terminology.entity.singular} nicht gefunden.`);
+      notify({ variant: 'error', message: `${terminology.entity.singular} nicht gefunden.` });
       return;
     }
 
     if (!customer.email && (!customer.additionalEmails || customer.additionalEmails.length === 0)) {
-      alert(terminology.entity.emailMissingMessage);
+      notify({ variant: 'warning', message: terminology.entity.emailMissingMessage });
       return;
     }
 
@@ -477,16 +498,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         setSelectedQuoteIds([]);
         
         if (errorCount === 0) {
-          alert(`Alle ${successCount} Angebote erfolgreich per E-Mail versendet!`);
+          notify({ variant: 'success', message: `Alle ${successCount} Angebote erfolgreich per E-Mail versendet!` });
         } else {
-          alert(`${successCount} Angebote erfolgreich versendet, ${errorCount} Fehler aufgetreten.`);
+          notify({ variant: 'warning', message: `${successCount} Angebote versendet, bei ${errorCount} trat ein Fehler auf.` });
         }
         
         setEmailModal({ isOpen: false, quote: null, customer: null, isBulkMode: false, bulkQuotes: [] });
         return;
       } catch (error) {
         logger.error('Bulk email error:', error);
-        alert('Fehler beim Bulk-E-Mail-Versand: ' + (error as Error).message);
+        notify({ variant: 'error', message: 'Fehler beim Bulk-E-Mail-Versand: ' + (error as Error).message });
         return;
       } finally {
         setIsBulkOperation(false);
@@ -566,11 +587,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         ? ` mit ${totalAttachments} Anhang${totalAttachments > 1 ? 'en' : ''}`
         : '';
       
-      alert(`Angebot erfolgreich per E-Mail versendet!${attachmentInfo}`);
+      notify({ variant: 'success', message: `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}` });
       setEmailModal({ isOpen: false, quote: null, customer: null });
     } catch (error) {
       logger.error('Error sending quote email:', error);
-      alert('Fehler beim E-Mail-Versand: ' + (error as Error).message);
+      notify({ variant: 'error', message: 'Fehler beim E-Mail-Versand: ' + (error as Error).message });
     } finally {
       setIsEmailSending(false);
     }
@@ -703,7 +724,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
             <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
@@ -713,7 +734,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Datum
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">
                   Angebotsnummer
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -725,18 +746,30 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                   Betrag
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8 2xl:w-32">
-                  <span className="hidden 2xl:inline">Status</span>
-                  <span className="sr-only 2xl:hidden">Status</span>
+                <th
+                  className={`py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}
+                >
+                  <span className={showStatusLabel ? undefined : 'sr-only'}>Status</span>
                 </th>
-                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-56 2xl:px-3">
+                <th
+                  style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
+                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}
+                >
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredQuotes.map((quote) => (
-                <tr key={quote.id} className="group hover:bg-gray-50">
+                <tr
+                  key={quote.id}
+                  onClick={event => {
+                    if ((event.target as HTMLElement).closest('button, a, input, select, label')) return;
+                    handlePreview(quote);
+                  }}
+                  className="group cursor-pointer hover:bg-gray-50"
+                  title="Zeile anklicken für die Vorschau"
+                >
                   <td className="px-3 py-4 w-16">
                     <input
                       type="checkbox"
@@ -751,6 +784,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {quote.quoteNumber}
+                    {/* Gegenrichtung zur Herkunftsangabe an der Rechnung: Hier ist
+                        sichtbar, dass aus dem Angebot bereits eine Rechnung wurde. */}
+                    {quote.convertedToInvoiceId && (
+                      <span className="mt-0.5 block text-xs font-normal text-gray-500">
+                        abgerechnet
+                      </span>
+                    )}
                   </td>
                   <td className="max-w-0 px-3 py-4 text-sm text-gray-900">
                     <span className="block truncate">{quote.customerName}</span>
@@ -761,19 +801,26 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}
                   </td>
-                  <td className="w-8 px-2 py-4 whitespace-nowrap 2xl:w-32 2xl:px-3">
-                    <span className={`hidden 2xl:inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
-                      {getStatusLabel(quote.status)}
-                    </span>
-                    <span
-                      className={`inline-flex h-2.5 w-2.5 rounded-full 2xl:hidden ${getStatusDotColor(quote.status)}`}
-                      title={getStatusLabel(quote.status)}
-                    >
-                      <span className="sr-only">{getStatusLabel(quote.status)}</span>
-                    </span>
+                  <td className={`py-4 whitespace-nowrap ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}>
+                    {showStatusLabel ? (
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
+                        {getStatusLabel(quote.status)}
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex h-2.5 w-2.5 rounded-full ${getStatusDotColor(quote.status)}`}
+                        title={getStatusLabel(quote.status)}
+                      >
+                        <span className="sr-only">{getStatusLabel(quote.status)}</span>
+                      </span>
+                    )}
                   </td>
-                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 2xl:w-56 2xl:px-3">
-                    <div className="hidden 2xl:flex flex-wrap gap-1">
+                  <td
+                    style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
+                    className={`sticky right-0 z-10 bg-white py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
+                  >
+                    {showInlineActions ? (
+                    <div className="flex flex-nowrap items-center gap-1">
                       {quote.status === 'draft' && (
                         <button
                           type="button"
@@ -820,7 +867,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         className="action-icon-button action-icon-indigo"
                         title="Bearbeiten"
                       >
-                        <Edit className="h-3.5 w-3.5" />
+                        <Edit className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
@@ -828,7 +875,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         className="action-icon-button action-icon-blue"
                         title="Vorschau anzeigen"
                       >
-                        <Eye className="h-3.5 w-3.5" />
+                        <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         type="button"
@@ -838,7 +885,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         title="Herunterladen"
                       >
                         {isExporting === quote.id ? (
-                          <div className="animate-spin h-3.5 w-3.5 border-2 border-green-600 border-t-transparent rounded-full"></div>
+                          <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
                         ) : (
                           <Download className="h-4 w-4" />
                         )}
@@ -849,10 +896,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         className="action-icon-button action-icon-red"
                         title="Löschen"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
-                    <ActionMenu containerClassName="hidden tablet:block 2xl:hidden" triggerClassName="action-icon-button action-icon-blue">
+                    ) : (
+                    <ActionMenu triggerClassName="action-icon-button action-icon-blue">
                         {quote.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>}
                         {quote.status === 'sent' && <>
                           <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
@@ -864,6 +912,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleDownloadPDF(quote)} disabled={isExporting === quote.id}>Herunterladen</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(quote)}>Löschen</ActionMenuItem>
                     </ActionMenu>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -875,34 +924,33 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         <div className="tablet:hidden">
           {filteredQuotes.map((quote) => (
             <div key={quote.id} className="p-4 border-b border-gray-200 last:border-b-0">
-              <div className="grid grid-cols-[auto,minmax(0,1fr),auto,auto] items-start gap-x-3">
-                <div className="pt-1">
-                  <input
-                    type="checkbox"
-                    checked={selectedQuoteIds.includes(quote.id)}
-                    onChange={(e) => handleQuoteSelection(quote.id, e.target.checked)}
-                    className="custom-checkbox"
-                    title="Angebot auswählen"
-                  />
-                </div>
-                
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={selectedQuoteIds.includes(quote.id)}
+                  onChange={(e) => handleQuoteSelection(quote.id, e.target.checked)}
+                  className="custom-checkbox mt-1 shrink-0"
+                  title="Angebot auswählen"
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
                     <h3 className="min-w-0 truncate text-sm font-medium text-gray-900">{quote.quoteNumber}</h3>
-                    <span className={`inline-flex shrink-0 px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
-                      {getStatusLabel(quote.status)}
-                    </span>
+                    <p className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}
+                    </p>
                   </div>
                   <p className="mt-1 truncate text-sm text-gray-600">{quote.customerName}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {formatDate(quote.issueDate, locale, company?.dateFormat)} - Gültig bis: {formatDate(quote.validUntil, locale, company?.dateFormat)}
-                  </p>
-                </div>
-                <div className="self-center whitespace-nowrap text-right">
-                  <p className="text-sm font-medium text-gray-900">{formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(quote.status)}`}>
+                      {getStatusLabel(quote.status)}
+                    </span>
+                    <span>{formatDate(quote.issueDate, locale, company?.dateFormat)}</span>
+                    <span>Gültig bis: {formatDate(quote.validUntil, locale, company?.dateFormat)}</span>
+                  </div>
                 </div>
 
-                <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue">
+                <ActionMenu containerClassName="shrink-0" triggerClassName="action-icon-button action-icon-blue">
                   <div className="flex flex-col gap-0.5">
                     {quote.status === 'draft' && (
                       <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>

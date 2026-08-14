@@ -37,6 +37,7 @@ import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
+import { useFeedback } from '../context/FeedbackContext';
 
 // Sortable Item Component for Drag & Drop
 interface SortableQuoteItemProps {
@@ -493,6 +494,7 @@ interface QuoteEditorProps {
 }
 
 export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: QuoteEditorProps) {
+  const { notify } = useFeedback();
   const { customers } = useCustomers();
   const { company } = useCompany();
   const { addQuote, updateQuote } = useQuotes();
@@ -807,21 +809,21 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
     e.preventDefault();
     
     if (!selectedCustomerId) {
-      alert(`Bitte wählen Sie einen ${terminology.entity.accusative} aus`);
+      notify({ variant: 'warning', message: `Bitte wählen Sie einen ${terminology.entity.accusative} aus.` });
       return;
     }
 
     const filledItems = items.filter(item => String(item.description || '').trim());
 
     if (filledItems.length === 0) {
-      alert('Bitte fügen Sie mindestens eine Position hinzu');
+      notify({ variant: 'warning', message: 'Bitte fügen Sie mindestens eine Position hinzu.' });
       return;
     }
 
     // Validate all items
     for (const item of filledItems) {
       if (!item.description || item.quantity <= 0 || item.unitPrice < 0) {
-        alert('Bitte füllen Sie alle Pflichtfelder korrekt aus');
+        notify({ variant: 'warning', message: 'Bitte füllen Sie alle Pflichtfelder korrekt aus.' });
         return;
       }
     }
@@ -838,7 +840,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       );
       
       if (!validation.isValid) {
-        alert(validation.error);
+        notify({ variant: 'error', message: validation.error || 'Die Eingabe ist ungültig.' });
         return;
       }
     }
@@ -878,7 +880,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       onClose();
     } catch (error) {
       logger.error('Fehler beim Speichern des Angebots', { error });
-      alert('Fehler beim Speichern des Angebots');
+      notify({ variant: 'error', message: 'Fehler beim Speichern des Angebots' });
     }
   };
 
@@ -932,7 +934,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   const handleQuotePreview = () => {
     const customer = customers.find(currentCustomer => currentCustomer.id === selectedCustomerId);
     if (!customer) {
-      alert(`Bitte wÃ¤hlen Sie zuerst einen ${terminology.entity.singular} aus`);
+      notify({ variant: 'warning', message: `Bitte wählen Sie zuerst einen ${terminology.entity.singular} aus.` });
       return;
     }
 

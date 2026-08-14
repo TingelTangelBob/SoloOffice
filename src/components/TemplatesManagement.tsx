@@ -18,6 +18,7 @@ import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorag
 import { apiService } from '../services/api';
 import { ImportWizard } from './ImportWizard';
 import { ThemeTabBar } from './ThemeTabBar';
+import { useFeedback } from '../context/FeedbackContext';
 
 type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
 
@@ -523,6 +524,7 @@ function TemplateEditorOverlay({
 }
 
 export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
+  const { confirm } = useFeedback();
   const {
     company,
     setCompany,
@@ -645,7 +647,13 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   };
 
   const handleDelete = async (template: DocumentTemplate) => {
-    if (!window.confirm(`Vorlage „${template.name}“ wirklich löschen?`)) return;
+    const confirmed = await confirm({
+      title: 'Vorlage löschen',
+      message: `Vorlage „${template.name}“ wirklich löschen?`,
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteDocumentTemplate(template.id);
     } catch {

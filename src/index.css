@@ -356,6 +356,28 @@
     display: none;
   }
 
+  /* Aktionsleiste am Ende von Formularen und Dialogen.
+     Die Schaltflächen teilen sich auch auf schmalen Geräten eine Zeile und
+     bleiben mittig beschriftet. Erst wenn die Beschriftungen nebeneinander
+     tatsächlich nicht mehr passen, bricht die Leiste um. */
+  .form-action-bar {
+    @apply flex flex-row flex-wrap items-center justify-end gap-3;
+  }
+
+  .form-action-bar > button {
+    @apply inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap sm:flex-none;
+  }
+
+  /* Kurzrückmeldungen liegen oben mittig.
+     Rechts oben stehen auf jeder Seite die Kopfzeilen-Aktionen („Neu“,
+     „Importieren“), unten rechts die Schaltflächen der Dialoge – beide Ränder
+     scheiden damit aus. In der Mitte steht nur Fließtext. Auf schmalen Geräten
+     nutzt der Hinweis die volle Breite und lässt oben Platz für die fest
+     verankerte Menü-Schaltfläche. */
+  .feedback-stack {
+    @apply pointer-events-none fixed inset-x-0 top-0 z-[1300] flex flex-col items-stretch gap-2 p-3 pt-[4.5rem] sm:items-center sm:p-4;
+  }
+
   .notice {
     @apply flex items-start justify-between gap-4 rounded-xl border p-4 text-sm;
   }
@@ -527,11 +549,11 @@
    *
    * Der Klassenname steht doppelt, um die Spezifität anzuheben: Sonst
    * überschreibt die Kurzform `lg:p-6` des Elements den Wert ab dem
-   * lg-Haltepunkt wieder auf 24 px – zu wenig für die 57 px hohe Leiste.
+   * lg-Haltepunkt wieder auf 24 px – zu wenig für die 25 px hohe Leiste.
    * Ein `!important` wäre die Alternative, wirkt aber breiter als nötig.
    */
   .demo-bar-space.demo-bar-space {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem);
   }
 
   .touch-target {

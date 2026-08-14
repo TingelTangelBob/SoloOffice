@@ -306,18 +306,18 @@ export function DownloadModal({
           </div>
         </div>
         
-        <div className="flex flex-col sm:flex-row justify-end gap-3 p-4 lg:p-6 border-t border-gray-200">
+        <div className="form-action-bar border-t border-gray-200 p-4 lg:p-6">
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 order-2 sm:order-1"
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             Abbrechen
           </button>
           <button
             onClick={handleDownload}
             disabled={isLoading}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 order-1 sm:order-2"
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
           >
             {isLoading ? (
               <>

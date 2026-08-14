@@ -6,6 +6,7 @@ import { generateUUID } from '../utils/uuid';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface EmailSendModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export function EmailSendModal({
   isBulkMode = false,
   bulkCount = 0
 }: EmailSendModalProps) {
+  const { notify } = useFeedback();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const [selectedFormats, setSelectedFormats] = useState<('zugferd' | 'xrechnung')[]>(['zugferd']);
@@ -81,7 +83,7 @@ export function EmailSendModal({
       // Validate file
       const validation = validateFile(file);
       if (!validation.valid) {
-        alert(validation.error);
+        notify({ variant: 'error', message: validation.error || 'Die Eingabe ist ungültig.' });
         return;
       }
 
@@ -113,10 +115,10 @@ export function EmailSendModal({
       const hasAdditionalEmails = customer.additionalEmails && customer.additionalEmails.filter(e => e.isActive).length > 0;
       
       if (!hasCustomerEmail && !hasAdditionalEmails) {
-        alert(`⚠️ Keine E-Mail-Adresse vorhanden!\n\nFügen Sie zuerst mindestens eine E-Mail-Adresse in der ${terminology.entity.managementLabel} hinzu oder verwenden Sie die manuelle E-Mail-Eingabe.`);
+        notify({ variant: 'warning', title: 'Keine E-Mail-Adresse vorhanden', message: `Fügen Sie zuerst mindestens eine E-Mail-Adresse in der ${terminology.entity.managementLabel} hinzu oder verwenden Sie die manuelle E-Mail-Eingabe.` });
         return;
       } else {
-        alert('⚠️ Bitte wählen Sie mindestens eine E-Mail-Adresse aus oder geben Sie eine E-Mail-Adresse manuell ein.');
+        notify({ variant: 'warning', message: 'Bitte wählen Sie mindestens eine E-Mail-Adresse aus oder geben Sie eine E-Mail-Adresse manuell ein.' });
         return;
       }
     }
@@ -568,18 +570,18 @@ export function EmailSendModal({
           </div>
         </div>
         
-        <div className="flex flex-col sm:flex-row justify-end gap-3 p-4 lg:p-6 border-t border-gray-200">
+        <div className="form-action-bar border-t border-gray-200 p-4 lg:p-6">
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 order-2 sm:order-1"
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             Abbrechen
           </button>
           <button
             onClick={handleSend}
             disabled={isLoading || (selectedEmails.length === 0 && manualEmails.filter(e => e.trim()).length === 0)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 order-1 sm:order-2"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
           >
             {isLoading ? (
               <>

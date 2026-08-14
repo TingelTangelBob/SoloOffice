@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Send, Clock, AlertCircle, Download, Eye, MoreVertical } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -8,7 +8,6 @@ import { ReminderEligibility, Invoice, Company } from '../types';
 import logger from '../utils/logger';
 import { formatCurrency, formatDate as formatDateValue } from '../utils/formatters';
 import { generateReminderPDF } from '../utils/pdfGenerator';
-import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { ReminderSendModal } from './ReminderSendModal';
 import { blobToBase64 } from '../utils/blobUtils';
 import { DocumentPreview } from './DocumentPreview';
@@ -498,7 +497,7 @@ function EligibleRemindersTab({
               <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Nächste Mahnung
               </th>
-              <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-20 2xl:px-3">
+              <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span className="sr-only">Aktionen</span>
               </th>
             </tr>
@@ -529,7 +528,7 @@ function EligibleRemindersTab({
                   {reminder.daysSinceDue} Tage
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {formatCurrency(reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
+                  {formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap">
                   {getStatusBadgeForReminder(reminder.currentStatus)}
@@ -548,28 +547,16 @@ function EligibleRemindersTab({
                     </div>
                   )}
                 </td>
-                <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap text-sm 2xl:w-20 2xl:px-3">
-                  <ActionMenu
-                    containerClassName="2xl:hidden"
-                    icon={<MoreVertical className="h-4 w-4" />}
-                    triggerClassName="action-icon-button action-icon-indigo"
-                    menuClassName="min-w-40"
-                  >
-                      <ActionMenuItem
-                        icon={<Send className="h-4 w-4" />}
-                        tone="blue"
-                        onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
-                        disabled={!reminder.isEligible}
-                      >
-                        Mahnung senden
-                      </ActionMenuItem>
-                  </ActionMenu>
+                {/* Es gibt nur eine Aktion; ein Drei-Punkte-Menü wäre hier ein
+                    zusätzlicher Klick ohne Nutzen. */}
+                <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap text-sm">
                   <button
                     type="button"
                     onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
                     disabled={!reminder.isEligible}
                     title="Mahnung senden"
-                    className={`hidden 2xl:inline-flex action-icon-button ${
+                    aria-label="Mahnung senden"
+                    className={`action-icon-button ${
                       reminder.isEligible
                         ? 'action-icon-blue'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -603,25 +590,23 @@ function EligibleRemindersTab({
                   <p className="truncate text-sm text-gray-600">{reminder.customerName}</p>
                 </div>
               </div>
-              <ActionMenu
-                icon={<MoreVertical className="h-4 w-4" />}
-                triggerClassName="action-icon-button action-icon-indigo"
-                menuClassName="min-w-40"
+              <button
+                type="button"
+                onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
+                disabled={!reminder.isEligible}
+                title="Mahnung senden"
+                aria-label="Mahnung senden"
+                className={`action-icon-button shrink-0 ${
+                  reminder.isEligible ? 'action-icon-blue' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
               >
-                <ActionMenuItem
-                  icon={<Send className="h-4 w-4" />}
-                  tone="blue"
-                  onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
-                  disabled={!reminder.isEligible}
-                >
-                  Mahnung senden
-                </ActionMenuItem>
-              </ActionMenu>
+                <Send className="h-4 w-4" />
+              </button>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <div><span className="block text-xs text-gray-500">Fällig</span>{formatDate(reminder.dueDate)}</div>
               <div><span className="block text-xs text-gray-500">Überfällig</span>{reminder.daysSinceDue} Tage</div>
-              <div><span className="block text-xs text-gray-500">Betrag</span>{formatCurrency(reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</div>
+              <div><span className="block text-xs text-gray-500">Offen</span>{formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</div>
               <div><span className="block text-xs text-gray-500">Status</span>{getStatusBadgeForReminder(reminder.currentStatus)}</div>
               <div className="col-span-2"><span className="block text-xs text-gray-500">Nächste Mahnung</span>
                 <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
@@ -784,7 +769,7 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
   
   // Calculate total amount including all reminder fees
   const calculateTotalWithReminderFees = (invoice: Invoice): number => {
-    let totalAmount = invoice.total;
+    let totalAmount = Number(invoice.outstandingAmount ?? invoice.total);
     
     // Get the maximum reminder stage reached
     const maxStage = invoice.maxReminderStage || 0;
@@ -855,9 +840,9 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
               <div className="text-right">
                 <p className="text-xl font-bold text-red-600">{formatCurrency(totalWithFees, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                 <p className="text-xs text-gray-500 mt-1">Offener Betrag (inkl. Mahngebühren)</p>
-                {totalWithFees !== invoice.total && (
+                {totalWithFees !== Number(invoice.outstandingAmount ?? invoice.total) && (
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Rechnung: {formatCurrency(invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)} + Gebühren: {formatCurrency(totalWithFees - invoice.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
+                    Offen: {formatCurrency(Number(invoice.outstandingAmount ?? invoice.total), company?.locale || 'de-DE', company?.numberFormat, company?.currency)} + Gebühren: {formatCurrency(totalWithFees - Number(invoice.outstandingAmount ?? invoice.total), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
                   </p>
                 )}
               </div>
@@ -949,4 +934,3 @@ function getStatusBadgeForReminder(status: Invoice['status']) {
     </span>
   );
 }
-

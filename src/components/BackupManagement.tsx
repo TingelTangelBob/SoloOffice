@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface BackupInfo {
   filename: string;
@@ -37,6 +38,7 @@ interface RestoreData {
 }
 
 export function BackupManagement({ onClose }: BackupManagementProps) {
+  const { confirm } = useFeedback();
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [zipBackups, setZipBackups] = useState<BackupInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -145,9 +147,13 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
   };
 
   const deleteBackup = async (filename: string) => {
-    if (!confirm(`Sind Sie sicher, dass Sie das Backup "${filename}" löschen möchten?`)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Backup löschen',
+      message: `Soll das Backup „${filename}“ wirklich gelöscht werden? Es kann danach nicht mehr eingespielt werden.`,
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       const response = await apiService.deleteBackup(filename);

@@ -106,6 +106,10 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   subtotal: number;
   taxAmount: number;
   total: number;
+  /** Summe aller aktiven Zahlungseingänge zur Rechnung. */
+  paidAmount?: number;
+  /** Noch offener Rechnungsbetrag nach aktiven Zahlungseingängen. */
+  outstandingAmount?: number;
   status: InvoiceStatus;
   notes?: string;
   attachments?: InvoiceAttachment[];
@@ -431,6 +435,9 @@ export interface Company extends ReminderSettings, CompanyHeader {
   defaultPaymentDays?: number;
   immediatePaymentClause?: string;
   invoiceStartNumber?: number;
+  /** Platzhalter: {YYYY}, {YY}, {MM} und genau ein Zähler wie {NNN}. */
+  invoiceNumberPattern?: string;
+  creditNoteNumberPattern?: string;
   paymentInformation?: PaymentInformation;
   paymentInformationMode?: PaymentInformationMode;
   // Invoice position templates
@@ -751,6 +758,22 @@ export interface EuerEntry extends Timestamps {
 
 export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction';
 
+/**
+ * Fortgeschriebener Änderungsverlauf einer Rechnung. Die Einträge werden von
+ * Datenbank-Triggern erzeugt und sind selbst nicht änderbar.
+ */
+export interface InvoiceHistoryEntry {
+  id: UUID;
+  invoiceId: UUID;
+  invoiceNumber?: string;
+  recordType: 'invoice' | 'item';
+  action: 'created' | 'updated' | 'deleted';
+  oldData?: Record<string, unknown> | null;
+  newData?: Record<string, unknown> | null;
+  changedAt: Date;
+  changedBy?: UUID | null;
+}
+
 export interface EuerEntryHistory {
   id: UUID;
   euerEntryId?: UUID;
@@ -772,6 +795,17 @@ export interface EuerEntryPayload {
   sourceType?: EuerEntrySourceType;
   sourceId?: UUID;
   correctionReason?: string;
+}
+
+export interface InvoicePaymentPayload {
+  amount: number;
+  entryDate: Date | string;
+  notes?: string;
+}
+
+export interface InvoicePaymentResult {
+  payment: EuerEntry;
+  invoice: Invoice;
 }
 
 // ============================================================================
@@ -834,6 +868,7 @@ export interface Receipt extends Timestamps {
   /** Original values produced by the latest OCR run, before manual corrections. */
   ocrExtractedData?: ReceiptExtractedData;
   linkedEuerEntryId?: UUID | null;
+  billedInvoiceId?: UUID | null;
   /** Only present when a receipt detail is requested. */
   content?: string;
 }
@@ -849,6 +884,15 @@ export interface ReceiptUpdatePayload {
   extractedData?: ReceiptExtractedData;
   ocrText?: string;
   linkedEuerEntryId?: UUID | null;
+}
+
+export interface ReceiptInvoicePayload {
+  customerId: UUID;
+  description: string;
+  quantity?: number;
+  unitPrice: number;
+  taxRate: number;
+  notes?: string;
 }
 
 export type IncomingEInvoiceFormat = 'XRechnung' | 'ZUGFeRD';
@@ -890,6 +934,8 @@ export interface ReminderEligibility {
   customerName: string;
   dueDate: Date;
   total: number;
+  paidAmount?: number;
+  outstandingAmount?: number;
   currentStatus: InvoiceStatus;
   nextStage: ReminderStage;
   daysSinceDue: number;

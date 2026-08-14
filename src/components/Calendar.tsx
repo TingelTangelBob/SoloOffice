@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import logger from '../utils/logger';
 import { 
   ChevronLeft, 
@@ -10,6 +11,7 @@ import {
   X,
   Edit,
   Trash2,
+  Download,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -17,11 +19,13 @@ import { useCompany } from '../context/CompanyContext';
 import { CalendarEvent, JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { ConfirmationModal } from './ConfirmationModal';
+import { useFeedback } from '../context/FeedbackContext';
 import { PageHeader } from './PageHeader';
 import { getTerminology } from '../utils/terminology';
 import { calculateTotalHours } from '../utils/jobUtils';
 import { formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { apiService } from '../services/api';
+import { downloadCalendarIcs } from '../utils/icsExport';
 
 interface CalendarProps {
   onNavigate?: (page: string) => void;
@@ -182,6 +186,7 @@ function CalendarDayScroll({ enabled, children }: CalendarDayScrollProps) {
 }
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
+  const { confirm, notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { jobEntries, addJobEntry, updateJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
@@ -196,6 +201,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
   const [selectedDateForNewJob, setSelectedDateForNewJob] = useState<Date | null>(null);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  /**
+   * In der Monatsansicht schrumpfen Einträge bei wenig Platz zu farbigen
+   * Punkten. Ein Klick darauf öffnet eine kleine Vorschau des Tages – der
+   * `title`-Hinweis des Browsers erscheint auf Touchgeräten nie.
+   */
+  const [dayPreview, setDayPreview] = useState<{ date: Date; anchor: DOMRect } | null>(null);
   const [jobPositions, setJobPositions] = useState<Map<string, number>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -310,6 +321,41 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showSearchResults]);
+
+  // Die Tagesvorschau ist an eine Zelle geheftet und muss sich schließen,
+  // sobald sich deren Position ändern kann.
+  useEffect(() => {
+    if (!dayPreview) return undefined;
+
+    const close = () => setDayPreview(null);
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest('.calendar-day-preview')) close();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [dayPreview]);
+
+  // Nur ein Wechsel der Ansicht oder des Monats verwirft die Vorschau. Die
+  // Tagesauswahl verändert `currentDate` ebenfalls und würde die Vorschau sonst
+  // im selben Klick wieder schließen.
+  const calendarPeriodKey = `${viewMode}-${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+  useEffect(() => {
+    setDayPreview(null);
+  }, [calendarPeriodKey]);
 
   useEffect(() => {
     if (!showDatePicker) return;
@@ -670,7 +716,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   };
 
   const handleDeleteCalendarEvent = async (event: CalendarEvent) => {
-    if (!window.confirm(`„${event.title}“ wirklich aus dem Kalender entfernen?`)) return;
+    const confirmed = await confirm({
+      title: 'Termin entfernen',
+      message: `„${event.title}“ wirklich aus dem Kalender entfernen?`,
+      confirmText: 'Entfernen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       await apiService.deleteCalendarEvent(event.id);
@@ -710,6 +762,31 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   // Check if a date is expanded
   const isDateExpanded = (date: Date) => {
     return expandedDates.has(date.toDateString());
+  };
+
+  /** Alle Einträge, nicht nur der sichtbare Zeitraum: Ein Kalenderexport, der
+      nur den aktuellen Monat enthält, ist beim Import wertlos. */
+  const exportableJobs = jobEntries;
+
+  const handleCalendarExport = () => {
+    const fileBase = (company.name || 'solooffice')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'solooffice';
+    downloadCalendarIcs(
+      { jobs: exportableJobs, events: calendarEvents, calendarName: `${company.name || 'SoloOffice'} – Kalender` },
+      `${fileBase}-kalender.ics`,
+    );
+    setShowShareDialog(false);
+    notify({ variant: 'success', message: 'Die Kalenderdatei wurde gespeichert.' });
+  };
+
+  const openDayPreview = (date: Date, event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    setDayPreview({ date: new Date(date), anchor: event.currentTarget.getBoundingClientRect() });
+    selectCalendarDate(date);
   };
 
   // Get status color for job
@@ -1160,8 +1237,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     <div className="space-y-3 lg:space-y-0">
       {/* Header */}
       <div className="p-1 lg:p-2">
-        <PageHeader title="Kalender">
-        <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
+        <PageHeader title="Kalender" actionsTakeOverRow={isSearchOpen}>
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none lg:shrink-0">
         <button
           type="button"
           onClick={handleNewEntry}
@@ -1182,7 +1259,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           <Share2 className="h-4 w-4" />
           <span className="hidden sm:inline">Teilen</span>
         </button>
-        <div className="relative order-1 search-container">
+        <div className="relative order-1 min-w-0 flex-1 search-container lg:flex-none">
           {isSearchOpen ? (
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1285,7 +1362,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       {/* Calendar Controls */}
       <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="grid min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
+          <div className="grid h-9 min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
             <button
               type="button"
               onClick={navigatePrevious}
@@ -1295,13 +1372,19 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               <ChevronLeft className="h-4 w-4 text-gray-600" />
             </button>
 
+            {/* Feste Höhe von 36 Pixeln: Der Monatswähler ist eine Schaltfläche
+                mit h-9, die Titel der übrigen Ansichten sind nur Text in einer
+                kleineren Schrift. Ohne die Vorgabe springt die Zeile beim
+                Wechsel der Ansicht in der Höhe. */}
             {viewMode === 'month' ? (
               monthPicker
             ) : (
-              <h2 className="min-w-0 truncate px-1 text-center text-base font-semibold capitalize text-gray-900 lg:text-lg">
-                {viewMode === 'week' || viewMode === 'workweek'
-                  ? `KW ${getCalendarWeek(currentWeekStart)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
-                  : selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              <h2 className="flex h-9 min-w-0 items-center justify-center px-1 text-center text-base font-semibold capitalize text-gray-900 lg:text-lg">
+                <span className="min-w-0 truncate">
+                  {viewMode === 'week' || viewMode === 'workweek'
+                    ? `KW ${getCalendarWeek(currentWeekStart)} · ${viewMode === 'workweek' ? workWeekRange : weekRange}`
+                    : selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
               </h2>
             )}
 
@@ -1445,10 +1528,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             const isEventEnd = calendarEvent.endDate === toDateKey(date);
 
                             return !compactEntries && (density === 'indicator' || (density === 'minimal' && isMultiDayEvent)) ? (
-                              <div
+                              <button
                                 key={calendarEvent.id}
-                                className={`-mx-2 h-2 bg-purple-400 ${isEventStart ? 'rounded-l-full' : ''} ${isEventEnd ? 'rounded-r-full' : ''}`}
+                                type="button"
+                                onClick={(clickEvent) => openDayPreview(date, clickEvent)}
+                                className={`-mx-2 h-2 w-full bg-purple-400 ${isEventStart ? 'rounded-l-full' : ''} ${isEventEnd ? 'rounded-r-full' : ''}`}
                                 title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
+                                aria-label={`Einträge am ${formatDate(date, locale, company?.dateFormat)} anzeigen`}
                               />
                             ) : (
                               <div
@@ -1511,6 +1597,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                     e.stopPropagation();
                                   }}
                                   onDrop={(e) => handleJobDrop(e, date, job.id)}
+                                  onClick={(clickEvent) => {
+                                    // Als Punkt ist der Eintrag nicht lesbar; der Klick
+                                    // öffnet deshalb die Tagesvorschau statt nur den Tag
+                                    // auszuwählen.
+                                    if (!compactEntries && density === 'indicator') openDayPreview(date, clickEvent);
+                                  }}
                                   className={`
                                     cursor-move transition-all duration-150
                                     ${!compactEntries && density === 'indicator'
@@ -1939,6 +2031,111 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       </div>
 
       {/* Job summary modal */}
+      {dayPreview && typeof document !== 'undefined' && createPortal(
+        (() => {
+          const previewWidth = 288;
+          const gap = 8;
+          const { anchor, date } = dayPreview;
+          const previewJobs = getJobsForDate(date);
+          const previewEvents = getEventsForDate(date);
+          // Nach unten öffnen, solange darunter Platz ist; sonst nach oben.
+          const opensDownwards = anchor.bottom + 220 <= window.innerHeight;
+          const left = Math.min(
+            Math.max(gap, anchor.left + anchor.width / 2 - previewWidth / 2),
+            Math.max(gap, window.innerWidth - previewWidth - gap),
+          );
+
+          return (
+            <div
+              className="calendar-day-preview fixed z-[1100] w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-200 bg-white p-3 text-left shadow-xl"
+              style={{
+                left,
+                ...(opensDownwards
+                  ? { top: anchor.bottom + gap }
+                  : { bottom: Math.max(gap, window.innerHeight - anchor.top + gap) }),
+              }}
+              role="dialog"
+              aria-label={`Einträge am ${formatDate(date, locale, company?.dateFormat)}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="min-w-0 text-sm font-semibold text-gray-900">
+                  {date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setDayPreview(null)}
+                  className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Vorschau schließen"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-2 max-h-64 space-y-1.5 overflow-y-auto">
+                {previewEvents.map((calendarEvent) => (
+                  <div key={calendarEvent.id} className="flex items-start gap-2 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1.5">
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-purple-400" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-purple-900">{calendarEvent.title}</p>
+                      <p className="text-xs text-purple-700">Abwesenheit</p>
+                    </div>
+                  </div>
+                ))}
+
+                {previewJobs.map((job) => {
+                  const customer = customers.find((entry) => entry.id === job.customerId);
+                  const timeLabel = getJobTimeLabel(job);
+                  const hours = calculateTotalHours(job);
+
+                  return (
+                    <button
+                      key={job.id}
+                      type="button"
+                      onClick={() => {
+                        setPreviewingJob(job);
+                        setDayPreview(null);
+                      }}
+                      className="flex w-full items-start gap-2 rounded-lg border border-gray-200 px-2 py-1.5 text-left transition-colors hover:bg-gray-50"
+                    >
+                      <span
+                        className={`mt-1 h-2 w-2 shrink-0 rounded-full ${getStatusIndicatorColor(job.status)}`}
+                        title={getStatusLabel(job.status)}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-gray-900">{job.title}</p>
+                        <p className="truncate text-xs text-gray-500">{customer?.name || job.customerName}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {timeLabel ? `${timeLabel} · ` : ''}
+                          {formatNumber(hours, locale, company?.numberFormat, 1)} h · {getStatusLabel(job.status)}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {previewEvents.length === 0 && previewJobs.length === 0 && (
+                  <p className="py-2 text-sm text-gray-500">Keine Einträge an diesem Tag.</p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  selectCalendarDate(date);
+                  changeViewMode('day');
+                  setDayPreview(null);
+                }}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Tagesansicht öffnen
+              </button>
+            </div>
+          );
+        })(),
+        document.getElementById('app-shell') || document.body,
+      )}
+
       {previewingJob && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
@@ -2036,7 +2233,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               )}
             </div>
 
-            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end">
+            <div className="form-action-bar border-t border-gray-200 bg-gray-50 px-5 py-4">
               <button
                 type="button"
                 onClick={() => setPreviewingJob(null)}
@@ -2111,34 +2308,39 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               </button>
             </div>
 
-            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-              <p className="font-medium">Kalender abonnieren</p>
-              <p className="mt-1 text-blue-800">
-                Die Kalenderfreigabe wird vorbereitet. Sobald der persönliche Abonnement-Link eingerichtet ist, kann er hier kopiert oder geteilt werden.
+            <p className="mt-4 text-sm text-gray-600">
+              Alle {terminology.work.plural} und Abwesenheiten werden als Kalenderdatei
+              gespeichert. Die Datei lässt sich in Outlook, Apple Kalender, Thunderbird oder
+              Google Kalender importieren.
+            </p>
+
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+              <p>
+                {exportableJobs.length} {exportableJobs.length === 1 ? terminology.work.singular : terminology.work.plural}
+                {' · '}
+                {calendarEvents.length} {calendarEvents.length === 1 ? 'Abwesenheit' : 'Abwesenheiten'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Die Datei ist eine Momentaufnahme. Spätere Änderungen erscheinen erst nach einem
+                erneuten Export.
               </p>
             </div>
 
-            <div className="mt-4">
-              <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="calendar-subscription-link">
-                Abonnement-Link
-              </label>
-              <input
-                id="calendar-subscription-link"
-                type="text"
-                readOnly
-                disabled
-                value="Nach Einrichtung der Kalenderfreigabe verfügbar"
-                className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm text-gray-400"
-              />
-            </div>
-
-            <div className="mt-5 flex justify-end">
+            <div className="form-action-bar mt-5">
               <button
                 type="button"
                 onClick={() => setShowShareDialog(false)}
+                className="min-h-0 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={handleCalendarExport}
                 className="min-h-0 rounded-lg bg-primary-custom px-4 py-2 text-sm text-white transition-colors hover:bg-primary-custom/90"
               >
-                Schließen
+                <Download className="h-4 w-4 shrink-0" />
+                <span>Kalenderdatei speichern</span>
               </button>
             </div>
           </div>

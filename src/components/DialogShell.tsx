@@ -40,8 +40,15 @@ export function DialogShell({
 }: DialogShellProps) {
   const content = (
     <>
-      <header className="flex shrink-0 items-start justify-between gap-4 bg-white px-5 py-4 sm:px-10 sm:py-7">
-        <div className="flex min-w-0 items-start gap-3 sm:gap-5">
+      {/* Zusätzliche Kopfaktionen (etwa der Umschalter Auftrag/Urlaub) stehen
+          auf schmalen Geräten in einer eigenen Zeile über dem Titel. Nebeneinander
+          bliebe für die Beschreibung sonst nur ein Wort pro Zeile übrig. */}
+      <header
+        className={`flex shrink-0 items-start justify-between gap-x-4 gap-y-3 bg-white px-5 py-4 sm:flex-nowrap sm:px-10 sm:py-7 ${
+          headerActions ? 'flex-wrap' : 'flex-nowrap'
+        }`}
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-5">
           {Icon && (
             <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-[60px] sm:w-[60px]">
               <Icon className="h-6 w-6 sm:h-8 sm:w-8" />
@@ -54,7 +61,11 @@ export function DialogShell({
             {description && <p className="mt-1 text-sm leading-6 text-gray-500 sm:text-lg sm:leading-7">{description}</p>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div
+          className={`flex shrink-0 items-center justify-end gap-2 ${
+            headerActions ? 'order-first w-full sm:order-none sm:w-auto' : ''
+          }`}
+        >
           {headerActions}
           <button
             type="button"
@@ -72,7 +83,7 @@ export function DialogShell({
       </div>
 
       {footer && (
-        <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-8 sm:py-5">
+        <footer className="form-action-bar shrink-0 border-t border-gray-200 bg-white px-5 py-4 sm:px-8 sm:py-5">
           {footer}
         </footer>
       )}
