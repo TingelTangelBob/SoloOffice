@@ -115,7 +115,7 @@ function DiscountTypeDropdown({ value, currencySymbol, onChange, onOpenChange, t
 
     document.addEventListener('pointerdown', closeDropdown);
     return () => document.removeEventListener('pointerdown', closeDropdown);
-  }, [isOpen]);
+  }, [isOpen, onOpenChange]);
 
   return (
     <div ref={dropdownRef} className="absolute right-0 top-0 z-30 h-full">
@@ -810,18 +810,21 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       unitPrice = Number(template.unitPrice) || 0;
       taxRate = company.isSmallBusiness ? 0 : (template.taxRate ?? 19);
     }
-    setItems(currentItems => [...currentItems, {
-      id: generateUUID(),
-      description,
-      quantity: 1,
-      unitPrice,
-      taxRate,
-      total: unitPrice,
-      order: currentItems.length + 1,
-      discountType: discountsEnabled ? 'percentage' : undefined,
-      discountValue: discountsEnabled ? 0 : undefined,
-      discountAmount: 0,
-    }]);
+    setItems(currentItems => {
+      const newItem: QuoteItem = {
+        id: generateUUID(),
+        description,
+        quantity: 1,
+        unitPrice,
+        taxRate,
+        total: unitPrice,
+        order: currentItems.length + 1,
+        discountType: discountsEnabled ? 'percentage' : undefined,
+        discountValue: discountsEnabled ? 0 : undefined,
+        discountAmount: 0,
+      };
+      return [...currentItems, newItem];
+    });
     setShowTemplateDropdown(false);
   };
 
@@ -995,16 +998,21 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
 
   const selectTemplateForItem = (itemId: string, suggestion: QuoteTemplateSuggestion) => {
     setItems(currentItems => {
-      const nextItems = currentItems.map(item => item.id === itemId ? {
-        ...item,
-        description: suggestion.label,
-        unitPrice: suggestion.unitPrice,
-        taxRate: suggestion.taxRate,
-        total: item.quantity * suggestion.unitPrice,
-        discountAmount: 0,
-        discountType: discountsEnabled ? 'percentage' : undefined,
-        discountValue: discountsEnabled ? 0 : undefined,
-      } : item);
+      const nextItems = currentItems.map(item => {
+        if (item.id !== itemId) return item;
+
+        const updatedItem: QuoteItem = {
+          ...item,
+          description: suggestion.label,
+          unitPrice: suggestion.unitPrice,
+          taxRate: suggestion.taxRate,
+          total: item.quantity * suggestion.unitPrice,
+          discountAmount: 0,
+          discountType: discountsEnabled ? 'percentage' : undefined,
+          discountValue: discountsEnabled ? 0 : undefined,
+        };
+        return updatedItem;
+      });
       return nextItems[nextItems.length - 1]?.id === itemId
         ? [...nextItems, createEmptyItem(nextItems.length + 1)]
         : nextItems;

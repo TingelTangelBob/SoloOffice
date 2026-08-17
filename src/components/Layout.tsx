@@ -295,12 +295,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             style={sidebarStyle}
             className={`
             fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-40
-            w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 bg-white shadow-sm transform transition-[width,transform] duration-300 ease-in-out
+            w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 overflow-hidden bg-white shadow-sm transform transition-[width,transform] duration-300 ease-in-out
             lg:transform-none lg:shadow-none lg:h-screen lg:self-start
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
           >
-            <div className={`flex h-full flex-col ${isSidebarCompact ? 'p-2' : 'p-4'}`}>
+            <div className={`flex h-full min-h-0 flex-col ${isSidebarCompact ? 'p-2' : 'p-4'}`}>
               <div className={`sidebar-brand mb-4 flex items-center justify-between border-b border-gray-200 pb-2 ${isSidebarCompact ? 'gap-1' : 'gap-2'}`}>
                 <button
                   type="button"
@@ -375,8 +375,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 )}
               </div>
 
-              <ul className="space-y-1">
-                {navItems.map((item) => {
+              <div className="theme-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+                <ul className="space-y-1">
+                  {navItems.map((item) => {
                   const Icon = item.icon;
                   const isParentActive = currentPage === item.id || item.children?.some(child => child.id === currentPage);
                   const isExpanded = item.id === 'invoices' ? isInvoiceMenuOpen : item.id === 'taxes' ? isTaxMenuOpen : isParentActive;
@@ -439,10 +440,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       ) : null}
                     </li>
                   );
-                })}
-              </ul>
+                  })}
+                </ul>
+              </div>
 
-              <div className="mt-auto border-t border-gray-200 pt-4">
+              <div className="shrink-0 border-t border-gray-200 pt-4">
                 <ul className="space-y-1">
                   {bottomNavItems.map((item) => {
                     const Icon = item.icon;
