@@ -207,7 +207,11 @@ export async function createTables() {
     await waitForDatabase(client);
 
     // Run all pending migrations
-    await runMigrations(client);
+    const migrationResult = await runMigrations(client);
+
+    if (migrationResult?.requiresRestart) {
+      throw new Error('Datenbankrolle wurde für RLS abgesichert. Backend wird einmal neu gestartet.');
+    }
 
     // Log migration status
     const status = await getMigrationStatus(client);

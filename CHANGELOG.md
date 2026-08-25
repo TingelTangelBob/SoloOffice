@@ -9,6 +9,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   und Einladungen sind nicht mehr im persönlichen Profil versteckt.
 - Workspace-Namen können für Eigentümer und Administratoren über die API
   gespeichert werden; reine Lesekonten sehen die Verwaltung schreibgeschützt.
+- PostgreSQL-RLS wird gegen Superuser-Bypass abgesichert: Der technische
+  Laufzeitbenutzer wird nach der Migration auf `NOSUPERUSER NOBYPASSRLS`
+  gesetzt und das Backend startet dafür einmal kontrolliert neu.
 
 ## [v0.6.3] – GitHub-Korrektur
 

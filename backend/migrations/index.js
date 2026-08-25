@@ -37,6 +37,7 @@ import * as migration028 from './028_time_zones.js';
 import * as migration029 from './029_invoice_audit.js';
 import * as migration030 from './030_receipt_billing.js';
 import * as migration031 from './031_invoice_number_patterns.js';
+import * as migration032 from './032_runtime_rls_role.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -71,6 +72,7 @@ const migrations = [
   migration029,
   migration030,
   migration031,
+  migration032,
 ];
 
 /**
@@ -90,6 +92,7 @@ export async function runMigrations(client) {
   // Get list of already executed migrations
   const result = await client.query('SELECT name FROM migrations');
   const executedMigrations = new Set(result.rows.map(row => row.name));
+  let requiresRestart = false;
 
   // Run pending migrations
   for (const migration of migrations) {
@@ -97,7 +100,8 @@ export async function runMigrations(client) {
       logger.info(`Running migration: ${migration.name}`);
       
       try {
-        await migration.up(client);
+        const migrationResult = await migration.up(client);
+        requiresRestart = requiresRestart || migrationResult?.requiresRestart === true;
         
         // Record the migration
         await client.query(
@@ -112,6 +116,8 @@ export async function runMigrations(client) {
       }
     }
   }
+
+  return { requiresRestart };
 }
 
 /**
