@@ -16,6 +16,13 @@ export async function up(client) {
   await client.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, created_at)');
 
   await client.query('ALTER TABLE customers ADD COLUMN IF NOT EXISTS leitweg_id VARCHAR(100)');
+  // The initial company schema predates the audit timestamps. Add the column
+  // before the legacy placeholder cleanup below uses it, so a fresh database
+  // can run this migration without depending on an unrelated later change.
+  await client.query(`
+    ALTER TABLE company
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  `);
   await client.query(`
     UPDATE company
     SET name = '', address = '', city = '', postal_code = '', phone = '', email = '',
