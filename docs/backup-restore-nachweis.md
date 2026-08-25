@@ -2,7 +2,7 @@
 
 **Datum:** 2026-08-25  
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
-**Status:** technisch bestanden, Gegenlesen für AP-2.4 offen
+**Status:** technisch bestanden, manuelle UI-Abnahme für AP-2.4 offen
 
 ## Ablauf
 
@@ -21,8 +21,8 @@
 ## Ergebnis
 
 ```text
-backup_a=8_records
-backup_b=6_records
+backup_a=10_records
+backup_b=7_records
 transient_removed=true
 workspace_b_unchanged=true
 restore_http=200
@@ -39,8 +39,19 @@ metadata.json
 Der Restore löscht und schreibt ausschließlich im aktiven Workspace. Der
 zweite Workspace blieb während des Restore-Laufs erhalten.
 
+## Größenlimit
+
+Ein absichtlich zu großer JSON-Payload wurde gegen den Restore-Endpunkt
+gesendet:
+
+```text
+oversize_http=413
+response={"error":"Das Backup ist zu groß. Erlaubt sind maximal 50 MB.","code":"BACKUP_PAYLOAD_TOO_LARGE"}
+```
+
+Die Grenze wird damit verständlich und ohne Datenbankänderung abgewiesen.
+
 ## Einschränkung
 
-Die Größenobergrenze von 50 MB wurde in diesem Lauf nicht künstlich
-überschritten. Ein Last-/Grenztest mit einem absichtlich zu großen Payload ist
-für eine spätere Betriebsabnahme noch sinnvoll.
+Eine zusätzliche manuelle Prüfung der Backup-Anzeige und des Restore-Ablaufs
+in zwei Browserfenstern bleibt für die endgültige Abnahme sinnvoll.

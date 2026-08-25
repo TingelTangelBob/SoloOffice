@@ -82,6 +82,23 @@ result=PASS
 
 Es wurde kein Datensatz des jeweils anderen Workspaces sichtbar.
 
+## Transaktionsfehler und Pool-Rückgabe
+
+Ein Restore in Workspace A wurde absichtlich mit einer ungültigen UUID zum
+Fehlschlag gebracht. Der gestartete Restore löste HTTP 500 aus und wurde
+vollständig zurückgerollt. Danach wurden beide Workspaces erneut gelesen:
+
+```text
+restore_error_http=500
+workspace_a_rollback=true
+workspace_b_unchanged=true
+next_workspace_request_clean=true
+result=PASS
+```
+
+Damit bleibt auch eine fehlerhafte Transaktion ohne Datenreste oder fremden
+Workspace-Kontext im Connection-Pool.
+
 ## Einschränkung
 
 Der Nachweis ist ein technischer API- und Datenbanklauf. Eine zusätzliche
