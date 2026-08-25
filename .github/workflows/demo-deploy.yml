@@ -48,7 +48,12 @@ env:
   IMAGE_NAME: ghcr.io/tingeltangelbob/solooffice-demo
 
 jobs:
+  qualitaet:
+    name: Qualitätstor
+    uses: ./.github/workflows/quality.yml
+
   build-und-push:
+    needs: qualitaet
     runs-on: ubuntu-latest
     steps:
       - name: Repository auschecken

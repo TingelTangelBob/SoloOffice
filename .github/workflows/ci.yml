@@ -5,11 +5,6 @@ on:
   pull_request:
 
 jobs:
-  container-builds:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Frontend lint and build
-        run: docker build --build-arg VITE_API_URL=/api --build-arg VITE_DEMO_MODE=false -f Dockerfile .
-      - name: Backend production image
-        run: docker build -f backend/Dockerfile backend
+  quality:
+    name: Qualität
+    uses: ./.github/workflows/quality.yml

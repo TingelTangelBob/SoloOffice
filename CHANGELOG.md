@@ -2,6 +2,25 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## [v0.6.3] – GitHub-Korrektur
+
+Stand, der unter [demo.solooffice.de](https://demo.solooffice.de) ausgeliefert wird (Commit `af0a1c3`).
+
+- Korrekturen an der Repository-Darstellung.
+- Die Demo-Leiste verlinkt jetzt direkt auf Self-Hosting und die Warteliste
+  für das gehostete Angebot.
+- Demo-Metadaten kennzeichnen die Anwendung eindeutig als Vorführung; das
+  Demo-Deployment wartet vor der Veröffentlichung auf den gemeinsamen
+  Qualitätsworkflow.
+
+## [v0.6.2] – UI-Optimierungen und Fehlerbehebungen
+
+- Verbesserungen an der Oberfläche und behobene Fehler aus dem v0.6-Release.
+
+## [v0.6.1] – Nachbesserungen zu v0.6
+
+- Nachbesserungen an den mit v0.6 eingeführten Abläufen.
+
 ## [v0.6] – Zahlungen, Dokumentfluss und Revisionssicherheit
 
 Der Release schließt zentrale Abläufe zwischen Rechnungen, Zahlungseingängen,

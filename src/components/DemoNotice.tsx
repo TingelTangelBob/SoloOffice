@@ -3,6 +3,8 @@ import { ExternalLink, RotateCcw, X } from 'lucide-react';
 import { isDemoDataStale, isDemoMode, resetDemoData } from '../services/demoApi';
 
 const REPO_URL = 'https://github.com/TingelTangelBob/SoloOffice';
+const SELF_HOSTING_URL = 'https://solooffice.de/selbst-hosten';
+const HOSTED_URL = 'https://solooffice.de/preise#warteliste';
 
 const commitSha = import.meta.env.VITE_COMMIT_SHA || '';
 const appVersion = import.meta.env.VITE_APP_VERSION || '';
@@ -110,6 +112,30 @@ export function DemoNotice() {
           </button>
 
           <a
+            href={SELF_HOSTING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-0 items-center gap-1.5 rounded px-2 py-0.5 hover:bg-gray-800 hover:text-white"
+            aria-label="SoloOffice selbst hosten"
+            title="SoloOffice selbst hosten"
+          >
+            <span className="hidden sm:inline">Selbst hosten</span>
+            <ExternalLink className="h-3 w-3" />
+          </a>
+
+          <a
+            href={HOSTED_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-0 items-center gap-1.5 rounded px-2 py-0.5 hover:bg-gray-800 hover:text-white"
+            aria-label="Gehostetes SoloOffice vormerken"
+            title="Gehostetes SoloOffice vormerken"
+          >
+            <span className="hidden sm:inline">Gehostet</span>
+            <ExternalLink className="h-3 w-3" />
+          </a>
+
+          <a
             href={sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -118,7 +144,7 @@ export function DemoNotice() {
           >
             <span className="hidden sm:inline">Quelltext</span>
             {versionLabel && (
-              <span className="font-mono text-[11px] text-gray-500">{versionLabel}</span>
+              <span className="hidden font-mono text-[11px] text-gray-500 sm:inline">{versionLabel}</span>
             )}
             <ExternalLink className="h-3 w-3" />
           </a>

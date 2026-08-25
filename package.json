@@ -1,7 +1,7 @@
 {
   "name": "solooffice",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.6.3",
   "type": "module",
   "license": "AGPL-3.0",
   "scripts": {

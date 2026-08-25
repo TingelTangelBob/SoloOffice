@@ -998,6 +998,24 @@
   }
 
   /*
+   * Die feste Demo-Leiste braucht überall denselben Abstand. Dadurch können
+   * sticky Aktionsleisten nicht mehr unter der Demo-Leiste verschwinden.
+   */
+  #app-shell[data-demo-mode="true"] {
+    --demo-bar-height: 1.5625rem;
+  }
+
+  #app-shell[data-demo-mode="true"] .form-action-bar {
+    bottom: var(--demo-bar-height);
+  }
+
+  /* Auch die feste/sticky Seitenleiste endet oberhalb der Demo-Leiste. */
+  #app-shell[data-demo-mode="true"] .sidebar-shell {
+    bottom: var(--demo-bar-height);
+    height: calc(100dvh - var(--demo-bar-height));
+  }
+
+  /*
    * Freiraum unter dem Inhalt, wenn im Demo-Modus die feste Hinweisleiste
    * steht.
    *
@@ -1013,7 +1031,7 @@
    * Ein `!important` wäre die Alternative, wirkt aber breiter als nötig.
    */
   .demo-bar-space.demo-bar-space {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--demo-bar-height, 1.5625rem));
   }
 
   .touch-target {

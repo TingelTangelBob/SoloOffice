@@ -268,7 +268,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   return (
     <>
       <DynamicColors />
-      <div id="app-shell" className="min-h-screen bg-gray-50">
+      <div id="app-shell" data-demo-mode={isDemoMode ? 'true' : undefined} className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
           {/* Mobile Seitenleiste öffnen. Auf Desktop bleibt der Umschalter
               dauerhaft am oberen Rand der Seitenleiste sichtbar. */}
@@ -294,6 +294,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           <nav
             style={sidebarStyle}
             className={`
+            sidebar-shell
             fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-40
             w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 overflow-hidden bg-white shadow-sm transform transition-[width,transform] duration-300 ease-in-out
             lg:transform-none lg:shadow-none lg:h-screen lg:self-start
