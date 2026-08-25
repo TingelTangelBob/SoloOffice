@@ -159,10 +159,18 @@ app.use((req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled server error', { error: err.message, stack: err.stack, url: req.url, method: req.method });
-  const statusCode = Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 500
-    ? err.statusCode
+  const parserStatus = Number.isInteger(err.status) ? err.status : err.statusCode;
+  const statusCode = Number.isInteger(parserStatus) && parserStatus >= 400 && parserStatus < 500
+    ? parserStatus
     : 500;
-  res.status(statusCode).json({ error: statusCode === 500 ? 'Internal server error' : err.message });
+  const isOversizedBackupPayload = statusCode === 413 && req.path.startsWith('/api/backup');
+  if (isOversizedBackupPayload) {
+    return res.status(413).json({
+      error: 'Das Backup ist zu groß. Erlaubt sind maximal 50 MB.',
+      code: 'BACKUP_PAYLOAD_TOO_LARGE',
+    });
+  }
+  return res.status(statusCode).json({ error: statusCode === 500 ? 'Internal server error' : err.message });
 });
 
 // Initialize database and start server
