@@ -152,6 +152,10 @@ class ApiService {
     return this.request<WorkspaceSummary>('/workspaces', { method: 'POST', body: JSON.stringify({ name }) });
   }
 
+  async updateWorkspace(workspaceId: string, name: string): Promise<WorkspaceSummary> {
+    return this.request<WorkspaceSummary>(`/workspaces/${workspaceId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+  }
+
   async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
     return this.request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
   }

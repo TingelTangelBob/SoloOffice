@@ -25,6 +25,7 @@ const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ 
 const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
 const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
 const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
+const WorkspaceManagement = lazy(() => import('./components/WorkspaceManagement').then(({ WorkspaceManagement: page }) => ({ default: page })));
 
 interface PageState {
   page: string;
@@ -150,6 +151,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : undefined} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
+      case 'workspace':
+        return <WorkspaceManagement />;
       case 'templates':
         return <TemplatesManagement onNavigate={onPageChange} />;
       default:

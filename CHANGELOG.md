@@ -2,6 +2,14 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## Unveröffentlicht
+
+- Workspace-Verwaltung als eigener, responsiver Navigationsbereich sichtbar
+  gemacht: Workspace-Wechsel, neue Workspaces, Umbenennung, Mitgliederrollen
+  und Einladungen sind nicht mehr im persönlichen Profil versteckt.
+- Workspace-Namen können für Eigentümer und Administratoren über die API
+  gespeichert werden; reine Lesekonten sehen die Verwaltung schreibgeschützt.
+
 ## [v0.6.3] – GitHub-Korrektur
 
 Stand, der unter [demo.solooffice.de](https://demo.solooffice.de) ausgeliefert wird (Commit `af0a1c3`).

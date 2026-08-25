@@ -75,6 +75,24 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.patch('/:workspaceId', requireWorkspaceFromParam('workspaceId'), requireRole('owner', 'admin'), async (req, res) => {
+  const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 255) : '';
+  if (!name) return res.status(400).json({ error: 'Bitte einen Workspace-Namen eingeben.' });
+
+  const result = await query(`
+    UPDATE workspaces
+    SET name = $1, updated_at = NOW()
+    WHERE id = $2
+    RETURNING *
+  `, [name, req.params.workspaceId]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'Workspace nicht gefunden.' });
+
+  return res.json({
+    ...publicWorkspace(result.rows[0], req.auth.role),
+    permissions: req.auth.permissions || {},
+  });
+});
+
 router.get('/:workspaceId/members', requireWorkspaceFromParam('workspaceId'), requireRole('owner', 'admin'), async (req, res) => {
   const result = await query(`
     SELECT u.id, u.email, u.first_name, u.last_name, u.created_at, wm.role, wm.permissions, wm.created_at AS joined_at

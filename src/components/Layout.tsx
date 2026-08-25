@@ -193,11 +193,13 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const calendarNavItem = { id: 'calendar', label: 'Kalender', icon: Calendar };
   const reportingNavItem = { id: 'reporting', label: 'Auswertungen', icon: BarChart3 };
   const settingsNavItem = { id: 'settings', label: 'Einstellungen', icon: Settings };
+  const workspaceNavItem = { id: 'workspace', label: 'Workspace', icon: Building2 };
   const templatesNavItem = { id: 'templates', label: 'Vorlagen', icon: Copy };
   const bottomNavItems = [
     { id: 'customers', label: terminology.entity.navLabel, icon: Users },
     templatesNavItem,
     settingsNavItem,
+    workspaceNavItem,
   ];
 
   const navItems: NavItem[] = [

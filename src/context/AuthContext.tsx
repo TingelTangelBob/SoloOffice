@@ -20,6 +20,7 @@ interface AuthContextValue {
   deleteAccount: (currentPassword: string) => Promise<void>;
   acceptInvitation: (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => Promise<void>;
   createWorkspace: (name: string) => Promise<WorkspaceSummary>;
+  updateWorkspace: (name: string) => Promise<void>;
   can: (permission: string) => boolean;
   canManageWorkspace: boolean;
   getWorkspaceMembers: () => Promise<WorkspaceMember[]>;
@@ -217,6 +218,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return created;
   }, []);
 
+  const updateWorkspace = useCallback(async (name: string) => {
+    if (!workspace) return;
+    if (isDemoMode) {
+      const nextWorkspaces = readDemoWorkspaces().map(item => item.id === workspace.id ? { ...item, name: name.trim() } : item);
+      persistDemoWorkspaces(nextWorkspaces);
+      const updated = nextWorkspaces.find(item => item.id === workspace.id) || workspace;
+      setWorkspace(updated);
+      setWorkspaces(nextWorkspaces);
+      return;
+    }
+    const updated = await apiService.updateWorkspace(workspace.id, name);
+    setWorkspace(previous => previous ? { ...previous, ...updated } : updated);
+    setWorkspaces(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+  }, [workspace]);
+
   const can = useCallback((permission: string) => {
     if (!workspace) return false;
     if (workspace.role === 'owner' || workspace.role === 'admin') return true;
@@ -247,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     deleteAccount,
     acceptInvitation,
     createWorkspace,
+    updateWorkspace,
     can,
     canManageWorkspace: workspace?.role === 'owner' || workspace?.role === 'admin',
     getWorkspaceMembers,
@@ -254,7 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeWorkspaceMember,
     getWorkspaceInvitations,
     createWorkspaceInvitation,
-  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
+  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
