@@ -3,7 +3,7 @@
 **Datum:** 2026-08-25  
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
 **Stand:** Workspace-Verwaltung plus Migration `032_runtime_rls_role`  
-**Status:** technisch bestanden, Gegenlesen für AP-2.3 offen
+**Status:** technisch bestanden, manuelle UI-Abnahme für AP-2.3 offen
 
 ## Testaufbau
 
