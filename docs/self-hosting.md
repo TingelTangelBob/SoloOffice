@@ -81,6 +81,12 @@ Vor jeder Aktualisierung:
 ./manage-instances.sh backup <name>
 ```
 
+Dieses Skript legt neben dem SQL-Dump auch Kopien der beiden Instanz-
+Konfigurationen mit Datenbankpasswort und `ENCRYPTION_KEY` an. Der Backup-
+Ordner wird deshalb auf `700`, die erzeugten Dateien auf `600` gesetzt. Die
+Dateien dürfen nicht in Git oder ein öffentliches Webverzeichnis gelangen und
+sollten zusätzlich verschlüsselt an einem zweiten Ort aufbewahrt werden.
+
 Der technische Nachweis mit zwei Workspaces steht in
 [`backup-restore-nachweis.md`](backup-restore-nachweis.md).
 

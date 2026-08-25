@@ -220,6 +220,11 @@ backup_instance() {
         return 1
     fi
     
+    # Backups contain business data and the instance keys from the env files.
+    # Keep the complete backup set private even when the host uses a permissive
+    # default umask.
+    umask 077
+
     # Get database configuration
     DB_NAME=$(grep "POSTGRES_DB=" ".env.${instance_name}" | cut -d'=' -f2)
     DB_USER=$(grep "POSTGRES_USER=" ".env.${instance_name}" | cut -d'=' -f2)
@@ -231,15 +236,19 @@ backup_instance() {
     
     # Create backup directory if it doesn't exist
     mkdir -p "$backup_dir"
+    chmod 700 "$backup_dir"
     
     print_info "Erstelle Backup für Instanz: $instance_name"
     print_info "Backup wird gespeichert als: $backup_file"
     
     if docker exec "$container_name" pg_dump -U "$DB_USER" "$DB_NAME" > "$backup_file"; then
+        chmod 600 "$backup_file"
         # Also backup configuration files
         cp ".env.${instance_name}" "${backup_dir}/env_${instance_name}_${timestamp}"
+        chmod 600 "${backup_dir}/env_${instance_name}_${timestamp}"
         if [ -f ".env.backend.${instance_name}" ]; then
             cp ".env.backend.${instance_name}" "${backup_dir}/env_backend_${instance_name}_${timestamp}"
+            chmod 600 "${backup_dir}/env_backend_${instance_name}_${timestamp}"
         fi
         
         print_success "Backup erfolgreich erstellt!"
