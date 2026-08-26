@@ -6,9 +6,9 @@ WORKDIR /app
 # backend container and does not send uploaded documents to a third party.
 RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-deu tesseract-ocr-data-eng poppler-utils
 
-# Copy package files and install dependencies
+# Copy the lockfile and install the exact dependency graph.
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy the application code
 COPY . .

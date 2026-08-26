@@ -12,6 +12,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 - PostgreSQL-RLS wird gegen Superuser-Bypass abgesichert: Der technische
   Laufzeitbenutzer wird nach der Migration auf `NOSUPERUSER NOBYPASSRLS`
   gesetzt und das Backend startet dafür einmal kontrolliert neu.
+- Der Backend-Build verwendet jetzt ein eingechecktes Lockfile und
+  `npm ci --omit=dev`. Direkte Sicherheitsupdates heben `adm-zip`, Nodemailer
+  und Multer an; die ungenutzte UUID-Abhängigkeit wurde entfernt.
 
 ## [v0.6.3] – GitHub-Korrektur
 
