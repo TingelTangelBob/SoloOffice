@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runMigrations, getMigrationStatus } from './migrations/index.js';
+import { ensureRuntimeDatabaseIsRlsSafe } from './migrations/032_runtime_rls_role.js';
 import { getRequestContext } from './utils/requestContext.js';
 
 dotenv.config();
@@ -208,9 +209,15 @@ export async function createTables() {
 
     // Run all pending migrations
     const migrationResult = await runMigrations(client);
+    // A database dump also restores the migration table. On a fresh
+    // PostgreSQL volume, POSTGRES_USER is nevertheless a superuser again, so
+    // migration 032 would be skipped. Recheck the live role and FORCE state
+    // on every start to keep disaster restores and interrupted maintenance
+    // operations behind the same RLS boundary.
+    const runtimeRlsSecured = await ensureRuntimeDatabaseIsRlsSafe(client);
 
-    if (migrationResult?.requiresRestart) {
-      throw new Error('Datenbankrolle wurde für RLS abgesichert. Backend wird einmal neu gestartet.');
+    if (migrationResult?.requiresRestart || runtimeRlsSecured) {
+      throw new Error('Datenbank-RLS wurde abgesichert. Backend wird einmal neu gestartet.');
     }
 
     // Log migration status

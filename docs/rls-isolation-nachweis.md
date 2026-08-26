@@ -1,6 +1,6 @@
 # Nachweis: Multiuser- und RLS-Isolation
 
-**Datum:** 2026-08-25  
+**Datum:** 2026-08-25, Restore-Nachtest am 2026-08-26
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
 **Stand:** Workspace-Verwaltung plus Migration `032_runtime_rls_role`  
 **Status:** technisch bestanden, manuelle UI-Abnahme für AP-2.3 offen
@@ -32,10 +32,19 @@ gesetzt. Im Quellstand ist das jetzt als Migration
 Backend nach der Demotion einmal beendet; Docker startet es mit neuem
 PostgreSQL-Login wieder. Bereits abgesicherte Instanzen bleiben idempotent.
 
+Seit dem Restore-Nachtest prüft derselbe Startpfad unabhängig von der
+Migrationstabelle außerdem bei jedem Start beide Rollenattribute und alle
+RLS-Tabellen. Das schließt zwei Wiederanlauf-Fälle: eine frisch erzeugte
+PostgreSQL-Rolle ist nach dem Einspielen eines Dumps wieder Superuser, und ein
+abgebrochener Instanz-Dump könnte eine Tabelle vorübergehend ohne `FORCE`
+hinterlassen. Beide Zustände führen zu einer Reparatur und genau einem
+kontrollierten Backend-Neustart.
+
 Nach der Korrektur:
 
 ```text
 solooffice_tor_s|f|f
+RLS-Tabellen: 31/31 erzwungen
 ```
 
 ## API-Nachweis

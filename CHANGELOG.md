@@ -11,10 +11,19 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   gespeichert werden; reine Lesekonten sehen die Verwaltung schreibgeschützt.
 - PostgreSQL-RLS wird gegen Superuser-Bypass abgesichert: Der technische
   Laufzeitbenutzer wird nach der Migration auf `NOSUPERUSER NOBYPASSRLS`
-  gesetzt und das Backend startet dafür einmal kontrolliert neu.
+  gesetzt und das Backend startet dafür einmal kontrolliert neu. Die Prüfung
+  läuft zusätzlich bei jedem Start, damit wiederhergestellte Datenbanken mit
+  bereits protokollierter Migration ebenfalls sicher bleiben. Dabei werden
+  auch RLS-Tabellen ohne erzwungene Richtlinie automatisch gehärtet.
 - Der Backend-Build verwendet jetzt ein eingechecktes Lockfile und
   `npm ci --omit=dev`. Direkte Sicherheitsupdates heben `adm-zip`, Nodemailer
   und Multer an; die ungenutzte UUID-Abhängigkeit wurde entfernt.
+- Docker Compose prüft den Backend-/Datenbankzustand mit einem echten
+  Healthcheck. Die Selbsthosting-Anleitung enthält vollständige nginx- und
+  Caddy-Beispiele, Secret-Verwahrung, Offsite-Backup und Wiederanlauf.
+- Instanz-Backups erzeugen trotz erzwungener RLS-Richtlinien wieder vollständige
+  SQL-Dumps: Das Backend pausiert kurz, die Tabellenrichtlinien werden
+  fehlersicher wieder aktiviert und in den Dump aufgenommen.
 
 ## [v0.6.3] – GitHub-Korrektur
 

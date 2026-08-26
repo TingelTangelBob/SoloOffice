@@ -226,13 +226,84 @@ backup_instance() {
     umask 077
 
     # Get database configuration
-    DB_NAME=$(grep "POSTGRES_DB=" ".env.${instance_name}" | cut -d'=' -f2)
-    DB_USER=$(grep "POSTGRES_USER=" ".env.${instance_name}" | cut -d'=' -f2)
+    local DB_NAME
+    local DB_USER
+    DB_NAME=$(grep "^POSTGRES_DB=" ".env.${instance_name}" | cut -d'=' -f2-)
+    DB_USER=$(grep "^POSTGRES_USER=" ".env.${instance_name}" | cut -d'=' -f2-)
+
+    if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ]; then
+        print_error "POSTGRES_DB oder POSTGRES_USER fehlt in .env.${instance_name}"
+        return 1
+    fi
     
     local backup_dir="backups"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
     local backup_file="${backup_dir}/backup_${instance_name}_${timestamp}.sql"
-    local container_name="belego-${instance_name}-db"
+    local force_rls_file
+    force_rls_file=$(mktemp)
+    local compose_command=(docker compose --env-file ".env.${instance_name}" -f docker-compose.yml)
+    local backend_was_running=false
+    local rls_relaxed=false
+    local cleanup_done=false
+    local cleanup_status=0
+
+    wait_for_backend_health() {
+        local backend_container
+        local backend_status
+        local attempt
+        backend_container=$("${compose_command[@]}" ps -q backend)
+
+        if [ -z "$backend_container" ]; then
+            return 1
+        fi
+
+        for attempt in $(seq 1 45); do
+            backend_status=$(docker inspect --format \
+                '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+                "$backend_container" 2>/dev/null)
+            if [ "$backend_status" = "healthy" ]; then
+                return 0
+            fi
+            sleep 1
+        done
+
+        return 1
+    }
+
+    backup_cleanup() {
+        if [ "$cleanup_done" = true ]; then
+            return "$cleanup_status"
+        fi
+        cleanup_done=true
+
+        if [ "$rls_relaxed" = true ] && [ -s "$force_rls_file" ]; then
+            if "${compose_command[@]}" exec -T database \
+                psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" \
+                < "$force_rls_file" >/dev/null; then
+                rls_relaxed=false
+            else
+                print_error "FORCE ROW LEVEL SECURITY konnte nicht vollständig reaktiviert werden."
+                cleanup_status=1
+            fi
+        fi
+
+        if [ "$backend_was_running" = true ]; then
+            if ! "${compose_command[@]}" start backend >/dev/null; then
+                print_error "Das Backend konnte nach dem Backup nicht neu gestartet werden."
+                cleanup_status=1
+            elif ! wait_for_backend_health; then
+                print_error "Das Backend wurde nach dem Backup nicht rechtzeitig gesund."
+                cleanup_status=1
+            fi
+        fi
+
+        rm -f "$force_rls_file"
+        return "$cleanup_status"
+    }
+
+    trap 'backup_cleanup' EXIT
+    trap 'exit 130' INT TERM HUP
     
     # Create backup directory if it doesn't exist
     mkdir -p "$backup_dir"
@@ -240,27 +311,130 @@ backup_instance() {
     
     print_info "Erstelle Backup für Instanz: $instance_name"
     print_info "Backup wird gespeichert als: $backup_file"
-    
-    if docker exec "$container_name" pg_dump -U "$DB_USER" "$DB_NAME" > "$backup_file"; then
-        chmod 600 "$backup_file"
-        # Also backup configuration files
-        cp ".env.${instance_name}" "${backup_dir}/env_${instance_name}_${timestamp}"
-        chmod 600 "${backup_dir}/env_${instance_name}_${timestamp}"
-        if [ -f ".env.backend.${instance_name}" ]; then
-            cp ".env.backend.${instance_name}" "${backup_dir}/env_backend_${instance_name}_${timestamp}"
-            chmod 600 "${backup_dir}/env_backend_${instance_name}_${timestamp}"
+
+    if "${compose_command[@]}" ps --status running --services | grep -Fxq backend; then
+        backend_was_running=true
+        print_warning "Das Backend wird für den konsistenten RLS-Dump kurz angehalten."
+        if ! "${compose_command[@]}" stop backend >/dev/null; then
+            print_error "Das Backend konnte nicht angehalten werden."
+            backup_cleanup
+            trap - EXIT INT TERM HUP
+            return 1
         fi
-        
-        print_success "Backup erfolgreich erstellt!"
-        print_info "Dateien:"
-        print_info "  - Datenbank: $backup_file"
-        print_info "  - Konfiguration: ${backup_dir}/env_${instance_name}_${timestamp}"
-        if [ -f ".env.backend.${instance_name}" ]; then
-            print_info "  - Backend-Konfiguration: ${backup_dir}/env_backend_${instance_name}_${timestamp}"
-        fi
-    else
-        print_error "Backup fehlgeschlagen!"
+    fi
+
+    if ! "${compose_command[@]}" exec -T database \
+        psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -Atc "
+            SELECT format(
+                'ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY;',
+                namespace.nspname,
+                table_class.relname
+            )
+            FROM pg_class AS table_class
+            JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+            WHERE table_class.relkind IN ('r', 'p')
+              AND table_class.relrowsecurity
+              AND table_class.relforcerowsecurity
+              AND namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY namespace.nspname, table_class.relname
+        " > "$force_rls_file"; then
+        print_error "RLS-Tabellen konnten nicht ermittelt werden."
+        backup_cleanup
+        trap - EXIT INT TERM HUP
         return 1
+    fi
+
+    if [ ! -s "$force_rls_file" ]; then
+        print_error "Keine erzwungenen RLS-Tabellen gefunden; Backup aus Sicherheitsgründen abgebrochen."
+        backup_cleanup
+        trap - EXIT INT TERM HUP
+        return 1
+    fi
+
+    if ! "${compose_command[@]}" exec -T database \
+        psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "
+            DO \$solooffice\$
+            DECLARE
+                target RECORD;
+            BEGIN
+                FOR target IN
+                    SELECT namespace.nspname AS schema_name, table_class.relname AS table_name
+                    FROM pg_class AS table_class
+                    JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+                    WHERE table_class.relkind IN ('r', 'p')
+                      AND table_class.relrowsecurity
+                      AND table_class.relforcerowsecurity
+                      AND namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+                LOOP
+                    EXECUTE format(
+                        'ALTER TABLE %I.%I NO FORCE ROW LEVEL SECURITY',
+                        target.schema_name,
+                        target.table_name
+                    );
+                END LOOP;
+            END
+            \$solooffice\$;
+        " >/dev/null; then
+        print_error "RLS konnte für den angehaltenen Backup-Lauf nicht vorbereitet werden."
+        backup_cleanup
+        trap - EXIT INT TERM HUP
+        return 1
+    fi
+    rls_relaxed=true
+
+    if ! "${compose_command[@]}" exec -T database \
+        pg_dump -U "$DB_USER" --no-owner --no-acl "$DB_NAME" > "$backup_file"; then
+        print_error "Backup fehlgeschlagen!"
+        rm -f "$backup_file"
+        backup_cleanup
+        trap - EXIT INT TERM HUP
+        return 1
+    fi
+
+    # pg_dump records the temporary NO-FORCE state. Append the exact original
+    # FORCE statements so a restored database is safe before the backend starts.
+    if ! printf '\n-- SoloOffice: erzwungene RLS-Richtlinien wiederherstellen\n' >> "$backup_file" \
+        || ! cat "$force_rls_file" >> "$backup_file" \
+        || ! chmod 600 "$backup_file"; then
+        print_error "Der SQL-Dump konnte nicht sicher abgeschlossen werden."
+        rm -f "$backup_file"
+        backup_cleanup
+        trap - EXIT INT TERM HUP
+        return 1
+    fi
+
+    backup_cleanup
+    local finished_cleanup_status=$?
+    trap - EXIT INT TERM HUP
+    if [ "$finished_cleanup_status" -ne 0 ]; then
+        rm -f "$backup_file"
+        return 1
+    fi
+
+    # Also backup configuration files
+    if ! cp ".env.${instance_name}" "${backup_dir}/env_${instance_name}_${timestamp}" \
+        || ! chmod 600 "${backup_dir}/env_${instance_name}_${timestamp}"; then
+        print_error "Die Instanzkonfiguration konnte nicht gesichert werden."
+        rm -f "$backup_file" "${backup_dir}/env_${instance_name}_${timestamp}"
+        return 1
+    fi
+    if [ -f ".env.backend.${instance_name}" ]; then
+        if ! cp ".env.backend.${instance_name}" "${backup_dir}/env_backend_${instance_name}_${timestamp}" \
+            || ! chmod 600 "${backup_dir}/env_backend_${instance_name}_${timestamp}"; then
+            print_error "Die Backend-Konfiguration konnte nicht gesichert werden."
+            rm -f "$backup_file" \
+                "${backup_dir}/env_${instance_name}_${timestamp}" \
+                "${backup_dir}/env_backend_${instance_name}_${timestamp}"
+            return 1
+        fi
+    fi
+
+    print_success "Backup erfolgreich erstellt!"
+    print_info "Dateien:"
+    print_info "  - Datenbank: $backup_file"
+    print_info "  - Konfiguration: ${backup_dir}/env_${instance_name}_${timestamp}"
+    if [ -f ".env.backend.${instance_name}" ]; then
+        print_info "  - Backend-Konfiguration: ${backup_dir}/env_backend_${instance_name}_${timestamp}"
     fi
 }
 
