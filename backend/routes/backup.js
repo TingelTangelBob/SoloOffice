@@ -141,6 +141,30 @@ function isOwnedBackup(filename, req, kind, extension) {
     && filename.endsWith(extension);
 }
 
+function getBackupWorkspaceId(backupData) {
+  if (typeof backupData?.workspaceId === 'string' && backupData.workspaceId) {
+    return backupData.workspaceId;
+  }
+
+  const workspaceIds = new Set();
+  for (const records of Object.values(backupData?.data || {})) {
+    if (!Array.isArray(records)) continue;
+    for (const record of records) {
+      if (record && typeof record.workspace_id === 'string' && record.workspace_id) {
+        workspaceIds.add(record.workspace_id);
+      }
+    }
+  }
+  if (workspaceIds.size > 1) {
+    throw new Error('Das Backup enthält Daten aus mehreren Workspaces und kann nicht wiederhergestellt werden.');
+  }
+  return [...workspaceIds][0] || null;
+}
+
+function backupWorkspaceMismatchMessage() {
+  return 'Dieses Backup gehört zu einem anderen Workspace. Wechseln Sie zum ursprünglichen Workspace und starten Sie die Wiederherstellung dort erneut.';
+}
+
 async function getTableColumns(client, table) {
   if (!BACKUP_TABLES.includes(table)) throw new Error(`Nicht erlaubte Restore-Tabelle: ${table}`);
   const result = await client.query(`
@@ -286,6 +310,7 @@ router.post('/create', async (req, res) => {
     const backup = {
       timestamp: new Date().toISOString(),
       version: '1.0',
+      workspaceId: req.auth.workspaceId,
       data: {}
     };
 
@@ -460,6 +485,15 @@ router.post('/restore', async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Ungültige Backup-Daten'
+      });
+    }
+
+    const backupWorkspaceId = getBackupWorkspaceId(backupData);
+    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
+      return res.status(409).json({
+        success: false,
+        message: backupWorkspaceMismatchMessage(),
+        code: 'BACKUP_WORKSPACE_MISMATCH'
       });
     }
 
@@ -728,6 +762,7 @@ router.post('/create-zip', async (req, res) => {
       timestamp: new Date().toISOString(),
       version: '2.0',
       type: 'full',
+      workspaceId: req.auth.workspaceId,
       data: {}
     };
 
@@ -906,6 +941,16 @@ router.post('/restore-zip', async (req, res) => {
         });
       }
 
+      const backupWorkspaceId = getBackupWorkspaceId(backupData);
+      if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
+        await fs.unlink(req.file.path).catch(() => undefined);
+        return res.status(409).json({
+          success: false,
+          message: backupWorkspaceMismatchMessage(),
+          code: 'BACKUP_WORKSPACE_MISMATCH'
+        });
+      }
+
       logger.info('Starting restore process...');
       
       // Begin transaction
@@ -922,7 +967,7 @@ router.post('/restore-zip', async (req, res) => {
       logger.info('Restoring data with schema allow-list...');
       ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId, restoreCompanyId));
 
-    await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
+      await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
 
       // Post-restore fixes for backward compatibility
       logger.info('Running post-restore compatibility fixes...');

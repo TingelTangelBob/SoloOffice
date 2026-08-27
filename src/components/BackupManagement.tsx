@@ -33,6 +33,7 @@ interface BackupManagementProps {
 interface RestoreData {
   version?: string | number;
   timestamp?: string;
+  workspaceId?: string;
   data?: Record<string, unknown[]>;
   file?: File;
 }
@@ -234,7 +235,10 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
       }
     } catch (error) {
       logger.error('Error restoring backup:', error);
-      setMessage({ type: 'error', text: 'Fehler beim Wiederherstellen des Backups' });
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Fehler beim Wiederherstellen des Backups',
+      });
     } finally {
       setIsRestoring(false);
     }
