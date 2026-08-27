@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
 import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users } from 'lucide-react';
-import { defaultCompany, useCompany } from '../context/CompanyContext';
+import { useCompany } from '../context/CompanyContext';
+import { defaultCompany } from '../context/CompanyProvider';
 import { ColorPicker } from './ColorPicker';
 import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';

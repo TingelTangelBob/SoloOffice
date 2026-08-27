@@ -1,35 +1,21 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { apiService } from '../services/api';
 import { setupMetaTags } from '../utils/faviconUtils';
 import logger from '../utils/logger';
 
 // Import individual contexts
-import { CustomerProvider, useCustomers } from './CustomerContext';
-import { InvoiceProvider, useInvoices } from './InvoiceContext';
-import { QuoteProvider, useQuotes } from './QuoteContext';
-import { JobProvider, useJobs } from './JobContext';
-import { CompanyProvider, useCompany, defaultCompany, defaultDocumentTemplates } from './CompanyContext';
-
-// ============================================================================
-// Loading Context
-// ============================================================================
-
-interface LoadingContextType {
-  loading: boolean;
-  error: string | null;
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
-}
-
-const LoadingContext = createContext<LoadingContextType | undefined>(undefined);
-
-export function useLoading(): LoadingContextType {
-  const context = useContext(LoadingContext);
-  if (context === undefined) {
-    throw new Error('useLoading must be used within LoadingProvider');
-  }
-  return context;
-}
+import { CustomerProvider } from './CustomerProvider';
+import { useCustomers } from './CustomerContext';
+import { InvoiceProvider } from './InvoiceProvider';
+import { useInvoices } from './InvoiceContext';
+import { QuoteProvider } from './QuoteProvider';
+import { useQuotes } from './QuoteContext';
+import { JobProvider } from './JobProvider';
+import { useJobs } from './JobContext';
+import { CompanyProvider, defaultCompany, defaultDocumentTemplates } from './CompanyProvider';
+import { useCompany } from './CompanyContext';
+import { LoadingContext, useLoading } from './LoadingContext';
 
 // ============================================================================
 // Data Loader Component
@@ -148,4 +134,3 @@ export function AppProvider({ children }: { children: ReactNode }) {
     </LoadingContext.Provider>
   );
 }
-

@@ -103,8 +103,8 @@ function formatDatePlaceholder(dateFormat: DateFormat): string {
   }
 }
 
-function formatWeekday(date: Date): string {
-  return new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(date).replace(/\.$/, '');
+function formatWeekday(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(date).replace(/\.$/, '');
 }
 
 export function LocalizedDateInput({
@@ -148,7 +148,7 @@ export function LocalizedDateInput({
     const firstDay = new Date(year, month, 1).getDay();
     const offset = (firstDay + 6) % 7;
     return Array.from({ length: 42 }, (_, index) => new Date(year, month, 1 - offset + index));
-  }, [locale, viewDate]);
+  }, [viewDate]);
 
   const weekdayDates = useMemo(() => {
     const monday = new Date(2023, 0, 2);
@@ -160,7 +160,7 @@ export function LocalizedDateInput({
   const selectedDate = toLocalDate(value);
   const minimumDate = min ? toLocalDate(min) : null;
   const today = toCanonicalDate(new Date());
-  const monthLabel = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' }).format(viewDate);
+  const monthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(viewDate);
   const labels = { previous: 'Vorheriger Monat', next: 'Nächster Monat', clear: 'Löschen', today: 'Heute' };
 
   const isSelectable = (date: Date) => {
@@ -255,7 +255,7 @@ export function LocalizedDateInput({
             </button>
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-center text-[11px] font-medium text-gray-500">
-            {weekdayDates.map(date => <span key={date.toISOString()}>{formatWeekday(date)}</span>)}
+            {weekdayDates.map(date => <span key={date.toISOString()}>{formatWeekday(date, locale)}</span>)}
           </div>
           <div className="mt-1 grid grid-cols-7 gap-0.5">
             {calendarDays.map(date => {

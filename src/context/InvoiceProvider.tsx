@@ -1,27 +1,9 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { Invoice } from '../types';
 import { apiService } from '../services/api';
 import logger from '../utils/logger';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface InvoiceContextType {
-  invoices: Invoice[];
-  setInvoices: React.Dispatch<React.SetStateAction<Invoice[]>>;
-  addInvoice: (invoice: Omit<Invoice, 'id' | 'createdAt'>) => Promise<Invoice>;
-  updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
-  deleteInvoice: (id: string) => Promise<void>;
-  refreshInvoices: () => Promise<void>;
-  getInvoiceById: (id: string) => Invoice | undefined;
-}
-
-// ============================================================================
-// Context
-// ============================================================================
-
-const InvoiceContext = createContext<InvoiceContextType | undefined>(undefined);
+import { InvoiceContext, type InvoiceContextType } from './InvoiceContext';
 
 // ============================================================================
 // Provider
@@ -98,16 +80,3 @@ export function InvoiceProvider({ children, initialInvoices = [] }: InvoiceProvi
     </InvoiceContext.Provider>
   );
 }
-
-// ============================================================================
-// Hook
-// ============================================================================
-
-export function useInvoices(): InvoiceContextType {
-  const context = useContext(InvoiceContext);
-  if (context === undefined) {
-    throw new Error('useInvoices must be used within an InvoiceProvider');
-  }
-  return context;
-}
-

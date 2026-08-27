@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { Company, HourlyRate, MaterialTemplate, InvoiceTemplate, DocumentTemplate } from '../types';
 import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
 import logger from '../utils/logger';
 import { DEFAULT_TIME_ZONE } from '../utils/timeZones';
+import { CompanyContext, type CompanyContextType } from './CompanyContext';
 
 // ============================================================================
 // Default Values
@@ -279,44 +281,6 @@ export const defaultCompany: Company = {
 };
 
 // ============================================================================
-// Types
-// ============================================================================
-
-interface CompanyContextType {
-  company: Company;
-  setCompany: React.Dispatch<React.SetStateAction<Company>>;
-  updateCompany: (company: Partial<Company>) => Promise<void>;
-  // Hourly Rates
-  hourlyRates: HourlyRate[];
-  setHourlyRates: React.Dispatch<React.SetStateAction<HourlyRate[]>>;
-  addHourlyRate: (rate: Omit<HourlyRate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateHourlyRate: (id: string, rate: Partial<HourlyRate>) => Promise<void>;
-  deleteHourlyRate: (id: string) => Promise<void>;
-  // Material Templates
-  materialTemplates: MaterialTemplate[];
-  setMaterialTemplates: React.Dispatch<React.SetStateAction<MaterialTemplate[]>>;
-  addMaterialTemplate: (template: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateMaterialTemplate: (id: string, template: Partial<MaterialTemplate>) => Promise<void>;
-  deleteMaterialTemplate: (id: string) => Promise<void>;
-  // Invoice Templates
-  addInvoiceTemplate: (template: Omit<InvoiceTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateInvoiceTemplate: (id: string, template: Partial<InvoiceTemplate>) => Promise<void>;
-  deleteInvoiceTemplate: (id: string) => Promise<void>;
-  getInvoiceTemplates: () => InvoiceTemplate[];
-  // Document Templates
-  documentTemplates: DocumentTemplate[];
-  addDocumentTemplate: (template: Omit<DocumentTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateDocumentTemplate: (id: string, template: Partial<DocumentTemplate>) => Promise<void>;
-  deleteDocumentTemplate: (id: string) => Promise<void>;
-}
-
-// ============================================================================
-// Context
-// ============================================================================
-
-const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
-
-// ============================================================================
 // Provider
 // ============================================================================
 
@@ -581,16 +545,4 @@ export function CompanyProvider({
       {children}
     </CompanyContext.Provider>
   );
-}
-
-// ============================================================================
-// Hook
-// ============================================================================
-
-export function useCompany(): CompanyContextType {
-  const context = useContext(CompanyContext);
-  if (context === undefined) {
-    throw new Error('useCompany must be used within a CompanyProvider');
-  }
-  return context;
 }

@@ -1,10 +1,12 @@
 import { lazy, Suspense, useCallback, useState, useEffect } from 'react';
-import { AppProvider, useLoading } from './context/AppContext';
+import { AppProvider } from './context/AppContext';
+import { useLoading } from './context/LoadingContext';
 import { Layout } from './components/Layout';
 import { useCompany } from './context/CompanyContext';
 import { useQuotes } from './context/QuoteContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { FeedbackProvider } from './context/FeedbackContext';
+import { useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthProvider';
+import { FeedbackProvider } from './context/FeedbackProvider';
 import { AuthPage } from './components/AuthPage';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));

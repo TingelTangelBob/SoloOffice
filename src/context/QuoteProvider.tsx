@@ -1,27 +1,9 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { Quote } from '../types';
 import { apiService } from '../services/api';
 import logger from '../utils/logger';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface QuoteContextType {
-  quotes: Quote[];
-  setQuotes: React.Dispatch<React.SetStateAction<Quote[]>>;
-  addQuote: (quote: Omit<Quote, 'id' | 'createdAt'>) => Promise<Quote>;
-  updateQuote: (id: string, quote: Partial<Quote>) => Promise<void>;
-  deleteQuote: (id: string) => Promise<void>;
-  refreshQuotes: () => Promise<void>;
-  getQuoteById: (id: string) => Quote | undefined;
-}
-
-// ============================================================================
-// Context
-// ============================================================================
-
-const QuoteContext = createContext<QuoteContextType | undefined>(undefined);
+import { QuoteContext, type QuoteContextType } from './QuoteContext';
 
 // ============================================================================
 // Provider
@@ -97,16 +79,3 @@ export function QuoteProvider({ children, initialQuotes = [] }: QuoteProviderPro
     </QuoteContext.Provider>
   );
 }
-
-// ============================================================================
-// Hook
-// ============================================================================
-
-export function useQuotes(): QuoteContextType {
-  const context = useContext(QuoteContext);
-  if (context === undefined) {
-    throw new Error('useQuotes must be used within a QuoteProvider');
-  }
-  return context;
-}
-

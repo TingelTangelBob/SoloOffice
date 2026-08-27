@@ -1,34 +1,10 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { apiService } from '../services/api';
 import { DEMO_DEFAULT_WORKSPACE_ID, getDemoActiveWorkspaceId, isDemoMode, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
-import type { AuthResponse, AuthUser, RegistrationResponse, WorkspaceInvitation, WorkspaceMember, WorkspaceRole, WorkspaceSummary } from '../types';
-
-interface AuthContextValue {
-  user: AuthUser | null;
-  workspace: WorkspaceSummary | null;
-  workspaces: WorkspaceSummary[];
-  loading: boolean;
-  isAuthenticated: boolean;
-  login: (email: string, password: string, workspaceId?: string) => Promise<void>;
-  register: (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => Promise<RegistrationResponse>;
-  logout: () => Promise<void>;
-  logoutAll: () => Promise<void>;
-  switchWorkspace: (workspaceId: string) => Promise<void>;
-  updateProfile: (firstName: string, lastName: string) => Promise<void>;
-  changePassword: (currentPassword: string, password: string) => Promise<void>;
-  deleteAccount: (currentPassword: string) => Promise<void>;
-  acceptInvitation: (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => Promise<void>;
-  createWorkspace: (name: string) => Promise<WorkspaceSummary>;
-  updateWorkspace: (name: string) => Promise<void>;
-  can: (permission: string) => boolean;
-  canManageWorkspace: boolean;
-  getWorkspaceMembers: () => Promise<WorkspaceMember[]>;
-  updateWorkspaceMember: (userId: string, role: WorkspaceRole) => Promise<WorkspaceMember>;
-  removeWorkspaceMember: (userId: string) => Promise<void>;
-  getWorkspaceInvitations: () => Promise<WorkspaceInvitation[]>;
-  createWorkspaceInvitation: (email: string, role?: Exclude<WorkspaceRole, 'owner'>) => Promise<WorkspaceInvitation>;
-}
+import type { AuthResponse, AuthUser, WorkspaceRole, WorkspaceSummary } from '../types';
+import { AuthContext, type AuthContextValue } from './AuthContext';
 
 const demoUser: AuthUser = {
   id: 'demo-user',
@@ -74,8 +50,6 @@ function createDemoWorkspace(name: string): WorkspaceSummary {
     role: 'owner',
   };
 }
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function applyAuthResponse(response: AuthResponse, setters: {
   setUser: (user: AuthUser | null) => void;
@@ -274,10 +248,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
 }

@@ -1,7 +1,8 @@
 import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
-import { defaultDocumentTemplates, useCompany } from '../context/CompanyContext';
+import { useCompany } from '../context/CompanyContext';
+import { defaultDocumentTemplates } from '../context/CompanyProvider';
 import {
   DocumentHeaderAlignment,
   DocumentLayout,

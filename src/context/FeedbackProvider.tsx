@@ -1,35 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { Notice } from '../components/Notice';
 import type { NoticeVariant } from '../components/Notice';
 import { generateUUID } from '../utils/uuid';
-
-export interface ConfirmOptions {
-  title: string;
-  message: string;
-  confirmText?: string;
-  cancelText?: string;
-  isDestructive?: boolean;
-  isGoBDWarning?: boolean;
-}
-
-export interface NotifyOptions {
-  variant?: NoticeVariant;
-  title?: string;
-  message: string;
-}
+import { FeedbackContext, type ConfirmOptions, type NotifyOptions } from './FeedbackContext';
 
 interface FeedbackMessage extends NotifyOptions {
   id: string;
   variant: NoticeVariant;
-}
-
-interface FeedbackContextValue {
-  /** Öffnet eine gestaltete Rückfrage und liefert die Entscheidung. */
-  confirm: (options: ConfirmOptions) => Promise<boolean>;
-  /** Zeigt eine kurze Rückmeldung am oberen Rand an. */
-  notify: (options: NotifyOptions) => void;
 }
 
 /**
@@ -44,8 +23,6 @@ const AUTO_DISMISS_MS: Record<NoticeVariant, number> = {
   error: 12000,
 };
 const MAX_VISIBLE_MESSAGES = 4;
-
-const FeedbackContext = createContext<FeedbackContextValue | null>(null);
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<FeedbackMessage[]>([]);
@@ -127,10 +104,4 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       />
     </FeedbackContext.Provider>
   );
-}
-
-export function useFeedback(): FeedbackContextValue {
-  const context = useContext(FeedbackContext);
-  if (!context) throw new Error('useFeedback muss innerhalb von FeedbackProvider verwendet werden.');
-  return context;
 }

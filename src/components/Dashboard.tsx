@@ -5,7 +5,7 @@ import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
-import { useLoading } from '../context/AppContext';
+import { useLoading } from '../context/LoadingContext';
 import { calculateTotalHours } from '../utils/jobUtils';
 import { formatCurrency, formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Search, Download, FileText, Send, Banknote, Eye, Receipt, History } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -217,7 +217,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     return matchesSearch && matchesStatus;
   });
 
-  const handleOpenEditor = (invoice?: Invoice) => {
+  const handleOpenEditor = useCallback((invoice?: Invoice) => {
     // Check if invoice is sent, reminded, or has any status other than draft and warn user
     if (invoice && invoice.status !== 'draft') {
       setConfirmModal({
@@ -234,7 +234,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       setEditingInvoice(invoice || null);
       setIsEditorOpen(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!initialInvoiceId || openedInitialInvoiceId.current === initialInvoiceId) return;
