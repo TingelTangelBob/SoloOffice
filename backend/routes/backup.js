@@ -159,6 +159,17 @@ async function clearWorkspaceData(client, workspaceId) {
   }
 }
 
+async function getRestoreCompanyId(client, workspaceId) {
+  const existing = await client.query(
+    'SELECT id FROM company WHERE workspace_id = $1 LIMIT 1',
+    [workspaceId]
+  );
+  if (existing.rows[0]?.id != null) return existing.rows[0].id;
+
+  const allocated = await client.query("SELECT nextval('company_id_seq') AS id");
+  return allocated.rows[0].id;
+}
+
 // Function to process values for JSONB columns
 function processValueForRestore(table, column, value) {
   if (JSONB_COLUMNS[table] && JSONB_COLUMNS[table].includes(column)) {
@@ -209,7 +220,7 @@ async function restoreDeferredInvoiceRelations(client, backupData, workspaceId) 
   }
 }
 
-async function restoreBackupTables(client, backupData, workspaceId) {
+async function restoreBackupTables(client, backupData, workspaceId, restoreCompanyId) {
   let restoredTables = 0;
   let restoredRecords = 0;
   const deferredInvoiceColumns = new Set(['reference_invoice_id', 'recurring_invoice_id', 'source_quote_id']);
@@ -245,9 +256,14 @@ async function restoreBackupTables(client, backupData, workspaceId) {
         if (!record || typeof record !== 'object' || Array.isArray(record)) {
           throw new Error(`Ungültiger Datensatz in Restore-Tabelle ${table}.`);
         }
-        const values = columns.map(column => column === 'workspace_id'
-          ? workspaceId
-          : processValueForRestore(table, column, record[column]));
+        const values = columns.map(column => {
+          if (column === 'workspace_id') return workspaceId;
+          if (table === 'company' && column === 'id') return restoreCompanyId;
+          if ((table === 'hourly_rates' || table === 'material_templates') && column === 'company_id') {
+            return restoreCompanyId;
+          }
+          return processValueForRestore(table, column, record[column]);
+        });
         const conflictClause = table === 'euer_entry_history' || table === 'invoice_history'
           ? ' ON CONFLICT (id) DO NOTHING'
           : '';
@@ -457,10 +473,11 @@ router.post('/restore', async (req, res) => {
 
     logger.info('Clearing data for the active workspace only...');
     await setAuditSuppressed(client, true);
+    const restoreCompanyId = await getRestoreCompanyId(client, req.auth.workspaceId);
     await clearWorkspaceData(client, req.auth.workspaceId);
 
     logger.info('Restoring JSON data with schema allow-list...');
-    ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId));
+    ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId, restoreCompanyId));
 
     await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
 
@@ -900,9 +917,10 @@ router.post('/restore-zip', async (req, res) => {
       // SMTP credentials are intentionally preserved; backups contain only a redacted placeholder.
       logger.info('Clearing data for the active workspace only...');
       await setAuditSuppressed(client, true);
+      const restoreCompanyId = await getRestoreCompanyId(client, req.auth.workspaceId);
       await clearWorkspaceData(client, req.auth.workspaceId);
       logger.info('Restoring data with schema allow-list...');
-      ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId));
+      ({ restoredTables, restoredRecords } = await restoreBackupTables(client, backupData, req.auth.workspaceId, restoreCompanyId));
 
     await restoreDeferredInvoiceRelations(client, backupData, req.auth.workspaceId);
 
