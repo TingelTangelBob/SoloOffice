@@ -165,6 +165,39 @@ function backupWorkspaceMismatchMessage() {
   return 'Dieses Backup gehört zu einem anderen Workspace. Wechseln Sie zum ursprünglichen Workspace und starten Sie die Wiederherstellung dort erneut.';
 }
 
+function getBackupTimeZone(req) {
+  const requestedTimeZone = typeof req.body?.timeZone === 'string' ? req.body.timeZone : '';
+  const candidates = [requestedTimeZone, process.env.APP_TIME_ZONE, 'Europe/Berlin'];
+
+  for (const timeZone of candidates) {
+    if (!timeZone) continue;
+    try {
+      new Intl.DateTimeFormat('de-DE', { timeZone }).format();
+      return timeZone;
+    } catch {
+      // Ungültige Zeitzonen werden ignoriert; der nächste Fallback wird geprüft.
+    }
+  }
+
+  return 'UTC';
+}
+
+function formatBackupFilenameTimestamp(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('de-DE', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}-${values.minute}-${values.second}-${values.fractionalSecond}`;
+}
+
 async function getTableColumns(client, table) {
   if (!BACKUP_TABLES.includes(table)) throw new Error(`Nicht erlaubte Restore-Tabelle: ${table}`);
   const result = await client.query(`
@@ -306,11 +339,14 @@ router.post('/create', async (req, res) => {
   
   try {
     logger.info('Creating backup...');
+    const now = new Date();
+    const timeZone = getBackupTimeZone(req);
     
     const backup = {
-      timestamp: new Date().toISOString(),
+      timestamp: now.toISOString(),
       version: '1.0',
       workspaceId: req.auth.workspaceId,
+      timeZone,
       data: {}
     };
 
@@ -334,7 +370,7 @@ router.post('/create', async (req, res) => {
     }
 
     // Save backup to file
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = formatBackupFilenameTimestamp(now, timeZone);
     const filename = `backup_${req.auth.workspaceId}_${timestamp}.json`;
     const filepath = path.join(backupDir, filename);
     
@@ -757,12 +793,15 @@ router.post('/create-zip', async (req, res) => {
     const { default: AdmZip } = await import('adm-zip');
     
     logger.info('Creating full ZIP backup...');
+    const now = new Date();
+    const timeZone = getBackupTimeZone(req);
     
     const backup = {
-      timestamp: new Date().toISOString(),
+      timestamp: now.toISOString(),
       version: '2.0',
       type: 'full',
       workspaceId: req.auth.workspaceId,
+      timeZone,
       data: {}
     };
 
@@ -786,7 +825,8 @@ router.post('/create-zip', async (req, res) => {
     // Add metadata file
     const metadata = {
       name: 'SoloOffice Vollbackup',
-      created: new Date().toISOString(),
+      created: backup.timestamp,
+      timeZone,
       version: backup.version,
       tables: Object.keys(backup.data).length,
       totalRecords: Object.values(backup.data).reduce((sum, records) => sum + records.length, 0)
@@ -802,7 +842,7 @@ router.post('/create-zip', async (req, res) => {
     }
 
     // Save ZIP file
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = formatBackupFilenameTimestamp(now, timeZone);
     const filename = `vollbackup_${req.auth.workspaceId}_${timestamp}.zip`;
     const filepath = path.join(backupDir, filename);
     

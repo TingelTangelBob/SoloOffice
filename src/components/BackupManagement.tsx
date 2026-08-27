@@ -34,6 +34,7 @@ interface RestoreData {
   version?: string | number;
   timestamp?: string;
   workspaceId?: string;
+  timeZone?: string;
   data?: Record<string, unknown[]>;
   file?: File;
 }

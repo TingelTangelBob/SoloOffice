@@ -10,6 +10,14 @@ function readCookie(name: string): string | undefined {
   return document.cookie.split('; ').find(cookie => cookie.startsWith(prefix))?.slice(prefix.length);
 }
 
+function getBrowserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 // ============================================================================
 // Helper Types
 // ============================================================================
@@ -795,7 +803,10 @@ class ApiService {
     tableCount: number;
     totalRecords: number;
   }> {
-    return this.request('/backup/create', { method: 'POST' });
+    return this.request('/backup/create', {
+      method: 'POST',
+      body: JSON.stringify({ timeZone: getBrowserTimeZone() }),
+    });
   }
 
   async listBackups(): Promise<{ success: boolean; backups: BackupInfo[] }> {
@@ -833,7 +844,10 @@ class ApiService {
     tableCount: number;
     totalRecords: number;
   }> {
-    return this.request('/backup/create-zip', { method: 'POST' });
+    return this.request('/backup/create-zip', {
+      method: 'POST',
+      body: JSON.stringify({ timeZone: getBrowserTimeZone() }),
+    });
   }
 
   async downloadZipBackup(filename: string): Promise<void> {
