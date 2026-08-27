@@ -199,6 +199,26 @@ docker compose --env-file .env.<name> -f docker-compose.yml \
 Migrationen laufen beim Backend-Start automatisch. Ein Datenbankbackup vor
 jedem Update bleibt Pflicht.
 
+## Logs, Request-IDs und Laufzeitmetriken
+
+Jede Backend-Antwort enthält den Header `X-Request-ID`. Dieselbe ID erscheint
+in strukturierten Serverlogs; bei einem internen Fehler zeigt die Oberfläche
+sie zusätzlich als Referenz an. Damit lässt sich eine Browsermeldung ohne
+personenbezogene Query-Parameter dem richtigen Logeintrag zuordnen.
+
+Der Endpunkt `/metrics` ist standardmäßig geschlossen. Für ein internes
+Monitoring einen langen Zufallswert in der Instanzkonfiguration setzen:
+
+```dotenv
+METRICS_TOKEN=<langer-zufallswert>
+LOG_LEVEL=WARN
+```
+
+Der Abruf erfolgt innerhalb des Backend-Netzes mit
+`Authorization: Bearer <Token>`. Ohne konfiguriertes Token antwortet der
+Endpunkt mit HTTP 503; ein falsches Token ergibt HTTP 401. Der Backend-Port
+soll weiterhin nicht öffentlich veröffentlicht werden.
+
 ## Reverse Proxy und HTTPS
 
 Das Frontend ist der öffentliche Einstiegspunkt. Der Backend-Port bleibt im
@@ -306,6 +326,8 @@ aktuellen Beta-Stand nicht.
 
 ## Technische Nachweise
 
+- [Backend-Build](backend-build-nachweis.md)
+- [Backend-Regressionssuite und Request-Tracing](backend-regression-tests.md)
 - [Multiuser- und RLS-Isolation](rls-isolation-nachweis.md)
 - [Backup und Restore](backup-restore-nachweis.md)
 - [Identity-/Workspace-Testablauf](identity-workspace-local-testing.md)

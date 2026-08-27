@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'node:crypto';
+
 const requestCounters = new Map();
 const startedAt = new Date().toISOString();
 
@@ -29,4 +31,12 @@ export function getMetricsSnapshot() {
       averageDurationMs: value.requests ? Math.round(value.durationMs / value.requests) : 0,
     }])),
   };
+}
+
+export function metricsAccessStatus(configuredToken, authorizationHeader) {
+  if (typeof configuredToken !== 'string' || !configuredToken) return 'unconfigured';
+  const expected = Buffer.from(`Bearer ${configuredToken}`);
+  const supplied = Buffer.from(typeof authorizationHeader === 'string' ? authorizationHeader : '');
+  if (expected.length !== supplied.length) return 'unauthorized';
+  return timingSafeEqual(expected, supplied) ? 'authorized' : 'unauthorized';
 }

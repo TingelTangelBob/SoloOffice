@@ -4,6 +4,8 @@
  * Environment-aware: Production vs Development
  */
 
+import { getRequestContext } from './requestContext.js';
+
 class Logger {
   constructor() {
     this.levels = {
@@ -48,12 +50,14 @@ class Logger {
   formatMessage(level, message, meta = {}) {
     const timestamp = new Date().toISOString();
     const levelStr = level.padEnd(5);
+    const requestId = getRequestContext()?.requestId;
     
     // Create base log object
     const logObj = {
       timestamp,
       level,
       message,
+      ...(requestId ? { requestId } : {}),
       ...meta
     };
     

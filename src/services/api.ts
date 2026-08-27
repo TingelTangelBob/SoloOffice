@@ -18,6 +18,28 @@ function getBrowserTimeZone(): string {
   }
 }
 
+class ApiResponseError extends Error {
+  constructor(message: string, public readonly status: number, public readonly requestId?: string) {
+    super(message);
+    this.name = 'ApiResponseError';
+  }
+}
+
+async function responseError(response: Response, fallback: string): Promise<ApiResponseError> {
+  const payload = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown; requestId?: unknown };
+  const baseMessage = typeof payload.error === 'string'
+    ? payload.error
+    : typeof payload.message === 'string'
+      ? payload.message
+      : fallback;
+  const requestId = response.headers.get('X-Request-ID')
+    || (typeof payload.requestId === 'string' ? payload.requestId : undefined);
+  const message = response.status >= 500 && requestId
+    ? `${baseMessage} (Referenz: ${requestId})`
+    : baseMessage;
+  return new ApiResponseError(message, response.status, requestId || undefined);
+}
+
 // ============================================================================
 // Helper Types
 // ============================================================================
@@ -82,15 +104,14 @@ class ApiService {
         if (response.status === 401 && typeof window !== 'undefined') {
           window.dispatchEvent(new Event('solooffice-auth-expired'));
         }
-        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
-        throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        throw await responseError(response, `HTTP error! status: ${response.status}`);
       }
 
       if (response.status === 204) return undefined as T;
       return response.json();
     } catch (error) {
       if (!skipErrorLogging) {
-        logger.api(method, url, undefined, undefined, error as Error);
+        logger.api(method, url, error instanceof ApiResponseError ? error.status : undefined, undefined, error as Error);
       }
       throw error;
     }
@@ -193,7 +214,7 @@ class ApiService {
     const response = await fetch(url, { credentials: 'include' });
     
     if (!response.ok) {
-      throw new Error(`Fehler beim Download: ${filename}`);
+      throw await responseError(response, `Fehler beim Download: ${filename}`);
     }
     
     const blob = await response.blob();
@@ -872,8 +893,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Network error' }));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      throw await responseError(response, `HTTP error! status: ${response.status}`);
     }
 
     return response.json();
@@ -914,7 +934,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error('Fehler beim Generieren des Rechnungsjournal-PDFs');
+      throw await responseError(response, 'Fehler beim Generieren des Rechnungsjournal-PDFs');
     }
 
     const blob = await response.blob();

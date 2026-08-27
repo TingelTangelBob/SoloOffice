@@ -38,7 +38,11 @@ Selbst festgelegt, orientiert an dem, was für ein steuerlich relevantes SaaS-Pr
 
 ### Was in **diesem** Dokument nicht geprüft wurde
 
-- **Kein Docker-Start** – Docker ist auf dem Prüfrechner nicht installiert. Backend, PostgreSQL, RLS, Migrationen und OCR sind daher **ausschließlich statisch** geprüft. Alle Befunde zu Abschnitt A, B und E sind aus dem Quelltext abgeleitet und **nicht zur Laufzeit bestätigt**.
+- **Im ursprünglichen Audit kein Docker-Start** – Docker war auf dem Prüfrechner
+  nicht installiert. Die späteren versionierten Nachweise auf dem getrennten
+  TestDocker bestätigen inzwischen Backend-Build, PostgreSQL-Migrationen, RLS,
+  Multiuser-Isolation sowie Backup/Restore zur Laufzeit. OCR bleibt ohne
+  fachliche Qualitätsabnahme.
 - Keine Validierung erzeugter XML-Dateien gegen den echten KOSIT-Validator (Befunde in Abschnitt C sind aus dem Quelltext abgeleitet, aber eindeutig).
 - Keine Penetrationstests, keine Lasttests.
 - Oberfläche, Responsive-Verhalten und Dunkelmodus → **Audit 2**.
@@ -136,13 +140,18 @@ HTML wird vor dem Rendern über `src/utils/sanitizeHtml.ts` auf eine lokale Allo
 
 **Umsetzung:** `/backups` ist jetzt ein benanntes Compose-Volume. Offsite-/S3-Replikation und ein Wiederherstellungs-Test bleiben Betriebsaufgaben für SaaS.
 
-Der Pfad `/backups` ist jetzt mit `backups_data` persistent. Offsite-/S3-Replikation, Rotation und ein Wiederherstellungstest sind für den SaaS-Betrieb noch offen.
+Der Pfad `/backups` ist jetzt mit `backups_data` persistent. Workspace- und
+Instanz-Restore sind nachgewiesen; Offsite-/S3-Replikation, Rotation und die
+regelmäßige Restore-Probe des externen Ziels bleiben für den SaaS-Betrieb offen.
 
 ### ✅ B2 · HOCH · Workspacebezogener Restore im Mehrmandantenbetrieb
 
 **Umsetzung:** Die Sperre ist entfernt. JSON- und ZIP-Restore löschen und schreiben ausschließlich im aktiven Workspace per parametrisiertem `DELETE`/RLS.
 
-Der Restore löscht und schreibt ausschließlich die Daten des aktiven Workspace per parametrisiertem `DELETE`; `TRUNCATE` und die Mehrmandanten-Sperre wurden entfernt. Der Ablauf muss noch in einer echten Docker/PostgreSQL-Mehrmandantenumgebung bestätigt werden.
+Der Restore löscht und schreibt ausschließlich die Daten des aktiven Workspace
+per parametrisiertem `DELETE`; `TRUNCATE` und die Mehrmandanten-Sperre wurden
+entfernt. Technischer PostgreSQL-Lauf und manuelle Zwei-Browser-Abnahme sind
+bestanden; Backups fremder Workspaces werden vor jeder Datenänderung abgewiesen.
 
 ### ✅ B3 · MITTEL · Migrationsstand wird beim Restore geschützt
 
@@ -337,9 +346,12 @@ Die verbleibenden Treffer für „Belego/belego" außerhalb von `node_modules` s
 
 ## E – Build, Betrieb, Reproduzierbarkeit
 
-### 🟠 E1 · HOCH · Kein `package-lock.json` im Backend
+### ✅ E1 · HOCH · Reproduzierbarer Backend-Build
 
-Das Frontend verwendet mit dem vorhandenen Root-Lockfile `npm ci`. Das Backend besitzt weiterhin kein Lockfile und verwendet deshalb im Dockerfile `npm install --omit=dev`; ein reproduzierbarer Backend-Lockfile-Lauf muss in einer Docker-Umgebung erzeugt und geprüft werden. Der Punkt bleibt orange.
+Das Backend besitzt ein eingechecktes Lockfile und installiert den exakten
+Produktionsbaum mit `npm ci --omit=dev`. Zwei cachefreie Docker-Builds ergaben
+denselben Abhängigkeitsbaum; der Nachweis steht in
+[`docs/backend-build-nachweis.md`](../docs/backend-build-nachweis.md).
 
 ### ✅ E2 · MITTEL · `VITE_API_URL` wird zur Bauzeit übergeben
 
@@ -356,17 +368,28 @@ Das Ergebnis bleibt ein statisches Bundle ohne Backend und Datenbank.
 
 Positiv: `demoApi.ts` ist mit 1.172 Zeilen sehr vollständig (Auth, Rollen, Workspaces, alle Fachbereiche, Seed-Daten pro Terminologieprofil, Speicherung in `localStorage`). Als Basis für eine überzeugende Live-Demo ist das ein echter Vorteil gegenüber statischen Screenshots.
 
-### 🟠 E4 · MITTEL · Keine Tests, keine CI
+### 🟠 E4 · MITTEL · Testabdeckung noch nicht vollständig
 
-`.github/workflows/quality.yml` baut jetzt Frontend- und Backend-Images; `scripts/verify-audit-contracts.mjs` schützt zentrale Audit-Verträge ohne zusätzliche Testabhängigkeit. Vollständige Unit-/Integrationstests für Steuerberechnung, RLS und XML gegen Referenzvalidatoren fehlen weiterhin, deshalb bleibt der Punkt orange.
+`.github/workflows/quality.yml` baut Frontend- und Backend-Images;
+`scripts/verify-audit-contracts.mjs` schützt zentrale Audit-Verträge. Jeder
+Backend-Build führt außerdem 16 Regressionstests mit `node:test` für Auth,
+Nummernmuster, Validierung, Beleg-Base64, Request-Kontexte und Metrikschutz
+aus. Datenbank-Integrationstests, Frontendtests und XML-Referenzvalidatoren
+fehlen weiterhin, deshalb bleibt der Punkt orange.
 
 ### 🟠 E5 · MITTEL · Keine Observability
 
-Das Backend bietet jetzt geschützte Laufzeitmetriken unter `/metrics`, strukturierte Logs und einen Health-Endpunkt. Externes Fehler-Tracking, Uptime-Monitoring, Alerting und Logaggregation (z. B. Sentry) müssen noch im jeweiligen SaaS-Betrieb eingerichtet werden.
+Das Backend bietet standardmäßig gesperrte Laufzeitmetriken unter `/metrics`,
+strukturierte Logs, einen Health-Endpunkt und durchgängige Request-IDs in
+Antwortheadern, Fehlerreferenzen und Logs. Externes Fehler-Tracking,
+Uptime-Monitoring, Alerting und Logaggregation müssen noch im jeweiligen
+SaaS-Betrieb eingerichtet werden.
 
 ### ✅ E6 · NIEDRIG · Expliziter JSON-404-Handler im Backend
 
-`backend/server.js` – unbekannte Pfade erhalten jetzt eine definierte JSON-Antwort mit HTTP 404; der Handler steht vor dem optional geschützten `/metrics`-Endpunkt.
+`backend/server.js` – unbekannte Pfade erhalten jetzt eine definierte
+JSON-Antwort mit HTTP 404 und Request-ID; der Handler steht hinter den
+definierten API-, Health- und Metrikrouten.
 
 ## 🟠 G – SaaS-Reife
 
@@ -413,16 +436,14 @@ Die fremde Managed-Hosting-/Priority-Support-Adresse wurde aus der README entfer
 **Vor irgendeiner öffentlichen Ankündigung:**
 
 1. **C1/C11** Vier E-Rechnungsfälle mit KOSIT- und FeRD-/Factur-X-Referenzvalidatoren prüfen und Ergebnis versionieren.
-2. **E1** Backend-Lockfile in einer Docker-Umgebung erzeugen, `npm ci --omit=dev` umstellen und den Build wiederholen.
-3. **B1/B5** Offsite-Backup, Restore-Probe und Objektspeicherstrategie für produktive SaaS-Daten festlegen.
-4. **H2/G** Landingpage, Copyright-/Fork-Hinweis, Datenschutzunterlagen und Supportkanal rechtlich/fachlich freigeben.
+2. **B1/B5** Offsite-Backup und Objektspeicherstrategie für produktive SaaS-Daten festlegen.
+3. **H2/G** Landingpage, Copyright-/Fork-Hinweis, Datenschutzunterlagen und Supportkanal rechtlich/fachlich freigeben.
 
 **Vor dem SaaS-Start:**
 
-5. **B7/G** Multiuser-, RLS-, Restore- und Löschablauf in Docker/PostgreSQL durchspielen.
-6. **G** Separaten Control Plane für Abrechnung, Limits, Bereitstellung und Sperren bauen bzw. betreiben.
-7. **C10** ZUGFeRD-PDF-Eingang, automatische Buchung und formales Archiv-/Aufbewahrungskonzept ergänzen.
-8. **E4/E5** Fachliche Tests, Referenzvalidatoren, Fehler-Tracking, Uptime-Monitoring und Alerting ergänzen.
+4. **G** Separaten Control Plane für Abrechnung, Limits, Bereitstellung und Sperren bauen bzw. betreiben.
+5. **C10** ZUGFeRD-PDF-Eingang, automatische Buchung und formales Archiv-/Aufbewahrungskonzept ergänzen.
+6. **E4/E5** Fachliche Tests, Referenzvalidatoren, Fehler-Tracking, Uptime-Monitoring und Alerting ergänzen.
 
 **Bereits umgesetzt und lokal geprüft:**
 
@@ -480,11 +501,13 @@ Das gehört über den Funktionsvergleich gestellt, nicht darunter.
 
 **1. Zustand der Oberfläche** → geprüft, siehe [Audit 2](SoloOffice-Audit-2-Oberflaeche.md). Ergebnis: gut, mit einer schweren Ausnahme (Dunkelmodus). Offen bleiben Tablet-Breakpoint und eingeklappte Seitenleiste.
 
-**2. Wurde der Multiuser-Ablauf je vollständig durchgespielt?** → **In dieser Umgebung weiterhin nein.** Die Codepfade sind statisch geprüft; Docker ist nicht installiert. Der konkrete Ablauf steht in `docs/identity-workspace-local-testing.md` und bleibt ein Start-Gate.
-
-> **Folge:** Authentifizierung, Rollenrechte, Workspace-Wechsel, Einladungen und die RLS-Isolation sind **ausschließlich statisch geprüft und nie zur Laufzeit bestätigt**. Der Quelltext sieht korrekt aus – aber „sieht korrekt aus" ist bei Mandantentrennung nicht genug. Das ist eine **Voraussetzung für den SaaS-Start**, keine Fleißaufgabe: Ein Fehler in dieser Schicht bedeutet fremde Rechnungsdaten im falschen Konto.
->
-> Der Testablauf ist in `docs/identity-workspace-local-testing.md` bereits sauber beschrieben (zwei Konten, zwei Workspaces, Rollenprüfung, Isolationsprüfung). Er braucht nur eine Docker-Umgebung und etwa einen halben Tag. **Zusätzlich** sollte die RLS-Isolation nicht nur über die Oberfläche, sondern direkt auf der Datenbank geprüft werden: mit gesetztem `app.workspace_id` eines fremden Workspaces eine Abfrage absetzen und bestätigen, dass **null Zeilen** zurückkommen.
+**2. Wurde der Multiuser-Ablauf je vollständig durchgespielt?** → **Ja.**
+Technischer API-/Datenbanklauf und manuelle Zwei-Browser-Abnahme sind auf dem
+getrennten TestDocker bestanden. Geprüft wurden Registrierung, getrennte
+Workspaces und Firmendaten, Kundentrennung, Einladung, Rollen sowie
+workspacebezogener ZIP-Restore. Die versionierten Ergebnisse stehen in
+[`docs/rls-isolation-nachweis.md`](../docs/rls-isolation-nachweis.md) und
+[`docs/backup-restore-nachweis.md`](../docs/backup-restore-nachweis.md).
 
 **3. Gab es je einen KOSIT-Validierungslauf?** → **Nein.** Die Generatoren enthalten jetzt eine lokale Wohlgeformtheits-/Pflichtfeldprüfung; KOSIT- und FeRD-/Factur-X-Referenzvalidatoren wurden nicht ausgeführt. Der Ablauf ist in [`docs/e-rechnung-validation.md`](../docs/e-rechnung-validation.md) festgehalten.
 

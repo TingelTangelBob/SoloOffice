@@ -216,7 +216,7 @@ git diff --check
 node scripts/verify-audit-contracts.mjs
 ~~~
 
-Die CI baut Frontend- und Backend-Images. Ein automatisiertes Testframework ist derzeit nicht eingerichtet. Vor einem Release müssen technische Checks und manuelle Prüfung getrennt betrachtet werden. Zu den wichtigsten manuellen Abläufen gehören:
+Die CI baut Frontend- und Backend-Images. Der Backend-Build führt eine auf `node:test` basierende Regressionssuite aus; Frontend- und Datenbank-Integrationstests sind noch nicht automatisiert. Vor einem Release müssen technische Checks und manuelle Prüfung getrennt betrachtet werden. Zu den wichtigsten manuellen Abläufen gehören:
 
 1. Registrierung, Login, Logout, E-Mail-Verifizierung und Passwort-Reset
 2. Workspace-Wechsel, Einladung und Rollenrechte mit mindestens zwei Konten

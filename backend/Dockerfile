@@ -13,6 +13,9 @@ RUN npm ci --omit=dev
 # Copy the application code
 COPY . .
 
+# Run dependency-free backend regression tests in every image build.
+RUN npm test
+
 # Ensure assets directory exists (contains default logo and icon)
 RUN mkdir -p /app/assets /backups && chown -R node:node /app /backups
 

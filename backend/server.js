@@ -27,7 +27,8 @@ import authRouter from './routes/auth.js';
 import workspacesRouter from './routes/workspaces.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
-import { metricsMiddleware, getMetricsSnapshot } from './utils/metrics.js';
+import { requestTracing } from './middleware/requestTracing.js';
+import { metricsMiddleware, getMetricsSnapshot, metricsAccessStatus } from './utils/metrics.js';
 import { pruneSessions } from './services/sessionMaintenance.js';
 import eInvoicesRouter from './routes/eInvoices.js';
 
@@ -41,6 +42,7 @@ const trustProxy = process.env.TRUST_PROXY === 'false'
     ? Number(process.env.TRUST_PROXY || 1)
     : 1;
 app.set('trust proxy', trustProxy);
+app.use(requestTracing);
 app.use(metricsMiddleware);
 
 // API security headers are set here as a defence in depth for deployments
@@ -67,6 +69,7 @@ app.use(cors({
     return callback(new Error('Origin not allowed by CORS'));
   },
   credentials: true,
+  exposedHeaders: ['X-Request-ID'],
 }));
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -143,9 +146,12 @@ app.use('/api/reminders', remindersRouter);
 app.use('/api/calendar-events', calendarEventsRouter);
 
 app.get('/metrics', (req, res) => {
-  const configuredToken = process.env.METRICS_TOKEN;
-  if (configuredToken && req.get('authorization') !== `Bearer ${configuredToken}`) {
-    return res.status(401).json({ error: 'Metriken nicht autorisiert' });
+  const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));
+  if (accessStatus === 'unconfigured') {
+    return res.status(503).json({ error: 'Metriken sind nicht konfiguriert', code: 'METRICS_NOT_CONFIGURED' });
+  }
+  if (accessStatus === 'unauthorized') {
+    return res.status(401).json({ error: 'Metriken nicht autorisiert', code: 'METRICS_UNAUTHORIZED' });
   }
   return res.json(getMetricsSnapshot());
 });
@@ -153,7 +159,7 @@ app.get('/metrics', (req, res) => {
 // Make unknown API paths explicit instead of falling through to a proxy or
 // returning an HTML error page.
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpunkt nicht gefunden' });
+  res.status(404).json({ error: 'Endpunkt nicht gefunden', requestId: req.requestId });
 });
 
 // Error handling middleware
@@ -170,7 +176,10 @@ app.use((err, req, res, next) => {
       code: 'BACKUP_PAYLOAD_TOO_LARGE',
     });
   }
-  return res.status(statusCode).json({ error: statusCode === 500 ? 'Internal server error' : err.message });
+  return res.status(statusCode).json({
+    error: statusCode === 500 ? 'Internal server error' : err.message,
+    requestId: req.requestId,
+  });
 });
 
 // Initialize database and start server

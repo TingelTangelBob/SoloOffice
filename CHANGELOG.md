@@ -4,6 +4,12 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Jeder Backend-Build führt eine neue, abhängigkeitenfreie Regressionssuite
+  für Authentifizierung, Nummernmuster, Validierung, Beleg-Base64,
+  Request-Kontexte und Metrikschutz aus.
+- HTTP-Anfragen erhalten durchgängige Request-IDs in Antwortheadern und
+  strukturierten Logs; interne Fehler zeigen die Referenz auch im Frontend.
+  `/metrics` ist ohne `METRICS_TOKEN` nicht mehr abrufbar.
 - Die workspacebezogene Bezeichnung des Belegbereichs kann in den
   App-Einstellungen gepflegt werden und wird in Navigation, Vorschau und
   Dokumentenansicht verwendet.

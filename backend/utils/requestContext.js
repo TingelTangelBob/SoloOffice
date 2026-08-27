@@ -7,10 +7,9 @@ const storage = new AsyncLocalStorage();
  * workspace context before every query.
  */
 export function runWithRequestContext(context, callback) {
-  return storage.run(context, callback);
+  return storage.run({ ...(storage.getStore() || {}), ...context }, callback);
 }
 
 export function getRequestContext() {
   return storage.getStore();
 }
-

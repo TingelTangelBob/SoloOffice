@@ -108,10 +108,14 @@ Legitime Stufen entstehen aus **Umfang**, nicht aus Funktion: Zahl der Nutzer, Z
 
 ### Was pooled zwingend voraussetzt
 
-Ein Punkt aus Audit 1 wird dadurch von „wichtig" zu **„Startvoraussetzung"**:
+Zwei frühere Startvoraussetzungen sind inzwischen nachgewiesen:
 
-- **B2 – Restore.** Die Wiederherstellung arbeitet jetzt workspacebezogen mit `DELETE`; `TRUNCATE` und die Mehrmandanten-Sperre sind entfernt. Der Ablauf braucht noch den beschriebenen Docker-/PostgreSQL-Isolationstest.
-- **Der Multiuser-Test** (Audit 1, Frage 2), der nie stattgefunden hat. Im pooled Modell ist die RLS-Schicht das Einzige, was Kundendaten trennt. Sie darf nicht ungetestet in Produktion gehen.
+- **B2 – Restore.** Workspace- und Instanz-Restore sind technisch geprüft; die
+  manuelle Zwei-Browser-Abnahme bestätigt, dass der zweite Workspace
+  unverändert bleibt.
+- **Multiuser/RLS.** API-, Datenbank-, Parallel- und Browserlauf mit zwei
+  Konten und Workspaces sind bestanden. Die Nachweise liegen versioniert in
+  `docs/rls-isolation-nachweis.md` und `docs/backup-restore-nachweis.md`.
 
 Dazu kommt **B5** – Belege liegen als Base64 in der Datenbank. Bei einem Kunden egal, bei hundert wird die Datenbank unhandlich und jedes Backup riesig. Vor dem Start Objektspeicher einplanen (`STORAGE_DRIVER=s3`); der Treiber ist in der Fachanwendung noch nicht implementiert.
 
@@ -174,13 +178,13 @@ Das ist vertretbar – muss aber in der Demo **ehrlich beschriftet** sein („In
 
 ## 7. Empfohlene Reihenfolge
 
-**Vor dem SaaS-Start – nicht verhandelbar:**
+**Vor dem SaaS-Start – verbleibend:**
 
-1. Multiuser- und RLS-Isolationstest (Audit 1, Frage 2)
-2. Offsite-Backup, Restore-Probe und workspacebezogenen Restorebetrieb (Audit 1 · B1/B2)
-3. Control Plane für Abrechnung, Limits und Workspace-Sperren (Audit 1 · G)
-4. Belege in Objektspeicher (Audit 1 · B5)
-5. Passwort-Reset, E-Mail-Bestätigung, Kontolöschung und Multiuser-Test (Audit 1 · G)
+1. Offsite-Backup mit regelmäßiger Restore-Probe (Audit 1 · B1)
+2. Control Plane für Abrechnung, Limits und Workspace-Sperren (Audit 1 · G)
+3. Belege in Objektspeicher (Audit 1 · B5)
+4. SMTP-Zustellung für Passwort-Reset und E-Mail-Bestätigung nachweisen
+5. Kontolöschung im vollständigen Produktablauf abnehmen
 
 **Parallel, unabhängig davon:**
 

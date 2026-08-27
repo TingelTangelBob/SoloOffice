@@ -1,8 +1,8 @@
 # Nachweis: reproduzierbarer Backend-Bau
 
-**Datum:** 2026-08-26  
+**Datum:** 2026-08-26, Gegenprüfung und Tests ergänzt am 2026-08-28
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s`  
-**Status:** technisch bestanden, Gegenlesen für AP-2.1 offen
+**Status:** technisch bestanden und gegengeprüft
 
 ## Änderung
 
@@ -45,6 +45,10 @@ Build B: 3d456aa5d3536e8ed47f1c881643cc7dcacb0af2dcd05ed5823e1e8836fcbc0c
 Die installierten Node-Abhängigkeiten sind damit zwischen beiden Läufen
 identisch. Betriebssystempakete bleiben an das digest-gepinnte
 `node:20-alpine`-Basisimage und dessen Alpine-Repositories gebunden.
+
+Seit dem 2026-08-28 führt der Backend-Build zusätzlich die dokumentierte
+[`Backend-Regressionssuite`](backend-regression-tests.md) aus. Ein Image wird
+nur noch erzeugt, wenn alle Tests bestanden sind.
 
 ## Verbleibender Hinweis
 
