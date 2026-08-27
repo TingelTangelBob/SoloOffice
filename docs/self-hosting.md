@@ -97,6 +97,9 @@ Workspace gebunden:
 - Download und Liste zeigen nur Backups des aktiven Workspace.
 - Restore löscht und schreibt nur Daten des aktiven Workspace.
 - SMTP-Passwörter werden nicht in das Backup übernommen.
+- JSON- und ZIP-Restore akzeptieren nur bekannte Tabellen und gültige
+  Datensatzlisten. ZIP-Dateien dürfen komprimiert höchstens 50 MB groß sein;
+  auch die entpackte Datenbankdatei und die Datensatzanzahl sind begrenzt.
 - Backups müssen zusätzlich außerhalb des Hosts aufbewahrt werden.
 
 Vor jeder Aktualisierung:
@@ -184,22 +187,34 @@ docker compose --env-file .env.<name> -f docker-compose.yml up -d --build
 docker compose --env-file .env.<name> -f docker-compose.yml ps
 ```
 
-Nach dem Update müssen Backend-Healthcheck, Login und der aktive Workspace
-geprüft werden. Der Healthcheck ist intern und erscheint in
-`docker compose ps` als `healthy`; ein Aufruf von `/health` am veröffentlichten
-Frontend-Port prüft nicht die Datenbank. Die direkte Antwort lässt sich so
-ansehen:
+Nach dem Update müssen Backend-Readiness, Login und der aktive Workspace
+geprüft werden. Der Compose-Healthcheck verwendet intern `/health/ready` und
+erscheint in `docker compose ps` als `healthy`; ein Aufruf am veröffentlichten
+Frontend-Port prüft die Datenbank nicht, weil dort nur `/api` weitergeleitet
+wird. Die direkte Antwort lässt sich so ansehen:
 
 ```bash
 docker compose --env-file .env.<name> -f docker-compose.yml \
   exec -T backend node -e \
-  "fetch('http://127.0.0.1:3001/health').then(async response => { console.log(response.status, await response.text()); process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1))"
+  "fetch('http://127.0.0.1:3001/health/ready').then(async response => { console.log(response.status, await response.text()); process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1))"
 ```
 
 Migrationen laufen beim Backend-Start automatisch. Ein Datenbankbackup vor
 jedem Update bleibt Pflicht.
 
-## Logs, Request-IDs und Laufzeitmetriken
+## Health, Shutdown, Logs und Laufzeitmetriken
+
+`/health/live` bestätigt ausschließlich, dass der Node-Prozess antwortet.
+`/health/ready` prüft zusätzlich PostgreSQL und wird vom Container verwendet.
+`/health` bleibt als kompatibler Alias erhalten. Öffentliche Health-Antworten
+enthalten weder Datenbankfehler noch Pool-Statistiken.
+
+Bei `SIGTERM` und `SIGINT` nimmt das Backend keine neuen Verbindungen mehr an,
+lässt laufende Requests bis zu `SHUTDOWN_TIMEOUT_MS` auslaufen und schließt
+danach den Datenbank-Pool. Der Standardwert beträgt zehn Sekunden; Compose gibt
+dem Container dafür 15 Sekunden. Ein schlanker Init-Prozess übernimmt
+Kindprozesse der lokalen OCR, zusätzliche Linux-Capabilities sind entfernt und
+`no-new-privileges` verhindert spätere Rechteausweitung.
 
 Jede Backend-Antwort enthält den Header `X-Request-ID`. Dieselbe ID erscheint
 in strukturierten Serverlogs; bei einem internen Fehler zeigt die Oberfläche
@@ -211,13 +226,17 @@ Monitoring einen langen Zufallswert in der Instanzkonfiguration setzen:
 
 ```dotenv
 METRICS_TOKEN=<langer-zufallswert>
+METRICS_MAX_PATHS=250
 LOG_LEVEL=WARN
 ```
 
 Der Abruf erfolgt innerhalb des Backend-Netzes mit
 `Authorization: Bearer <Token>`. Ohne konfiguriertes Token antwortet der
 Endpunkt mit HTTP 503; ein falsches Token ergibt HTTP 401. Der Backend-Port
-soll weiterhin nicht öffentlich veröffentlicht werden.
+soll weiterhin nicht öffentlich veröffentlicht werden. Unbekannte Pfade werden
+in einem gemeinsamen Schlüssel gezählt; oberhalb von `METRICS_MAX_PATHS`
+landen weitere Routen unter `OTHER`. Dadurch kann die Metriksammlung nicht
+durch frei gewählte URL-Pfade unbegrenzt wachsen.
 
 ## Reverse Proxy und HTTPS
 
@@ -302,9 +321,10 @@ app.example.de {
 }
 ```
 
-Der externe Proxy und das interne Frontend begrenzen Uploads aktuell effektiv
-auf 100 MB. Größere ZIP-Dateien müssen für einen Restore auf Host-Ebene oder
-über eine bewusst angepasste Proxygrenze verarbeitet werden.
+Der externe Proxy und das interne Frontend erlauben für E-Mail-Anhänge bis zu
+100 MB. Workspace-Restores sind unabhängig davon im Backend bewusst auf 50 MB
+komprimierte ZIP-Größe begrenzt. Größere Datenbestände werden über den
+vollständigen Instanz-Dump aus `manage-instances.sh` wiederhergestellt.
 
 ## Betreiberverantwortung
 
@@ -328,6 +348,8 @@ aktuellen Beta-Stand nicht.
 
 - [Backend-Build](backend-build-nachweis.md)
 - [Backend-Regressionssuite und Request-Tracing](backend-regression-tests.md)
+- [Automatisierte Tests und Qualitätstore](automated-tests.md)
 - [Multiuser- und RLS-Isolation](rls-isolation-nachweis.md)
 - [Backup und Restore](backup-restore-nachweis.md)
 - [Identity-/Workspace-Testablauf](identity-workspace-local-testing.md)
+- [Wiedervorlage für manuelle Release-Prüfungen](manual-release-checklist.md)

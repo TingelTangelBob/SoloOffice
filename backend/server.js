@@ -31,6 +31,9 @@ import { requestTracing } from './middleware/requestTracing.js';
 import { metricsMiddleware, getMetricsSnapshot, metricsAccessStatus } from './utils/metrics.js';
 import { pruneSessions } from './services/sessionMaintenance.js';
 import eInvoicesRouter from './routes/eInvoices.js';
+import { livenessPayload, readinessResult } from './utils/health.js';
+import { createGracefulShutdown } from './utils/gracefulShutdown.js';
+import { createCorsOriginValidator } from './utils/corsOrigin.js';
 
 dotenv.config();
 
@@ -64,38 +67,21 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:8080,http:/
   .map(origin => origin.trim())
   .filter(Boolean);
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Origin not allowed by CORS'));
-  },
+  origin: createCorsOriginValidator(allowedOrigins),
   credentials: true,
   exposedHeaders: ['X-Request-ID'],
 }));
-// Health check endpoint
-app.get('/health', async (req, res) => {
+async function sendReadiness(req, res, legacy = false) {
   const dbHealth = await checkHealth();
-  
-  if (dbHealth.healthy) {
-    res.json({ 
-      status: 'OK', 
-      message: 'Server is running',
-      database: {
-        status: 'connected',
-        poolStats: dbHealth.poolStats,
-      },
-    });
-  } else {
-    res.status(503).json({ 
-      status: 'DEGRADED', 
-      message: 'Server is running but database connection failed',
-      database: {
-        status: 'disconnected',
-        error: dbHealth.error,
-        poolStats: dbHealth.poolStats,
-      },
-    });
-  }
-});
+  const result = readinessResult(dbHealth, { legacy });
+  return res.status(result.statusCode).json(result.payload);
+}
+
+// Liveness beantwortet nur, ob der Node-Prozess reagiert. Readiness prüft die
+// Datenbank, veröffentlicht aber weder Verbindungsfehler noch Pool-Interna.
+app.get('/health/live', (req, res) => res.json(livenessPayload()));
+app.get('/health/ready', (req, res) => sendReadiness(req, res));
+app.get('/health', (req, res) => sendReadiness(req, res, true));
 
 // API routes
 // Authentication endpoints that must be reachable without an existing session.
@@ -164,20 +150,41 @@ app.use((req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logger.error('Unhandled server error', { error: err.message, stack: err.stack, url: req.url, method: req.method });
   const parserStatus = Number.isInteger(err.status) ? err.status : err.statusCode;
   const statusCode = Number.isInteger(parserStatus) && parserStatus >= 400 && parserStatus < 500
     ? parserStatus
     : 500;
+  const logMeta = { error: err.message, url: req.url, method: req.method, statusCode };
+  if (statusCode >= 500) {
+    logger.error('Unhandled server error', { ...logMeta, stack: err.stack });
+  } else {
+    logger.warn('Server request rejected', { ...logMeta, code: err.code || err.type });
+  }
   const isOversizedBackupPayload = statusCode === 413 && req.path.startsWith('/api/backup');
   if (isOversizedBackupPayload) {
     return res.status(413).json({
       error: 'Das Backup ist zu groß. Erlaubt sind maximal 50 MB.',
       code: 'BACKUP_PAYLOAD_TOO_LARGE',
+      requestId: req.requestId,
+    });
+  }
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      error: 'Der Anfrageinhalt enthält kein gültiges JSON.',
+      code: 'REQUEST_JSON_INVALID',
+      requestId: req.requestId,
+    });
+  }
+  if (statusCode === 413) {
+    return res.status(413).json({
+      error: 'Der Anfrageinhalt ist zu groß.',
+      code: 'REQUEST_PAYLOAD_TOO_LARGE',
+      requestId: req.requestId,
     });
   }
   return res.status(statusCode).json({
-    error: statusCode === 500 ? 'Internal server error' : err.message,
+    error: statusCode === 500 ? 'Interner Serverfehler' : err.message,
+    ...(err.code ? { code: err.code } : {}),
     requestId: req.requestId,
   });
 });
@@ -195,28 +202,33 @@ async function startServer() {
     }, 60 * 60 * 1000);
     app.locals.maintenanceInterval = maintenanceInterval;
     
-    app.listen(PORT, '0.0.0.0', () => {
+    const httpServer = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Server started`, { port: PORT, environment: process.env.NODE_ENV || 'development' });
     });
+    const shutdown = createGracefulShutdown({
+      httpServer,
+      closeDatabase: () => pool.end(),
+      clearMaintenance: () => {
+        if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
+      },
+      logger,
+      timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS || 10_000),
+    });
+    app.locals.httpServer = httpServer;
+    app.locals.shutdown = shutdown;
+
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      process.once(signal, () => {
+        shutdown(signal).catch(error => {
+          process.exitCode = 1;
+          logger.error('Server shutdown failed', { signal, error: error.message, stack: error.stack });
+        });
+      });
+    }
   } catch (error) {
     logger.error('Failed to start server', { error: error.message, stack: error.stack });
     process.exit(1);
   }
 }
-
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-  logger.info('Shutting down server...');
-  if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
-  await pool.end();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  logger.info('Shutting down server (SIGTERM)...');
-  if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
-  await pool.end();
-  process.exit(0);
-});
 
 startServer();

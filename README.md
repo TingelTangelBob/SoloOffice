@@ -216,7 +216,15 @@ git diff --check
 node scripts/verify-audit-contracts.mjs
 ~~~
 
-Die CI baut Frontend- und Backend-Images. Der Backend-Build führt eine auf `node:test` basierende Regressionssuite aus; Frontend- und Datenbank-Integrationstests sind noch nicht automatisiert. Vor einem Release müssen technische Checks und manuelle Prüfung getrennt betrachtet werden. Zu den wichtigsten manuellen Abläufen gehören:
+Die CI baut Frontend- und Backend-Images. Beide Builds führen ihre
+Regressionssuite aus; anschließend prüft ein kurzlebiger PostgreSQL-15-Dienst
+alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
+Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md).
+
+Vor einem Release müssen technische Checks und manuelle Prüfung getrennt
+betrachtet werden. Der aktuelle Stand wird dauerhaft in der
+[manuellen Release-Checkliste](docs/manual-release-checklist.md) geführt. Zu den
+wichtigsten manuellen Abläufen gehören:
 
 1. Registrierung, Login, Logout, E-Mail-Verifizierung und Passwort-Reset
 2. Workspace-Wechsel, Einladung und Rollenrechte mit mindestens zwei Konten
@@ -236,7 +244,7 @@ Die CI baut Frontend- und Backend-Images. Der Backend-Build führt eine auf `nod
 - Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
 - Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
 
-Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
+Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
 
 ## Lizenz und Beiträge
 

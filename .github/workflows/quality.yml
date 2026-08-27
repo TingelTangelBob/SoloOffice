@@ -4,9 +4,27 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: solooffice_integration
+          POSTGRES_USER: solooffice_integration
+          POSTGRES_PASSWORD: integration-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U solooffice_integration -d solooffice_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v5
@@ -24,3 +42,14 @@ jobs:
 
       - name: Backend-Image bauen
         run: docker build -t solooffice-backend ./backend
+
+      - name: Migrationen und Workspace-RLS gegen PostgreSQL prüfen
+        run: >-
+          docker run --rm --network host
+          -e DB_HOST=127.0.0.1
+          -e DB_PORT=5432
+          -e DB_NAME=solooffice_integration
+          -e DB_USER=solooffice_integration
+          -e DB_PASSWORD=integration-only-password
+          -e ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+          solooffice-backend npm run test:integration

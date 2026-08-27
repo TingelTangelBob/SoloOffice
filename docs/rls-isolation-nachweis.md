@@ -5,6 +5,12 @@
 **Stand:** Workspace-Verwaltung plus Migration `032_runtime_rls_role`  
 **Status:** technisch und manuell bestanden
 
+Seit 2026-08-28 wiederholt GitHub Actions den kritischen Datenbankteil bei
+jedem Qualitätslauf gegen eine frische PostgreSQL-15-Datenbank: alle
+Migrationen, `NOSUPERUSER NOBYPASSRLS`, erzwungene Richtlinien, zwei getrennte
+Workspace-Kontexte, leerer Kontext und Cross-Workspace-Schreibversuch. Der
+Ablauf ist in [`automated-tests.md`](automated-tests.md) beschrieben.
+
 ## Testaufbau
 
 Auf der getrennten Tor-S-Instanz wurden zwei technische Konten und zwei

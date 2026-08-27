@@ -1,6 +1,6 @@
 # Nachweis: Workspace- und Instanz-Backup mit Restore
 
-**Datum:** 2026-08-25, Instanz-Restore ergänzt am 2026-08-26, manuelle Abnahme am 2026-08-27
+**Datum:** 2026-08-25, Instanz-Restore ergänzt am 2026-08-26, manuelle Abnahme am 2026-08-27, Eingangsvalidierung ergänzt am 2026-08-28
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
 **Status:** technisch und manuell bestanden
 
@@ -50,6 +50,15 @@ response={"error":"Das Backup ist zu groß. Erlaubt sind maximal 50 MB.","code":
 ```
 
 Die Grenze wird damit verständlich und ohne Datenbankänderung abgewiesen.
+
+Seit 2026-08-28 gilt dieselbe Tabellen-/Datensatz-Allowlist für JSON- und
+ZIP-Restores. ZIP-Archive werden vor dem Belegen einer Datenbankverbindung auf
+die exakten Einträge `database.json` und `metadata.json`, 50 MB Uploadgröße,
+45 MB entpackte Datenbankdatei, gültiges JSON, bekannte Tabellen und höchstens
+250.000 Datensätze geprüft. Zusätzliche oder doppelte Einträge, beschädigtes
+JSON und unbekannte Tabellen werden mit einem konkreten 4xx-Code abgewiesen.
+Die temporäre Upload-Datei wird auch bei früher Ablehnung in einem äußeren
+`finally`-Pfad entfernt.
 
 ## Vollständiges Instanz-Backup
 

@@ -39,6 +39,8 @@ services:
       - TRUST_PROXY=${TRUST_PROXY:-1}
       - LOG_LEVEL=${LOG_LEVEL:-WARN}
       - METRICS_TOKEN=${METRICS_TOKEN:-}
+      - METRICS_MAX_PATHS=${METRICS_MAX_PATHS:-250}
+      - SHUTDOWN_TIMEOUT_MS=${SHUTDOWN_TIMEOUT_MS:-10000}
       - REGISTRATION_MODE=${REGISTRATION_MODE:-closed-after-first}
       - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY muss in der Instanz-Umgebung gesetzt sein}
@@ -52,13 +54,19 @@ services:
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-}
     expose:
       - "3001"
+    init: true
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - backups_data:/backups
     depends_on:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5

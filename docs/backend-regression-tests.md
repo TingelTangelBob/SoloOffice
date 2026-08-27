@@ -15,14 +15,17 @@ ausgeführt und deckt folgende Verträge ab:
 - Validierung und Formatierung konfigurierbarer Rechnungsnummernmuster
 - UUID-, Datums-, Zahlen-, Schema- und Rabattvalidierung
 - Base64-Prüfung für lokal verarbeitete Belege
-- standardmäßig gesperrter Metrikzugriff mit konstantzeitlichem Tokenvergleich
+- ZIP-/JSON-Backupstruktur, Entpack- und Datensatzgrenzen
+- CORS-Herkunft, öffentliche Health-Antworten und Graceful Shutdown
+- standardmäßig gesperrter Metrikzugriff, begrenzte Routenkardinalität sowie
+  getrennte 4xx-/5xx-Zähler
 - Validierung, Weitergabe und Verschachtelung von Request-IDs
 
 ## Ergebnis
 
 ```text
-tests=16
-passed=16
+tests=36
+passed=36
 failed=0
 result=PASS
 ```
@@ -47,5 +50,7 @@ nicht in Request-Logs übernommen.
 `Authorization: Bearer <Token>` erforderlich; falsche Angaben enden mit HTTP
 401 und `METRICS_UNAUTHORIZED`.
 
-Die Suite ersetzt noch keine Datenbank-Integrationstests, offiziellen
-E-Rechnungsvalidatoren oder externes Uptime-Monitoring.
+Die separate CI-Stufe prüft Migrationen und RLS gegen PostgreSQL; Frontend- und
+Datenbankumfang stehen in [`automated-tests.md`](automated-tests.md). Die Suite
+ersetzt keine Browserabnahme, offiziellen E-Rechnungsvalidatoren oder externes
+Uptime-Monitoring.

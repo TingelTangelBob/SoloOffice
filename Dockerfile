@@ -17,8 +17,9 @@ ENV VITE_API_URL=${VITE_API_URL}
 # Copy the application code
 COPY . .
 
-# Lint and type-check/build inside the same reproducible container image.
-RUN npm run lint && npm run typecheck && npm run build
+# Regression tests, lint and type-check/build run inside the same reproducible
+# container image. The image is not emitted if one of these quality gates fails.
+RUN npm run test:frontend && npm run lint && npm run typecheck && npm run build
 
 # Production stage
 FROM nginx:alpine

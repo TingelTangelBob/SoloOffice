@@ -4,6 +4,20 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Frontend-Fachlogik und PostgreSQL-RLS erhalten eigene automatisierte
+  Regressionstests. GitHub Actions führt alle Migrationen gegen eine frische
+  PostgreSQL-15-Datenbank aus und prüft die Trennung zweier Workspaces.
+- JSON- und ZIP-Restores validieren Tabellen, Datensatzstruktur und
+  Datensatzgrenzen vor der ersten Datenbankänderung. ZIP-Uploads sind auf
+  50 MB begrenzt, prüfen auch die entpackte Größe und werden in jedem
+  Fehlerpfad aus dem temporären Verzeichnis entfernt.
+- Das Backend trennt Liveness und Datenbank-Readiness, veröffentlicht keine
+  internen Datenbankfehler mehr und fährt HTTP-Server sowie Datenbank-Pool mit
+  einem begrenzten Graceful-Shutdown herunter. Compose ergänzt Init-Prozess,
+  Stoppfrist, `no-new-privileges` und den Entzug aller Linux-Capabilities.
+- Laufzeitmetriken unterscheiden 4xx- und 5xx-Fehler und begrenzen die Zahl
+  dynamischer Routenschlüssel. CORS-Ablehnungen und ungültige JSON-Payloads
+  liefern definierte deutsche Fehlercodes statt eines unspezifischen 500ers.
 - Jeder Backend-Build führt eine neue, abhängigkeitenfreie Regressionssuite
   für Authentifizierung, Nummernmuster, Validierung, Beleg-Base64,
   Request-Kontexte und Metrikschutz aus.

@@ -130,7 +130,10 @@ HTML wird vor dem Rendern über `src/utils/sanitizeHtml.ts` auf eine lokale Allo
 
 **Umsetzung:** Das Backend-Image wechselt nach dem Anlegen von `/app` und `/backups` zu `USER node`.
 
-`backend/Dockerfile` verwendet nach der Anlage der Laufzeitverzeichnisse `USER node`.
+`backend/Dockerfile` verwendet nach der Anlage der Laufzeitverzeichnisse
+`USER node`. Compose entzieht zusätzlich alle Linux-Capabilities, setzt
+`no-new-privileges`, verwendet einen Init-Prozess und gewährt 15 Sekunden für
+den kontrollierten Shutdown.
 
 ---
 
@@ -152,6 +155,9 @@ Der Restore löscht und schreibt ausschließlich die Daten des aktiven Workspace
 per parametrisiertem `DELETE`; `TRUNCATE` und die Mehrmandanten-Sperre wurden
 entfernt. Technischer PostgreSQL-Lauf und manuelle Zwei-Browser-Abnahme sind
 bestanden; Backups fremder Workspaces werden vor jeder Datenänderung abgewiesen.
+JSON- und ZIP-Eingaben durchlaufen zusätzlich vor der ersten Datenbankverbindung
+dieselbe Tabellen-/Datensatz-Allowlist. ZIP-Struktur, Upload- und Entpackgröße
+sowie temporäre Dateien sind fehlersicher begrenzt bzw. aufgeräumt.
 
 ### ✅ B3 · MITTEL · Migrationsstand wird beim Restore geschützt
 
@@ -163,7 +169,9 @@ Die Tabelle `migrations` steht weder in `RESTORE_CLEAR_TABLES` noch in `RESTORE_
 
 **Umsetzung:** `generateInvoiceNumber` verwendet einen transaktionsbezogenen PostgreSQL-Advisory-Lock je Workspace/Jahr/Dokumenttyp.
 
-Die Generierung verwendet jetzt einen transaktionsbezogenen PostgreSQL-Advisory-Lock je Workspace, Jahr und Dokumenttyp. Der lokale Nachweis umfasst den Code; konkurrierende Datenbanktransaktionen müssen noch praktisch getestet werden.
+Die Generierung verwendet einen transaktionsbezogenen PostgreSQL-Advisory-Lock
+je Workspace, Jahr und Dokumenttyp. Der PostgreSQL-Integrationstest startet
+zwei konkurrierende Transaktionen und weist zwei unterschiedliche Nummern nach.
 
 ### 🟠 B5 · MITTEL · Dateien als Base64-TEXT in PostgreSQL
 
@@ -187,7 +195,8 @@ Der instrumentierte Client setzt den Request-Kontext nur bei einem Wechsel des K
 
 - `FORCE ROW LEVEL SECURITY` ist gesetzt – ohne das wäre RLS für den Tabelleneigentümer wirkungslos gewesen. Das ist der Fehler, den fast alle an dieser Stelle machen.
 - `NULLIF(current_setting('app.workspace_id', true), '')::uuid` liefert bei fehlendem Kontext `NULL` → keine Zeile. **Fail-closed.**
-- Alle 28 fachlichen Tabellen sind erfasst; die Identity-Tabellen sind bewusst ausgenommen und werden explizit gefiltert.
+- Alle aktuell 31 fachlichen Tabellen sind erfasst; die Identity-Tabellen sind
+  bewusst ausgenommen und werden explizit gefiltert.
 - Nummernkreise wurden korrekt von global-unique auf `(workspace_id, nummer)` umgestellt.
 - Mitgliedschaftsentzug wirkt sofort, weil `loadSession` über `workspace_members` joint.
 
@@ -372,16 +381,19 @@ Positiv: `demoApi.ts` ist mit 1.172 Zeilen sehr vollständig (Auth, Rollen, Work
 
 `.github/workflows/quality.yml` baut Frontend- und Backend-Images;
 `scripts/verify-audit-contracts.mjs` schützt zentrale Audit-Verträge. Jeder
-Backend-Build führt außerdem 16 Regressionstests mit `node:test` für Auth,
-Nummernmuster, Validierung, Beleg-Base64, Request-Kontexte und Metrikschutz
-aus. Datenbank-Integrationstests, Frontendtests und XML-Referenzvalidatoren
-fehlen weiterhin, deshalb bleibt der Punkt orange.
+Frontend-Build führt 15 Tests für reine Fachlogik aus, jeder Backend-Build
+36 Regressionstests. Eine separate PostgreSQL-Stufe prüft sieben Verträge für
+Migrationen, RLS, Workspace-Isolation und konkurrierende Rechnungsnummern.
+Browser-/Komponententests und XML-Referenzvalidatoren fehlen weiterhin,
+deshalb bleibt der Punkt orange. Der Umfang ist in
+[`docs/automated-tests.md`](../docs/automated-tests.md) versioniert.
 
 ### 🟠 E5 · MITTEL · Keine Observability
 
-Das Backend bietet standardmäßig gesperrte Laufzeitmetriken unter `/metrics`,
-strukturierte Logs, einen Health-Endpunkt und durchgängige Request-IDs in
-Antwortheadern, Fehlerreferenzen und Logs. Externes Fehler-Tracking,
+Das Backend bietet standardmäßig gesperrte und kardinalitätsbegrenzte
+Laufzeitmetriken unter `/metrics`, strukturierte Logs, getrennte Liveness und
+Datenbank-Readiness, begrenzten Graceful Shutdown und durchgängige Request-IDs
+in Antwortheadern, Fehlerreferenzen und Logs. Externes Fehler-Tracking,
 Uptime-Monitoring, Alerting und Logaggregation müssen noch im jeweiligen
 SaaS-Betrieb eingerichtet werden.
 
@@ -483,7 +495,8 @@ Die fremde Managed-Hosting-/Priority-Support-Adresse wurde aus der README entfer
 - **Keine ELSTER-Übertragung** – explizit als Roadmap ausweisen
 - **EÜR, Steuerprofil, Reports und Abschreibungen ersetzen keine steuerliche Prüfung** – gehört sichtbar auf die Seite, nicht nur ins Kleingedruckte
 - **OCR liefert Vorschläge, die geprüft werden müssen**
-- **Aktueller Stand ist Beta** (`v0.2.0-beta.1` in Vorbereitung, kein automatisiertes Testframework)
+- **Aktueller Stand ist Beta** (`v0.6.3`; automatisierte Tests ersetzen keine
+  fachliche oder visuelle Release-Abnahme)
 
 ### Positionierung
 

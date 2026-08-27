@@ -29,9 +29,9 @@ ENV VITE_APP_VERSION=${VITE_APP_VERSION}
 
 COPY . .
 
-# Gleiche Qualitätsstufe wie beim regulären Image: Lint und Typprüfung laufen
-# im Build, damit ein defekter Stand die Demo nicht erreicht.
-RUN npm run lint && npm run typecheck && npm run build
+# Gleiche Qualitätsstufe wie beim regulären Image: Regressionstests, Lint und
+# Typprüfung laufen im Build, damit ein defekter Stand die Demo nicht erreicht.
+RUN npm run test:frontend && npm run lint && npm run typecheck && npm run build
 
 # Production stage
 FROM nginx:alpine

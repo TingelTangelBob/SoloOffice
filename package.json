@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "npm run test:frontend",
+    "test:frontend": "tsc -p tsconfig.frontend-tests.json && node --test test/frontend/*.test.mjs",
     "typecheck": "tsc --noEmit --pretty false -p tsconfig.app.json",
     "preview": "vite preview"
   },

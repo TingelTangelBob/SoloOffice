@@ -4,6 +4,12 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
+import {
+  BACKUP_ARCHIVE_LIMITS,
+  BackupArchiveError,
+  parseBackupArchive,
+  validateBackupData,
+} from '../utils/backupArchive.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,6 +109,10 @@ const RESTORE_ORDER = [
   'incoming_e_invoices'
 ];
 
+// Historische Sicherungen können die Migrationstabelle enthalten. Sie wird
+// strukturell geprüft, aber nie gelöscht oder zurückgeschrieben.
+const IGNORED_LEGACY_BACKUP_TABLES = ['migrations'];
+
 /**
  * Tabellen mit protokollierenden Triggern. Während der Wiederherstellung
  * werden sie stillgelegt: Sonst erzeugt jeder eingespielte Datensatz einen
@@ -156,7 +166,10 @@ function getBackupWorkspaceId(backupData) {
     }
   }
   if (workspaceIds.size > 1) {
-    throw new Error('Das Backup enthält Daten aus mehreren Workspaces und kann nicht wiederhergestellt werden.');
+    throw new BackupArchiveError(
+      'Das Backup enthält Daten aus mehreren Workspaces und kann nicht wiederhergestellt werden.',
+      'BACKUP_MULTIPLE_WORKSPACES',
+    );
   }
   return [...workspaceIds][0] || null;
 }
@@ -512,7 +525,8 @@ router.get('/list', async (req, res) => {
 
 // Restore from backup
 router.post('/restore', async (req, res) => {
-  const client = await pool.connect();
+  let client = null;
+  let transactionStarted = false;
   
   try {
     const { backupData } = req.body;
@@ -520,23 +534,32 @@ router.post('/restore', async (req, res) => {
     if (!backupData || !backupData.data) {
       return res.status(400).json({
         success: false,
-        message: 'Ungültige Backup-Daten'
+        message: 'Ungültige Backup-Daten',
+        code: 'BACKUP_DATA_INVALID',
+        requestId: req.requestId,
       });
     }
+    validateBackupData(backupData, {
+      allowedTables: BACKUP_TABLES,
+      ignoredTables: IGNORED_LEGACY_BACKUP_TABLES,
+    });
 
     const backupWorkspaceId = getBackupWorkspaceId(backupData);
     if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
       return res.status(409).json({
         success: false,
         message: backupWorkspaceMismatchMessage(),
-        code: 'BACKUP_WORKSPACE_MISMATCH'
+        code: 'BACKUP_WORKSPACE_MISMATCH',
+        requestId: req.requestId,
       });
     }
 
+    client = await pool.connect();
     logger.info('Starting restore process...');
     
     // Begin transaction
     await client.query('BEGIN');
+    transactionStarted = true;
     
     let restoredTables = 0;
     let restoredRecords = 0;
@@ -710,6 +733,7 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
     // Protokollierung wieder aktivieren, bevor die Transaktion endet.
     await setAuditSuppressed(client, false);
     await client.query('COMMIT');
+    transactionStarted = false;
     
     logger.info(`Restore completed: ${restoredTables} tables, ${restoredRecords} records`);
     
@@ -723,20 +747,30 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
 
   } catch (error) {
     // Rollback transaction on error
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      logger.error('Error during rollback:', rollbackError);
+    if (client && transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        logger.error('Error during rollback:', rollbackError);
+      }
     }
     
-    logger.error('Error during restore:', error);
-    res.status(500).json({
+    const isValidationError = error instanceof BackupArchiveError;
+    if (isValidationError) {
+      logger.warn('JSON restore rejected', { code: error.code, error: error.message });
+    } else {
+      logger.error('Error during restore:', error);
+    }
+    res.status(isValidationError ? error.statusCode : 500).json({
       success: false,
-      message: 'Fehler beim Wiederherstellen des Backups',
-      error: error.message
+      message: isValidationError
+        ? error.message
+        : 'Das Backup konnte wegen eines internen Fehlers nicht wiederhergestellt werden.',
+      code: isValidationError ? error.code : 'BACKUP_RESTORE_FAILED',
+      requestId: req.requestId,
     });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
@@ -925,14 +959,15 @@ router.get('/download-zip/:filename', async (req, res) => {
 
 // Upload and restore from ZIP backup
 router.post('/restore-zip', async (req, res) => {
+  let uploadedPath = null;
   try {
-    // Dynamic imports
+    // Multipart-Verarbeitung bleibt auf der Platte, damit der komprimierte
+    // Upload nicht zusätzlich vollständig im Arbeitsspeicher liegt.
     const multer = await import('multer');
-    const { default: AdmZip } = await import('adm-zip');
     
     const upload = multer.default({ 
       dest: '/tmp/',
-      limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+      limits: { fileSize: BACKUP_ARCHIVE_LIMITS.uploadBytes }
     });
     
     // Handle file upload with promise
@@ -942,59 +977,47 @@ router.post('/restore-zip', async (req, res) => {
         else resolve();
       });
     });
+    uploadedPath = req.file?.path || null;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Keine Backup-Datei hochgeladen',
+        code: 'BACKUP_FILE_MISSING',
+        requestId: req.requestId,
+      });
+    }
+
+    logger.info('Processing ZIP backup restore...');
+
+    // Struktur, Entpackgröße und Tabellen werden vollständig geprüft, bevor
+    // eine Datenbankverbindung belegt oder eine Transaktion begonnen wird.
+    const zipBuffer = await fs.readFile(req.file.path);
+    const { backupData } = parseBackupArchive(zipBuffer, {
+      allowedTables: BACKUP_TABLES,
+      ignoredTables: IGNORED_LEGACY_BACKUP_TABLES,
+    });
+
+    const backupWorkspaceId = getBackupWorkspaceId(backupData);
+    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
+      return res.status(409).json({
+        success: false,
+        message: backupWorkspaceMismatchMessage(),
+        code: 'BACKUP_WORKSPACE_MISMATCH',
+        requestId: req.requestId,
+      });
+    }
 
     const client = await pool.connect();
-    
+    let transactionStarted = false;
+
     try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'Keine Backup-Datei hochgeladen'
-        });
-      }
-
-      logger.info('Processing ZIP backup restore...');
-      
-      // Read and extract ZIP file
-      const zipBuffer = await fs.readFile(req.file.path);
-      const zip = new AdmZip(zipBuffer);
-      
-      // Check if it's a valid backup
-      const databaseEntry = zip.getEntry('database.json');
-      const metadataEntry = zip.getEntry('metadata.json');
-      
-      if (!databaseEntry || !metadataEntry) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ungültige Backup-Datei - fehlende Dateien'
-        });
-      }
-
-      // Extract and parse database backup
-      const databaseContent = databaseEntry.getData().toString('utf8');
-      const backupData = JSON.parse(databaseContent);
-      
-      if (!backupData || !backupData.data) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ungültige Backup-Daten'
-        });
-      }
-
-      const backupWorkspaceId = getBackupWorkspaceId(backupData);
-      if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
-        await fs.unlink(req.file.path).catch(() => undefined);
-        return res.status(409).json({
-          success: false,
-          message: backupWorkspaceMismatchMessage(),
-          code: 'BACKUP_WORKSPACE_MISMATCH'
-        });
-      }
 
       logger.info('Starting restore process...');
       
       // Begin transaction
       await client.query('BEGIN');
+      transactionStarted = true;
       
       let restoredTables = 0;
       let restoredRecords = 0;
@@ -1168,13 +1191,7 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
       // Protokollierung wieder aktivieren, bevor die Transaktion endet.
       await setAuditSuppressed(client, false);
       await client.query('COMMIT');
-      
-      // Clean up uploaded file
-      try {
-        await fs.unlink(req.file.path);
-      } catch (cleanupError) {
-        logger.warn('Could not clean up uploaded file:', cleanupError.message);
-      }
+      transactionStarted = false;
       
       logger.info(`ZIP restore completed: ${restoredTables} tables, ${restoredRecords} records`);
       
@@ -1188,45 +1205,77 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
 
     } catch (restoreError) {
       // Rollback transaction on error
-      try {
-        await client.query('ROLLBACK');
-      } catch (rollbackError) {
-        logger.error('Error during rollback:', rollbackError);
-      }
-      
-      // Clean up uploaded file
-      if (req.file) {
+      if (transactionStarted) {
         try {
-          await fs.unlink(req.file.path);
-        } catch (cleanupError) {
-          logger.warn('Could not clean up uploaded file:', cleanupError.message);
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          logger.error('Error during rollback:', rollbackError);
         }
       }
-      
-      logger.error('Error during ZIP restore:', restoreError);
-      res.status(500).json({
+
+      const isValidationError = restoreError instanceof BackupArchiveError;
+      if (isValidationError) {
+        logger.warn('ZIP restore rejected', { code: restoreError.code, error: restoreError.message });
+      } else {
+        logger.error('Error during ZIP restore:', restoreError);
+      }
+      res.status(isValidationError ? restoreError.statusCode : 500).json({
         success: false,
-        message: 'Fehler beim Wiederherstellen des Vollbackups',
-        error: restoreError.message
+        message: isValidationError
+          ? restoreError.message
+          : 'Das Vollbackup konnte wegen eines internen Fehlers nicht wiederhergestellt werden.',
+        code: isValidationError ? restoreError.code : 'BACKUP_RESTORE_FAILED',
+        requestId: req.requestId,
       });
     } finally {
       client.release();
     }
   } catch (error) {
-    logger.error('Error in ZIP restore setup:', error);
-    
-    if (error.code === 'MODULE_NOT_FOUND' || error.message.includes('multer') || error.message.includes('adm-zip')) {
+    const isExpectedRejection = error instanceof BackupArchiveError || error?.code === 'LIMIT_FILE_SIZE';
+    if (isExpectedRejection) {
+      logger.warn('ZIP restore rejected before transaction', { code: error.code, error: error.message });
+    } else {
+      logger.error('Error in ZIP restore setup:', error);
+    }
+
+    if (error instanceof BackupArchiveError) {
+      res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+        code: error.code,
+        requestId: req.requestId,
+      });
+    } else if (error?.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({
+        success: false,
+        message: 'Das Backup ist zu groß. Erlaubt sind maximal 50 MB.',
+        code: 'BACKUP_FILE_TOO_LARGE',
+        requestId: req.requestId,
+      });
+    } else if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('multer')) {
       res.status(503).json({
         success: false,
         message: 'ZIP-Restore-Funktionalität noch nicht verfügbar. Bitte starten Sie den Container neu.',
-        error: 'Dependencies not installed'
+        code: 'BACKUP_RESTORE_UNAVAILABLE',
+        requestId: req.requestId,
       });
     } else {
       res.status(500).json({
         success: false,
-        message: 'Fehler beim Wiederherstellen des Vollbackups',
-        error: error.message
+        message: 'Das Vollbackup konnte wegen eines internen Fehlers nicht wiederhergestellt werden.',
+        code: 'BACKUP_RESTORE_FAILED',
+        requestId: req.requestId,
       });
+    }
+  } finally {
+    if (uploadedPath) {
+      try {
+        await fs.unlink(uploadedPath);
+      } catch (cleanupError) {
+        if (cleanupError.code !== 'ENOENT') {
+          logger.warn('Temporäre Backup-Datei konnte nicht gelöscht werden', { error: cleanupError.message });
+        }
+      }
     }
   }
 });

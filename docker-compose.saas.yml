@@ -15,9 +15,9 @@
 #   * Objektspeicher für Belege – diese liegen weiterhin als Base64 in der
 #     Datenbank (Audit 1 · B5). `STORAGE_DRIVER` existiert im Code NICHT.
 #   * Offsite-Backups – `BACKUP_TARGET` existiert im Code NICHT.
-#   * Der Multiuser-Durchlauf wurde nie zur Laufzeit geprüft. Im pooled
-#     Betrieb ist Row-Level Security das Einzige, was Kundendaten trennt.
-#     Das ist eine Startvoraussetzung, keine Fleißaufgabe.
+#   * RLS und der Multiuser-Ablauf sind technisch sowie manuell nachgewiesen;
+#     die CI wiederholt den Datenbankteil. SMTP-Zustellung, externe
+#     Überwachung und die übrige manuelle Release-Checkliste bleiben offen.
 #
 # Hier stehen deshalb ausschließlich Schalter, die im Quelltext tatsächlich
 # ausgewertet werden.
