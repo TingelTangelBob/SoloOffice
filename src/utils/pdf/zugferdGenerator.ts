@@ -103,7 +103,10 @@ export async function embedZUGFeRDXMLIntoPDF(pdfBuffer: ArrayBuffer, invoice: In
       afRelationship: AFRelationship.Alternative,
     });
     const pdfBytes = await pdfDoc.save({ useObjectStreams: false, addDefaultPage: false, objectsPerTick: 50 });
-    return new Blob([pdfBytes], { type: 'application/pdf' });
+    // BlobPart erwartet in aktuellen TypeScript-DOM-Typen ein ArrayBuffer,
+    // während pdf-lib eine Uint8Array<ArrayBufferLike> liefert.
+    const blobBuffer = pdfBytes.slice().buffer as ArrayBuffer;
+    return new Blob([blobBuffer], { type: 'application/pdf' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('ZUGFeRD-PDF konnte nicht erzeugt werden', { error: message });
