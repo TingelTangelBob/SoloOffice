@@ -1,9 +1,9 @@
 # Nachweis: Multiuser- und RLS-Isolation
 
-**Datum:** 2026-08-25, Restore-Nachtest am 2026-08-26
+**Datum:** 2026-08-25, Restore-Nachtest am 2026-08-26, manuelle Abnahme am 2026-08-27
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
 **Stand:** Workspace-Verwaltung plus Migration `032_runtime_rls_role`  
-**Status:** technisch bestanden, manuelle UI-Abnahme für AP-2.3 offen
+**Status:** technisch und manuell bestanden
 
 ## Testaufbau
 
@@ -108,8 +108,17 @@ result=PASS
 Damit bleibt auch eine fehlerhafte Transaktion ohne Datenreste oder fremden
 Workspace-Kontext im Connection-Pool.
 
-## Einschränkung
+## Manuelle Browserabnahme
 
-Der Nachweis ist ein technischer API- und Datenbanklauf. Eine zusätzliche
-manuelle Prüfung mit zwei Browserfenstern und den Rollenbeschriftungen in der
-Oberfläche bleibt für die endgültige Abnahme sinnvoll.
+Zwei getrennte Konten wurden parallel im normalen Browserfenster und in einem
+Inkognito-Fenster verwendet. Beide sahen ausschließlich den eigenen Workspace,
+die eigenen Firmendaten und die eigenen Fachdaten. Ein in Konto 1 angelegter
+Testkunde erschien nicht in Konto 2. Einladung und Rollen im gemeinsamen
+Workspace wurden ebenfalls erfolgreich geprüft.
+
+```text
+AP-2.3=PASS
+workspace_isolation=PASS
+customer_isolation=PASS
+invitation_and_roles=PASS
+```

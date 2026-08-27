@@ -1,8 +1,8 @@
 # Nachweis: Workspace- und Instanz-Backup mit Restore
 
-**Datum:** 2026-08-25, Instanz-Restore ergänzt am 2026-08-26
+**Datum:** 2026-08-25, Instanz-Restore ergänzt am 2026-08-26, manuelle Abnahme am 2026-08-27
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s` · Port 8090  
-**Status:** technisch bestanden, manuelle UI-Abnahme für AP-2.4 offen
+**Status:** technisch und manuell bestanden
 
 ## Workspacebezogener Ablauf
 
@@ -112,9 +112,23 @@ vorgesehenen Neustart aus und beantwortete `/health` wieder mit HTTP 200. Alle
 temporären Container und das Testnetz wurden danach entfernt; die Tor-S- und
 Anzeigen-Studio-Stacks liefen weiter.
 
-## Einschränkung
+## Manuelle Browserabnahme
 
-Eine zusätzliche manuelle Prüfung der Backup-Anzeige und des Restore-Ablaufs
-in zwei Browserfenstern bleibt für die endgültige Abnahme sinnvoll. Ein
-Offsite-Ziel und dessen regelmäßige Überwachung sind Betreiberaufgaben und
-wurden in diesem lokalen Restore-Nachweis nicht geprüft.
+Ein ZIP-Vollbackup wurde über die Oberfläche erstellt, heruntergeladen und im
+ursprünglichen Workspace wiederhergestellt. Ein nach dem Backup angelegter
+Testkunde wurde durch den Restore erwartungsgemäß entfernt; der zweite
+Workspace blieb unverändert. Ein Restoreversuch im falschen Workspace wird
+vor jeder Datenänderung mit `BACKUP_WORKSPACE_MISMATCH` abgewiesen. Neue
+Backup-Dateinamen verwenden die vom Browser gemeldete lokale Zeitzone.
+
+```text
+AP-2.4=PASS
+zip_restore=PASS
+second_workspace_unchanged=PASS
+local_backup_time=PASS
+```
+
+## Verbleibende Betriebsaufgabe
+
+Ein Offsite-Ziel und dessen regelmäßige Überwachung sind Betreiberaufgaben und
+wurden in diesem Nachweis nicht geprüft.

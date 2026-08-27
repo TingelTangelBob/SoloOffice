@@ -1308,6 +1308,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const invoicePatternError = data.invoiceNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.invoiceNumberPattern));
       const creditNotePatternError = data.creditNoteNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.creditNoteNumberPattern));
       if (invoicePatternError || creditNotePatternError) throw new Error(invoicePatternError || creditNotePatternError || 'Ungültiges Nummernmuster.');
+      if (data.receiptLabel !== undefined) {
+        if (typeof data.receiptLabel !== 'string' || !data.receiptLabel.trim() || data.receiptLabel.trim().length > 40) {
+          throw new Error('Die Bezeichnung für Belege muss zwischen 1 und 40 Zeichen enthalten.');
+        }
+        data.receiptLabel = data.receiptLabel.trim();
+      }
       const requestedProfile = typeof data.terminologyProfile === 'string' && data.terminologyProfile in demoProfileFixtures
         ? data.terminologyProfile as TerminologyProfile
         : String(state.company.terminologyProfile || 'customers') as TerminologyProfile;

@@ -64,13 +64,13 @@ function getSelectedReminderTemplate(stage: ReminderTemplateStage, text?: string
   return templates.find(template => template.text.trim() === normalizedText);
 }
 
-function TerminologyPreview({ profile }: { profile: TerminologyDefinition }) {
+function TerminologyPreview({ profile, receiptLabel }: { profile: TerminologyDefinition; receiptLabel: string }) {
   const preview = profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
   const menuItems = [
     { label: 'Übersicht', icon: Home },
     { label: profile.work.navLabel, icon: Briefcase, active: true },
     { label: 'Rechnungen', icon: FileText },
-    { label: 'Belege', icon: FileText },
+    { label: receiptLabel, icon: FileText },
     { label: 'Bank', icon: CreditCard },
     { label: 'Steuern', icon: Calculator },
     { label: 'Auswertungen', icon: BarChart3 },
@@ -163,6 +163,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const creditNoteNumberPattern = formData.creditNoteNumberPattern || 'GS-{YYYY}-{NNN}';
   const invoiceNumberPatternError = validateInvoiceNumberPattern(invoiceNumberPattern);
   const creditNoteNumberPatternError = validateInvoiceNumberPattern(creditNoteNumberPattern);
+  const normalizedReceiptLabel = formData.receiptLabel?.trim() || '';
+  const receiptLabelError = normalizedReceiptLabel.length === 0
+    ? 'Bitte eine Bezeichnung für den Belegbereich eingeben.'
+    : normalizedReceiptLabel.length > 40
+      ? 'Die Bezeichnung darf höchstens 40 Zeichen enthalten.'
+      : '';
 
   const handleTerminologyProfileSelect = (profile: typeof terminologyProfiles[number]) => {
     setFormData(previous => {
@@ -361,6 +367,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (receiptLabelError) {
+      setFeedback({ type: 'error', text: receiptLabelError });
+      return;
+    }
     if (invoiceNumberPatternError || creditNoteNumberPatternError) {
       setFeedback({ type: 'error', text: invoiceNumberPatternError || creditNoteNumberPatternError || 'Bitte die Nummernmuster prüfen.' });
       return;
@@ -368,8 +378,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     setIsSaving(true);
     
     try {
-      const companySettings = { ...formData };
-      delete companySettings.receiptLabel;
+      const companySettings = { ...formData, receiptLabel: normalizedReceiptLabel };
       const terminologyProfileChanged = company.terminologyProfile !== formData.terminologyProfile;
       delete companySettings.invoiceTemplates;
       delete companySettings.documentTemplates;
@@ -551,10 +560,39 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <span className="flex min-h-[2.75rem] items-start justify-center pt-1 text-center">
                     <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
                   </span>
-                  <TerminologyPreview profile={profile} />
+                  <TerminologyPreview profile={profile} receiptLabel={normalizedReceiptLabel || 'Belege'} />
                 </button>
               );
             })}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <label htmlFor="receipt-label" className="block text-sm font-semibold text-gray-900">
+              Bezeichnung für den Belegbereich
+            </label>
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              Dieser Name erscheint in der Navigation und als Überschrift, zum Beispiel „Belege“, „Ausgabenbelege“ oder „Dokumente“.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
+              <div className="flex-1">
+                <input
+                  id="receipt-label"
+                  type="text"
+                  maxLength={40}
+                  value={formData.receiptLabel ?? 'Belege'}
+                  onChange={(event) => setFormData(previous => ({ ...previous, receiptLabel: event.target.value }))}
+                  aria-invalid={Boolean(receiptLabelError)}
+                  aria-describedby="receipt-label-help"
+                  className={`w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-primary-custom ${receiptLabelError ? 'border-red-300' : 'border-gray-300'}`}
+                />
+                <p id="receipt-label-help" className={`mt-1 text-xs ${receiptLabelError ? 'text-red-600' : 'text-gray-500'}`}>
+                  {receiptLabelError || `${(formData.receiptLabel ?? 'Belege').length} von 40 Zeichen`}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 sm:min-w-48">
+                Vorschau: <span className="font-semibold">{normalizedReceiptLabel || 'Belege'}</span>
+              </div>
             </div>
           </div>
 

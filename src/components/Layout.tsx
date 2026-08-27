@@ -64,6 +64,7 @@ function readSidebarSettings(): SidebarSettings {
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
+  const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const { customers } = useCustomers();
   const { invoices } = useInvoices();
   const { quotes } = useQuotes();
@@ -184,7 +185,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
 
   const receiptNavItem: NavItem = {
     id: 'documents',
-    label: 'Belege',
+    label: receiptLabel,
     icon: FileScan,
   };
 

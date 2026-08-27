@@ -232,8 +232,8 @@ Die CI baut Frontend- und Backend-Images. Ein automatisiertes Testframework ist 
 - OCR-Ergebnisse sind Vorschläge und müssen vor der Übernahme geprüft werden.
 - EÜR, Steuerprofile, Reports und Abschreibungen sind vorbereitende Arbeitsunterlagen und ersetzen keine steuerliche Prüfung.
 - ELSTER-Übertragung ist noch nicht enthalten.
-- Der technische Multiuser-/RLS-Ablauf und Backup/Restore sind auf dem getrennten TestDocker nachgewiesen; die manuelle Browserabnahme und die E-Mail-Zustellung bleiben offen.
-- Die konfigurierbare Belegbezeichnung ist im Datenmodell und in der API vorbereitet, wird im aktuellen Einstellungsformular und in der Navigation aber noch nicht vollständig wirksam.
+- Multiuser-/RLS-Isolation und workspacebezogener Backup/Restore sind auf dem getrennten TestDocker technisch und manuell nachgewiesen; die E-Mail-Zustellung bleibt offen.
+- Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
 - Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
 
 Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).

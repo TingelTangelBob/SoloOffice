@@ -118,7 +118,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
       const result = await uploadReceiptFiles(files);
       if (result.created.length) {
         setReceipts(current => [...result.created.slice().reverse(), ...current]);
-        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
+        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} ${receiptLabel}`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
       }
       if (result.errors.length) setError(result.errors.join(' '));
     } catch (uploadError) {
@@ -313,7 +313,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     <>
       <input ref={fileInputRef} type="file" accept={RECEIPT_UPLOAD_ACCEPT} capture="environment" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
       <div className="space-y-4 sm:space-y-6">
-      {!embedded && <PageHeader icon={FileScan} title={receiptLabel} subtitle="Belege lokal einlesen, prüfen und mit EÜR-Buchungen verknüpfen">
+      {!embedded && <PageHeader icon={FileScan} title={receiptLabel} subtitle={`${receiptLabel} lokal einlesen, prüfen und mit EÜR-Buchungen verknüpfen`}>
         <button
           type="button"
           onClick={() => onNavigate?.('euer')}
@@ -330,8 +330,8 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           onClick={openUpload}
           disabled={uploading}
           className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
-          aria-label={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
-          title={uploading ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+          aria-label={uploading ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
+          title={uploading ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
         >
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           <span className="hidden xl:inline">{uploading ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>

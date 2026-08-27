@@ -4,6 +4,13 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Die workspacebezogene Bezeichnung des Belegbereichs kann in den
+  App-Einstellungen gepflegt werden und wird in Navigation, Vorschau und
+  Dokumentenansicht verwendet.
+- ZIP-Restore erkennt Backups aus fremden Workspaces vor jeder Datenänderung,
+  zeigt eine konkrete Fehlermeldung und verwendet für neue Backup-Dateinamen
+  die lokale Browserzeitzone. Die manuelle Multiuser- und Restore-Abnahme ist
+  bestanden.
 - Workspace-Verwaltung als eigener, responsiver Navigationsbereich sichtbar
   gemacht: Workspace-Wechsel, neue Workspaces, Umbenennung, Mitgliederrollen
   und Einladungen sind nicht mehr im persönlichen Profil versteckt.

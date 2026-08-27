@@ -105,6 +105,7 @@ function toUnifiedIncoming(invoice: IncomingEInvoice, locale: string, dateFormat
 
 export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagementProps) {
   const { company } = useCompany();
+  const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const [activeTab, setActiveTab] = useState<DocumentsTab>(() => normalizeTab(initialTab));
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [incomingInvoices, setIncomingInvoices] = useState<IncomingEInvoice[]>([]);
@@ -132,11 +133,11 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
       setReceipts(receiptResult);
       setIncomingInvoices(incomingResult);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Belege konnten nicht geladen werden.');
+      setError(loadError instanceof Error ? loadError.message : `${receiptLabel} konnten nicht geladen werden.`);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [receiptLabel]);
 
   useEffect(() => {
     void loadOverview();
@@ -173,7 +174,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
       const result = await uploadReceiptFiles(files);
       if (result.created.length) {
         setReceipts(current => [...result.created.slice().reverse(), ...current]);
-        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} Belege`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
+        setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} ${receiptLabel}`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
       }
       if (result.errors.length) setError(result.errors.join(' '));
     } catch (uploadError) {
@@ -198,7 +199,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
     <>
       <input ref={receiptUploadInputRef} type="file" accept={RECEIPT_UPLOAD_ACCEPT} capture="environment" multiple className="hidden" onChange={handleOverviewUpload} disabled={uploadingReceipt} />
       <div className="space-y-4 sm:space-y-6">
-      <PageHeader icon={FileScan} title="Belege" subtitle="Normale Belege und elektronische Rechnungen an einem Ort verwalten">
+      <PageHeader icon={FileScan} title={receiptLabel} subtitle={`${receiptLabel} und elektronische Rechnungen an einem Ort verwalten`}>
         {(activeTab === 'all' || activeTab === 'receipts') && (
           <>
             <button
@@ -206,8 +207,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
               onClick={openReceiptUpload}
               className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
               disabled={uploadingReceipt}
-              aria-label={uploadingReceipt ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
-              title={uploadingReceipt ? 'Belege werden verarbeitet' : 'Beleg hochladen'}
+              aria-label={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
+              title={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
             >
               {uploadingReceipt ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               <span className="hidden xl:inline">{uploadingReceipt ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
@@ -246,7 +247,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         onChange={selectTab}
         tabs={[
           { id: 'all' as const, label: 'Alle', icon: LayoutGrid, count: tabCounts.all },
-          { id: 'receipts' as const, label: 'Sonstige Belege', icon: ReceiptText, count: tabCounts.receipts },
+          { id: 'receipts' as const, label: `Sonstige ${receiptLabel}`, icon: ReceiptText, count: tabCounts.receipts },
           { id: 'incoming' as const, label: 'E-Rechnungen', icon: FileCheck2, count: tabCounts.incoming },
         ]}
       />
@@ -263,8 +264,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Alle Belege</h2>
-              <p className="mt-1 text-sm text-gray-500">Normale Belege und E-Rechnungen werden gemeinsam angezeigt. Die Originalquellen und ihre jeweiligen Prüfregeln bleiben getrennt erhalten.</p>
+              <h2 className="text-lg font-semibold text-gray-900">Alle {receiptLabel}</h2>
+              <p className="mt-1 text-sm text-gray-500">{receiptLabel} und E-Rechnungen werden gemeinsam angezeigt. Die Originalquellen und ihre jeweiligen Prüfregeln bleiben getrennt erhalten.</p>
             </div>
             <button type="button" onClick={() => void loadOverview()} className="action-button inline-flex items-center gap-2" disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -272,10 +273,10 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
             </button>
           </div>
 
-          {loading ? <div className="py-12 text-center text-sm text-gray-500">Belege werden geladen …</div> : documents.length === 0 ? (
+          {loading ? <div className="py-12 text-center text-sm text-gray-500">{receiptLabel} werden geladen …</div> : documents.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
               <FileScan className="mx-auto h-8 w-8 text-gray-400" />
-              <p className="mt-3 font-medium text-gray-800">Noch keine Belege</p>
+              <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>
               <p className="mt-1 text-sm text-gray-500">Nutze oben die Upload-Aktionen oder wähle eine Belegart, um einen normalen Beleg oder eine E-Rechnung zu übernehmen.</p>
             </div>
           ) : (
