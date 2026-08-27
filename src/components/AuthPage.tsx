@@ -108,39 +108,39 @@ export function AuthPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
           {(isRegistration || isInvitation) && (
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm text-gray-700">Vorname<input value={firstName} onChange={event => setFirstName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="given-name" /></label>
-              <label className="text-sm text-gray-700">Nachname<input value={lastName} onChange={event => setLastName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="family-name" /></label>
+              <label htmlFor="auth-first-name" className="text-sm text-gray-700">Vorname<input id="auth-first-name" name="given-name" value={firstName} onChange={event => setFirstName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth given-name" /></label>
+              <label htmlFor="auth-last-name" className="text-sm text-gray-700">Nachname<input id="auth-last-name" name="family-name" value={lastName} onChange={event => setLastName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth family-name" /></label>
             </div>
           )}
 
-          <label className="block text-sm text-gray-700">
+          {isRegistration && (
+            <label htmlFor="auth-organization" className="block text-sm text-gray-700">Workspace-Name<input id="auth-organization" name="organization" value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} placeholder="z. B. Meine Firma" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth organization" /></label>
+          )}
+
+          <label htmlFor="auth-email" className="block text-sm text-gray-700">
             E-Mail-Adresse
             <span className="relative mt-1 block">
               <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="email" />
+              <input id="auth-email" name="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth email" />
             </span>
           </label>
 
-          {isRegistration && (
-            <label className="block text-sm text-gray-700">Workspace-Name<input value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} placeholder="z. B. Meine Firma" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="organization" /></label>
-          )}
-
           {showPassword && (
-            <label className="block text-sm text-gray-700">
+            <label htmlFor="auth-password" className="block text-sm text-gray-700">
               Passwort
               <span className="relative mt-1 block">
                 <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input type="password" required minLength={10} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+                <input id="auth-password" name="password" type="password" required minLength={10} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete={`section-auth ${mode === 'login' ? 'current-password' : 'new-password'}`} />
               </span>
               {(isRegistration || mode === 'reset') && <span className="mt-1 block text-xs text-gray-500">Mindestens 10 Zeichen.</span>}
             </label>
           )}
 
           {(isRegistration || mode === 'reset' || isInvitation) && (
-            <label className="block text-sm text-gray-700">Passwort wiederholen<input type="password" required minLength={10} value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="new-password" /></label>
+            <label htmlFor="auth-password-confirmation" className="block text-sm text-gray-700">Passwort wiederholen<input id="auth-password-confirmation" name="password-confirmation" type="password" required minLength={10} value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth new-password" /></label>
           )}
 
           {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
