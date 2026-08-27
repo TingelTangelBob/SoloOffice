@@ -87,6 +87,13 @@ function instrumentClient(client) {
 
   const originalQuery = client.query.bind(client);
   client.query = (...args) => {
+    // Transaction control must run even after a statement failed. Applying
+    // request context first would issue set_config inside the aborted
+    // transaction and prevent the required ROLLBACK from succeeding.
+    const queryText = typeof args[0] === 'string' ? args[0].trim().toUpperCase() : '';
+    if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/.test(queryText)) {
+      return originalQuery(...args);
+    }
     const context = getRequestContext();
     const workspaceId = context?.workspaceId || '';
     const userId = context?.userId || '';
