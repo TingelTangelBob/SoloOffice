@@ -6,6 +6,36 @@ import { counterMatcher, formatNumberPattern, invoiceDateParts, numberPatternErr
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const REQUIRED_COMPANY_FIELDS = [
+  ['name', 'Firmenname'],
+  ['address', 'Straße und Hausnummer'],
+  ['postal_code', 'PLZ'],
+  ['city', 'Ort'],
+  ['email', 'E-Mail-Adresse'],
+  ['tax_id', 'USt-IdNr.'],
+  ['bank_account', 'IBAN'],
+];
+
+async function validateCompanyForInvoice(client) {
+  const result = await client.query(`
+    SELECT name, address, postal_code, city, email, tax_id, bank_account
+    FROM company
+    WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
+    LIMIT 1
+  `);
+  const company = result.rows[0];
+  const missingFields = REQUIRED_COMPANY_FIELDS
+    .filter(([field]) => !String(company?.[field] || '').trim())
+    .map(([, label]) => label);
+
+  if (missingFields.length > 0) {
+    const error = new Error(`Bitte vervollständigen Sie vor dem Erstellen einer Rechnung die Firmendaten: ${missingFields.join(', ')}.`);
+    error.statusCode = 400;
+    error.code = 'COMPANY_DATA_INCOMPLETE';
+    throw error;
+  }
+}
+
 export async function generateInvoiceNumber(issueDate, documentType = 'invoice', clientOverride = null) {
   const client = clientOverride || await pool.connect();
   try {
@@ -139,6 +169,8 @@ export async function createInvoice(data, transactionHook) {
 
   try {
     await client.query('BEGIN');
+
+    await validateCompanyForInvoice(client);
 
     if (recurringInvoiceId) {
       const recurringResult = await client.query(`
@@ -317,7 +349,7 @@ export async function createInvoice(data, transactionHook) {
     // Insert invoice
     const invoiceResult = await client.query(`
       INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscAmount]);
 

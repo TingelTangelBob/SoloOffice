@@ -47,6 +47,15 @@ export function JobInvoiceGenerator({
   const completedJobs = selectedJobs.filter((job: JobEntry) => job.status === 'completed');
   const nonCompletedJobs = selectedJobs.filter((job: JobEntry) => job.status !== 'completed');
   const billableJobs = completedJobs.filter((job) => includedJobIds.includes(job.id));
+  const missingCompanyFields = [
+    [company.name, 'Firmenname'],
+    [company.address, 'Straße und Hausnummer'],
+    [company.postalCode, 'PLZ'],
+    [company.city, 'Ort'],
+    [company.email, 'E-Mail-Adresse'],
+    [company.taxId, 'USt-IdNr.'],
+    [company.bankAccount, 'IBAN'],
+  ].filter(([value]) => !String(value || '').trim()).map(([, label]) => label);
 
   useEffect(() => {
     setIncludedJobIds(jobs
@@ -83,6 +92,14 @@ export function JobInvoiceGenerator({
 
   const handleGenerate = () => {
     if (billableJobs.length === 0) return;
+    if (missingCompanyFields.length > 0) {
+      notify({
+        variant: 'warning',
+        title: 'Firmendaten unvollständig',
+        message: `Bitte ergänzen Sie vor dem Erstellen einer Rechnung: ${missingCompanyFields.join(', ')}.`,
+      });
+      return;
+    }
     setShowFinalConfirmation(true);
   };
 
@@ -95,7 +112,11 @@ export function JobInvoiceGenerator({
       onClose();
     } catch (error) {
       logger.error('Error generating invoice:', error);
-      notify({ variant: 'error', message: 'Fehler beim Erstellen der Rechnung. Bitte versuchen Sie es erneut.' });
+      notify({
+        variant: 'error',
+        title: 'Rechnung konnte nicht erstellt werden',
+        message: error instanceof Error ? error.message : 'Die Rechnung konnte wegen eines unbekannten Fehlers nicht erstellt werden.',
+      });
     } finally {
       setIsGenerating(false);
     }

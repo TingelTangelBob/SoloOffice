@@ -943,7 +943,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
       onClose();
     } catch (error) {
       logger.error('Failed to save invoice', { error: (error as Error).message });
-      // You might want to show an error message to the user here
+      notify({
+        variant: 'error',
+        title: invoice ? 'Rechnung konnte nicht gespeichert werden' : 'Rechnung konnte nicht erstellt werden',
+        message: error instanceof Error ? error.message : 'Die Rechnung konnte wegen eines unbekannten Fehlers nicht gespeichert werden.',
+      });
     }
   };
 
