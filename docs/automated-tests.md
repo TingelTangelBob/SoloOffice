@@ -12,9 +12,10 @@ Mac ist keine lokale Node-/PostgreSQL-Installation erforderlich.
 | Stufe | Umfang | Ausführung |
 |---|---|---|
 | Frontend-Fachlogik | 15 Tests für Nummernmuster, Zahlen-/Datumsformate, CSV-Schutz, Wiederholungen, Zahlungen und Kundendubletten | bei jedem Frontend-Image-Build |
-| Backend-Regressionssuite | 36 Tests für Auth, Validierung, Restore-Archive, Health, Shutdown, CORS, Request-IDs und Metriken | bei jedem Backend-Image-Build |
+| Backend-Regressionssuite | 37 Tests für Auth, Validierung, Restore-Archive, Health, Shutdown, CORS, Request-IDs, Metriken und PDFKit-Ausgabe | bei jedem Backend-Image-Build |
 | PostgreSQL-Integration | 7 Tests für alle Migrationen, Rollenentmachtung, erzwungene RLS, Trennung zweier Workspaces und parallele Rechnungsnummern | im gemeinsamen GitHub-Qualitätsworkflow |
 | Statische Audit-Verträge | sicherheits- und fachkritische Quellverträge | vor beiden Image-Builds in GitHub Actions |
+| Abhängigkeits-Audit | vollständiger Frontend-Baum ab hoher Kritikalität sowie produktive Frontend-/Backend-Bäume ab mittlerer Kritikalität | vor beiden Image-Builds in GitHub Actions |
 
 Der Frontend-Testlauf kompiliert nur ausgewählte, reine TypeScript-Fachmodule
 in das ignorierte Verzeichnis `.test-dist` und führt sie anschließend mit
@@ -32,6 +33,12 @@ erfolgreich sind. Der Backend-Build führt die schnelle Suite mit `npm test`
 aus. Die PostgreSQL-Integration läuft bewusst separat gegen eine frische
 PostgreSQL-15-Datenbank, weil ein Image-Build keinen Datenbankdienst enthalten
 soll.
+
+Zusätzlich prüft die CI vor dem Bau den aktuellen npm-Sicherheitsstand. Der
+vollständige Frontend-Baum darf keine hohe oder kritische bekannte
+Schwachstelle enthalten. In den produktiven Frontend- und Backend-Bäumen sind
+auch mittlere Befunde blockierend. Versionen und Grenzen stehen im
+[`Abhängigkeitsnachweis`](dependency-security.md).
 
 ## Was der RLS-Test nachweist
 

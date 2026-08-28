@@ -205,14 +205,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     const matchesSearch = invoiceNumber.toLowerCase().includes(searchTermLower) ||
                          customerName.toLowerCase().includes(searchTermLower);
     
-    let matchesStatus = false;
-    if (filterStatus === 'all') {
-      matchesStatus = true;
-    } else if (filterStatus === 'not-paid') {
-      matchesStatus = invoice.status !== 'paid';
-    } else {
-      matchesStatus = invoice.status === filterStatus;
-    }
+    const matchesStatus = filterStatus === 'all' || (
+      filterStatus === 'not-paid'
+        ? invoice.status !== 'paid'
+        : invoice.status === filterStatus
+    );
     
     return matchesSearch && matchesStatus;
   });

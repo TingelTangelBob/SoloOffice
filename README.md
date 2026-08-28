@@ -181,9 +181,9 @@ Eine ELSTER-Übertragung ist aktuell nicht enthalten.
 
 | Bereich | Technologie |
 | --- | --- |
-| Frontend | React 18, TypeScript, Vite 5, Tailwind CSS 3, Context API |
+| Frontend | React 18, TypeScript, Vite 8, Tailwind CSS 3, Context API |
 | Navigation | Hash-Routing über window.location.hash |
-| Backend | Node.js 20, Express, ES Modules |
+| Backend | Node.js 22, Express, ES Modules |
 | Datenbank | PostgreSQL 15 mit sequenziellen Migrationen und Row-Level Security |
 | Dokumente | jsPDF, pdf-lib, PDFKit, XML-Generatoren für XRechnung/ZUGFeRD |
 | OCR | Tesseract mit deutschen und englischen Sprachdaten im Backend-Container |
@@ -212,6 +212,8 @@ Entwicklungs- und Build-Schritte werden innerhalb von Docker ausgeführt. Der Fr
 ~~~bash
 docker compose --env-file .env.<instanz> -f docker-compose.yml build frontend
 docker build -f backend/Dockerfile backend
+npm run audit:dependencies
+npm --prefix backend run audit:dependencies
 git diff --check
 node scripts/verify-audit-contracts.mjs
 ~~~
@@ -219,7 +221,9 @@ node scripts/verify-audit-contracts.mjs
 Die CI baut Frontend- und Backend-Images. Beide Builds führen ihre
 Regressionssuite aus; anschließend prüft ein kurzlebiger PostgreSQL-15-Dienst
 alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
-Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md).
+Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md). Die
+Abhängigkeitsstrategie und die aktuellen Audit-Grenzen sind in
+[docs/dependency-security.md](docs/dependency-security.md) dokumentiert.
 
 Vor einem Release müssen technische Checks und manuelle Prüfung getrennt
 betrachtet werden. Der aktuelle Stand wird dauerhaft in der
@@ -244,7 +248,7 @@ wichtigsten manuellen Abläufen gehören:
 - Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
 - Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
 
-Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
+Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/dependency-security.md](docs/dependency-security.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
 
 ## Lizenz und Beiträge
 

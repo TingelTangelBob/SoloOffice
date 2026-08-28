@@ -24,12 +24,24 @@ const restoreOrder = backup.match(/const RESTORE_ORDER = \[(.*?)\];/s)?.[1] || '
 
 requireText('Dockerfile', 'RUN npm run test:frontend && npm run lint && npm run typecheck && npm run build');
 requireText('Dockerfile.demo', 'RUN npm run test:frontend && npm run lint && npm run typecheck && npm run build');
+requireText('Dockerfile', 'FROM node:22-alpine AS build');
+requireText('Dockerfile.demo', 'FROM node:22-alpine AS build');
+requireText('package.json', '"vite": "^8.2.2"');
+requireText('package.json', '"eslint": "^10.9.1"');
+requireText('package.json', '"node": "^20.19.0 || ^22.13.0 || >=24.0.0"');
 requireText('Dockerfile', 'ARG VITE_DEMO_MODE=false');
 requireText('backend/Dockerfile', 'RUN npm test');
+requireText('backend/Dockerfile', 'FROM node:22-alpine');
+requireText('backend/package.json', '"pdfkit": "^0.20.1"');
+requireText('backend/test/pdfKit.test.js', "assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');");
+requireText('.dockerignore', '**/._*');
+requireText('backend/.dockerignore', '**/._*');
 requireText('docker-compose.yml', 'POSTGRES_PASSWORD muss in der Instanz-Umgebung gesetzt sein');
 requireText('docker-compose.yml', "fetch('http://127.0.0.1:3001/health/ready')");
 requireText('docker-compose.yml', 'no-new-privileges:true');
 requireText('.github/workflows/quality.yml', 'Migrationen und Workspace-RLS gegen PostgreSQL prüfen');
+requireText('.github/workflows/quality.yml', 'npm run audit:dependencies');
+requireText('.github/workflows/quality.yml', 'npm --prefix backend run audit:dependencies');
 requireText('backend/routes/backup.js', 'ignoredTables: IGNORED_LEGACY_BACKUP_TABLES');
 requireText('backend/utils/backupArchive.js', 'uploadBytes: 50 * 1024 * 1024');
 requireText('backend/utils/metrics.js', "const OVERFLOW_KEY = 'OTHER';");

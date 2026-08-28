@@ -1,7 +1,7 @@
 # Nachweis: Backend-Regressionssuite und Request-Tracing
 
 **Datum:** 2026-08-28
-**Laufzeit:** Node.js 20 im Backend-Image
+**Laufzeit:** Node.js 22 im Backend-Image
 **Status:** technisch bestanden
 
 ## Umfang
@@ -20,12 +20,14 @@ ausgeführt und deckt folgende Verträge ab:
 - standardmäßig gesperrter Metrikzugriff, begrenzte Routenkardinalität sowie
   getrennte 4xx-/5xx-Zähler
 - Validierung, Weitergabe und Verschachtelung von Request-IDs
+- echte PDF-Erzeugung mit PDFKit einschließlich mehrseitigem Dokument und
+  gültigem PDF-Anfang/-Ende
 
 ## Ergebnis
 
 ```text
-tests=36
-passed=36
+tests=37
+passed=37
 failed=0
 result=PASS
 ```

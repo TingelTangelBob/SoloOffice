@@ -10,7 +10,8 @@
     "dev": "nodemon server.js",
     "test": "npm run test:unit",
     "test:unit": "NODE_ENV=test node --test test/*.test.js",
-    "test:integration": "NODE_ENV=test node scripts/prepareIntegrationDatabase.js && NODE_ENV=test node --test --test-concurrency=1 test/integration/*.test.js"
+    "test:integration": "NODE_ENV=test node scripts/prepareIntegrationDatabase.js && NODE_ENV=test node --test --test-concurrency=1 test/integration/*.test.js",
+    "audit:dependencies": "npm audit --omit=dev --audit-level=moderate"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -20,9 +21,12 @@
     "nodemailer": "^9.0.5",
     "adm-zip": "^0.6.0",
     "multer": "^2.2.0",
-    "pdfkit": "^0.14.0"
+    "pdfkit": "^0.20.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

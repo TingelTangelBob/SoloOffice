@@ -152,12 +152,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     const matchesSearch = quoteNumber.toLowerCase().includes(searchTermLower) ||
                          customerName.toLowerCase().includes(searchTermLower);
     
-    let matchesStatus = false;
-    if (filterStatus === 'all') {
-      matchesStatus = true;
-    } else {
-      matchesStatus = quote.status === filterStatus;
-    }
+    const matchesStatus = filterStatus === 'all' || quote.status === filterStatus;
     
     return matchesSearch && matchesStatus;
   });

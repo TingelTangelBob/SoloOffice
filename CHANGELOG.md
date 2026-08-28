@@ -4,6 +4,13 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Frontend-Build und Backend-Laufzeit wechseln auf Node.js 22. Vite, das
+  React-Plugin und ESLint werden auf aktuelle sichere Hauptversionen
+  angehoben, die Lockdatei vollständig aktualisiert und ein blockierender
+  npm-Audit für Build- sowie Produktionsabhängigkeiten in GitHub Actions
+  ergänzt. PDFKit 0.20 ersetzt die alte Version samt ungewartetem `crypto-js`
+  und erhält einen echten PDF-Regressionstest. Versteckte
+  macOS-Metadatendateien werden aus Docker-Buildkontexten ausgeschlossen.
 - Frontend-Fachlogik und PostgreSQL-RLS erhalten eigene automatisierte
   Regressionstests. GitHub Actions führt alle Migrationen gegen eine frische
   PostgreSQL-15-Datenbank aus und prüft die Trennung zweier Workspaces.

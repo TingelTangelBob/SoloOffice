@@ -51,7 +51,7 @@ export const processAttachments = async (attachments: AttachmentFile[]): Promise
       });
     } catch (error) {
       logger.error('Fehler beim Verarbeiten des Anhangs', { fileName: attachment.name, error });
-      throw new Error(`Fehler beim Verarbeiten der Datei "${attachment.name}"`);
+      throw new Error(`Fehler beim Verarbeiten der Datei "${attachment.name}"`, { cause: error });
     }
   }
   

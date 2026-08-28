@@ -104,7 +104,7 @@ export async function generateInvoiceFromJobs(
     }, 0);
     const total = subtotal + taxAmount;
 
-    let invoiceTitle = '';
+    let invoiceTitle: string;
     if (type === 'daily' && date) {
       invoiceTitle = `Tagesrechnung vom ${formatDate(date, company.locale, company.dateFormat)}`;
     } else if (type === 'monthly' && date) {

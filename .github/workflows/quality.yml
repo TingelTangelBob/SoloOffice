@@ -32,10 +32,15 @@ jobs:
       - name: Node.js einrichten
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Statische Audit-Verträge prüfen
         run: node scripts/verify-audit-contracts.mjs
+
+      - name: Abhängigkeiten auf bekannte Schwachstellen prüfen
+        run: |
+          npm run audit:dependencies
+          npm --prefix backend run audit:dependencies
 
       - name: Frontend-Image bauen (Lint, TypeScript, Vite-Build)
         run: docker build --build-arg VITE_API_URL=/api --build-arg VITE_DEMO_MODE=false -t solooffice-frontend .

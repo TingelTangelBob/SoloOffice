@@ -196,14 +196,11 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                            jobJobNumber.toLowerCase().includes(searchTermLower) ||
                            jobExternalJobNumber.toLowerCase().includes(searchTermLower);
       
-      let matchesStatus = false;
-      if (statusFilter === 'all') {
-        matchesStatus = true;
-      } else if (statusFilter === 'not-invoiced') {
-        matchesStatus = job.status !== 'invoiced';
-      } else {
-        matchesStatus = job.status === statusFilter;
-      }
+      const matchesStatus = statusFilter === 'all' || (
+        statusFilter === 'not-invoiced'
+          ? job.status !== 'invoiced'
+          : job.status === statusFilter
+      );
       const matchesCustomer = customerFilter === 'all' || job.customerId === customerFilter;
       
       let matchesDate = true;

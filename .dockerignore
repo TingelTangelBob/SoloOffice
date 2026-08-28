@@ -10,6 +10,9 @@ backups
 Projektordner
 .agents
 .codex
+.DS_Store
+._*
+**/._*
 *.log
 *.tmp
 Dockerfile*

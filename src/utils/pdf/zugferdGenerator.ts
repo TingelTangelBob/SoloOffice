@@ -110,6 +110,6 @@ export async function embedZUGFeRDXMLIntoPDF(pdfBuffer: ArrayBuffer, invoice: In
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('ZUGFeRD-PDF konnte nicht erzeugt werden', { error: message });
-    throw new Error(`ZUGFeRD-PDF konnte nicht erzeugt werden: ${message}`);
+    throw new Error(`ZUGFeRD-PDF konnte nicht erzeugt werden: ${message}`, { cause: error });
   }
 }

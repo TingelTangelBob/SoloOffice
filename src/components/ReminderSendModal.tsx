@@ -84,7 +84,7 @@ export function ReminderSendModal({
   useEffect(() => {
     if (isOpen) {
       // Pre-select all active customer emails
-      let activeEmails: string[] = [];
+      let activeEmails: string[];
       
       if (isBulkMode && bulkInvoices.length > 0) {
         // Collect all unique customer emails from all bulk invoices

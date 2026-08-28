@@ -349,6 +349,7 @@ aktuellen Beta-Stand nicht.
 - [Backend-Build](backend-build-nachweis.md)
 - [Backend-Regressionssuite und Request-Tracing](backend-regression-tests.md)
 - [Automatisierte Tests und Qualitätstore](automated-tests.md)
+- [Node- und npm-Abhängigkeitssicherheit](dependency-security.md)
 - [Multiuser- und RLS-Isolation](rls-isolation-nachweis.md)
 - [Backup und Restore](backup-restore-nachweis.md)
 - [Identity-/Workspace-Testablauf](identity-workspace-local-testing.md)

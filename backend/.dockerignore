@@ -4,6 +4,9 @@
 node_modules
 backups
 coverage
+.DS_Store
+._*
+**/._*
 *.log
 *.tmp
 Projektordner

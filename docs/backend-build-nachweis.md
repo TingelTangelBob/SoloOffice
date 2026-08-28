@@ -1,6 +1,6 @@
 # Nachweis: reproduzierbarer Backend-Bau
 
-**Datum:** 2026-08-26, Gegenprüfung und Tests ergänzt am 2026-08-28
+**Datum:** 2026-08-26, Gegenprüfung, Tests und Node-22-Umstellung ergänzt am 2026-08-28
 **Instanz:** TestDocker `TestDocker` · `/opt/solooffice-tor-s`  
 **Status:** technisch bestanden und gegengeprüft
 
@@ -15,7 +15,7 @@
 
 ## Sicherheitsprüfung
 
-Der Produktions-Audit im Node-20-Container meldet:
+Der Produktions-Audit im Node-22-Container meldet:
 
 ```text
 found 0 vulnerabilities
@@ -42,17 +42,23 @@ Build A: 3d456aa5d3536e8ed47f1c881643cc7dcacb0af2dcd05ed5823e1e8836fcbc0c
 Build B: 3d456aa5d3536e8ed47f1c881643cc7dcacb0af2dcd05ed5823e1e8836fcbc0c
 ```
 
-Die installierten Node-Abhängigkeiten sind damit zwischen beiden Läufen
-identisch. Betriebssystempakete bleiben an das digest-gepinnte
-`node:20-alpine`-Basisimage und dessen Alpine-Repositories gebunden.
+Die installierten Node-Abhängigkeiten waren damit zwischen beiden Läufen
+identisch. Die Anwendung verwendet inzwischen `node:22-alpine`; der Tag ist
+nicht digest-gepinnt und kann bei einem späteren Neubau ein aktualisiertes
+Node-/Alpine-Basisimage liefern. Reproduzierbar festgeschrieben ist der
+npm-Abhängigkeitsbaum über `backend/package-lock.json`, nicht das
+Betriebssystemimage. Der vollständige Image-Build in CI bleibt deshalb das
+maßgebliche Qualitätstor.
 
 Seit dem 2026-08-28 führt der Backend-Build zusätzlich die dokumentierte
 [`Backend-Regressionssuite`](backend-regression-tests.md) aus. Ein Image wird
-nur noch erzeugt, wenn alle Tests bestanden sind.
+nur noch erzeugt, wenn alle Tests bestanden sind. Der aktuelle Auditablauf ist
+im [`Abhängigkeitsnachweis`](dependency-security.md) beschrieben.
 
-## Verbleibender Hinweis
+## PDFKit-Aktualisierung
 
-`pdfkit@0.14.0` zieht transitiv das nicht mehr aktiv gepflegte
-`crypto-js@4.2.0` ein. npm meldet dafür aktuell keine bekannte Schwachstelle.
-Ein PDFKit-Upgrade braucht einen getrennten PDF-Regressionslauf und ist nicht
-Teil dieses Pakets.
+PDFKit wurde von 0.14 auf 0.20 angehoben. Damit entfällt die transitive,
+nicht mehr gepflegte Abhängigkeit `crypto-js`. Ein eigener Regressionstest
+erzeugt bei jedem Backend-Build ein mehrseitiges PDF mit denselben zentralen
+Text-, Farb-, Rechteck-, Seiten- und Standardschrift-APIs wie das
+Rechnungsjournal. Anfang, Ende und Mindestgröße der Ausgabe werden geprüft.
