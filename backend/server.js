@@ -34,6 +34,10 @@ import eInvoicesRouter from './routes/eInvoices.js';
 import { livenessPayload, readinessResult } from './utils/health.js';
 import { createGracefulShutdown } from './utils/gracefulShutdown.js';
 import { createCorsOriginValidator } from './utils/corsOrigin.js';
+import {
+  DATABASE_RLS_RESTART_EXIT_CODE,
+  isDatabaseRlsRestart,
+} from './utils/startupRestart.js';
 
 dotenv.config();
 
@@ -226,6 +230,10 @@ async function startServer() {
       });
     }
   } catch (error) {
+    if (isDatabaseRlsRestart(error)) {
+      logger.warn(error.message);
+      process.exit(DATABASE_RLS_RESTART_EXIT_CODE);
+    }
     logger.error('Failed to start server', { error: error.message, stack: error.stack });
     process.exit(1);
   }

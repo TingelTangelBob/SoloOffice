@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { runMigrations, getMigrationStatus } from './migrations/index.js';
 import { ensureRuntimeDatabaseIsRlsSafe } from './migrations/032_runtime_rls_role.js';
 import { getRequestContext } from './utils/requestContext.js';
+import { DATABASE_RLS_RESTART_MESSAGE } from './utils/startupRestart.js';
 
 dotenv.config();
 
@@ -224,7 +225,7 @@ export async function createTables() {
     const runtimeRlsSecured = await ensureRuntimeDatabaseIsRlsSafe(client);
 
     if (migrationResult?.requiresRestart || runtimeRlsSecured) {
-      throw new Error('Datenbank-RLS wurde abgesichert. Backend wird einmal neu gestartet.');
+      throw new Error(DATABASE_RLS_RESTART_MESSAGE);
     }
 
     // Log migration status

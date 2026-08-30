@@ -12,7 +12,7 @@ Mac ist keine lokale Node-/PostgreSQL-Installation erforderlich.
 | Stufe | Umfang | Ausführung |
 |---|---|---|
 | Frontend-Fachlogik | 15 Tests für Nummernmuster, Zahlen-/Datumsformate, CSV-Schutz, Wiederholungen, Zahlungen und Kundendubletten | bei jedem Frontend-Image-Build |
-| Backend-Regressionssuite | 37 Tests für Auth, Validierung, Restore-Archive, Health, Shutdown, CORS, Request-IDs, Metriken und PDFKit-Ausgabe | bei jedem Backend-Image-Build |
+| Backend-Regressionssuite | 39 Tests für Auth, Validierung, Restore-Archive, Health, Shutdown, kontrollierten RLS-Neustart, CORS, Request-IDs, Metriken und PDFKit-Ausgabe | bei jedem Backend-Image-Build |
 | PostgreSQL-Integration | 7 Tests für alle Migrationen, Rollenentmachtung, erzwungene RLS, Trennung zweier Workspaces und parallele Rechnungsnummern | im gemeinsamen GitHub-Qualitätsworkflow |
 | Statische Audit-Verträge | sicherheits- und fachkritische Quellverträge | vor beiden Image-Builds in GitHub Actions |
 | Abhängigkeits-Audit | vollständiger Frontend-Baum ab hoher Kritikalität sowie produktive Frontend-/Backend-Bäume ab mittlerer Kritikalität | vor beiden Image-Builds in GitHub Actions |

@@ -33,5 +33,6 @@ USER node
 # Expose port 3001
 EXPOSE 3001
 
-# Start the application
-CMD ["npm", "start"]
+# Start the application. The small supervisor keeps the container alive while
+# a fresh database rebuilds its pool once after runtime-role demotion.
+CMD ["node", "scripts/startProduction.js"]

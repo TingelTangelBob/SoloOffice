@@ -9,6 +9,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   Quellcommit ein; Frontend und Backend tragen ihn als OCI-Label. Das reguläre
   nginx-Frontend läuft ohne root und mit schreibgeschütztem Dateisystem,
   eigenem Healthcheck, sicheren Cache-Regeln und begrenzten Logs.
+- Der einmalige Verbindungsneustart nach Entzug der PostgreSQL-Sonderrechte
+  läuft bei einer frischen Installation kontrolliert innerhalb des Backend-
+  Containers und erzeugt keinen sporadischen `unhealthy`-Start mehr.
 - Die Erstinstallation speichert Instanzgeheimnisse mit Dateimodus 600, gibt
   keine Datenbankpasswörter mehr aus und erzeugt auch im Legacy-Pfad einen
   eigenen Verschlüsselungsschlüssel. Shell- und Betriebsverträge werden in CI

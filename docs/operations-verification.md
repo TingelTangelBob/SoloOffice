@@ -29,6 +29,11 @@ Prüfung gegen den erwarteten Commit aus. Damit werden Containerrechte,
 schreibgeschütztes Frontend, Proxy, Migrationen und RLS bereits vor einem
 Serverupdate gemeinsam erprobt.
 
+Auf einer ganz frischen Datenbank entzieht die RLS-Migration dem Laufzeitkonto
+einmalig seine PostgreSQL-Sonderrechte. Das Backend baut seine Verbindungen
+danach innerhalb desselben Containers kontrolliert neu auf; der Container
+bleibt dabei stabil und fordert höchstens einen solchen Neustart an.
+
 Ein bestimmter Commit lässt sich zusätzlich erzwingen:
 
 ```bash

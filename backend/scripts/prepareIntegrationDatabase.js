@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createTables, pool } from '../database.js';
+import { isDatabaseRlsRestart } from '../utils/startupRestart.js';
 
-const RESTART_MESSAGE = 'Datenbank-RLS wurde abgesichert. Backend wird einmal neu gestartet.';
 const RESTART_MARKER = 'SOLOOFFICE_INTEGRATION_DB_RESTARTED';
 const databaseName = String(process.env.DB_NAME || '');
 
@@ -16,7 +16,7 @@ async function prepareOnce() {
     await createTables();
     return false;
   } catch (error) {
-    if (error instanceof Error && error.message === RESTART_MESSAGE) return true;
+    if (isDatabaseRlsRestart(error)) return true;
     throw error;
   } finally {
     await pool.end();
