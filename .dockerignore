@@ -8,8 +8,8 @@ dist
 coverage
 backups
 Projektordner
-.agents
-.codex
+.agents*
+.codex*
 .DS_Store
 ._*
 **/._*

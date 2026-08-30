@@ -35,6 +35,8 @@ requireText('backend/Dockerfile', 'FROM node:22-alpine');
 requireText('backend/package.json', '"pdfkit": "^0.20.1"');
 requireText('backend/test/pdfKit.test.js', "assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');");
 requireText('.dockerignore', '**/._*');
+requireText('.dockerignore', '.codex*');
+requireText('eslint.config.js', "'.codex-*/**'");
 requireText('backend/.dockerignore', '**/._*');
 requireText('docker-compose.yml', 'POSTGRES_PASSWORD muss in der Instanz-Umgebung gesetzt sein');
 requireText('docker-compose.yml', "fetch('http://127.0.0.1:3001/health/ready')");

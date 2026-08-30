@@ -10,7 +10,8 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   npm-Audit für Build- sowie Produktionsabhängigkeiten in GitHub Actions
   ergänzt. PDFKit 0.20 ersetzt die alte Version samt ungewartetem `crypto-js`
   und erhält einen echten PDF-Regressionstest. Versteckte
-  macOS-Metadatendateien werden aus Docker-Buildkontexten ausgeschlossen.
+  macOS-Metadatendateien sowie lokale Agenten-Arbeitsordner werden aus Docker-
+  und ESLint-Prüfkontexten ausgeschlossen.
 - Frontend-Fachlogik und PostgreSQL-RLS erhalten eigene automatisierte
   Regressionstests. GitHub Actions führt alle Migrationen gegen eine frische
   PostgreSQL-15-Datenbank aus und prüft die Trennung zweier Workspaces.

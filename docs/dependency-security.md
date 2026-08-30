@@ -57,4 +57,6 @@ neu veröffentlichten Hinweis ohne Quellcodeänderung später fehlschlagen.
 Container-Basisimages, Alpine-Pakete, Browser und PostgreSQL brauchen getrennte
 Aktualisierung und Prüfung. Der bewegliche Tag `node:22-alpine` liefert bei
 einem Neubau Sicherheitsupdates, ist aber kein bytegenau reproduzierbarer
-Digest-Pin.
+Digest-Pin. Lokale Agenten-Arbeitsordner und macOS-Metadaten sind aus Docker-
+und ESLint-Prüfkontexten ausgeschlossen, damit nicht versionierte Hilfsdateien
+einen ansonsten reproduzierbaren Serverbau nicht verändern.
