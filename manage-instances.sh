@@ -32,6 +32,9 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}❌ $1${NC}"
+    if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+        printf '::error title=SoloOffice-Betriebsprüfung::%s\n' "$1"
+    fi
 }
 
 validate_instance_name() {

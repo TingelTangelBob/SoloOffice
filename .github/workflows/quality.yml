@@ -75,7 +75,7 @@ jobs:
             test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
           done
 
-      - name: Vollständige Compose-Instanz starten und prüfen
+      - name: Compose-Prüfinstanz vorbereiten
         run: |
           cat > .env.ci <<'EOF'
           COMPOSE_PROJECT_NAME=solooffice-ci
@@ -106,23 +106,26 @@ jobs:
           docker tag solooffice-frontend solooffice-ci-frontend
           docker tag solooffice-backend solooffice-ci-backend
 
-          cleanup() {
-            status=$?
-            trap - EXIT
-            if [ "$status" -ne 0 ]; then
-              docker compose --env-file .env.ci -f docker-compose.yml ps || true
-              docker compose --env-file .env.ci -f docker-compose.yml logs --no-color || true
-            fi
-            docker compose --env-file .env.ci -f docker-compose.yml down -v --remove-orphans || true
-            exit "$status"
-          }
-          trap cleanup EXIT
-
+      - name: Vollständige Compose-Instanz starten
+        run: |
           SOLOOFFICE_VERSION="$(jq -r .version package.json)" \
           SOLOOFFICE_COMMIT_SHA="$GITHUB_SHA" \
             docker compose --env-file .env.ci -f docker-compose.yml \
             up -d --no-build --wait --wait-timeout 120
+
+      - name: Vollständige Compose-Instanz prüfen
+        run: |
           bash manage-instances.sh verify ci "$GITHUB_SHA"
+
+      - name: Fehlgeschlagene Compose-Instanz diagnostizieren
+        if: failure()
+        run: |
+          docker compose --env-file .env.ci -f docker-compose.yml ps || true
+          docker compose --env-file .env.ci -f docker-compose.yml logs --no-color || true
+
+      - name: Compose-Prüfinstanz aufräumen
+        if: always()
+        run: docker compose --env-file .env.ci -f docker-compose.yml down -v --remove-orphans
 
       - name: Migrationen und Workspace-RLS gegen PostgreSQL prüfen
         run: >-
