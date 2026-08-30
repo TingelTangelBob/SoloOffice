@@ -1,6 +1,6 @@
 # Automatisierte Tests und Qualitätstore
 
-**Stand:** 2026-08-28
+**Stand:** 2026-08-30
 **Status:** im Docker-Build und in GitHub Actions integriert
 
 SoloOffice trennt schnelle Regressionstests, reproduzierbare Image-Builds und
@@ -16,6 +16,7 @@ Mac ist keine lokale Node-/PostgreSQL-Installation erforderlich.
 | PostgreSQL-Integration | 7 Tests für alle Migrationen, Rollenentmachtung, erzwungene RLS, Trennung zweier Workspaces und parallele Rechnungsnummern | im gemeinsamen GitHub-Qualitätsworkflow |
 | Statische Audit-Verträge | sicherheits- und fachkritische Quellverträge | vor beiden Image-Builds in GitHub Actions |
 | Abhängigkeits-Audit | vollständiger Frontend-Baum ab hoher Kritikalität sowie produktive Frontend-/Backend-Bäume ab mittlerer Kritikalität | vor beiden Image-Builds in GitHub Actions |
+| Betriebsverträge | Shell-Syntax, Archiv-Commit, OCI-Labels, komplette Compose-Instanz, Healthchecks und geschützte Update-/Prüfpfade | in GitHub Actions und nach jedem Instanzupdate |
 
 Der Frontend-Testlauf kompiliert nur ausgewählte, reine TypeScript-Fachmodule
 in das ignorierte Verzeichnis `.test-dist` und führt sie anschließend mit
@@ -71,3 +72,6 @@ Datenbank-Isolationsnaht. Nicht ersetzt werden:
 
 Diese Punkte stehen dauerhaft in der
 [manuellen Release-Checkliste](manual-release-checklist.md).
+
+Die zusätzliche technische Prüfung einer tatsächlich laufenden Instanz ist im
+[Betriebsnachweis](operations-verification.md) beschrieben.

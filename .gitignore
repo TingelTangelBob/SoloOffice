@@ -8,6 +8,7 @@
 node_modules
 dist
 .test-dist
+backups/
 *.tsbuildinfo
 AGENTS.md
 CLAUDE.md

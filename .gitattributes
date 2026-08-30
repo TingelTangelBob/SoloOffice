@@ -8,6 +8,10 @@
 # mit „bad interpreter".
 *.sh text eol=lf
 
+# `git archive` ersetzt den Platzhalter durch den exakten Commit. Damit kann
+# auch ein Serverordner ohne `.git` seinen tatsächlichen Quellstand belegen.
+BUILD_COMMIT export-subst
+
 # Binärdateien nie anfassen.
 *.png binary
 *.jpg binary

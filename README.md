@@ -224,6 +224,10 @@ alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
 Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md). Die
 Abhängigkeitsstrategie und die aktuellen Audit-Grenzen sind in
 [docs/dependency-security.md](docs/dependency-security.md) dokumentiert.
+Laufende Instanzen lassen sich mit `manage-instances.sh verify` ohne Anmeldung
+auf Health, Migrationen, RLS und den exakten Image-Commit prüfen; der gesicherte
+Updatepfad steht in
+[docs/operations-verification.md](docs/operations-verification.md).
 
 Vor einem Release müssen technische Checks und manuelle Prüfung getrennt
 betrachtet werden. Der aktuelle Stand wird dauerhaft in der
@@ -248,7 +252,7 @@ wichtigsten manuellen Abläufen gehören:
 - Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
 - Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
 
-Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/dependency-security.md](docs/dependency-security.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
+Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/operations-verification.md](docs/operations-verification.md), [docs/dependency-security.md](docs/dependency-security.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
 
 ## Lizenz und Beiträge
 

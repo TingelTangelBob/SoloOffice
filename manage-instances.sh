@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -o pipefail
+umask 077
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+# shellcheck source=scripts/build-provenance.sh
+source "$SCRIPT_DIR/scripts/build-provenance.sh"
 
 # Script to manage multiple SoloOffice instances
 
@@ -26,53 +34,69 @@ print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+validate_instance_name() {
+    local instance_name="${1:-}"
+    if [[ ! "$instance_name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+        print_error "Ungültiger Instanzname. Erlaubt sind Buchstaben, Zahlen, _ und -."
+        return 1
+    fi
+}
+
+file_mode() {
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+
 # Function to list all running instances
 list_instances() {
+    local env_file
+    local instance_name
+    local frontend_port
+    local container_id
+    local container_state
+    local status
+    local found=false
+
     echo
-    print_info "=== Laufende SoloOffice-Instanzen ==="
-    echo
-    
-    # Get all running containers with belego in name
-    containers=$(docker ps --filter "name=belego-" --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}")
-    
-    if [ "$(echo "$containers" | wc -l)" -eq 1 ]; then
-        print_warning "Keine laufenden Instanzen gefunden."
-    else
-        echo "$containers"
-    fi
-    
-    echo
-    print_info "=== Verfügbare Konfigurationen ==="
+    print_info "=== Verfügbare SoloOffice-Instanzen ==="
     for env_file in .env.*; do
         if [ -f "$env_file" ] && [[ "$env_file" != .env.backend.* ]]; then
-            instance_name=$(echo "$env_file" | sed 's/.env.//')
+            instance_name=${env_file#.env.}
             if [ -f ".env.backend.$instance_name" ]; then
-                # Get ports from env file
-                DB_PORT=$(grep "DB_PORT=" "$env_file" | cut -d'=' -f2)
-                BACKEND_PORT=$(grep "BACKEND_PORT=" "$env_file" | cut -d'=' -f2)
-                FRONTEND_PORT=$(grep "FRONTEND_PORT=" "$env_file" | cut -d'=' -f2)
-                
-                # Check if running
-                if docker ps --filter "name=belego-${instance_name}" --format "{{.Names}}" | grep -q "belego-${instance_name}"; then
-                    status="${GREEN}RUNNING${NC}"
+                found=true
+                frontend_port=$(sed -n 's/^FRONTEND_PORT=//p' "$env_file" | tail -n 1)
+                container_id=$(docker compose --env-file "$env_file" -f docker-compose.yml \
+                    ps -q frontend 2>/dev/null)
+                if [ -n "$container_id" ]; then
+                    container_state=$(docker inspect --format \
+                        '{{.State.Status}}{{if .State.Health}}/{{.State.Health.Status}}{{end}}' \
+                        "$container_id" 2>/dev/null)
                 else
-                    status="${RED}STOPPED${NC}"
+                    container_state="stopped"
                 fi
-                
-                echo -e "  ${BLUE}$instance_name${NC} - $status - Frontend:$FRONTEND_PORT (Backend/DB intern)"
+                if [[ "$container_state" == running* ]]; then
+                    status="${GREEN}$(printf '%s' "$container_state" | tr '[:lower:]' '[:upper:]')${NC}"
+                else
+                    status="${RED}$(printf '%s' "$container_state" | tr '[:lower:]' '[:upper:]')${NC}"
+                fi
+
+                echo -e "  ${BLUE}$instance_name${NC} - $status - Frontend:${frontend_port:-unbekannt} (Backend/DB intern)"
             fi
         fi
     done
+    if [ "$found" = false ]; then
+        print_warning "Keine Instanzkonfigurationen gefunden."
+    fi
 }
 
 # Function to stop an instance
 stop_instance() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     if [ -z "$instance_name" ]; then
         print_error "Bitte geben Sie den Instanznamen an"
         echo "Usage: $0 stop <instance_name>"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
     
     if [ ! -f ".env.${instance_name}" ]; then
         print_error "Instanz '$instance_name' nicht gefunden"
@@ -80,7 +104,7 @@ stop_instance() {
     fi
     
     print_info "Stoppe Instanz: $instance_name"
-    if docker compose --env-file .env.${instance_name} -f docker-compose.yml down; then
+    if docker compose --env-file ".env.${instance_name}" -f docker-compose.yml down; then
         print_success "Instanz '$instance_name' wurde gestoppt"
     else
         print_error "Fehler beim Stoppen der Instanz '$instance_name'"
@@ -90,12 +114,13 @@ stop_instance() {
 
 # Function to start an instance
 start_instance() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     if [ -z "$instance_name" ]; then
         print_error "Bitte geben Sie den Instanznamen an"
         echo "Usage: $0 start <instance_name>"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
     
     if [ ! -f ".env.${instance_name}" ]; then
         print_error "Konfigurationsdatei .env.${instance_name} nicht gefunden"
@@ -124,10 +149,22 @@ CORS_ORIGIN=http://localhost:${FRONTEND_PORT}
 COOKIE_SECURE=false
 COOKIE_SAME_SITE=lax
 EOF
+        chmod 600 ".env.backend.${instance_name}"
     fi
     
+    local build_version
+    local build_revision
+    build_version=$(solooffice_project_version "$SCRIPT_DIR")
+    build_revision=$(solooffice_source_revision "$SCRIPT_DIR")
+
     print_info "Starte Instanz: $instance_name"
-    if docker compose --env-file .env.${instance_name} -f docker-compose.yml up -d --build; then
+    if env SOLOOFFICE_VERSION="$build_version" SOLOOFFICE_COMMIT_SHA="$build_revision" \
+        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml \
+        up -d --build --wait --wait-timeout 120; then
+        if ! verify_instance "$instance_name"; then
+            print_error "Die Instanz wurde gestartet, hat die Betriebsprüfung aber nicht bestanden."
+            return 1
+        fi
         print_success "Instanz '$instance_name' wurde gestartet"
         
         # Show access information
@@ -146,12 +183,13 @@ EOF
 
 # Function to remove an instance completely
 remove_instance() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     if [ -z "$instance_name" ]; then
         print_error "Bitte geben Sie den Instanznamen an"
         echo "Usage: $0 remove <instance_name>"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
     
     if [ ! -f ".env.${instance_name}" ]; then
         print_error "Instanz '$instance_name' nicht gefunden"
@@ -183,7 +221,7 @@ remove_instance() {
 
 # Function to show logs for an instance
 logs_instance() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     local service=${2:-""}
     
     if [ -z "$instance_name" ]; then
@@ -191,6 +229,14 @@ logs_instance() {
         echo "Usage: $0 logs <instance_name> [service]"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
+    case "$service" in
+        ""|database|backend|frontend) ;;
+        *)
+            print_error "Unbekannter Dienst '$service'."
+            return 1
+            ;;
+    esac
     
     if [ ! -f ".env.${instance_name}" ]; then
         print_error "Instanz '$instance_name' nicht gefunden"
@@ -200,20 +246,21 @@ logs_instance() {
     print_info "Zeige Logs für Instanz: $instance_name"
     if [ -n "$service" ]; then
         print_info "Service: $service"
-        docker compose --env-file .env.${instance_name} -f docker-compose.yml logs -f $service
+        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml logs -f "$service"
     else
-        docker compose --env-file .env.${instance_name} -f docker-compose.yml logs -f
+        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml logs -f
     fi
 }
 
 # Function to backup instance data
 backup_instance() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     if [ -z "$instance_name" ]; then
         print_error "Bitte geben Sie den Instanznamen an"
         echo "Usage: $0 backup <instance_name>"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
     
     if [ ! -f ".env.${instance_name}" ]; then
         print_error "Instanz '$instance_name' nicht gefunden"
@@ -438,14 +485,247 @@ backup_instance() {
     fi
 }
 
+# Prüft eine laufende Instanz ohne Anmeldung und ohne Fachdaten zu verändern.
+verify_instance() {
+    local instance_name="${1:-}"
+    local expected_revision="${2:-}"
+    local env_file
+    local backend_env_file
+    local compose_command
+    local service
+    local container_id
+    local container_state
+    local frontend_port
+    local base_url
+    local headers_file
+    local body_file
+    local auth_status
+    local db_user
+    local db_name
+    local role_flags
+    local unforced_rls
+    local latest_migration_file
+    local expected_migration
+    local actual_migration
+    local expected_version
+    local frontend_revision
+    local backend_revision
+    local image_id
+    local image_revision
+    local image_version
+    local source_revision
+
+    validate_instance_name "$instance_name" || return 1
+    env_file=".env.${instance_name}"
+    backend_env_file=".env.backend.${instance_name}"
+    if [ ! -f "$env_file" ] || [ ! -f "$backend_env_file" ]; then
+        print_error "Instanzkonfiguration für '$instance_name' ist unvollständig."
+        return 1
+    fi
+    if [ "$(file_mode "$env_file")" != "600" ] || [ "$(file_mode "$backend_env_file")" != "600" ]; then
+        print_error "Die Instanzdateien müssen Dateimodus 600 besitzen."
+        return 1
+    fi
+
+    source_revision=$(solooffice_source_revision "$SCRIPT_DIR")
+    if [ -z "$expected_revision" ] && [[ "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
+        expected_revision="$source_revision"
+    fi
+    if [ -n "$expected_revision" ]; then
+        solooffice_require_revision "$expected_revision" || return 1
+    fi
+
+    compose_command=(docker compose --env-file "$env_file" -f docker-compose.yml)
+    for service in database backend frontend; do
+        container_id=$("${compose_command[@]}" ps -q "$service")
+        if [ -z "$container_id" ]; then
+            print_error "Der Dienst '$service' besitzt keinen Container."
+            return 1
+        fi
+        container_state=$(docker inspect --format \
+            '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+            "$container_id" 2>/dev/null)
+        if [ "$container_state" != "running|healthy" ]; then
+            print_error "Der Dienst '$service' ist nicht gesund: $container_state"
+            return 1
+        fi
+    done
+
+    if ! "${compose_command[@]}" exec -T backend node -e \
+        "fetch('http://127.0.0.1:3001/health/ready').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+        print_error "Die interne Backend-Readiness ist fehlgeschlagen."
+        return 1
+    fi
+
+    frontend_port=$(sed -n 's/^FRONTEND_PORT=//p' "$env_file" | tail -n 1)
+    if [[ ! "$frontend_port" =~ ^[0-9]{1,5}$ ]] || [ "$frontend_port" -gt 65535 ]; then
+        print_error "FRONTEND_PORT ist ungültig."
+        return 1
+    fi
+    base_url="${SOLOOFFICE_VERIFY_URL:-http://127.0.0.1:${frontend_port}}"
+    if ! curl --fail --silent --show-error --max-time 10 "$base_url/" >/dev/null; then
+        print_error "Das Frontend antwortet nicht unter $base_url/."
+        return 1
+    fi
+    if ! curl --fail --silent --show-error --max-time 10 "$base_url/healthz" >/dev/null; then
+        print_error "Der Frontend-Healthcheck antwortet nicht."
+        return 1
+    fi
+
+    headers_file=$(mktemp)
+    body_file=$(mktemp)
+    auth_status=$(curl --silent --show-error --max-time 10 \
+        --dump-header "$headers_file" --output "$body_file" \
+        --write-out '%{http_code}' "$base_url/api/auth/me")
+    if [ "$auth_status" != "401" ] || ! grep -qi '^X-Request-ID:' "$headers_file"; then
+        rm -f "$headers_file" "$body_file"
+        print_error "Der anonyme Auth- und Request-ID-Smoke-Test ist fehlgeschlagen."
+        return 1
+    fi
+    rm -f "$headers_file" "$body_file"
+
+    db_user=$(sed -n 's/^POSTGRES_USER=//p' "$env_file" | tail -n 1)
+    db_name=$(sed -n 's/^POSTGRES_DB=//p' "$env_file" | tail -n 1)
+    if [ -z "$db_user" ] || [ -z "$db_name" ]; then
+        print_error "POSTGRES_USER oder POSTGRES_DB fehlt."
+        return 1
+    fi
+    role_flags=$("${compose_command[@]}" exec -T database \
+        psql -U "$db_user" -d "$db_name" -Atc \
+        "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+    if [ "$role_flags" != "f|f" ]; then
+        print_error "Die Datenbank-Laufzeitrolle kann RLS umgehen."
+        return 1
+    fi
+    unforced_rls=$("${compose_command[@]}" exec -T database \
+        psql -U "$db_user" -d "$db_name" -Atc \
+        "SELECT count(*) FROM pg_class JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace WHERE pg_namespace.nspname = current_schema() AND pg_class.relrowsecurity AND NOT pg_class.relforcerowsecurity")
+    if [ "$unforced_rls" != "0" ]; then
+        print_error "$unforced_rls RLS-Tabellen erzwingen die Richtlinie nicht."
+        return 1
+    fi
+
+    latest_migration_file=$(find backend/migrations -maxdepth 1 -type f \
+        -name '[0-9][0-9][0-9]_*.js' | LC_ALL=C sort | tail -n 1)
+    expected_migration=$(basename "$latest_migration_file" .js)
+    actual_migration=$("${compose_command[@]}" exec -T database \
+        psql -U "$db_user" -d "$db_name" -Atc \
+        "SELECT name FROM migrations ORDER BY id DESC LIMIT 1")
+    if [ -z "$expected_migration" ] || [ "$actual_migration" != "$expected_migration" ]; then
+        print_error "Migrationsstand abweichend: erwartet '$expected_migration', aktiv '$actual_migration'."
+        return 1
+    fi
+
+    expected_version=$(solooffice_project_version "$SCRIPT_DIR")
+    for service in frontend backend; do
+        image_id=$("${compose_command[@]}" images -q "$service" | head -n 1)
+        image_revision=$(docker image inspect --format \
+            '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id" 2>/dev/null)
+        image_version=$(docker image inspect --format \
+            '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_id" 2>/dev/null)
+        if [ "$image_version" != "$expected_version" ]; then
+            print_error "Das $service-Image meldet Version '$image_version' statt '$expected_version'."
+            return 1
+        fi
+        if [ "$service" = "frontend" ]; then
+            frontend_revision="$image_revision"
+        else
+            backend_revision="$image_revision"
+        fi
+    done
+    if [ "$frontend_revision" != "$backend_revision" ]; then
+        print_error "Frontend und Backend stammen aus unterschiedlichen Commits."
+        return 1
+    fi
+    if [ -n "$expected_revision" ] && [ "$frontend_revision" != "$expected_revision" ]; then
+        print_error "Die Images stammen nicht aus dem erwarteten Commit $expected_revision."
+        return 1
+    fi
+    if [ "$frontend_revision" = "unknown" ] || [ -z "$frontend_revision" ]; then
+        print_warning "Die Images besitzen noch keinen eindeutigen Commit-Nachweis."
+    fi
+
+    print_success "Betriebsprüfung bestanden: SoloOffice ${expected_version}, Commit ${frontend_revision:0:12}."
+}
+
+# Baut einen bereits synchronisierten Quellstand, sichert die Instanz und
+# schaltet erst nach erfolgreichen Image-Builds um.
+update_instance() {
+    local instance_name="${1:-}"
+    local requested_revision="${2:-}"
+    local revision
+    local version
+    local env_file
+    local backend_env_file
+    local env_hashes
+    local compose_command
+
+    validate_instance_name "$instance_name" || return 1
+    env_file=".env.${instance_name}"
+    backend_env_file=".env.backend.${instance_name}"
+    if [ ! -f "$env_file" ] || [ ! -f "$backend_env_file" ]; then
+        print_error "Instanzkonfiguration für '$instance_name' ist unvollständig."
+        return 1
+    fi
+    if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        && [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=normal)" ]; then
+        print_error "Ein Update aus einem veränderten Git-Arbeitsbaum ist nicht erlaubt."
+        return 1
+    fi
+
+    revision=$(solooffice_source_revision "$SCRIPT_DIR")
+    solooffice_require_revision "$revision" || return 1
+    if [ -n "$requested_revision" ]; then
+        solooffice_require_revision "$requested_revision" || return 1
+        if [ "$requested_revision" != "$revision" ]; then
+            print_error "Quellstand $revision stimmt nicht mit $requested_revision überein."
+            return 1
+        fi
+    fi
+    version=$(solooffice_project_version "$SCRIPT_DIR")
+    compose_command=(docker compose --env-file "$env_file" -f docker-compose.yml)
+
+    env_hashes=$(mktemp)
+    if ! solooffice_write_sha256_manifest "$env_hashes" "$env_file" "$backend_env_file"; then
+        rm -f "$env_hashes"
+        return 1
+    fi
+    if ! backup_instance "$instance_name"; then
+        rm -f "$env_hashes"
+        return 1
+    fi
+
+    print_info "Baue SoloOffice $version aus Commit ${revision:0:12}."
+    if ! env SOLOOFFICE_VERSION="$version" SOLOOFFICE_COMMIT_SHA="$revision" \
+        "${compose_command[@]}" build frontend backend; then
+        rm -f "$env_hashes"
+        print_error "Build fehlgeschlagen; die laufenden Container wurden nicht umgeschaltet."
+        return 1
+    fi
+    if ! "${compose_command[@]}" up -d --no-build --wait --wait-timeout 120; then
+        rm -f "$env_hashes"
+        print_error "Die neuen Container wurden nicht rechtzeitig gesund."
+        return 1
+    fi
+    if ! solooffice_verify_sha256_manifest "$env_hashes" >/dev/null; then
+        rm -f "$env_hashes"
+        print_error "Eine geschützte Instanzdatei wurde während des Updates verändert."
+        return 1
+    fi
+    rm -f "$env_hashes"
+
+    verify_instance "$instance_name" "$revision"
+}
+
 # Function to edit instance configuration
 edit_config() {
-    local instance_name=$1
+    local instance_name="${1:-}"
     if [ -z "$instance_name" ]; then
         print_error "Bitte geben Sie den Instanznamen an"
         echo "Usage: $0 config <instance_name>"
         return 1
     fi
+    validate_instance_name "$instance_name" || return 1
     
     if [ ! -f ".env.backend.${instance_name}" ]; then
         print_error "Backend-Konfigurationsdatei .env.backend.${instance_name} nicht gefunden"
@@ -503,7 +783,13 @@ case "$1" in
         logs_instance $2 $3
         ;;
     backup)
-        backup_instance $2
+        backup_instance "$2"
+        ;;
+    verify|check)
+        verify_instance "$2" "${3:-}"
+        ;;
+    update)
+        update_instance "$2" "${3:-}"
         ;;
     config|edit)
         edit_config $2
@@ -522,6 +808,8 @@ case "$1" in
         echo "  remove <instance>       - Instanz löschen (⚠️  Datenverlust!)"
         echo "  logs <instance> [svc]   - Logs anzeigen"
         echo "  backup <instance>       - Datenbank-Backup erstellen"
+        echo "  verify <instance> [sha] - Laufzeit, RLS und Image-Commit prüfen"
+        echo "  update <instance> [sha] - Sichern, bauen, umschalten und prüfen"
         echo "  config <instance>       - Konfiguration bearbeiten"
         echo "  help                    - Diese Hilfe anzeigen"
         echo
@@ -530,6 +818,8 @@ case "$1" in
         echo "  $0 start client1"
         echo "  $0 logs client1 backend"
         echo "  $0 backup client1"
+        echo "  $0 verify client1"
+        echo "  $0 update client1"
         echo "  $0 config client1"
         echo
         ;;

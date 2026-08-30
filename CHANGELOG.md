@@ -4,6 +4,15 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Self-Hosting-Updates erhalten einen automatischen Backup-, Build-, Health-,
+  RLS-, Migrations- und Commit-Nachweis. `git archive` bettet den exakten
+  Quellcommit ein; Frontend und Backend tragen ihn als OCI-Label. Das reguläre
+  nginx-Frontend läuft ohne root und mit schreibgeschütztem Dateisystem,
+  eigenem Healthcheck, sicheren Cache-Regeln und begrenzten Logs.
+- Die Erstinstallation speichert Instanzgeheimnisse mit Dateimodus 600, gibt
+  keine Datenbankpasswörter mehr aus und erzeugt auch im Legacy-Pfad einen
+  eigenen Verschlüsselungsschlüssel. Shell- und Betriebsverträge werden in CI
+  blockierend geprüft.
 - Frontend-Build und Backend-Laufzeit wechseln auf Node.js 22. Vite, das
   React-Plugin und ESLint werden auf aktuelle sichere Hauptversionen
   angehoben, die Lockdatei vollständig aktualisiert und ein blockierender

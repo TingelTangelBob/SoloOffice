@@ -18,11 +18,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        SOLOOFFICE_VERSION: ${SOLOOFFICE_VERSION:-dev}
+        SOLOOFFICE_COMMIT_SHA: ${SOLOOFFICE_COMMIT_SHA:-unknown}
     container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-backend
     env_file:
       - .env.backend.${INSTANCE_NAME:-default}
@@ -72,6 +80,11 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - app-network
 
@@ -82,6 +95,8 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
         VITE_DEMO_MODE: ${VITE_DEMO_MODE:-false}
+        SOLOOFFICE_VERSION: ${SOLOOFFICE_VERSION:-dev}
+        SOLOOFFICE_COMMIT_SHA: ${SOLOOFFICE_COMMIT_SHA:-unknown}
     container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-frontend
     environment:
       - NODE_ENV=production
@@ -90,7 +105,25 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:uid=101,gid=101
+      - /var/cache/nginx:uid=101,gid=101
+      - /var/run:uid=101,gid=101
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - app-network
     

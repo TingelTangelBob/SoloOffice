@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -o pipefail
+umask 077
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+# shellcheck source=scripts/build-provenance.sh
+source "$SCRIPT_DIR/scripts/build-provenance.sh"
 
 # Script to deploy multiple instances of SoloOffice
 # Interactive deployment with guided configuration
@@ -25,6 +33,14 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}❌ $1${NC}"
+}
+
+validate_instance_name() {
+    local instance_name="${1:-}"
+    if [[ ! "$instance_name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+        print_error "Ungültiger Instanzname. Erlaubt sind Buchstaben, Zahlen, _ und -."
+        return 1
+    fi
 }
 
 # Function to prompt for input with default value
@@ -90,7 +106,7 @@ collect_instance_config() {
     # Instance name
     while true; do
         INSTANCE_NAME=$(prompt_input "Name der Instanz (z.B. 'client1', 'firma-mustermann')" "")
-        if [ -n "$INSTANCE_NAME" ]; then
+        if [ -n "$INSTANCE_NAME" ] && validate_instance_name "$INSTANCE_NAME"; then
             # Check if instance already exists
             if [ -f ".env.${INSTANCE_NAME}" ]; then
                 print_warning "Eine Instanz mit dem Namen '$INSTANCE_NAME' existiert bereits."
@@ -178,6 +194,7 @@ POSTGRES_PASSWORD=${DB_PASSWORD}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 REGISTRATION_MODE=closed-after-first
 EOF
+    chmod 600 ".env.${INSTANCE_NAME}"
 
     # Create Backend environment file
     print_info "Erstelle Backend Konfiguration..."
@@ -195,10 +212,18 @@ COOKIE_SAME_SITE=lax
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 REGISTRATION_MODE=closed-after-first
 EOF
+    chmod 600 ".env.backend.${INSTANCE_NAME}"
 
     # Start deployment
     print_info "Starte Docker Container..."
-    if docker compose --env-file .env.${INSTANCE_NAME} -f docker-compose.yml up -d --build; then
+    local build_version
+    local build_revision
+    build_version=$(solooffice_project_version "$SCRIPT_DIR")
+    build_revision=$(solooffice_source_revision "$SCRIPT_DIR")
+    if env SOLOOFFICE_VERSION="$build_version" SOLOOFFICE_COMMIT_SHA="$build_revision" \
+        docker compose --env-file ".env.${INSTANCE_NAME}" -f docker-compose.yml \
+        up -d --build --wait --wait-timeout 120 \
+        && bash "$SCRIPT_DIR/manage-instances.sh" verify "$INSTANCE_NAME"; then
         echo
         print_success "Instance '$INSTANCE_NAME' wurde erfolgreich deployed!"
         echo
@@ -216,7 +241,7 @@ EOF
         print_info "3. Erstellen Sie Ihre ersten Kunden und Rechnungen"
         echo
         print_warning "Wichtig: Bewahren Sie die Konfigurationsdateien sicher auf!"
-        print_warning "Database Password: $DB_PASSWORD"
+        print_info "Passwörter und Verschlüsselungsschlüssel werden ausschließlich in den geschützten Instanzdateien gespeichert."
     else
         print_error "Deployment fehlgeschlagen!"
         return 1
@@ -225,6 +250,12 @@ EOF
 
 # Main script logic
 main() {
+    # Hilfe muss auch auf einem Rechner ohne laufendes Docker lesbar sein.
+    if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        show_help
+        return
+    fi
+
     # Check for dependencies
     print_info "Überprüfe Systemvoraussetzungen..."
     
@@ -256,9 +287,6 @@ main() {
     else
         # Parse command line arguments
         case "$1" in
-            --help|-h)
-                show_help
-                ;;
             --interactive|-i)
                 collect_instance_config
                 if [ $? -eq 0 ]; then
@@ -326,6 +354,8 @@ legacy_deploy() {
     BACKEND_PORT=${3:-3001}
     FRONTEND_PORT=${4:-8080}
 
+    validate_instance_name "$INSTANCE_NAME" || exit 1
+
     # Check if ports are already in use
     if ! check_port $DB_PORT; then
         print_error "Port $DB_PORT ist bereits belegt!"
@@ -342,8 +372,9 @@ legacy_deploy() {
         exit 1
     fi
 
-    # Generate secure password
+    # Generate secure secrets
     DB_PASSWORD="secure_db_${INSTANCE_NAME}_$(openssl rand -hex 32)"
+    ENCRYPTION_KEY="$(openssl rand -hex 32)"
     
     # Create minimal configuration (no SMTP)
     cat > .env.${INSTANCE_NAME} << EOF
@@ -358,6 +389,7 @@ POSTGRES_PASSWORD=${DB_PASSWORD}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 REGISTRATION_MODE=closed-after-first
 EOF
+    chmod 600 ".env.${INSTANCE_NAME}"
 
     # Create minimal backend config
     cat > .env.backend.${INSTANCE_NAME} << EOF
@@ -371,9 +403,17 @@ NODE_ENV=production
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 REGISTRATION_MODE=closed-after-first
 EOF
+    chmod 600 ".env.backend.${INSTANCE_NAME}"
 
     # Deploy with specific env file
-    if docker compose --env-file .env.${INSTANCE_NAME} -f docker-compose.yml up -d --build; then
+    local build_version
+    local build_revision
+    build_version=$(solooffice_project_version "$SCRIPT_DIR")
+    build_revision=$(solooffice_source_revision "$SCRIPT_DIR")
+    if env SOLOOFFICE_VERSION="$build_version" SOLOOFFICE_COMMIT_SHA="$build_revision" \
+        docker compose --env-file ".env.${INSTANCE_NAME}" -f docker-compose.yml \
+        up -d --build --wait --wait-timeout 120 \
+        && bash "$SCRIPT_DIR/manage-instances.sh" verify "$INSTANCE_NAME"; then
         print_success "Instance '$INSTANCE_NAME' deployed successfully!"
         print_info "Frontend available at: http://localhost:$FRONTEND_PORT"
         print_info "Backend/Datenbank: nur intern im Compose-Netzwerk (Debug-Override bei Bedarf ergänzen)"

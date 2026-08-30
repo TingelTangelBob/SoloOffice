@@ -182,25 +182,25 @@ Der technische Nachweis mit zwei Workspaces steht in
 ## Aktualisierung
 
 ```bash
-git pull
-docker compose --env-file .env.<name> -f docker-compose.yml up -d --build
-docker compose --env-file .env.<name> -f docker-compose.yml ps
+git pull --ff-only
+./manage-instances.sh update <name>
 ```
 
-Nach dem Update müssen Backend-Readiness, Login und der aktive Workspace
-geprüft werden. Der Compose-Healthcheck verwendet intern `/health/ready` und
-erscheint in `docker compose ps` als `healthy`; ein Aufruf am veröffentlichten
-Frontend-Port prüft die Datenbank nicht, weil dort nur `/api` weitergeleitet
-wird. Die direkte Antwort lässt sich so ansehen:
+Der Update-Befehl erstellt zuerst ein vollständiges Instanzbackup, baut beide
+Images mit dem exakten Commit-Nachweis, schaltet erst nach erfolgreichen Builds
+um und führt anschließend die technische Instanzprüfung aus. Die geschützten
+`.env`-Dateien werden vor und nach dem Ablauf per Prüfsumme verglichen.
+
+Eine laufende Instanz kann jederzeit ohne Änderung von Fachdaten erneut geprüft
+werden:
 
 ```bash
-docker compose --env-file .env.<name> -f docker-compose.yml \
-  exec -T backend node -e \
-  "fetch('http://127.0.0.1:3001/health/ready').then(async response => { console.log(response.status, await response.text()); process.exit(response.ok ? 0 : 1); }).catch(() => process.exit(1))"
+./manage-instances.sh verify <name>
 ```
 
-Migrationen laufen beim Backend-Start automatisch. Ein Datenbankbackup vor
-jedem Update bleibt Pflicht.
+Migrationen laufen beim Backend-Start automatisch. Umfang und Fehlerverhalten
+der Prüfung stehen im
+[`Betriebsnachweis`](operations-verification.md).
 
 ## Health, Shutdown, Logs und Laufzeitmetriken
 
@@ -208,6 +208,11 @@ jedem Update bleibt Pflicht.
 `/health/ready` prüft zusätzlich PostgreSQL und wird vom Container verwendet.
 `/health` bleibt als kompatibler Alias erhalten. Öffentliche Health-Antworten
 enthalten weder Datenbankfehler noch Pool-Statistiken.
+
+Das Frontend besitzt zusätzlich `/healthz`. Sein nginx-Container läuft ohne
+root, mit schreibgeschütztem Dateisystem und begrenzten Logdateien. `index.html`
+wird nicht zwischengespeichert; gehashte Vite-Assets sind dagegen unveränderlich
+cachebar.
 
 Bei `SIGTERM` und `SIGINT` nimmt das Backend keine neuen Verbindungen mehr an,
 lässt laufende Requests bis zu `SHUTDOWN_TIMEOUT_MS` auslaufen und schließt

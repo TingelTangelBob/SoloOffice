@@ -1,5 +1,13 @@
 FROM node:22-alpine
 
+ARG SOLOOFFICE_VERSION=dev
+ARG SOLOOFFICE_COMMIT_SHA=unknown
+
+LABEL org.opencontainers.image.title="SoloOffice Backend" \
+      org.opencontainers.image.version="${SOLOOFFICE_VERSION}" \
+      org.opencontainers.image.revision="${SOLOOFFICE_COMMIT_SHA}" \
+      org.opencontainers.image.source="https://github.com/TingelTangelBob/SoloOffice"
+
 WORKDIR /app
 
 # Local OCR runtime and German/English language data. OCR stays inside the

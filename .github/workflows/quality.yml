@@ -37,16 +37,92 @@ jobs:
       - name: Statische Audit-Verträge prüfen
         run: node scripts/verify-audit-contracts.mjs
 
+      - name: Shell-Skripte und Archiv-Provenienz prüfen
+        run: |
+          bash -n deploy-instance.sh manage-instances.sh scripts/*.sh deploy/*.sh
+          bash manage-instances.sh help > /dev/null
+          archived_commit="$(git archive --format=tar HEAD BUILD_COMMIT | tar -xOf - BUILD_COMMIT | tr -d '[:space:]')"
+          test "$archived_commit" = "$GITHUB_SHA"
+
       - name: Abhängigkeiten auf bekannte Schwachstellen prüfen
         run: |
           npm run audit:dependencies
           npm --prefix backend run audit:dependencies
 
       - name: Frontend-Image bauen (Lint, TypeScript, Vite-Build)
-        run: docker build --build-arg VITE_API_URL=/api --build-arg VITE_DEMO_MODE=false -t solooffice-frontend .
+        run: |
+          app_version="$(jq -r .version package.json)"
+          docker build \
+            --build-arg VITE_API_URL=/api \
+            --build-arg VITE_DEMO_MODE=false \
+            --build-arg SOLOOFFICE_VERSION="$app_version" \
+            --build-arg SOLOOFFICE_COMMIT_SHA="$GITHUB_SHA" \
+            -t solooffice-frontend .
 
       - name: Backend-Image bauen
-        run: docker build -t solooffice-backend ./backend
+        run: |
+          app_version="$(jq -r .version package.json)"
+          docker build \
+            --build-arg SOLOOFFICE_VERSION="$app_version" \
+            --build-arg SOLOOFFICE_COMMIT_SHA="$GITHUB_SHA" \
+            -t solooffice-backend ./backend
+
+      - name: Image-Versionen und Commit-Nachweis prüfen
+        run: |
+          app_version="$(jq -r .version package.json)"
+          for image in solooffice-frontend solooffice-backend; do
+            test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")" = "$app_version"
+            test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
+          done
+
+      - name: Vollständige Compose-Instanz starten und prüfen
+        run: |
+          cat > .env.ci <<'EOF'
+          COMPOSE_PROJECT_NAME=solooffice-ci
+          INSTANCE_NAME=ci
+          FRONTEND_PORT=18090
+          POSTGRES_DB=solooffice_ci
+          POSTGRES_USER=solooffice_ci
+          POSTGRES_PASSWORD=ci-runtime-only-password
+          ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+          CORS_ORIGIN=http://127.0.0.1:18090
+          COOKIE_SECURE=false
+          COOKIE_SAME_SITE=lax
+          REGISTRATION_MODE=closed-after-first
+          EOF
+          cat > .env.backend.ci <<'EOF'
+          PORT=3001
+          DB_HOST=database
+          DB_PORT=5432
+          DB_NAME=solooffice_ci
+          DB_USER=solooffice_ci
+          DB_PASSWORD=ci-runtime-only-password
+          NODE_ENV=production
+          ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+          REGISTRATION_MODE=closed-after-first
+          EOF
+          chmod 600 .env.ci .env.backend.ci
+
+          docker tag solooffice-frontend solooffice-ci-frontend
+          docker tag solooffice-backend solooffice-ci-backend
+
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              docker compose --env-file .env.ci -f docker-compose.yml ps || true
+              docker compose --env-file .env.ci -f docker-compose.yml logs --no-color || true
+            fi
+            docker compose --env-file .env.ci -f docker-compose.yml down -v --remove-orphans || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          SOLOOFFICE_VERSION="$(jq -r .version package.json)" \
+          SOLOOFFICE_COMMIT_SHA="$GITHUB_SHA" \
+            docker compose --env-file .env.ci -f docker-compose.yml \
+            up -d --no-build --wait --wait-timeout 120
+          bash manage-instances.sh verify ci "$GITHUB_SHA"
 
       - name: Migrationen und Workspace-RLS gegen PostgreSQL prüfen
         run: >-
