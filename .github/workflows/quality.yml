@@ -108,10 +108,22 @@ jobs:
 
       - name: Vollständige Compose-Instanz starten
         run: |
+          compose_log="$(mktemp)"
+          set +e
           SOLOOFFICE_VERSION="$(jq -r .version package.json)" \
           SOLOOFFICE_COMMIT_SHA="$GITHUB_SHA" \
             docker compose --env-file .env.ci -f docker-compose.yml \
-            up -d --no-build --wait --wait-timeout 120
+            up -d --no-build --wait --wait-timeout 120 2>&1 | tee "$compose_log"
+          compose_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$compose_status" -ne 0 ]; then
+            details="$(tail -n 30 "$compose_log")"
+            details=${details//'%'/'%25'}
+            details=${details//$'\r'/'%0D'}
+            details=${details//$'\n'/'%0A'}
+            printf '::error title=Compose-Start fehlgeschlagen::%s\n' "$details"
+            exit "$compose_status"
+          fi
 
       - name: Vollständige Compose-Instanz prüfen
         run: |

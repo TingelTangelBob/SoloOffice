@@ -72,6 +72,7 @@ requireText('.github/workflows/quality.yml', 'Vollständige Compose-Instanz star
 requireText('.github/workflows/quality.yml', 'Vollständige Compose-Instanz prüfen');
 requireText('.github/workflows/quality.yml', 'bash manage-instances.sh verify ci "$GITHUB_SHA"');
 requireText('.github/workflows/quality.yml', 'Compose-Prüfinstanz aufräumen');
+requireText('.github/workflows/quality.yml', '::error title=Compose-Start fehlgeschlagen::%s');
 requireText('manage-instances.sh', '::error title=SoloOffice-Betriebsprüfung::%s');
 requireText('backend/routes/backup.js', 'ignoredTables: IGNORED_LEGACY_BACKUP_TABLES');
 requireText('backend/utils/backupArchive.js', 'uploadBytes: 50 * 1024 * 1024');
