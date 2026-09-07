@@ -34,12 +34,22 @@ export function DynamicColors() {
     return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
   };
 
-  // Function to determine text color based on background luminance
-  const getTextColor = (backgroundColor: string) => {
-    const luminance = getLuminance(backgroundColor);
-    // If luminance is greater than 0.5, use dark text, otherwise use light text
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+  /**
+   * Kontrastverhältnis nach WCAG zwischen zwei Farben.
+   */
+  const contrastRatio = (foreground: string, background: string) => {
+    const a = getLuminance(foreground);
+    const b = getLuminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
   };
+
+  // Choose the higher-contrast text color instead of relying on a luminance
+  // cutoff. The cutoff selected white for mid-tone accent colors below 4.5:1.
+  const getTextColor = (backgroundColor: string) => (
+    contrastRatio('#000000', backgroundColor) >= contrastRatio('#ffffff', backgroundColor)
+      ? '#000000'
+      : '#ffffff'
+  );
 
   // Calculate optimal text colors
   const primaryTextColor = getTextColor(primaryColor);
@@ -66,15 +76,6 @@ export function DynamicColors() {
   const primaryLight = lightenColor(primaryColor, 90);
   const primaryMedium = lightenColor(primaryColor, 80);
   const secondaryLight = lightenColor(secondaryColor, 90);
-
-  /**
-   * Kontrastverhältnis nach WCAG zwischen zwei Farben.
-   */
-  const contrastRatio = (foreground: string, background: string) => {
-    const a = getLuminance(foreground);
-    const b = getLuminance(background);
-    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-  };
 
   /**
    * Akzentfarbe so weit aufhellen bzw. abdunkeln, bis sie auf der jeweiligen
@@ -212,7 +213,13 @@ export function DynamicColors() {
         
         /* Text colors */
         #app-shell .text-primary-custom {
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface, var(--primary-color)) !important;
+        }
+        #app-shell .bg-primary-custom .text-primary-custom,
+        #app-shell .btn-primary .text-primary-custom,
+        #app-shell .action-menu-trigger-primary .text-primary-custom,
+        #app-shell .theme-tab-active .text-primary-custom {
+          color: var(--primary-text-color) !important;
         }
         #app-shell .text-secondary-custom {
           color: var(--secondary-color) !important;
@@ -279,11 +286,11 @@ export function DynamicColors() {
 
         #app-shell .action-menu-trigger {
           background-color: var(--primary-light) !important;
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
         }
         #app-shell .action-menu-trigger:hover {
           background-color: var(--primary-medium) !important;
-          color: var(--primary-color) !important;
+          color: var(--primary-on-surface) !important;
         }
 
         #app-shell .action-menu-trigger-primary {
@@ -395,7 +402,10 @@ export function DynamicColors() {
           background-color: #4b5563 !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-300 {
-          background-color: #6b7280 !important;
+          background-color: #4b5563 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-gray-50\\/60 {
+          background-color: #1f2937 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-light-custom {
           background-color: #374151 !important;
@@ -476,10 +486,6 @@ export function DynamicColors() {
            4,5:1 erreicht werden. */
         #app-shell[data-theme="dark"] .text-primary-custom {
           color: var(--primary-on-surface) !important;
-        }
-        #app-shell[data-theme="dark"] .bg-primary-custom .text-primary-custom,
-        #app-shell[data-theme="dark"] .btn-primary .text-primary-custom {
-          color: var(--primary-text-color) !important;
         }
         /* Die Icon-Aktionen setzen ihre Farben über @apply zusammen. Dabei
            landen die Deklarationen direkt in .action-icon-*, die weiter unten
@@ -586,17 +592,50 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-blue-100 {
           background-color: #1e3a8a !important;
         }
+        #app-shell[data-theme="dark"] .bg-blue-100\\/80 {
+          background-color: #1e3a8a !important;
+        }
+        /* Solid status/action colours need a dark-theme shade as well. White
+           button text on the regular 500-stops falls below 4.5:1. */
+        #app-shell[data-theme="dark"] .bg-blue-500,
+        #app-shell[data-theme="dark"] .bg-blue-600,
+        #app-shell[data-theme="dark"] .bg-blue-700 {
+          background-color: #1d4ed8 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-blue-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-blue-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-blue-800:hover {
+          background-color: #1d4ed8 !important;
+        }
         #app-shell[data-theme="dark"] .bg-green-50 {
           background-color: #052e16 !important;
         }
         #app-shell[data-theme="dark"] .bg-green-100 {
           background-color: #14532d !important;
         }
+        #app-shell[data-theme="dark"] .bg-green-500,
+        #app-shell[data-theme="dark"] .bg-green-600 {
+          background-color: #15803d !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-green-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-green-700:hover {
+          background-color: #15803d !important;
+        }
         #app-shell[data-theme="dark"] .bg-red-50 {
           background-color: #450a0a !important;
         }
         #app-shell[data-theme="dark"] .bg-red-100 {
           background-color: #7f1d1d !important;
+        }
+        #app-shell[data-theme="dark"] .bg-red-500,
+        #app-shell[data-theme="dark"] .bg-red-600,
+        #app-shell[data-theme="dark"] .bg-red-700 {
+          background-color: #b91c1c !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-red-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-red-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-red-800:hover {
+          background-color: #b91c1c !important;
         }
         #app-shell[data-theme="dark"] .bg-yellow-50,
         #app-shell[data-theme="dark"] .bg-amber-50 {
@@ -605,6 +644,16 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-yellow-100,
         #app-shell[data-theme="dark"] .bg-amber-100 {
           background-color: #78350f !important;
+        }
+        #app-shell[data-theme="dark"] .bg-yellow-500,
+        #app-shell[data-theme="dark"] .bg-amber-500,
+        #app-shell[data-theme="dark"] .bg-amber-600 {
+          background-color: #b45309 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-yellow-100:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-amber-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-amber-800:hover {
+          background-color: #b45309 !important;
         }
         #app-shell[data-theme="dark"] .bg-orange-50 {
           background-color: #451a03 !important;
@@ -615,17 +664,44 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-orange-200 {
           background-color: #9a3412 !important;
         }
+        #app-shell[data-theme="dark"] .bg-orange-500,
+        #app-shell[data-theme="dark"] .bg-orange-600 {
+          background-color: #c2410c !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-orange-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-orange-700:hover {
+          background-color: #c2410c !important;
+        }
         #app-shell[data-theme="dark"] .bg-emerald-50 {
           background-color: #052e16 !important;
         }
         #app-shell[data-theme="dark"] .bg-emerald-100 {
           background-color: #14532d !important;
         }
+        #app-shell[data-theme="dark"] .bg-emerald-500 {
+          background-color: #047857 !important;
+        }
         #app-shell[data-theme="dark"] .bg-rose-50 {
           background-color: #450a0a !important;
         }
         #app-shell[data-theme="dark"] .bg-rose-100 {
           background-color: #7f1d1d !important;
+        }
+        #app-shell[data-theme="dark"] .bg-rose-500 {
+          background-color: #be123c !important;
+        }
+        #app-shell[data-theme="dark"] .bg-purple-600 {
+          background-color: #7e22ce !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-purple-700:hover {
+          background-color: #7e22ce !important;
+        }
+        #app-shell[data-theme="dark"] .bg-purple-50,
+        #app-shell[data-theme="dark"] .bg-purple-100 {
+          background-color: #581c87 !important;
+        }
+        #app-shell[data-theme="dark"] .bg-violet-50 {
+          background-color: #2e1065 !important;
         }
         #app-shell[data-theme="dark"] .border-blue-100,
         #app-shell[data-theme="dark"] .border-blue-200,
@@ -661,23 +737,33 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .border-amber-200 {
           border-color: #d97706 !important;
         }
+        #app-shell[data-theme="dark"] .border-purple-200,
+        #app-shell[data-theme="dark"] .border-purple-500 {
+          border-color: #a855f7 !important;
+        }
+        #app-shell[data-theme="dark"] .border-violet-200 {
+          border-color: #8b5cf6 !important;
+        }
         #app-shell[data-theme="dark"] .text-blue-950,
         #app-shell[data-theme="dark"] .text-blue-900,
         #app-shell[data-theme="dark"] .text-blue-800,
         #app-shell[data-theme="dark"] .text-blue-700,
-        #app-shell[data-theme="dark"] .text-blue-600 {
+        #app-shell[data-theme="dark"] .text-blue-600,
+        #app-shell[data-theme="dark"] .text-blue-500 {
           color: #dbeafe !important;
         }
         #app-shell[data-theme="dark"] .text-green-900,
         #app-shell[data-theme="dark"] .text-green-800,
         #app-shell[data-theme="dark"] .text-green-700,
-        #app-shell[data-theme="dark"] .text-green-600 {
+        #app-shell[data-theme="dark"] .text-green-600,
+        #app-shell[data-theme="dark"] .text-green-500 {
           color: #bbf7d0 !important;
         }
         #app-shell[data-theme="dark"] .text-red-900,
         #app-shell[data-theme="dark"] .text-red-800,
         #app-shell[data-theme="dark"] .text-red-700,
-        #app-shell[data-theme="dark"] .text-red-600 {
+        #app-shell[data-theme="dark"] .text-red-600,
+        #app-shell[data-theme="dark"] .text-red-500 {
           color: #fecaca !important;
         }
         #app-shell[data-theme="dark"] .text-yellow-900,
@@ -694,7 +780,8 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-purple-900,
         #app-shell[data-theme="dark"] .text-purple-800,
         #app-shell[data-theme="dark"] .text-purple-700,
-        #app-shell[data-theme="dark"] .text-purple-600 {
+        #app-shell[data-theme="dark"] .text-purple-600,
+        #app-shell[data-theme="dark"] .text-purple-500 {
           color: #e9d5ff !important;
         }
         #app-shell[data-theme="dark"] .text-indigo-900,
@@ -707,26 +794,73 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-orange-900,
         #app-shell[data-theme="dark"] .text-orange-800,
         #app-shell[data-theme="dark"] .text-orange-700,
-        #app-shell[data-theme="dark"] .text-orange-600 {
+        #app-shell[data-theme="dark"] .text-orange-600,
+        #app-shell[data-theme="dark"] .text-orange-500 {
           color: #fdba74 !important;
         }
         #app-shell[data-theme="dark"] .text-emerald-900,
         #app-shell[data-theme="dark"] .text-emerald-800,
         #app-shell[data-theme="dark"] .text-emerald-700,
-        #app-shell[data-theme="dark"] .text-emerald-600 {
+        #app-shell[data-theme="dark"] .text-emerald-600,
+        #app-shell[data-theme="dark"] .text-emerald-500 {
           color: #a7f3d0 !important;
         }
         #app-shell[data-theme="dark"] .text-rose-900,
         #app-shell[data-theme="dark"] .text-rose-800,
         #app-shell[data-theme="dark"] .text-rose-700,
-        #app-shell[data-theme="dark"] .text-rose-600 {
+        #app-shell[data-theme="dark"] .text-rose-600,
+        #app-shell[data-theme="dark"] .text-rose-500 {
           color: #fecaca !important;
         }
         #app-shell[data-theme="dark"] .text-amber-900,
         #app-shell[data-theme="dark"] .text-amber-800,
         #app-shell[data-theme="dark"] .text-amber-700,
-        #app-shell[data-theme="dark"] .text-amber-600 {
+        #app-shell[data-theme="dark"] .text-amber-600,
+        #app-shell[data-theme="dark"] .text-amber-500 {
           color: #fde68a !important;
+        }
+        #app-shell[data-theme="dark"] .text-yellow-500 {
+          color: #fde68a !important;
+        }
+        #app-shell[data-theme="dark"] .text-violet-900,
+        #app-shell[data-theme="dark"] .text-violet-800,
+        #app-shell[data-theme="dark"] .text-violet-700 {
+          color: #ddd6fe !important;
+        }
+        /* Hover utilities otherwise restore Tailwind's dark source colour
+           over the dark surface. Keep interactive states readable too. */
+        #app-shell[data-theme="dark"] .hover\\:text-gray-500:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-gray-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-gray-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-gray-800:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-gray-900:hover {
+          color: #f3f4f6 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-blue-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-blue-800:hover {
+          color: #dbeafe !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-green-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-green-800:hover {
+          color: #bbf7d0 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-indigo-800:hover {
+          color: #c7d2fe !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-purple-700:hover {
+          color: #e9d5ff !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-red-600:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-red-700:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-red-800:hover {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-rose-700:hover {
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:text-primary-custom:hover,
+        #app-shell[data-theme="dark"] .hover\\:text-primary-custom\\/80:hover {
+          color: var(--primary-on-surface) !important;
         }
         #app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
         #app-shell[data-theme="dark"] textarea,
@@ -742,6 +876,11 @@ export function DynamicColors() {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fb923c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 5-5 5 5'/%3E%3C/svg%3E");
         }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
+          background-color: #374151 !important;
+        }
+        #app-shell[data-theme="dark"] .hover\\:bg-gray-100:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-gray-200:hover,
+        #app-shell[data-theme="dark"] .hover\\:bg-gray-400:hover {
           background-color: #374151 !important;
         }
         #app-shell[data-theme="dark"] .document-preview-tool-button:hover,

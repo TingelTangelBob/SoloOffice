@@ -4,6 +4,8 @@
 [![Qualität](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/quality.yml/badge.svg)](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/quality.yml)
 [![Lizenz: AGPL v3](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 
+**Links:** [Website](https://solooffice.de) · [Demo](https://demo.solooffice.de) · [Landingpage](https://github.com/TingelTangelBob/solooffice-landingpage) · [Selbst hosten](docs/self-hosting.md)
+
 SoloOffice ist eine deutschsprachige, selbst hostbare Webanwendung für Rechnungen, Angebote, Aufträge und vorbereitende Buchhaltung. Die Anwendung verbindet Kundenverwaltung, Dokumente, E-Rechnungen, lokale Belegerkennung, EÜR, Auswertungen und Workspace-Verwaltung in einer Oberfläche.
 
 Der aktuelle Stand ist **v0.6.3** und ein Beta-/Testrelease. Die Anwendung ist für Tests und Feedback gedacht und ersetzt keine Steuer-, Rechts- oder Datenschutzberatung. Die Versionsnummer folgt SemVer; **1.0.0** wird vergeben, sobald das Self-Hosting praktisch nachgewiesen ist — Migrationen, Mandantentrennung und Restore gegen eine echte Datenbank.
@@ -89,6 +91,10 @@ Terminologieprofile, Farbthemen, Unternehmensdaten, Rechnungseinstellungen, Dars
 
 ## Schnellstart mit Docker
 
+Für eine öffentliche Instanz mit TLS, Reverse Proxy, Geheimnisverwaltung,
+Backups, Updates und Wiederherstellung ist die [Betriebsanleitung für
+Selbsthoster](docs/self-hosting.md) maßgeblich.
+
 ### Voraussetzungen
 
 - Docker Desktop oder Docker Engine mit Docker Compose v2
@@ -156,6 +162,8 @@ Wichtige Betriebsvariablen werden pro Instanz gesetzt:
 | REGISTRATION_MODE | Öffnung bzw. Begrenzung der Registrierung |
 | REQUIRE_EMAIL_VERIFICATION | Optionale E-Mail-Bestätigung |
 | SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM | E-Mail-Versand |
+| OCR_CONCURRENCY_LIMIT | Höchstzahl gleichzeitig laufender lokaler OCR-Vorgänge (Standard: 2) |
+| OCR_TIMEOUT_MS | Zeitlimit je OCR-Hilfsprozess in Millisekunden (Standard: 120000) |
 
 Für einen produktiven Betrieb müssen insbesondere ENCRYPTION_KEY, Datenbankpasswort und Session-/Proxy-Einstellungen dauerhaft und geheim verwahrt werden. Hinter HTTPS ist COOKIE_SECURE=true zu verwenden; CORS_ORIGIN muss auf die tatsächliche Frontend-Adresse zeigen.
 

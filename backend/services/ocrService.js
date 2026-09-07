@@ -3,10 +3,13 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import logger from '../utils/logger.js';
 
 const execFileAsync = promisify(execFile);
 const MAX_OCR_OUTPUT = 8 * 1024 * 1024;
 const MAX_PDF_PAGES = 50;
+const DEFAULT_OCR_CONCURRENCY_LIMIT = 2;
+const DEFAULT_OCR_TIMEOUT_MS = 120_000;
 
 const extensionByMimeType = {
   'image/jpeg': '.jpg',
@@ -19,6 +22,85 @@ const extensionByMimeType = {
 const amountPattern = /(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})?/g;
 const datePattern = /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b|\b(20\d{2})-(\d{2})-(\d{2})\b/g;
 const dateHintPattern = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b20\d{2}-\d{2}-\d{2}\b/;
+
+function positiveIntegerFromEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+export function getOcrConcurrencyLimit() {
+  return positiveIntegerFromEnv('OCR_CONCURRENCY_LIMIT', DEFAULT_OCR_CONCURRENCY_LIMIT);
+}
+
+export function getOcrTimeoutMs() {
+  return positiveIntegerFromEnv('OCR_TIMEOUT_MS', DEFAULT_OCR_TIMEOUT_MS);
+}
+
+function execFileOptions(maxBuffer = MAX_OCR_OUTPUT) {
+  return {
+    maxBuffer,
+    timeout: getOcrTimeoutMs(),
+  };
+}
+
+function isProcessTimeout(error) {
+  return error?.code === 'ETIMEDOUT' || error?.killed === true;
+}
+
+function timeoutMessage(name) {
+  return `Die lokale Belegerkennung für „${name || 'Beleg'}“ hat das Zeitlimit von ${Math.round(getOcrTimeoutMs() / 1000)} Sekunden überschritten.`;
+}
+
+class OcrQueue {
+  active = 0;
+  pending = [];
+
+  run(task, name) {
+    const position = this.pending.length + 1;
+    const limit = getOcrConcurrencyLimit();
+    if (this.active >= limit) {
+      logger.warn(`Lokales OCR für „${name || 'Beleg'}“ wartet in der Warteschlange (Position ${position}; ${this.active}/${limit} Vorgänge aktiv).`);
+    }
+
+    return new Promise((resolve, reject) => {
+      this.pending.push({ task, resolve, reject });
+      this.drain();
+    });
+  }
+
+  drain() {
+    while (this.active < getOcrConcurrencyLimit() && this.pending.length) {
+      const item = this.pending.shift();
+      this.active += 1;
+      Promise.resolve()
+        .then(item.task)
+        .then(item.resolve, item.reject)
+        .finally(() => {
+          this.active -= 1;
+          this.drain();
+        });
+    }
+  }
+
+  snapshot() {
+    return {
+      active: this.active,
+      pending: this.pending.length,
+      limit: getOcrConcurrencyLimit(),
+    };
+  }
+}
+
+const ocrQueue = new OcrQueue();
+
+/** Queue a complete local OCR operation and expose its current load for diagnostics/tests. */
+export function runWithOcrConcurrency(task, name) {
+  return ocrQueue.run(task, name);
+}
+
+export function getOcrQueueStatus() {
+  return ocrQueue.snapshot();
+}
 
 export function decodeBase64Content(content) {
   if (typeof content !== 'string' || !content.trim()) {
@@ -179,55 +261,80 @@ function parseExtractedData(text) {
   };
 }
 
-async function readConfidence(inputPath) {
-  try {
-    const { stdout } = await execFileAsync('tesseract', [inputPath, 'stdout', '-l', 'deu+eng', '--psm', '6', 'tsv'], {
-      maxBuffer: MAX_OCR_OUTPUT,
-    });
-    const confidences = stdout
-      .split(/\r?\n/)
-      .slice(1)
-      .map(line => line.split('\t')[10])
-      .map(value => Number(value))
-      .filter(value => Number.isFinite(value) && value >= 0);
-    if (!confidences.length) return undefined;
-    return Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100) / 100;
-  } catch {
-    return undefined;
+export function parseTesseractTsv(tsv) {
+  const rows = String(tsv || '').split(/\r?\n/).filter(Boolean);
+  if (!rows.length) return { text: '', confidence: undefined };
+
+  const header = rows[0].split('\t');
+  const confidenceIndex = header.indexOf('conf') >= 0 ? header.indexOf('conf') : 10;
+  const textIndex = header.indexOf('text') >= 0 ? header.indexOf('text') : 11;
+  const lineIndexes = ['page_num', 'block_num', 'par_num', 'line_num']
+    .map(column => header.indexOf(column));
+  const textLines = [];
+  const confidences = [];
+  let currentLineKey;
+  let currentWords = [];
+
+  const flushLine = () => {
+    if (currentWords.length) textLines.push(currentWords.join(' '));
+    currentWords = [];
+  };
+
+  for (const row of rows.slice(1)) {
+    const columns = row.split('\t');
+    const confidence = Number(columns[confidenceIndex]);
+    if (Number.isFinite(confidence) && confidence >= 0) confidences.push(confidence);
+
+    // TSV level 5 contains one row per recognized word. Its text is the same
+    // recognition result that the plain Tesseract output exposes.
+    if (columns[0] !== '5' || textIndex >= columns.length) continue;
+    const lineKey = lineIndexes.every(index => index >= 0)
+      ? lineIndexes.map(index => columns[index]).join('\t')
+      : 'line';
+    if (currentLineKey !== undefined && lineKey !== currentLineKey) flushLine();
+    currentLineKey = lineKey;
+    const word = columns[textIndex].trim();
+    if (word) currentWords.push(word);
   }
+  flushLine();
+
+  return {
+    text: textLines.join('\n').trim(),
+    confidence: confidences.length
+      ? Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100) / 100
+      : undefined,
+  };
 }
 
 async function runTesseract(inputPath, name) {
   try {
-    const { stdout } = await execFileAsync('tesseract', [inputPath, 'stdout', '-l', 'deu+eng', '--psm', '6'], {
-      maxBuffer: MAX_OCR_OUTPUT,
-    });
-    return String(stdout || '').trim();
+    const { stdout } = await execFileAsync('tesseract', [inputPath, 'stdout', '-l', 'deu+eng', '--psm', '6', 'tsv'], execFileOptions());
+    return parseTesseractTsv(stdout);
   } catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('Lokales OCR ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
     }
+    if (isProcessTimeout(error)) throw new Error(timeoutMessage(name));
     throw new Error(`Lokales OCR konnte „${name || 'Beleg'}“ nicht lesen.`);
   }
 }
 
 async function extractPdfText(inputPath, name) {
   try {
-    const { stdout } = await execFileAsync('pdftotext', ['-layout', inputPath, '-'], {
-      maxBuffer: MAX_OCR_OUTPUT,
-    });
+    const { stdout } = await execFileAsync('pdftotext', ['-layout', inputPath, '-'], execFileOptions());
     return String(stdout || '').trim();
   } catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
     }
+    if (isProcessTimeout(error)) throw new Error(timeoutMessage(name));
     throw new Error(`Die PDF „${name || 'Beleg'}“ konnte nicht gelesen werden.`);
   }
 }
 
 async function getPdfPageCount(inputPath, name) {
   try {
-    const { stdout } = await execFileAsync('pdfinfo', [inputPath], { maxBuffer: 1024 * 1024 });
+    const { stdout } = await execFileAsync('pdfinfo', [inputPath], execFileOptions(1024 * 1024));
     const pageMatch = String(stdout || '').match(/^Pages:\s+(\d+)$/m);
     const pageCount = Number(pageMatch?.[1]);
     if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error('Keine PDF-Seiten gefunden.');
@@ -237,6 +344,7 @@ async function getPdfPageCount(inputPath, name) {
     if (error?.code === 'ENOENT') {
       throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
     }
+    if (isProcessTimeout(error)) throw new Error(timeoutMessage(name));
     if (error instanceof Error && error.message.includes('höchstens')) throw error;
     throw new Error(`Die PDF „${name || 'Beleg'}“ konnte nicht gelesen werden.`);
   }
@@ -246,13 +354,12 @@ async function runScannedPdfOcr(inputPath, tempDirectory, name) {
   await getPdfPageCount(inputPath, name);
   const pagePrefix = path.join(tempDirectory, 'page');
   try {
-    await execFileAsync('pdftoppm', ['-png', '-r', '180', inputPath, pagePrefix], {
-      maxBuffer: MAX_OCR_OUTPUT,
-    });
+    await execFileAsync('pdftoppm', ['-png', '-r', '180', inputPath, pagePrefix], execFileOptions());
   } catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('Die PDF-Verarbeitung ist im Backend nicht installiert. Bitte das Backend-Image neu bauen.');
     }
+    if (isProcessTimeout(error)) throw new Error(timeoutMessage(name));
     throw new Error(`Die eingescannte PDF „${name || 'Beleg'}“ konnte nicht verarbeitet werden.`);
   }
 
@@ -265,10 +372,9 @@ async function runScannedPdfOcr(inputPath, tempDirectory, name) {
   const confidences = [];
   for (const pageFile of pageFiles) {
     const pagePath = path.join(tempDirectory, pageFile);
-    const pageText = await runTesseract(pagePath, name);
-    if (pageText) pageTexts.push(pageText);
-    const confidence = await readConfidence(pagePath);
-    if (confidence !== undefined) confidences.push(confidence);
+    const result = await runTesseract(pagePath, name);
+    if (result.text) pageTexts.push(result.text);
+    if (result.confidence !== undefined) confidences.push(result.confidence);
   }
 
   return {
@@ -299,10 +405,17 @@ export async function runLocalOcr({ content, contentType, name }) {
     let confidence;
     if (normalizedContentType === 'application/pdf') {
       text = await extractPdfText(inputPath, name);
-      if (!text) ({ text, confidence } = await runScannedPdfOcr(inputPath, tempDirectory, name));
+      if (!text) {
+        ({ text, confidence } = await runWithOcrConcurrency(
+          () => runScannedPdfOcr(inputPath, tempDirectory, name),
+          name,
+        ));
+      }
     } else {
-      text = await runTesseract(inputPath, name);
-      confidence = await readConfidence(inputPath);
+      ({ text, confidence } = await runWithOcrConcurrency(
+        () => runTesseract(inputPath, name),
+        name,
+      ));
     }
 
     return {
