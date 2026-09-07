@@ -13,6 +13,7 @@
     "src/utils/customerUtils.ts",
     "src/utils/formatters.ts",
     "src/utils/invoiceNumberPattern.ts",
+    "src/utils/invoicePeriod.ts",
     "src/utils/jobRecurrence.ts",
     "src/utils/jobUtils.ts",
     "src/utils/paymentInformation.ts",

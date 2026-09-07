@@ -20,6 +20,11 @@ import {
   validateInvoiceNumberPattern,
 } from '../../.test-dist/utils/invoiceNumberPattern.js';
 import {
+  formatDateInputValue,
+  isDateInInclusiveRange,
+  toDateInputValue,
+} from '../../.test-dist/utils/invoicePeriod.js';
+import {
   getIsoWeekday,
   getJobRecurrenceDates,
   getRecurrenceWeekdayLabel,
@@ -81,6 +86,16 @@ test('CSV schützt Text vor Formeleinschleusung, Zahlen bleiben berechenbar', ()
 
   assert.equal(csv, 'Name;Betrag;Notiz\r\n\'=SUM(A1:A2);-12,50;"Text; mit ""Zitat"""\r\n');
   assert.match(csvFileName('rechnungen'), /^rechnungen-\d{4}-\d{2}-\d{2}\.csv$/);
+});
+
+test('Rechnungszeiträume vergleichen Von und Bis inklusiv', () => {
+  assert.equal(toDateInputValue('2026-08-28T23:00:00.000Z'), '2026-08-28');
+  assert.equal(toDateInputValue(new Date(2026, 7, 28, 13, 0)), '2026-08-28');
+  assert.equal(formatDateInputValue(new Date(2026, 0, 3)), '2026-01-03');
+  assert.equal(isDateInInclusiveRange('2026-08-01', '2026-08-01', '2026-08-31'), true);
+  assert.equal(isDateInInclusiveRange('2026-08-31', '2026-08-01', '2026-08-31'), true);
+  assert.equal(isDateInInclusiveRange('2026-09-01', '2026-08-01', '2026-08-31'), false);
+  assert.equal(isDateInInclusiveRange('2026-08-15', '2026-09-01', '2026-08-31'), false);
 });
 
 test('Wöchentliche Wiederholungen respektieren Intervall und Wochentage', () => {

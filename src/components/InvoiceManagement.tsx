@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Banknote, Eye, Receipt, History } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -29,6 +29,9 @@ import { getTerminology } from '../utils/terminology';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { csvFileName, downloadCsv } from '../utils/csvExport';
+import type { CsvColumn } from '../utils/csvExport';
+import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '../utils/invoicePeriod';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -67,6 +70,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const openedInitialInvoiceId = useRef<string | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
+  const [invoiceStartDate, setInvoiceStartDate] = useState('');
+  const [invoiceEndDate, setInvoiceEndDate] = useState('');
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
@@ -210,9 +215,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         ? invoice.status !== 'paid'
         : invoice.status === filterStatus
     );
+
+    const matchesDateRange = isDateInInclusiveRange(invoice.issueDate, invoiceStartDate, invoiceEndDate);
     
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesDateRange;
   });
+  const hasInvalidInvoiceDateRange = Boolean(invoiceStartDate && invoiceEndDate && invoiceStartDate > invoiceEndDate);
 
   const handleOpenEditor = useCallback((invoice?: Invoice) => {
     // Check if invoice is sent, reminded, or has any status other than draft and warn user
@@ -805,6 +813,76 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   };
 
+  const setInvoiceTimePreset = (preset: 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'thisYear' | 'lastYear' | 'last30days') => {
+    const today = new Date();
+    let start: Date;
+    let end: Date;
+
+    switch (preset) {
+      case 'thisMonth':
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        break;
+      case 'lastMonth':
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        end = new Date(today.getFullYear(), today.getMonth(), 0);
+        break;
+      case 'thisQuarter': {
+        const quarter = Math.floor(today.getMonth() / 3);
+        start = new Date(today.getFullYear(), quarter * 3, 1);
+        end = new Date(today.getFullYear(), (quarter + 1) * 3, 0);
+        break;
+      }
+      case 'thisYear':
+        start = new Date(today.getFullYear(), 0, 1);
+        end = new Date(today.getFullYear(), 11, 31);
+        break;
+      case 'lastYear':
+        start = new Date(today.getFullYear() - 1, 0, 1);
+        end = new Date(today.getFullYear() - 1, 11, 31);
+        break;
+      case 'last30days':
+        start = new Date(today);
+        start.setDate(today.getDate() - 30);
+        end = today;
+        break;
+    }
+
+    setInvoiceStartDate(formatDateInputValue(start));
+    setInvoiceEndDate(formatDateInputValue(end));
+  };
+
+  const clearInvoicePeriod = () => {
+    setInvoiceStartDate('');
+    setInvoiceEndDate('');
+  };
+
+  const csvDate = (value: Invoice['issueDate']): Date | '' => {
+    const dateKey = toDateInputValue(value);
+    if (!dateKey) return '';
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const invoiceCsvColumns: CsvColumn<Invoice>[] = [
+    { header: 'Rechnungsnr', value: invoice => invoice.invoiceNumber },
+    { header: 'Typ', value: invoice => invoice.documentType === 'credit_note' ? 'Gutschrift' : 'Rechnung' },
+    { header: 'Kunde', value: invoice => invoice.customerName },
+    { header: 'IssueDate', value: invoice => csvDate(invoice.issueDate) },
+    { header: 'Faelligkeit', value: invoice => csvDate(invoice.dueDate) },
+    { header: 'Status', value: invoice => getStatusLabel(invoice.status) },
+    { header: 'Netto', value: invoice => invoice.subtotal, decimals: 2 },
+    { header: 'Steuer', value: invoice => invoice.taxAmount, decimals: 2 },
+    { header: 'Brutto', value: invoice => invoice.total, decimals: 2 },
+  ];
+
+  const handleExportPeriodCsv = () => {
+    if (!filteredInvoices.length || hasInvalidInvoiceDateRange) return;
+    const from = invoiceStartDate || 'offen';
+    const to = invoiceEndDate || 'offen';
+    downloadCsv(csvFileName(`Rechnungen-Zeitraum-${from}-bis-${to}`), filteredInvoices, invoiceCsvColumns);
+  };
+
   // Bulk operations functions
   const handleInvoiceSelection = (invoiceId: string, checked: boolean) => {
     if (checked) {
@@ -889,21 +967,35 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={Receipt} title="Rechnungen" subtitle="Verwalten Sie Ihre Rechnungen">
-        <button
-          onClick={() => handleOpenEditor()}
-          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
-          aria-label="Neue Rechnung erstellen"
-          title="Neue Rechnung erstellen"
-        >
-          <Plus className="h-5 w-5" />
-          <span className="hidden sm:inline">Neue Rechnung</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportPeriodCsv}
+            disabled={filteredInvoices.length === 0 || hasInvalidInvoiceDateRange}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+            aria-label="Zeitraum als CSV exportieren"
+            title="Gefilterten Zeitraum als CSV exportieren"
+          >
+            <Table2 className="h-5 w-5" />
+            <span className="hidden sm:inline">Zeitraum exportieren</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenEditor()}
+            className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+            aria-label="Neue Rechnung erstellen"
+            title="Neue Rechnung erstellen"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="hidden sm:inline">Neue Rechnung</span>
+          </button>
+        </div>
         </PageHeader>
       </div>
 
       {/* Filters */}
       <ResponsiveFilterBar
-        hasActiveFilters={filterStatus !== 'all'}
+        hasActiveFilters={filterStatus !== 'all' || Boolean(invoiceStartDate || invoiceEndDate)}
         search={(
           <div className="relative">
             <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
@@ -917,20 +1009,76 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           </div>
         )}
         filters={(
-          <FilterSelect
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">Alle Status</option>
-            <option value="not-paid">Alle außer bezahlt</option>
-            <option value="draft">Entwurf</option>
-            <option value="sent">Versendet</option>
-            <option value="paid">Bezahlt</option>
-            <option value="overdue">Überfällig</option>
-          </FilterSelect>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <label className="min-w-[9rem] flex-1 text-xs font-medium text-gray-700">
+              Von
+              <input
+                type="date"
+                value={invoiceStartDate}
+                max={invoiceEndDate || undefined}
+                onChange={(event) => setInvoiceStartDate(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                aria-label="Rechnungsdatum von"
+              />
+            </label>
+            <label className="min-w-[9rem] flex-1 text-xs font-medium text-gray-700">
+              Bis
+              <input
+                type="date"
+                value={invoiceEndDate}
+                min={invoiceStartDate || undefined}
+                onChange={(event) => setInvoiceEndDate(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                aria-label="Rechnungsdatum bis"
+              />
+            </label>
+            <FilterSelect
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="min-w-[11rem] rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Alle Status</option>
+              <option value="not-paid">Alle außer bezahlt</option>
+              <option value="draft">Entwurf</option>
+              <option value="sent">Versendet</option>
+              <option value="paid">Bezahlt</option>
+              <option value="overdue">Überfällig</option>
+            </FilterSelect>
+            <div className="flex basis-full flex-wrap gap-1 pt-1">
+              <span className="mr-1 self-center text-xs text-gray-500">Schnellfilter:</span>
+              {([
+                ['thisMonth', 'Dieser Monat'],
+                ['lastMonth', 'Letzter Monat'],
+                ['thisQuarter', 'Dieses Quartal'],
+                ['thisYear', 'Dieses Jahr'],
+                ['lastYear', 'Letztes Jahr'],
+                ['last30days', 'Letzte 30 Tage'],
+              ] as const).map(([preset, label]) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setInvoiceTimePreset(preset)}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  {label}
+                </button>
+              ))}
+              {(invoiceStartDate || invoiceEndDate) && (
+                <button
+                  type="button"
+                  onClick={clearInvoicePeriod}
+                  className="rounded-full px-2.5 py-1 text-xs text-gray-600 underline hover:text-gray-900"
+                >
+                  Zeitraum zurücksetzen
+                </button>
+              )}
+            </div>
+          </div>
         )}
       />
+      {hasInvalidInvoiceDateRange && (
+        <p className="-mt-4 text-sm text-red-700" role="alert">Das Von-Datum darf nicht nach dem Bis-Datum liegen.</p>
+      )}
 
       {/* Invoice List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
