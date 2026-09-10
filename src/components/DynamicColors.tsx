@@ -364,8 +364,11 @@ export function DynamicColors() {
           background-color: #232326 !important;
           color: #a1a1aa !important;
         }
+        /* Der Zähler des aktiven Reiters folgt dessen Akzenttönung. Ohne diese
+           Regel gewinnt die allgemeine Zählerfarbe darüber: gleiche
+           Spezifität, ebenfalls wichtig gesetzt, und sie steht weiter oben. */
         #app-shell[data-theme="dark"] .theme-tab-active .theme-tab-count {
-          background-color: rgb(255 255 255 / 0.2) !important;
+          background-color: var(--accent-edge) !important;
           color: inherit !important;
         }
         #app-shell[data-theme="dark"] .settings-save-bar {
@@ -425,10 +428,6 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .bg-gray-50 {
           background-color: #0a0a0b !important;
-        }
-        #app-shell[data-theme="dark"] .page-header {
-          background-color: #0a0a0b !important;
-          border-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-button,
         #app-shell[data-theme="dark"] .calendar-period-label {

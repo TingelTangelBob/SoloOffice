@@ -1182,7 +1182,7 @@
     /* Füllfläche für Primäraktionen und aktive Reiter. */
     --ink-solid: #18181b;
     --ink-solid-text: #ffffff;
-    --nav-active-surface: #ededef;
+    --surface-hover: #ededef;
     /* Auswahlzustände nach dem Muster der Fachsprachen-Einstellung: getönte
        Fläche plus Akzentrahmen statt voller Farbfläche. Die tatsächlichen
        Werte setzt `DynamicColors.tsx` je Theme; hier stehen nur Rückfallwerte
@@ -1202,7 +1202,7 @@
     --ink-strong: #fafafa;
     --ink-solid: #fafafa;
     --ink-solid-text: #18181b;
-    --nav-active-surface: #232326;
+    --surface-hover: #232326;
     --accent-tint: rgba(37, 99, 235, 0.26);
     --accent-edge: rgba(37, 99, 235, 0.55);
   }
@@ -1329,12 +1329,12 @@
   }
 
   .nav-row-muted:hover {
-    background-color: var(--surface-sunken);
-    color: var(--ink-strong, #101012);
+    background-color: var(--surface-hover);
+    color: var(--ink-strong);
   }
 
   #app-shell[data-theme="dark"] .nav-row-muted:hover {
-    background-color: var(--nav-active-surface);
+    background-color: var(--surface-hover);
     color: #fafafa;
   }
 }
