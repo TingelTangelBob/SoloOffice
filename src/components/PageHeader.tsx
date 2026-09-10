@@ -2,9 +2,16 @@ import { ReactNode } from 'react';
 import { LucideIcon } from 'lucide-react';
 
 interface PageHeaderProps {
+  /**
+   * Wird nicht mehr dargestellt. Die Eigenschaft bleibt erhalten, weil rund
+   * dreißig Seiten sie übergeben; die Ansicht ist inzwischen über
+   * Seitenleiste und Kopfleiste eindeutig, ein zusätzliches Symbol schob den
+   * Titel nur von der Ecke weg.
+   */
   icon?: LucideIcon;
   title: string;
   shortTitle?: string;
+  /** Wird nicht mehr dargestellt; siehe `icon`. */
   subtitle?: string;
   children?: ReactNode;
   /**
@@ -15,17 +22,24 @@ interface PageHeaderProps {
   actionsTakeOverRow?: boolean;
 }
 
-export function PageHeader({ icon: Icon, title, shortTitle, subtitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
+/**
+ * Überschrift einer Seite samt Seitenaktionen in derselben Zeile.
+ *
+ * Bis zur Einführung der Kopfleiste war dieser Bereich auf schmalen Geräten
+ * fest am oberen Rand verankert und trug dort Symbol, Titel und Untertitel.
+ * Die Verortung übernimmt jetzt die Kopfleiste; hier bleibt der Titel als
+ * ruhige Überschrift dicht an der oberen linken Ecke.
+ */
+export function PageHeader({ title, shortTitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
   return (
-    <div className="page-header fixed inset-x-0 top-0 z-10 flex h-16 min-h-16 w-full flex-nowrap items-center gap-2 overflow-hidden border-b border-gray-100 bg-white px-3 pl-16 tablet:gap-3 lg:static lg:h-auto lg:min-h-0 lg:overflow-visible lg:border-0 lg:bg-transparent lg:p-0 lg:flex-row lg:justify-between lg:gap-4">
-      <div className={`min-w-0 basis-0 flex-1 items-center overflow-visible ${actionsTakeOverRow ? 'hidden lg:flex' : 'flex'}`}>
-        {Icon && <Icon className="mr-2 h-5 w-5 flex-shrink-0 text-primary-custom sm:h-6 sm:w-6 lg:mr-3 lg:h-8 lg:w-8" />}
-        <div className="min-w-0 flex-1">
-          <h1 className="min-w-0 break-words text-xl font-bold leading-tight text-gray-900 sm:text-2xl lg:text-3xl" title={title}>
-            {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
-          </h1>
-          {subtitle && <p className="mt-1 hidden text-gray-600 lg:block">{subtitle}</p>}
-        </div>
+    <div className="page-header flex w-full flex-nowrap items-center gap-2 tablet:gap-3 lg:gap-4">
+      <div className={`min-w-0 basis-0 flex-1 items-center ${actionsTakeOverRow ? 'hidden lg:flex' : 'flex'}`}>
+        <h1
+          className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-gray-900 lg:text-xl"
+          title={title}
+        >
+          {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
+        </h1>
       </div>
       {children && (
         <div

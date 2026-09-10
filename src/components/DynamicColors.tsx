@@ -108,11 +108,26 @@ export function DynamicColors() {
 
   // Flächen, auf denen die Akzentfarbe als Text erscheint: helle Karten (weiß)
   // und dunkle Karten. Maßgeblich ist im Dunkelmodus nicht die Karte selbst
-  // (#1f2937), sondern die hellste Fläche, auf der Akzenttext vorkommt: die
-  // Markierung des ausgewählten Tages im Kalender (#374151). Gegen alle
+  // (#141416), sondern die hellste Fläche, auf der Akzenttext vorkommt: die
+  // Markierung des ausgewählten Tages im Kalender (#232326). Gegen alle
   // dunkleren Flächen bleibt der Wert dadurch besser als gefordert.
+  /**
+   * Tönung der Akzentfarbe als echter rgba-Wert.
+   *
+   * Bewusst hier statt als `color-mix` im Stylesheet: Die Auswertung von
+   * `color-mix` innerhalb einer Custom Property lieferte im Browser eine
+   * vollständig transparente Farbe, obwohl alle Bestandteile korrekt
+   * aufgelöst waren. Die Datei rechnet Farben ohnehin an dieser Stelle aus.
+   */
+  const tintOf = (color: string, alpha: number) => {
+    const hex = color.replace('#', '');
+    const channels = [0, 2, 4].map(offset => parseInt(hex.substr(offset, 2), 16));
+    if (channels.some(Number.isNaN)) return color;
+    return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${alpha})`;
+  };
+
   const primaryOnLightSurface = accessibleOn(primaryColor, '#ffffff');
-  const primaryOnDarkSurface = accessibleOn(primaryColor, '#374151');
+  const primaryOnDarkSurface = accessibleOn(primaryColor, '#232326');
 
   useEffect(() => {
     const appShell = document.getElementById('app-shell');
@@ -132,6 +147,11 @@ export function DynamicColors() {
         '--primary-on-surface',
         resolvedTheme === 'dark' ? primaryOnDarkSurface : primaryOnLightSurface,
       );
+      // Auswahlzustände: getönte Fläche plus Akzentrahmen, nach dem Muster der
+      // Fachsprachen-Einstellung. Auf dunklen Flächen braucht die Tönung mehr
+      // Deckung, um überhaupt sichtbar zu werden.
+      appShell.style.setProperty('--accent-tint', tintOf(primaryColor, resolvedTheme === 'dark' ? 0.26 : 0.12));
+      appShell.style.setProperty('--accent-edge', tintOf(primaryColor, resolvedTheme === 'dark' ? 0.55 : 0.42));
     };
 
     appShell.style.setProperty('--primary-color', primaryColor);
@@ -153,16 +173,22 @@ export function DynamicColors() {
     <style>
       {`
         /* Button styles */
+        /* Primäraktionen tragen Tinte statt der Akzentfarbe: fast schwarz im
+           Hellmodus, fast weiß im Dunkelmodus. Die Akzentfarbe bleibt für
+           Links, Fokus, aktive Navigation und Diagramme reserviert. */
         #app-shell .btn-primary {
-          background-color: var(--primary-color) !important;
-          border-color: var(--primary-color) !important;
-          color: var(--primary-text-color) !important;
+          background-color: var(--ink-solid) !important;
+          border-color: var(--ink-solid) !important;
+          color: var(--ink-solid-text) !important;
         }
         #app-shell .btn-primary:hover {
-          background-color: var(--primary-color) !important;
-          filter: brightness(0.9) !important;
-          border-color: var(--primary-color) !important;
-          color: var(--primary-text-color) !important;
+          background-color: var(--ink-solid) !important;
+          filter: brightness(1.35) !important;
+          border-color: var(--ink-solid) !important;
+          color: var(--ink-solid-text) !important;
+        }
+        #app-shell[data-theme="dark"] .btn-primary:hover {
+          filter: brightness(0.88) !important;
         }
         
         #app-shell .btn-secondary {
@@ -178,9 +204,9 @@ export function DynamicColors() {
         }
 
         #app-shell[data-theme="dark"] .theme-switch-option:not(.theme-switch-active):hover {
-          background-color: #374151 !important;
-          border-color: #6b7280 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          border-color: #3f3f46 !important;
+          color: #ffffff !important;
         }
         #app-shell .theme-control-button:hover {
           background-color: var(--primary-light) !important;
@@ -188,21 +214,21 @@ export function DynamicColors() {
           color: var(--primary-color) !important;
         }
         #app-shell[data-theme="dark"] .theme-control-button:hover {
-          background-color: #2d3748 !important;
+          background-color: #202024 !important;
         }
         #app-shell .theme-series-panel {
           border-color: rgba(148, 163, 184, 0.42) !important;
         }
         #app-shell[data-theme="dark"] .theme-series-panel {
-          border-color: #374151 !important;
+          border-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .theme-option-button--primary:hover {
-          background-color: #2d3748 !important;
+          background-color: #202024 !important;
           border-color: var(--primary-color) !important;
         }
         #app-shell[data-theme="dark"] .theme-option-button--neutral:hover {
-          background-color: #374151 !important;
-          border-color: #6b7280 !important;
+          background-color: #232326 !important;
+          border-color: #3f3f46 !important;
         }
         
         /* Focus styles */
@@ -227,8 +253,8 @@ export function DynamicColors() {
         
         /* Background colors */
         #app-shell .bg-primary-custom {
-          background-color: var(--primary-color) !important;
-          color: var(--primary-text-color) !important;
+          background-color: var(--ink-solid) !important;
+          color: var(--ink-solid-text) !important;
         }
         #app-shell .bg-primary-light-custom {
           background-color: var(--primary-light) !important;
@@ -258,10 +284,14 @@ export function DynamicColors() {
            Die Markierung liegt als innerer Schatten links im Element: Eine
            echte Rahmenkante würde an den abgerundeten Ecken als abgeschnittener
            Bogen neben dem Menüpunkt stehen. */
+        /* Aktive Navigation nach dem Muster der Fachsprachen-Einstellung:
+           getönte Akzentfläche statt voller Farbfläche, Schrift in der auf die
+           jeweilige Fläche abgestimmten Akzentfarbe. */
         #app-shell .nav-active {
-          background-color: var(--primary-light) !important;
+          background-color: var(--accent-tint) !important;
           color: var(--primary-on-surface) !important;
-          box-shadow: inset 3px 0 0 0 var(--primary-color) !important;
+          font-weight: 500 !important;
+          box-shadow: none !important;
         }
         
         /* Loading spinner */
@@ -315,24 +345,24 @@ export function DynamicColors() {
 
         /* Theme overrides stay inside the app shell. */
         #app-shell[data-theme="dark"] {
-          background-color: #111827 !important;
+          background-color: #0a0a0b !important;
           color: #e5e7eb;
         }
         #app-shell[data-theme="dark"] .theme-tab-bar {
-          background-color: #1f2937 !important;
-          border-color: #4b5563 !important;
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
           box-shadow: none !important;
         }
         #app-shell[data-theme="dark"] .theme-tab-button:not(.theme-tab-active) {
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .theme-tab-button:not(.theme-tab-active):hover {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .theme-tab-count {
-          background-color: #374151 !important;
-          color: #d1d5db !important;
+          background-color: #232326 !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .theme-tab-active .theme-tab-count {
           background-color: rgb(255 255 255 / 0.2) !important;
@@ -340,41 +370,76 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .settings-save-bar {
           background-color: rgba(17, 24, 39, 0.95) !important;
-          border-color: #4b5563 !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .theme-scrollbar {
-          scrollbar-color: #4b5563 #1f2937 !important;
+          scrollbar-color: #2f2f34 #141416 !important;
           scrollbar-width: thin;
         }
         #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-track {
-          background: #1f2937 !important;
+          background: #141416 !important;
         }
         #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-thumb {
-          background: #4b5563 !important;
+          background: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .theme-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #6b7280 !important;
+          background: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .bg-white {
-          background-color: #1f2937 !important;
+          background-color: #141416 !important;
+        }
+        /* Die Seitenleiste liegt auf der Seitenfläche, nicht auf einer eigenen
+           gehobenen Fläche. Die Regel steht hier und nicht in index.css, weil
+           die Klassenüberschreibung darüber sonst gewinnt. */
+        #app-shell[data-theme="dark"] .sidebar-shell {
+          background-color: #0a0a0b !important;
+        }
+        /* Aktionssymbole tragen im Dunkelmodus keine Farbfläche, sondern
+           bleiben bis zum Zeigen zurückhaltend. */
+        #app-shell[data-theme="dark"] .action-icon-blue,
+        #app-shell[data-theme="dark"] .action-icon-green,
+        #app-shell[data-theme="dark"] .action-icon-red,
+        #app-shell[data-theme="dark"] .action-icon-indigo {
+          background-color: transparent !important;
+          color: #9a9aa2 !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-blue:hover,
+        #app-shell[data-theme="dark"] .action-icon-blue:focus-visible {
+          background-color: #172554 !important;
+          color: #bfdbfe !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-green:hover,
+        #app-shell[data-theme="dark"] .action-icon-green:focus-visible {
+          background-color: #052e16 !important;
+          color: #bbf7d0 !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-red:hover,
+        #app-shell[data-theme="dark"] .action-icon-red:focus-visible {
+          background-color: #450a0a !important;
+          color: #fecaca !important;
+        }
+        #app-shell[data-theme="dark"] .action-icon-indigo:hover,
+        #app-shell[data-theme="dark"] .action-icon-indigo:focus-visible {
+          background-color: #1e1b4b !important;
+          color: #c7d2fe !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-50 {
-          background-color: #111827 !important;
+          background-color: #0a0a0b !important;
         }
         #app-shell[data-theme="dark"] .page-header {
-          background-color: #111827 !important;
-          border-color: #273449 !important;
+          background-color: #0a0a0b !important;
+          border-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-button,
         #app-shell[data-theme="dark"] .calendar-period-label {
-          background-color: #1f2937 !important;
+          background-color: #141416 !important;
           border-color: #475569 !important;
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-button:hover,
         #app-shell[data-theme="dark"] .calendar-period-label:hover {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-outline {
           background-color: transparent !important;
@@ -382,100 +447,100 @@ export function DynamicColors() {
           color: var(--primary-on-surface) !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-outline:hover {
-          background-color: #263244 !important;
+          background-color: #1c1c20 !important;
         }
         #app-shell[data-theme="dark"] .calendar-view-switcher {
-          background-color: #111827 !important;
+          background-color: #0a0a0b !important;
           border-color: #475569 !important;
         }
         #app-shell[data-theme="dark"] .calendar-view-option:not(.bg-primary-custom) {
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .calendar-view-option:not(.bg-primary-custom):hover {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-100 {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-200 {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-300 {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-50\\/60 {
-          background-color: #1f2937 !important;
+          background-color: #141416 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-light-custom {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-medium-custom {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-custom\\/5 {
-          background-color: #263244 !important;
+          background-color: #1c1c20 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-custom\\/10 {
-          background-color: #2d3748 !important;
+          background-color: #202024 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-custom\\/15 {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-custom\\/20 {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .bg-slate-50 {
-          background-color: #1f2937 !important;
+          background-color: #141416 !important;
         }
         #app-shell[data-theme="dark"] .bg-slate-100 {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .bg-slate-200 {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .text-slate-600,
         #app-shell[data-theme="dark"] .text-slate-500 {
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .text-slate-400 {
-          color: #9ca3af !important;
+          color: #71717a !important;
         }
         #app-shell[data-theme="dark"] .border-slate-200 {
-          border-color: #4b5563 !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .border-slate-300 {
-          border-color: #6b7280 !important;
+          border-color: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .text-gray-950,
         #app-shell[data-theme="dark"] .text-gray-900,
         #app-shell[data-theme="dark"] .text-gray-800,
         #app-shell[data-theme="dark"] .text-gray-700 {
-          color: #f3f4f6 !important;
+          color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .text-gray-600,
         #app-shell[data-theme="dark"] .text-gray-500,
         #app-shell[data-theme="dark"] .text-gray-400 {
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .border-gray-100,
         #app-shell[data-theme="dark"] .border-gray-200,
         #app-shell[data-theme="dark"] .border-gray-300 {
-          border-color: #4b5563 !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .nav-active {
-          background-color: #374151 !important;
+          background-color: var(--accent-tint) !important;
           color: var(--primary-on-surface) !important;
-          box-shadow: inset 3px 0 0 0 var(--primary-color) !important;
+          box-shadow: none !important;
         }
         #app-shell[data-theme="dark"] .action-button {
-          background-color: #1f2937 !important;
-          border-color: #4b5563 !important;
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
           color: #e5e7eb !important;
         }
         #app-shell[data-theme="dark"] .action-button:hover {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .action-button.text-rose-700 {
           color: #fecaca !important;
@@ -491,54 +556,22 @@ export function DynamicColors() {
            landen die Deklarationen direkt in .action-icon-*, die weiter unten
            stehenden Regeln für .bg-blue-100 & Co. greifen also nicht. Der
            Dunkelmodus braucht deshalb eigene Regeln. */
-        #app-shell[data-theme="dark"] .action-icon-blue {
-          background-color: #1e3a8a !important;
-          color: #bfdbfe !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-blue:hover {
-          background-color: #1d4ed8 !important;
-          color: #eff6ff !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-green {
-          background-color: #14532d !important;
-          color: #bbf7d0 !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-green:hover {
-          background-color: #15803d !important;
-          color: #f0fdf4 !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-red {
-          background-color: #7f1d1d !important;
-          color: #fecaca !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-red:hover {
-          background-color: #b91c1c !important;
-          color: #fef2f2 !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-indigo {
-          background-color: #312e81 !important;
-          color: #c7d2fe !important;
-        }
-        #app-shell[data-theme="dark"] .action-icon-indigo:hover {
-          background-color: #4338ca !important;
-          color: #eef2ff !important;
-        }
         #app-shell[data-theme="dark"] .action-icon-button:disabled {
           opacity: 0.45;
         }
         #app-shell[data-theme="dark"] .position-row-drag-handle {
-          color: #9ca3af !important;
+          color: #71717a !important;
         }
         #app-shell[data-theme="dark"] .position-row-drag-handle:hover {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .position-row-action {
-          color: #d1d5db !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .position-row-action:hover:not(:disabled) {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .position-row-delete {
           color: #fecaca !important;
@@ -553,13 +586,13 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .custom-checkbox:not(:checked),
         #app-shell[data-theme="dark"] .custom-radio:not(:checked) {
-          background-color: #1f2937 !important;
-          border-color: #6b7280 !important;
+          background-color: #141416 !important;
+          border-color: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .custom-checkbox:disabled:not(:checked),
         #app-shell[data-theme="dark"] .custom-radio:disabled:not(:checked) {
-          background-color: #374151 !important;
-          border-color: #6b7280 !important;
+          background-color: #232326 !important;
+          border-color: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .notice-info {
           background-color: #172554 !important;
@@ -582,9 +615,9 @@ export function DynamicColors() {
           color: #fecaca !important;
         }
         #app-shell[data-theme="dark"] .guidance-panel {
-          background-color: #1f2937 !important;
-          border-color: #4b5563 !important;
-          color: #d1d5db !important;
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
+          color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .bg-blue-50 {
           background-color: #172554 !important;
@@ -834,7 +867,7 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .hover\\:text-gray-700:hover,
         #app-shell[data-theme="dark"] .hover\\:text-gray-800:hover,
         #app-shell[data-theme="dark"] .hover\\:text-gray-900:hover {
-          color: #f3f4f6 !important;
+          color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .hover\\:text-blue-700:hover,
         #app-shell[data-theme="dark"] .hover\\:text-blue-800:hover {
@@ -865,9 +898,9 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
         #app-shell[data-theme="dark"] textarea,
         #app-shell[data-theme="dark"] select {
-          background-color: #1f2937 !important;
-          color: #f3f4f6 !important;
-          border-color: #4b5563 !important;
+          background-color: #141416 !important;
+          color: #fafafa !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] select:not(.select-with-chevron) {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
@@ -876,64 +909,64 @@ export function DynamicColors() {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fb923c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 5-5 5 5'/%3E%3C/svg%3E");
         }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-50:hover {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .hover\\:bg-gray-100:hover,
         #app-shell[data-theme="dark"] .hover\\:bg-gray-200:hover,
         #app-shell[data-theme="dark"] .hover\\:bg-gray-400:hover {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .document-preview-tool-button:hover,
         #app-shell[data-theme="dark"] .document-preview-tool-button:focus-visible {
-          background-color: #374151 !important;
-          color: #f9fafb !important;
+          background-color: #232326 !important;
+          color: #ffffff !important;
         }
         #app-shell[data-theme="dark"] .focus\\:bg-gray-50:focus {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .action-menu-trigger {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
           color: #dbeafe !important;
         }
         #app-shell[data-theme="dark"] .action-menu-trigger:hover {
-          background-color: #4b5563 !important;
+          background-color: #2f2f34 !important;
           color: #eff6ff !important;
         }
         #app-shell[data-theme="dark"] .action-menu {
-          background-color: #1f2937 !important;
-          border-color: #4b5563 !important;
-          color: #f3f4f6 !important;
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
+          color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .action-menu-item {
           color: #e5e7eb !important;
         }
         #app-shell[data-theme="dark"] .action-menu-item:hover {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
           color: #ffffff !important;
         }
 
         /* Terminologie previews use the app theme without losing their profile accent. */
         #app-shell[data-theme="dark"] .terminology-profile-card,
         #app-shell[data-theme="dark"] .terminology-preview {
-          background-color: #1f2937 !important;
-          border-color: #4b5563 !important;
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .terminology-profile-card-selected {
-          background-color: #111827 !important;
+          background-color: #0a0a0b !important;
         }
         #app-shell[data-theme="dark"] .terminology-preview-header {
-          background-color: #111827 !important;
-          border-color: #4b5563 !important;
+          background-color: #0a0a0b !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .terminology-preview-search {
-          background-color: #111827 !important;
-          border-color: #4b5563 !important;
+          background-color: #0a0a0b !important;
+          border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .terminology-preview-active {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
         #app-shell[data-theme="dark"] .terminology-profile-selected-label {
-          background-color: #374151 !important;
+          background-color: #232326 !important;
         }
       `}
     </style>

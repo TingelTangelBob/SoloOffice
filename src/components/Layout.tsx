@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, Menu, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, CircleUserRound } from 'lucide-react';
+import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -10,6 +10,8 @@ import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
 import { useAuth } from '../context/AuthContext';
 import { DemoNotice } from './DemoNotice';
+import { TopBar } from './TopBar';
+import type { TopBarNotice } from './TopBar';
 import { isDemoMode } from '../services/demoApi';
 
 interface LayoutProps {
@@ -69,7 +71,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { invoices } = useInvoices();
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
-  const { user, workspace } = useAuth();
+  const { user, workspace, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
@@ -130,7 +132,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
         collapsed: nextWidth > SIDEBAR_COMPACT_BREAKPOINT ? false : previous.collapsed,
       }));
     };
-    const handleMouseUp = () => setIsResizingSidebar(false);
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+      // Unter der Schwelle rastet die Leiste in die Symbolbreite ein. Ohne das
+      // bliebe eine Breite gespeichert, die nie dargestellt wird – das nächste
+      // Ausklappen sprang dann auf einen Wert, den niemand eingestellt hat.
+      setSidebarSettings(previous => (previous.width <= SIDEBAR_COMPACT_BREAKPOINT
+        ? { width: SIDEBAR_DEFAULT_WIDTH, collapsed: true }
+        : previous));
+    };
 
     document.body.classList.add('sidebar-resizing');
     window.addEventListener('mousemove', handleMouseMove);
@@ -148,8 +158,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       : { ...previous, collapsed: true });
   };
 
+  /*
+   * Beim Ziehen folgt die Leiste dem Zeiger, sonst der Umschaltung.
+   *
+   * Vorher galt auch während des Ziehens `isSidebarCompact`: Unterhalb von
+   * 176 Pixeln sprang die Kante auf 72, während der Zeiger bei 150 stand. Der
+   * Griff löste sich damit vom Mauszeiger.
+   */
+  const sidebarRenderWidth = isResizingSidebar
+    ? sidebarSettings.width
+    : (isSidebarCompact ? SIDEBAR_COMPACT_WIDTH : sidebarSettings.width);
+
   const sidebarStyle = {
-    '--sidebar-width': `${isSidebarCompact ? SIDEBAR_COMPACT_WIDTH : sidebarSettings.width}px`,
+    '--sidebar-width': `${sidebarRenderWidth}px`,
   } as CSSProperties;
   const wideContentPages = ['invoices', 'quotes', 'jobs', 'calendar', 'customers', 'reporting'];
   const contentWidthClass = currentPage === 'templates'
@@ -217,6 +238,72 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     ...bottomNavItems,
   ];
 
+  /*
+   * Gruppierung der Seitenleiste.
+   *
+   * `navItems` bleibt als flache Liste bestehen, weil die Suche darauf
+   * aufbaut. Die Gruppen ordnen dieselben Einträge nur für die Anzeige –
+   * ohne Beschriftungen liest sich eine Leiste mit acht gleichrangigen
+   * Punkten als eine einzige lange Aufzählung.
+   */
+  const navSections: { id: string; label: string; items: NavItem[] }[] = [
+    { id: 'ueberblick', label: 'Überblick', items: baseNavItems },
+    {
+      id: 'dokumente',
+      label: 'Dokumente',
+      items: [
+        invoiceNavItem,
+        ...(company.quotesEnabled ? [quotesNavItem] : []),
+        receiptNavItem,
+      ],
+    },
+    ...(company.jobTrackingEnabled
+      ? [{ id: 'arbeit', label: 'Arbeit', items: [jobNavItem, calendarNavItem] }]
+      : []),
+    {
+      id: 'auswertung',
+      label: 'Auswertung',
+      items: [
+        taxNavItem,
+        ...(company.reportingEnabled ? [reportingNavItem] : []),
+      ],
+    },
+  ].filter((section) => section.items.length > 0);
+
+  /*
+   * Hinweise der Kopfleiste.
+   *
+   * Bewusst aus dem vorhandenen Bestand abgeleitet statt aus einer eigenen
+   * Benachrichtigungstabelle: Eine Glocke, die nichts Belastbares zeigt, wäre
+   * eine Attrappe. Jeder Eintrag führt in die Ansicht, in der er sich
+   * erledigen lässt.
+   */
+  const overdueCount = invoices.filter((invoice) => invoice.status === 'overdue').length;
+  const draftCount = invoices.filter((invoice) => invoice.status === 'draft').length;
+  const topBarNotices: TopBarNotice[] = [
+    ...(companySetupComplete ? [] : [{
+      id: 'company',
+      label: 'Firmendaten unvollständig',
+      detail: 'Für belastbare Rechnungen fehlen Pflichtangaben.',
+      page: 'settings',
+      tone: 'warning' as const,
+    }]),
+    ...(overdueCount > 0 ? [{
+      id: 'overdue',
+      label: `${overdueCount} ${overdueCount === 1 ? 'überfällige Rechnung' : 'überfällige Rechnungen'}`,
+      detail: 'Zahlungsziel überschritten.',
+      page: 'invoices',
+      tone: 'negative' as const,
+    }] : []),
+    ...(draftCount > 0 ? [{
+      id: 'draft',
+      label: `${draftCount} ${draftCount === 1 ? 'Entwurf' : 'Entwürfe'}`,
+      detail: 'Noch nicht versendet.',
+      page: 'invoices',
+      tone: 'neutral' as const,
+    }] : []),
+  ];
+
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('de-DE');
   const searchResults: SearchResult[] = normalizedSearchQuery
     ? [
@@ -268,25 +355,57 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     }
   };
 
+  /*
+   * Globale Suche. Sie steht jetzt in der Kopfleiste statt in der
+   * Seitenleiste; Zustand und Trefferliste bleiben hier, weil sie auf
+   * `allNavItems`, Kunden, Rechnungen, Angebote und Aufträge zugreifen.
+   */
+  const searchSlot = (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && searchResults[0]) {
+            handlePageChange(searchResults[0].page);
+            setSearchQuery('');
+          }
+        }}
+        placeholder="Suchen..."
+        aria-label="Globale Suche"
+        className="h-9 w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 py-0 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"
+        style={{ paddingLeft: '2.25rem' }}
+      />
+      {searchQuery && (
+        <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+          {searchResults.length > 0 ? searchResults.map((result) => (
+            <button
+              key={`${result.page}-${result.id}`}
+              type="button"
+              onClick={() => {
+                handlePageChange(result.page);
+                setSearchQuery('');
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50"
+            >
+              <div className="truncate text-sm font-medium text-gray-900">{result.title}</div>
+              <div className="truncate text-xs text-gray-500">{result.subtitle}</div>
+            </button>
+          )) : (
+            <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
       <DynamicColors />
       <div id="app-shell" data-demo-mode={isDemoMode ? 'true' : undefined} className="min-h-screen bg-gray-50">
         <div className="flex relative min-h-screen">
-          {/* Mobile Seitenleiste öffnen. Auf Desktop bleibt der Umschalter
-              dauerhaft am oberen Rand der Seitenleiste sichtbar. */}
-          {!isMobileMenuOpen && (
-            <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 lg:hidden">
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="pointer-events-auto absolute left-3 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-md bg-white p-0 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-700"
-                aria-label="Menü öffnen"
-              >
-                <Menu className="h-6 w-6" />
-              </button>
-            </div>
-          )}
-
           {isMobileMenuOpen && (
             <div
               className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
@@ -299,13 +418,18 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             className={`
             sidebar-shell
             fixed lg:sticky lg:top-0 lg:bottom-auto inset-y-0 left-0 z-40
-            w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 overflow-hidden bg-white shadow-sm transform transition-[width,transform] duration-300 ease-in-out
+            w-64 lg:w-[var(--sidebar-width)] flex-shrink-0 overflow-hidden bg-white shadow-sm transform transition-[width,transform] duration-300
             lg:transform-none lg:shadow-none lg:h-screen lg:self-start
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
           >
-            <div className={`flex h-full min-h-0 flex-col ${isSidebarCompact ? 'p-2' : 'p-4'}`}>
-              <div className={`sidebar-brand mb-4 flex items-center justify-between border-b border-gray-200 pb-2 ${isSidebarCompact ? 'gap-1' : 'gap-2'}`}>
+            <div className={`flex h-full min-h-0 flex-col transition-[padding] duration-300 ease-out ${isSidebarCompact ? 'px-2 pb-2' : 'px-4 pb-4'}`}>
+              {/* Der Kopfbereich ist immer exakt so hoch wie die Kopfleiste
+                  (h-14). Er läuft dank negativer Ränder bis an die Kanten der
+                  Seitenleiste, damit der Strich unter dem Logo bündig mit der
+                  Unterkante der Kopfleiste liegt. Eingeklappt stehen Logo und
+                  Umschalter untereinander. */}
+              <div className={`sidebar-brand mb-3 flex h-14 shrink-0 border-b border-gray-200 ${isSidebarCompact ? '-mx-2 flex-col items-center justify-center gap-1.5 px-2' : '-mx-4 flex-row items-center justify-between gap-2 px-4'}`}>
                 <button
                   type="button"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -316,72 +440,26 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 </button>
                 <button
                   onClick={() => handlePageChange('dashboard')}
-                  className={`flex items-center py-2 hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0' : 'min-w-0 flex-1 lg:pl-2'}`}
+                  className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0 py-0.5' : 'min-w-0 flex-1 py-2 lg:pl-2'}`}
                   aria-label="Übersicht öffnen"
                 >
                   {company.icon ? (
-                    <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
                   ) : (
                     <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
                   )}
                   <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={toggleSidebar}
-                  aria-pressed={isSidebarCompact}
-                  className={`sidebar-toggle hidden min-h-0 min-w-0 shrink-0 items-center justify-center border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom/40 lg:inline-flex ${
-                    isSidebarCompact ? 'h-7 w-7 rounded-md' : 'h-9 w-9 rounded-lg'
-                  }`}
-                  aria-label={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
-                  title={isSidebarCompact ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
-                >
-                  {isSidebarCompact ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-                </button>
-              </div>
-
-              <div className={`${isSidebarCompact ? 'hidden' : 'relative mb-4'}`}>
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && searchResults[0]) {
-                      handlePageChange(searchResults[0].page);
-                      setSearchQuery('');
-                    }
-                  }}
-                  placeholder="Suchen..."
-                  aria-label="Globale Suche"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"
-                  style={{ paddingLeft: '2.25rem' }}
-                />
-                {searchQuery && (
-                  <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                    {searchResults.length > 0 ? searchResults.map((result) => (
-                      <button
-                        key={`${result.page}-${result.id}`}
-                        type="button"
-                        onClick={() => {
-                          handlePageChange(result.page);
-                          setSearchQuery('');
-                        }}
-                        className="w-full px-3 py-2 text-left hover:bg-gray-50"
-                      >
-                        <div className="truncate text-sm font-medium text-gray-900">{result.title}</div>
-                        <div className="truncate text-xs text-gray-500">{result.subtitle}</div>
-                      </button>
-                    )) : (
-                      <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>
-                    )}
-                  </div>
-                )}
               </div>
 
               <div className="theme-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-                <ul className="space-y-1">
-                  {navItems.map((item) => {
+                {navSections.map((section) => (
+                  <div className="nav-section" key={section.id}>
+                    {isSidebarCompact
+                      ? <div className="nav-group-rule" aria-hidden="true" />
+                      : <p className="nav-group-label">{section.label}</p>}
+                    <ul className="space-y-0.5">
+                      {section.items.map((item) => {
                   const Icon = item.icon;
                   const isParentActive = currentPage === item.id || item.children?.some(child => child.id === currentPage);
                   const isExpanded = item.id === 'invoices' ? isInvoiceMenuOpen : item.id === 'taxes' ? isTaxMenuOpen : isParentActive;
@@ -389,10 +467,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   return (
                     <li key={item.id}>
                       <div
-                        className={`flex items-center rounded-lg transition-colors ${
-                          isParentActive
-                            ? 'nav-active'
-                            : 'text-gray-700 hover:bg-gray-50'
+                        className={`nav-row flex items-center transition-colors ${
+                          isParentActive ? 'nav-active' : 'nav-row-muted'
                         }`}
                       >
                         <button
@@ -401,9 +477,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                           aria-label={item.label}
                           aria-current={isParentActive ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
-                          className={`flex min-w-0 flex-1 items-center py-2 text-left text-sm ${isSidebarCompact ? 'justify-center px-2' : 'pl-4 pr-2'}`}
+                          className={`flex min-w-0 flex-1 items-center py-1 text-left ${isSidebarCompact ? 'justify-center px-2' : 'pl-2.5 pr-1.5'}`}
                         >
-                          <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                          <Icon className={`h-4 w-4 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-2.5'}`} />
                           <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
                         </button>
                         {subMenuItems?.length ? (
@@ -414,7 +490,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                             aria-controls={`nav-submenu-${item.id}`}
                             aria-label={`${item.label}: Untermenü ${isExpanded ? 'zuklappen' : 'aufklappen'}`}
                             title={isExpanded ? 'Untermenü zuklappen' : 'Untermenü aufklappen'}
-                            className="mr-2 inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md text-current transition-colors hover:bg-black/5"
+                            className="mr-1 inline-flex h-6 w-6 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md text-current transition-colors hover:bg-black/5"
                           >
                             {isExpanded
                               ? <ChevronDown className="h-4 w-4" />
@@ -423,17 +499,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                         ) : null}
                       </div>
                       {subMenuItems?.length && isExpanded ? (
-                        <ul id={`nav-submenu-${item.id}`} className="ml-6 mt-1 space-y-1 border-l-2 border-gray-200 pl-3">
+                        <ul id={`nav-submenu-${item.id}`} className="ml-[1.15rem] mb-0.5 mt-0.5 space-y-px border-l border-gray-200 pl-2.5">
                           {subMenuItems.map((child) => (
                             <li key={child.id}>
                               <button
                                 type="button"
                                 onClick={() => handlePageChange(child.id)}
                                 aria-current={currentPage === child.id ? 'page' : undefined}
-                                className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                  currentPage === child.id
-                                    ? 'font-medium text-primary-custom'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                className={`nav-subrow w-full rounded-md px-2.5 py-1 text-left text-[13px] transition-colors ${
+                                  currentPage === child.id ? 'nav-subrow-active' : 'nav-row-muted'
                                 }`}
                               >
                                 {child.label}
@@ -444,12 +518,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       ) : null}
                     </li>
                   );
-                  })}
-                </ul>
+                      })}
+                    </ul>
+                  </div>
+                ))}
               </div>
 
-              <div className="shrink-0 border-t border-gray-200 pt-4">
-                <ul className="space-y-1">
+              <div className="shrink-0 border-t border-gray-200 pt-2">
+                {!isSidebarCompact && <p className="nav-group-label">Verwaltung</p>}
+                <ul className="space-y-0.5">
                   {bottomNavItems.map((item) => {
                     const Icon = item.icon;
                     return (
@@ -460,35 +537,17 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                           aria-label={item.label}
                           aria-current={currentPage === item.id ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
-                          className={`w-full flex items-center rounded-lg py-2 text-left text-sm transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-4'} ${
-                            currentPage === item.id
-                              ? 'nav-active'
-                              : 'text-gray-700 hover:bg-gray-50'
+                          className={`nav-row flex w-full items-center py-1 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-2.5'} ${
+                            currentPage === item.id ? 'nav-active' : 'nav-row-muted'
                           }`}
                         >
-                          <Icon className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
+                          <Icon className={`h-4 w-4 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-2.5'}`} />
                           <span className={`${isSidebarCompact ? 'hidden' : ''} truncate`}>{item.label}</span>
                         </button>
                       </li>
                     );
                   })}
                 </ul>
-                <div className="mt-3 border-t border-gray-200 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange('profile')}
-                    aria-label="Profil öffnen"
-                    aria-current={currentPage === 'profile' ? 'page' : undefined}
-                    className={`flex w-full items-center rounded-lg py-2 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-3'} ${currentPage === 'profile' ? 'nav-active' : 'text-gray-700 hover:bg-gray-50'}`}
-                    title={isSidebarCompact ? user?.displayName : undefined}
-                  >
-                    <CircleUserRound className={`h-5 w-5 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-3'}`} />
-                    <span className={`${isSidebarCompact ? 'hidden' : ''} min-w-0 truncate`}>
-                      <span className="block truncate text-sm font-medium">{user?.displayName || 'Profil'}</span>
-                      <span className="block truncate text-xs text-gray-500">{workspace?.name || 'Workspace'}</span>
-                    </span>
-                  </button>
-                </div>
               </div>
             </div>
             <div
@@ -505,12 +564,25 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               Mobilgeräten trifft das sonst genau die Schaltflächen am
               Formularende. `demo-bar-space` ersetzt `safe-area-bottom`, statt
               es zu ergänzen (siehe Begründung in index.css). */}
-          <main
-            className={`min-h-screen min-w-0 flex-1 p-3 pt-16 sm:p-4 sm:pt-16 lg:p-6 lg:pt-6 ${
-              isDemoMode ? 'demo-bar-space' : 'safe-area-bottom'
-            }`}
-          >
-            <div className={`mx-auto w-full ${contentWidthClass}`}>
+          <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+            <TopBar
+              searchSlot={searchSlot}
+              isSidebarCompact={isSidebarCompact}
+              onToggleSidebar={toggleSidebar}
+              notices={topBarNotices}
+              userName={user?.displayName || 'Konto'}
+              userEmail={user?.email}
+              workspaceName={workspace?.name || 'Workspace'}
+              onNavigate={handlePageChange}
+              onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+              onLogout={() => { void logout(); }}
+            />
+            <main
+              className={`min-w-0 flex-1 p-3 sm:p-4 lg:p-6 ${
+                isDemoMode ? 'demo-bar-space' : 'safe-area-bottom'
+              }`}
+            >
+              <div className={`mx-auto w-full ${contentWidthClass}`}>
               {!companySetupComplete && currentPage !== 'settings' && (
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
                   <span><strong>Firmendaten vervollständigen:</strong> Für belastbare Rechnungen und E-Rechnungen fehlen noch Pflichtangaben.</span>
@@ -518,8 +590,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 </div>
               )}
               {children}
-            </div>
-          </main>
+              </div>
+            </main>
+          </div>
         </div>
       </div>
 

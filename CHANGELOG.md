@@ -4,6 +4,26 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Die Oberfläche bekommt eine durchgehende Gestaltungsebene: Inter als selbst
+  gehostete Schrift ohne externes CDN, neutrale statt blaustichiger Grautöne,
+  Kanten über Rahmen statt Schlagschatten und ein neutral schwarzer
+  Dunkelmodus. Die einstellbare Akzentfarbe bleibt erhalten, trägt aber nur
+  noch Auswahlzustände, Links, Fokus und Diagramme; Primäraktionen tragen
+  Tinte.
+- Neue Kopfleiste über dem Inhalt mit Umschalter der Seitenleiste, globaler
+  Suche, Hinweisen und Benutzermenü. Umschalter, Suche und Benutzerkonto sind
+  aus der Seitenleiste dorthin umgezogen und nicht doppelt vorhanden. Die
+  Hinweise werden aus dem Bestand abgeleitet: unvollständige Firmendaten,
+  überfällige Rechnungen und nicht versendete Entwürfe.
+- Die Seitenleiste ist in beschriftete Gruppen gegliedert und deutlich
+  kompakter; aktive Haupt- und Unterpunkte sind eindeutig markiert. Tabellen
+  und Navigationszeilen sind flacher, weil die globale Touch-Mindesthöhe von
+  44 Pixeln jetzt nur noch auf Touch-Geräten greift.
+- Beim Ziehen der Seitenleistenbreite folgt die Kante dem Zeiger statt mit
+  Verzögerung zu animieren, und unterhalb der Schwelle rastet die Leiste beim
+  Loslassen sauber in die Symbolbreite ein.
+- Seitenüberschriften sind kleiner und stehen ohne Symbol und Untertitel in
+  derselben Zeile wie die Seitenaktionen.
 - Die Übersicht erhält ein einheitliches Kartenraster: Beträge stehen als
   große Kennzahl in Festbreitenziffern, der Status als eingefärbter Hinweis
   daneben. Neu sind eine Kennzahl für versendete, noch offene Rechnungen, ein
