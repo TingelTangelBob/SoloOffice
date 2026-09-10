@@ -15,6 +15,15 @@ besitzen:
 - Auditierbarkeit von Tarif- und Sperrentscheidungen,
 - Export-/Löschworkflow mit der Workspace- und Backup-Funktion.
 
-Dieser Dienst ist in diesem Repository noch nicht implementiert. Bis dahin
-bleibt der SaaS-Betrieb ein 🟠 offener Betriebsbaustein; Self-Hosting ist davon
-nicht abhängig.
+Ein erster API-/Betriebsstand liegt jetzt als separater Dienst unter
+[`../../control-plane`](../../control-plane). Er enthält die technische
+Grundlage für Konto, E-Mail-Verifikation, Google-Login, Tarif, Stripe-
+Checkout, Kundenportal, Webhook-Signaturprüfung, Deduplizierung,
+Kulanzstatus, Zahlungshistorie und Admin-Kennzahlen.
+
+Der Stand ist noch kein öffentlicher Verkaufsstart. Die Stripe-Price-IDs,
+Schlüssel, Steuerkonfiguration und Rechtstexte werden ausschließlich über die
+Umgebung gesetzt. Die Anbindung an eine abgesicherte SoloOffice-Admin-API für
+Provisioning und Sperren ist als Vertrag vorbereitet, aber noch nicht in der
+Fachanwendung vorhanden. Bis zu diesem Nachweis bleibt der SaaS-Betrieb ein 🟠
+offener Betriebsbaustein; Self-Hosting ist davon nicht abhängig.
