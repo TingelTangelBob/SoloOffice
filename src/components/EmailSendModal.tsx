@@ -7,30 +7,43 @@ import { useCompany } from '../context/CompanyContext';
 import { formatCurrency } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 
-interface EmailSendModalProps {
+interface EmailSendModalCommonProps {
   isOpen: boolean;
   onClose: () => void;
   onSend: (formats: ('zugferd' | 'xrechnung')[], customText?: string, attachments?: AttachmentFile[], selectedDocumentAttachmentIds?: string[], selectedEmails?: string[], manualEmails?: string[]) => void;
   document: Invoice | Quote; // Can be either invoice or quote
   documentType?: 'invoice' | 'quote'; // Type of document
-  customer: { email: string; additionalEmails?: { id: string; email: string; label?: string; isActive: boolean }[] };
   isLoading: boolean;
-  isBulkMode?: boolean;
-  bulkCount?: number;
 }
 
-export function EmailSendModal({
-  isOpen,
-  onClose,
-  onSend,
-  document,
-  documentType = 'invoice',
-  customer,
-  isLoading,
-  isBulkMode = false,
-  bulkCount = 0
-}: EmailSendModalProps) {
+interface SingleEmailSendModalProps extends EmailSendModalCommonProps {
+  isBulkMode?: false;
+  customer: { email: string; additionalEmails?: { id: string; email: string; label?: string; isActive: boolean }[] };
+  bulkCount?: never;
+}
+
+interface BulkEmailSendModalProps extends EmailSendModalCommonProps {
+  isBulkMode: true;
+  customer?: never;
+  bulkCount: number;
+}
+
+type EmailSendModalProps = SingleEmailSendModalProps | BulkEmailSendModalProps;
+
+export function EmailSendModal(props: EmailSendModalProps) {
+  const {
+    isOpen,
+    onClose,
+    onSend,
+    document,
+    documentType = 'invoice',
+    isLoading,
+  } = props;
+  const isBulkMode = props.isBulkMode === true;
+  const customer = isBulkMode ? undefined : props.customer;
+  const bulkCount = isBulkMode ? props.bulkCount : 0;
   const { notify } = useFeedback();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -46,19 +59,12 @@ export function EmailSendModal({
   // Determine if document is invoice or quote
   const isInvoice = documentType === 'invoice';
   const isQuote = documentType === 'quote';
+  const normalizeEmail = (email: string) => email.trim();
 
   // Initialize selected emails when modal opens
   React.useEffect(() => {
     if (isOpen && customer) {
-      const allEmails = [];
-      // Only add customer email if it exists and is not empty
-      if (customer.email && customer.email.trim()) {
-        allEmails.push(customer.email);
-      }
-      if (customer.additionalEmails) {
-        allEmails.push(...customer.additionalEmails.filter(e => e.isActive).map(e => e.email));
-      }
-      setSelectedEmails(allEmails); // Start with all available emails selected
+      setSelectedEmails(getActiveEmailRecipients(customer));
     }
   }, [isOpen, customer]);
 
@@ -107,6 +113,14 @@ export function EmailSendModal({
 
   const handleSend = () => {
     const finalManualEmails = manualEmails.filter(email => email.trim() !== '');
+
+    if (isBulkMode) {
+      onSend(selectedFormats, showCustomText ? customText : undefined, attachments, [], [], finalManualEmails);
+      return;
+    }
+
+    if (!customer) return;
+
     const totalEmailCount = selectedEmails.length + finalManualEmails.length;
     
     // Check if there are any email addresses available
@@ -141,52 +155,71 @@ export function EmailSendModal({
         {
           value: 'zugferd' as const,
           label: 'PDF',
-          description: 'eRechnungskonforme PDF-Rechnung (ZUGFeRD)',
+          description: 'PDF-Rechnung mit eingebettetem ZUGFeRD-XML',
           icon: FileText,
         },
         {
           value: 'xrechnung' as const,
           label: 'XRechnung (XML)',
-          description: 'Strukturierte XML-Rechnung (eRechnungskonform)',
+          description: 'Strukturierte XML-Rechnung',
           icon: FileText,
         },
       ];
 
+  const bulkDocumentLabel = isQuote
+    ? (bulkCount === 1 ? 'Angebot' : 'Angebote')
+    : (bulkCount === 1 ? 'Rechnung' : 'Rechnungen');
+  const dialogTitle = isBulkMode
+    ? `${bulkCount} ${bulkDocumentLabel} per E-Mail versenden`
+    : `${documentLabel} per E-Mail versenden`;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 lg:p-6 border-b border-gray-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="email-send-modal-title"
+        className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+      >
+        <div className="flex flex-shrink-0 items-center justify-between p-4 lg:p-6 border-b border-gray-200">
           <div className="flex items-center space-x-2 lg:space-x-3">
             <div className="p-2 rounded-full bg-purple-100">
               <Mail className="h-5 w-5 lg:h-6 lg:w-6 text-purple-600" />
             </div>
-            <h3 className="text-base lg:text-lg font-semibold text-gray-900">
-              {isBulkMode ? `${bulkCount} ${documentLabel}${bulkCount > 1 ? 'en' : ''} per E-Mail versenden` : `${documentLabel} per E-Mail versenden`}
+            <h3 id="email-send-modal-title" className="text-base lg:text-lg font-semibold text-gray-900">
+              {dialogTitle}
             </h3>
           </div>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 p-1"
             disabled={isLoading}
+            aria-label="Dialog schließen"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
         
-        <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
+        <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 flex-1 min-h-0 overflow-y-auto">
           {/* E-Mail Details */}
           <div className="bg-primary-custom/10 border border-primary-custom/30 rounded-lg p-3 lg:p-4">
             <h4 className="text-sm font-semibold text-primary-custom mb-2">
-              📧 {documentLabel}sdetails
+              📧 {isBulkMode ? 'Sammelversand' : `${documentLabel}sdetails`}
             </h4>
-            <p className="text-sm text-primary-custom">
-              <strong>{documentLabel}:</strong> {documentNumber}<br/>
-              <strong>Betrag:</strong> {formatCurrency(document.total, company.locale, company.numberFormat, company.currency)}
-            </p>
+            {isBulkMode ? (
+              <p className="text-sm text-primary-custom">
+                <strong>{bulkCount} {bulkDocumentLabel}</strong> werden jeweils separat an die aktiven E-Mail-Adressen des jeweiligen Kunden geschickt.
+              </p>
+            ) : (
+              <p className="text-sm text-primary-custom">
+                <strong>{documentLabel}:</strong> {documentNumber}<br/>
+                <strong>Betrag:</strong> {formatCurrency(document.total, company.locale, company.numberFormat, company.currency)}
+              </p>
+            )}
           </div>
 
           {/* Email Recipients Selection */}
-          {!isBulkMode && (
+          {!isBulkMode && customer && (
             <div>
               <h4 className="text-sm font-medium text-gray-900 mb-3">
                 E-Mail-Empfänger auswählen:
@@ -199,12 +232,13 @@ export function EmailSendModal({
                   <label className="flex items-center space-x-3 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100">
                     <input
                       type="checkbox"
-                      checked={selectedEmails.includes(customer.email)}
+                      checked={selectedEmails.includes(normalizeEmail(customer.email))}
                       onChange={(e) => {
+                        const email = normalizeEmail(customer.email);
                         if (e.target.checked) {
-                          setSelectedEmails([...selectedEmails, customer.email]);
+                          setSelectedEmails([...selectedEmails, email]);
                         } else {
-                          setSelectedEmails(selectedEmails.filter(email => email !== customer.email));
+                          setSelectedEmails(selectedEmails.filter(selectedEmail => selectedEmail !== email));
                         }
                       }}
                       className="custom-checkbox"
@@ -239,12 +273,13 @@ export function EmailSendModal({
                   >
                     <input
                       type="checkbox"
-                      checked={selectedEmails.includes(additionalEmail.email)}
+                      checked={selectedEmails.includes(normalizeEmail(additionalEmail.email))}
                       onChange={(e) => {
+                        const email = normalizeEmail(additionalEmail.email);
                         if (e.target.checked) {
-                          setSelectedEmails([...selectedEmails, additionalEmail.email]);
+                          setSelectedEmails([...selectedEmails, email]);
                         } else {
-                          setSelectedEmails(selectedEmails.filter(email => email !== additionalEmail.email));
+                          setSelectedEmails(selectedEmails.filter(selectedEmail => selectedEmail !== email));
                         }
                       }}
                       className="custom-checkbox"
@@ -570,7 +605,7 @@ export function EmailSendModal({
           </div>
         </div>
         
-        <div className="form-action-bar border-t border-gray-200 p-4 lg:p-6">
+        <div className="form-action-bar flex-shrink-0 border-t border-gray-200 p-4 lg:p-6">
           <button
             onClick={onClose}
             disabled={isLoading}
@@ -580,7 +615,7 @@ export function EmailSendModal({
           </button>
           <button
             onClick={handleSend}
-            disabled={isLoading || (selectedEmails.length === 0 && manualEmails.filter(e => e.trim()).length === 0)}
+            disabled={isLoading || (!isBulkMode && selectedEmails.length === 0 && manualEmails.filter(e => e.trim()).length === 0)}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
           >
             {isLoading ? (

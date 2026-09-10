@@ -196,13 +196,28 @@ router.put('/:id', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query('DELETE FROM recurring_invoices WHERE id = $1 RETURNING id', [req.params.id]);
-    if (!result.rows.length) return res.status(404).json({ error: 'Recurring invoice not found' });
+    await client.query('BEGIN');
+    const current = await client.query('SELECT id FROM recurring_invoices WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Wiederkehrende Rechnung nicht gefunden.' });
+    }
+    const generated = await client.query('SELECT 1 FROM invoices WHERE recurring_invoice_id=$1 LIMIT 1', [req.params.id]);
+    if (generated.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Diese Vorlage hat bereits Rechnungen erzeugt. Bitte beenden Sie die Wiederholung, damit die Dokumentherkunft erhalten bleibt.' });
+    }
+    await client.query('DELETE FROM recurring_invoices WHERE id=$1', [req.params.id]);
+    await client.query('COMMIT');
     res.json({ message: 'Recurring invoice deleted successfully' });
   } catch (error) {
+    await client.query('ROLLBACK');
     logger.error('Failed to delete recurring invoice', { error: error.message, recurringInvoiceId: req.params.id });
     res.status(500).json({ error: 'Failed to delete recurring invoice' });
+  } finally {
+    client.release();
   }
 });
 

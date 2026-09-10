@@ -36,7 +36,7 @@ const DOCUMENT_SECONDARY_COLOR = '#64748b';
 
 // Export types for external use
 export interface PDFOptions {
-  format: 'zugferd' | 'xrechnung';
+  format: 'pdf' | 'zugferd' | 'xrechnung';
   company: Company;
   customer: Customer;
 }
@@ -69,6 +69,9 @@ export function downloadBlob(blob: Blob, filename: string) {
  * Generate Invoice PDF
  */
 export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions): Promise<Blob> {
+  if (invoice.documentSnapshot?.version === 1) {
+    options = { ...options, company: invoice.documentSnapshot.company, customer: invoice.documentSnapshot.customer };
+  }
   // For XRechnung format, generate XML instead of PDF
   if (options.format === 'xrechnung') {
     return generateXRechnungXML(invoice, options);
@@ -263,11 +266,11 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   
   const itemDiscountAmount = invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0;
   const globalDiscountAmount = invoice.globalDiscountAmount || 0;
-  const hasDiscountData = itemDiscountAmount > 0 || globalDiscountAmount > 0;
+  const hasDiscountData = itemDiscountAmount !== 0 || globalDiscountAmount !== 0;
   
   let discountLines = 0;
-  if (itemDiscountAmount > 0) discountLines++;
-  if (globalDiscountAmount > 0) discountLines++;
+  if (itemDiscountAmount !== 0) discountLines++;
+  if (globalDiscountAmount !== 0) discountLines++;
   if (hasDiscountData) discountLines++;
   
   const totalsBoxHeight = 18 + (discountLines * 7) + (numberOfTaxRates * 7) + (showTotalTaxLine ? 7 : 0);
@@ -301,18 +304,18 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   yPosition += 7;
   
   // Item discounts
-  if (itemDiscountAmount > 0) {
+  if (itemDiscountAmount !== 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Artikelrabatte:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(itemDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
+    pdf.text(formatCurrency(-itemDiscountAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
   // Global discount
-  if (globalDiscountAmount > 0) {
+  if (globalDiscountAmount !== 0) {
     pdf.setTextColor(220, 38, 38);
     pdf.text('Gesamtrabatt:', totalsLabelX, yPosition);
-    pdf.text(`-${formatCurrency(globalDiscountAmount, locale, options.company.numberFormat, options.company.currency)}`, totalsStartX, yPosition);
+    pdf.text(formatCurrency(-globalDiscountAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
     yPosition += 7;
   }
   
@@ -511,6 +514,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   }
 
   // === EMBED ZUGFERD XML ===
+  if (options.format === 'pdf') return pdf.output('blob');
   return await embedZUGFeRDXMLIntoPDF(pdf.output('arraybuffer'), invoice, options);
 }
 
@@ -1059,7 +1063,14 @@ export async function generateQuotePDF(quote: Quote, options: QuotePDFOptions): 
   yPosition += 10;
 
   // === TOTALS ===
-  const taxBreakdownData = calculateTaxBreakdown(quote.items);
+  const taxBreakdownData = calculateTaxBreakdown(quote.items, {
+    id: quote.id,
+    taxAmount: quote.taxAmount,
+    total: quote.total,
+    globalDiscountType: quote.globalDiscountType,
+    globalDiscountValue: quote.globalDiscountValue,
+    globalDiscountAmount: quote.globalDiscountAmount,
+  });
   const numberOfTaxRates = Object.keys(taxBreakdownData).filter(rate => Number(rate) > 0).length;
   const showTotalTaxLine = numberOfTaxRates > 1;
   

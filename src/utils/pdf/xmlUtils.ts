@@ -64,10 +64,30 @@ const COUNTRY_CODES: Record<string, string> = {
   'vereinigte staaten': 'US',
 };
 
+// Peppol BIS Billing, geprüfte Liste vom 09.09.2026 (inkl. 1A und XI):
+// https://docs.peppol.eu/poacc/billing/3.0/codelist/ISO3166/
+const DOCUMENT_COUNTRY_CODES = new Set('1A AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW'.split(' '));
+let countryNames: Map<string, string> | undefined;
+
 export function countryCode(country?: string): string {
   const normalised = String(country || '').trim().toLocaleLowerCase('de-DE');
-  if (/^[a-z]{2}$/i.test(normalised)) return normalised.toUpperCase();
-  return COUNTRY_CODES[normalised] || 'DE';
+  const code = normalised.toUpperCase();
+  if (DOCUMENT_COUNTRY_CODES.has(code)) return code;
+  if (COUNTRY_CODES[normalised]) return COUNTRY_CODES[normalised];
+  if (!countryNames) {
+    countryNames = new Map([['kosovo', '1A'], ['nordirland', 'XI'], ['northern ireland', 'XI']]);
+    for (const language of ['de', 'en']) {
+      const names = new Intl.DisplayNames([language], { type: 'region', fallback: 'none' });
+      for (const candidate of DOCUMENT_COUNTRY_CODES) {
+        if (!/^[A-Z]{2}$/.test(candidate)) continue;
+        const name = names.of(candidate);
+        if (name) countryNames.set(name.toLocaleLowerCase('de-DE'), candidate);
+      }
+    }
+  }
+  const resolved = countryNames.get(normalised);
+  if (resolved) return resolved;
+  throw new Error('Das Land fehlt oder ist unbekannt. Bitte hinterlegen Sie ein gültiges Land oder Länderkürzel, zum Beispiel DE.');
 }
 
 export function taxCategoryCode(rate: number, isSmallBusiness = false): 'S' | 'E' | 'AE' {
@@ -80,5 +100,4 @@ export function taxExemptionReason(category: 'S' | 'E' | 'AE'): string {
   if (category === 'AE') return 'Steuerschuldnerschaft des Leistungsempfängers gemäß § 13b UStG';
   return '';
 }
-
 

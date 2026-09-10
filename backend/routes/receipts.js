@@ -1,6 +1,6 @@
 import express from 'express';
 import { pool, query } from '../database.js';
-import { decodeBase64Content, runLocalOcr } from '../services/ocrService.js';
+import { decodeBase64Content, isOcrQueueOverloaded, runLocalOcr } from '../services/ocrService.js';
 import { createInvoice } from '../services/invoiceService.js';
 
 const router = express.Router();
@@ -55,6 +55,18 @@ function validateUpload(data) {
   return { name, contentType, size: buffer.length, buffer };
 }
 
+function sendOcrQueueOverload(res, error) {
+  const retryAfterSeconds = Number.isInteger(error?.retryAfterSeconds) && error.retryAfterSeconds > 0
+    ? error.retryAfterSeconds
+    : 1;
+  res.set('Retry-After', String(retryAfterSeconds));
+  return res.status(429).json({
+    error: 'Die lokale OCR-Warteschlange ist ausgelastet. Bitte später erneut versuchen.',
+    code: 'OCR_QUEUE_OVERLOADED',
+    retryAfterSeconds,
+  });
+}
+
 async function findReceipt(id, includeContent = false) {
   const result = await query(`SELECT ${includeContent ? 'content,' : ''} ${receiptFields} FROM receipts WHERE id = $1`, [id]);
   return result.rows[0];
@@ -102,9 +114,11 @@ router.post('/', async (req, res, next) => {
         content: req.body.content,
         contentType: validated.contentType,
         name: validated.name,
+        workspaceId: req.auth.workspaceId,
       });
       ocrResult = { ...result, status: 'completed' };
     } catch (error) {
+      if (isOcrQueueOverloaded(error)) return sendOcrQueueOverload(res, error);
       ocrResult = {
         status: 'failed',
         error: error instanceof Error ? error.message : 'Lokales OCR ist fehlgeschlagen.',
@@ -153,10 +167,16 @@ router.post('/:id/ocr', async (req, res, next) => {
     if (!receipt) return res.status(404).json({ error: 'Beleg nicht gefunden.' });
 
     try {
-      const result = await runLocalOcr({ content: receipt.content, contentType: receipt.content_type, name: receipt.name });
+      const result = await runLocalOcr({
+        content: receipt.content,
+        contentType: receipt.content_type,
+        name: receipt.name,
+        workspaceId: req.auth.workspaceId,
+      });
       const updated = await saveOcrResult(receipt, { ...result, status: 'completed' });
       return res.json(toReceipt(updated.rows[0]));
     } catch (error) {
+      if (isOcrQueueOverloaded(error)) return sendOcrQueueOverload(res, error);
       const updated = await saveOcrResult(receipt, {
         status: 'failed',
         error: error instanceof Error ? error.message : 'Lokales OCR ist fehlgeschlagen.',

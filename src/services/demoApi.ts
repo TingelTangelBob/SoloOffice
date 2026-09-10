@@ -2,6 +2,8 @@ import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
+import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
+import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 
@@ -192,7 +194,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
       id: generateUUID(), invoiceNumber: `RE-${yearOf(-(index * 4 + 1))}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name,
       issueDate: isoDate(-(index * 4 + 1)), dueDate: isoDate(14 - index * 3),
-      items, ...totals,
+      ...totals,
       status: (['draft', 'sent', 'paid', 'overdue'][index % 4]), notes: fixture.workDescription,
       createdAt: isoDate(-(index * 4 + 1)),
     };
@@ -205,7 +207,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     return {
       id: generateUUID(), quoteNumber: `AN-${yearOf(-(index * 6 + 2))}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name, issueDate: isoDate(-(index * 6 + 2)), validUntil: isoDate(20 - index * 2),
-      items, ...totals, status: (['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'][index]),
+      ...totals, status: (['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'][index]),
       notes: fixture.workDescription, createdAt: isoDate(-(index * 6 + 2)),
     };
   });
@@ -552,10 +554,70 @@ function validateDemoRecurring(data: DemoRecord): { startDate: string; endDate?:
   return { startDate, endDate: endDate || undefined, nextRunDate, dueDays };
 }
 
-function calculateItems(items: DemoRecord[]) {
-  const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-  const taxAmount = items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.taxRate || 0)) / 100, 0);
-  return { subtotal, taxAmount, total: subtotal + taxAmount };
+function calculateItems(
+  items: DemoRecord[],
+  documentType: 'invoice' | 'credit_note' | 'quote' = 'invoice',
+  discountData?: DemoRecord,
+) {
+  const result = calculateDocumentMoney({
+    ...(discountData || {}),
+    items: items as unknown as MoneyItem[],
+  }, { documentType });
+  return {
+    items: result.items as unknown as DemoRecord[],
+    subtotal: result.subtotal,
+    itemDiscountAmount: result.itemDiscountAmount,
+    globalDiscountType: result.globalDiscountType,
+    globalDiscountValue: result.globalDiscountValue,
+    globalDiscountAmount: result.globalDiscountAmount,
+    totalDiscountAmount: result.totalDiscountAmount,
+    discountedSubtotal: result.discountedSubtotal,
+    taxAmount: result.taxAmount,
+    taxBreakdown: result.taxBreakdown,
+    total: result.total,
+  };
+}
+
+const derivedMoneyFields = [
+  'subtotal', 'itemDiscountAmount', 'globalDiscountAmount', 'totalDiscountAmount',
+  'discountedSubtotal', 'taxAmount', 'total', 'taxBreakdown',
+] as const;
+
+function withoutDerivedMoneyFields(data: DemoRecord): DemoRecord {
+  const result = { ...data };
+  derivedMoneyFields.forEach(field => { delete result[field]; });
+  return result;
+}
+
+function hasMoneyUpdate(data: DemoRecord): boolean {
+  return data.items !== undefined
+    || data.globalDiscountType !== undefined
+    || data.globalDiscountValue !== undefined
+    || data.globalDiscountAmount !== undefined;
+}
+
+const invoiceContentFields = ['customerId', 'customerName', 'issueDate', 'dueDate', 'items', 'attachments', 'notes',
+  'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount', 'referenceInvoiceId', 'creditNoteReason',
+  'recurringInvoiceId', 'subtotal', 'taxAmount', 'total', 'documentType', 'documentSnapshot', 'invoiceNumber'];
+
+function protectDemoInvoice(current: DemoRecord, data: DemoRecord) {
+  if (current.status !== 'draft' && (data.status === 'draft' || invoiceContentFields.some(key => data[key] !== undefined))) {
+    throw new Error('Diese Rechnung ist bereits ausgestellt. Für inhaltliche Korrekturen bitte eine Gutschrift und bei Bedarf eine neue Rechnung erstellen.');
+  }
+}
+
+function captureDemoInvoice(state: DemoState, invoice: DemoRecord) {
+  const customer = state.customers.find(row => row.id === invoice.customerId);
+  if (!customer) throw new Error('Kunde nicht gefunden.');
+  invoice.documentSnapshot = JSON.parse(JSON.stringify({ version: 1, capturedAt: isoDate(), company: state.company, customer }));
+  invoice.customerName = customer.name;
+}
+
+function demoMoneyUpdate(current: DemoRecord, data: DemoRecord, documentType: 'invoice' | 'credit_note' | 'quote') {
+  if (!hasMoneyUpdate(data)) return {};
+  const merged = { ...current, ...data };
+  if (data.globalDiscountType === null) merged.globalDiscountAmount = 0;
+  return calculateItems(merged.items as DemoRecord[], documentType, merged);
 }
 
 function validateDemoEuerSource(state: DemoState, data: DemoRecord, currentId?: string) {
@@ -835,8 +897,8 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
         entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Angebot bereits vorhanden.' });
         return;
       }
-      const totals = calculateItems(items);
-      entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Angebot kann angelegt werden.', data: { ...row, customerId: customer.id, customerName: customer.name, issueDate: dateOnly(row.issueDate || isoDate()), validUntil: dateOnly(row.validUntil || isoDate()), items, ...totals } });
+      const totals = calculateItems(items, 'quote', row);
+      entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Angebot kann angelegt werden.', data: { ...row, customerId: customer.id, customerName: customer.name, issueDate: dateOnly(row.issueDate || isoDate()), validUntil: dateOnly(row.validUntil || isoDate()), ...totals } });
       return;
     }
 
@@ -1005,24 +1067,29 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (invoice.status === 'draft') throw new Error('Für einen Entwurf kann noch kein Zahlungseingang erfasst werden.');
 
     const amount = Number(data.amount);
+    const amountCents = Math.round(amount * 100);
     const entryDate = assertDemoDate(data.entryDate, 'Das Zahlungsdatum');
     const notes = String(data.notes || '').trim();
     const paidAmount = demoPaidAmount(state, { ...invoice, status: invoice.status === 'paid' ? 'sent' : invoice.status });
-    const remaining = Math.max(Number(invoice.total || 0) - paidAmount, 0);
-    if (invoice.status === 'paid' || remaining < 0.005) throw new Error('Die Rechnung ist bereits vollständig bezahlt.');
-    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Der Zahlungsbetrag muss größer als 0 sein.');
-    if (amount > remaining + 0.005) throw new Error(`Der Zahlungsbetrag überschreitet den offenen Betrag von ${remaining.toFixed(2)} €.`);
+    const remainingCents = Math.max(Math.round(Number(invoice.total || 0) * 100) - Math.round(paidAmount * 100), 0);
+    const remaining = remainingCents / 100;
+    if (invoice.status === 'paid' || remainingCents === 0) throw new Error('Die Rechnung ist bereits vollständig bezahlt.');
+    if (!['number', 'string'].includes(typeof data.amount) || !Number.isFinite(amount) || amount <= 0
+        || !Number.isSafeInteger(amountCents) || Math.abs(amount * 100 - amountCents) > 0.00001) {
+      throw new Error('Der Zahlungsbetrag muss größer als 0 sein und darf höchstens zwei Nachkommastellen haben.');
+    }
+    if (amountCents > remainingCents) throw new Error(`Der Zahlungsbetrag überschreitet den offenen Betrag von ${remaining.toFixed(2)} €.`);
     if (notes.length > 500) throw new Error('Die Notiz darf höchstens 500 Zeichen enthalten.');
 
-    const subtotal = Number(invoice.subtotal || 0);
+    const taxableNet = Number(invoice.total) - Number(invoice.taxAmount || 0);
     const payment: DemoRecord = {
       id: generateUUID(),
       entryType: 'income',
       entryDate,
       description: `Zahlung Rechnung ${invoice.invoiceNumber}`,
       category: 'other_income',
-      amount,
-      taxRate: subtotal > 0 ? Number(invoice.taxAmount || 0) / subtotal * 100 : 0,
+      amount: amountCents / 100,
+      taxRate: taxableNet > 0 ? Number(invoice.taxAmount || 0) / taxableNet * 100 : 0,
       notes: notes || undefined,
       sourceType: 'invoice_payment',
       sourceId: invoice.id,
@@ -1036,7 +1103,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       oldData: null, newData: { ...payment }, changedAt: isoDate(),
     });
 
-    if (remaining - amount < 0.005) {
+    if (remainingCents === amountCents) {
       const previous = { ...invoice };
       invoice.status = 'paid';
       invoice.updatedAt = isoDate();
@@ -1141,7 +1208,6 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       customerName: customer.name,
       issueDate: dateOnly(isoDate()),
       dueDate: dateOnly(isoDate(Number(state.company.defaultPaymentDays || 30))),
-      items,
       attachments: receipt.content ? [{ id: generateUUID(), name: receipt.name, content: receipt.content, contentType: receipt.contentType, size: receipt.size, uploadedAt: isoDate() }] : [],
       ...totals,
       status: 'draft',
@@ -1150,6 +1216,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       createdAt: isoDate(),
       updatedAt: isoDate(),
     };
+    captureDemoInvoice(state, invoice);
     state.invoices.push(invoice);
     receipt.billedInvoiceId = invoice.id;
     receipt.updatedAt = isoDate();
@@ -1342,7 +1409,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       id: generateUUID(),
       order: Number(item.order || 0),
     }));
-    const totals = calculateItems(items);
+    const totals = calculateItems(items, 'invoice', quote);
     const issueDate = dateOnly(isoDate());
     const invoice: DemoRecord = {
       id: generateUUID(),
@@ -1351,7 +1418,6 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       customerName: quote.customerName,
       issueDate,
       dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00`).getTime() + 30 * 86400000)),
-      items,
       ...totals,
       status: 'draft',
       notes: quote.notes ? `Erstellt aus Angebot ${quote.quoteNumber}\n\n${quote.notes}` : `Erstellt aus Angebot ${quote.quoteNumber}`,
@@ -1360,6 +1426,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       documentType: 'invoice',
       createdAt: isoDate(),
     };
+    captureDemoInvoice(state, invoice);
     state.invoices.push(invoice);
     quote.convertedToInvoiceId = invoice.id;
     quote.status = 'billed';
@@ -1385,7 +1452,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const customer = state.customers.find(item => item.id === String(jobsForInvoice[0].customerId));
     if (!customer) throw new Error('Kunde nicht gefunden');
     const items = (Array.isArray(data.items) ? data.items : []).map(item => ({ ...item, id: generateUUID() }));
-    const totals = calculateItems(items as DemoRecord[]);
+    const totals = calculateItems(items as DemoRecord[], 'invoice', data);
     const sourceJobSources = jobsForInvoice.map(job => {
       const recurrence = job.recurrence as Partial<JobRecurrence> | undefined;
       return {
@@ -1408,12 +1475,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       invoiceNumber: nextDemoInvoiceNumber(state, data.issueDate || isoDate()),
       issueDate: dateOnly(data.issueDate || isoDate()),
       dueDate: dateOnly(data.dueDate || isoDate(30)),
-      items,
       ...totals,
       status: 'draft',
       documentType: 'invoice',
       createdAt: isoDate(),
     };
+    captureDemoInvoice(state, invoice);
     state.invoices.push(invoice);
     jobsForInvoice.forEach(job => { job.status = 'invoiced'; job.updatedAt = isoDate(); });
     saveState(state);
@@ -1735,7 +1802,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         id: generateUUID(),
         order: Number(item.order || 0),
       }));
-      const totals = calculateItems(invoiceItems);
+      const totals = calculateItems(invoiceItems, 'invoice', recurring);
       const invoice: DemoRecord = {
         id: generateUUID(),
         invoiceNumber: nextDemoInvoiceNumber(state, runDate),
@@ -1743,7 +1810,6 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         customerName: recurring.customerName,
         issueDate: runDate,
         dueDate: dateOnly(new Date(new Date(`${runDate}T00:00:00`).getTime() + Number(recurring.dueDays || 30) * 86400000)),
-        items: invoiceItems,
         ...totals,
         status: 'draft',
         notes: recurring.notes || '',
@@ -1765,7 +1831,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         createdAt: isoDate(),
       };
 
-      state.invoices.push(invoice);
+      captureDemoInvoice(state, invoice);
+    state.invoices.push(invoice);
       recurring.lastRunDate = runDate;
       recurring.nextRunDate = nextRunDate;
       if (hasEnded) recurring.status = 'ended';
@@ -1822,6 +1889,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         return updated as unknown as T;
       }
       if (method === 'DELETE') {
+        if (state.invoices.some(invoice => invoice.recurringInvoiceId === id)) throw new Error('Diese Vorlage hat bereits Rechnungen erzeugt. Bitte beenden Sie die Wiederholung.');
         state.recurringInvoices = recurringItems.filter(item => item.id !== id);
         saveState(state);
         return undefined as T;
@@ -1847,7 +1915,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         const unitPrice = -Math.abs(Number(item.unitPrice || 0));
         return { ...item, id: generateUUID(), quantity, unitPrice, total: quantity * unitPrice, order: Number(item.order || 0) };
       });
-      const totals = calculateItems(items);
+      const totals = calculateItems(items, 'credit_note', data);
       const record: DemoRecord = {
         ...data,
         id: generateUUID(),
@@ -1856,13 +1924,13 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         customerName: customer.name,
         issueDate: dateOnly(data.issueDate || isoDate()),
         dueDate: dateOnly(data.dueDate || data.issueDate || isoDate()),
-        items,
         ...totals,
         status: data.status || 'draft',
         documentType: 'credit_note',
         referenceInvoiceNumber: state.invoices.find(item => item.id === data.referenceInvoiceId)?.invoiceNumber,
         createdAt: isoDate(),
       };
+      captureDemoInvoice(state, record);
       state.invoices.push(record);
       saveState(state);
       return record as unknown as T;
@@ -1873,6 +1941,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'GET') return state.invoices[index] as unknown as T;
       if (method === 'PUT') {
         const current = state.invoices[index];
+        protectDemoInvoice(current, data);
         const contentUpdate = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'items'].some(field => data[field] !== undefined);
         if (contentUpdate && current.status !== 'draft') throw new Error('Nur Entwürfe können bearbeitet werden');
         const customer = data.customerId ? state.customers.find(item => item.id === String(data.customerId)) : undefined;
@@ -1891,10 +1960,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           total: Number(item.quantity || 0) * -Math.abs(Number(item.unitPrice || 0)),
           order: Number(item.order || 0),
         })) : current.items;
-        const totals = Array.isArray(data.items) ? calculateItems(items as DemoRecord[]) : {};
+        const totals = demoMoneyUpdate(current, data, 'credit_note');
         const updated = {
           ...current,
-          ...data,
+          ...withoutDerivedMoneyFields(data),
           ...(customer ? { customerId: customer.id, customerName: customer.name } : {}),
           ...(data.referenceInvoiceId === null ? { referenceInvoiceNumber: undefined } : data.referenceInvoiceId ? { referenceInvoiceNumber: state.invoices.find(item => item.id === data.referenceInvoiceId)?.invoiceNumber } : {}),
           items,
@@ -1902,6 +1971,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           documentType: 'credit_note',
           updatedAt: isoDate(),
         };
+        if (current.status === 'draft' && (invoiceContentFields.some(key => data[key] !== undefined) || !current.documentSnapshot)) captureDemoInvoice(state, updated);
         state.invoices[index] = updated;
         saveState(state);
         return updated as unknown as T;
@@ -1991,6 +2061,13 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     const record: DemoRecord = { ...data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() };
     if (key === 'customers') record.customerNumber = String(1001 + items.length);
+    if (key === 'invoices' || key === 'quotes') {
+      if (key === 'invoices' && data.status === 'paid') throw new Error('Bitte die Rechnung zunächst anlegen und anschließend den Zahlungseingang erfassen.');
+      Object.assign(record, calculateItems(data.items as DemoRecord[], key === 'quotes' ? 'quote' : 'invoice', data));
+      record.status = data.status || 'draft';
+      if (key === 'invoices') captureDemoInvoice(state, record);
+      else record.quoteNumber = data.quoteNumber || `AN-${new Date().getFullYear()}-${String(items.length + 1).padStart(3, '0')}`;
+    }
     if (key === 'invoices') {
       record.invoiceNumber = nextDemoInvoiceNumber(state, data.issueDate || isoDate());
       record.documentType = 'invoice';
@@ -2119,17 +2196,27 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           return records[0] as unknown as T;
         }
       }
+      if (key === 'invoices') {
+        if (index < 0) throw new Error('Rechnung nicht gefunden.');
+        protectDemoInvoice(items[index], data);
+      }
+      const moneyUpdate = (key === 'invoices' || key === 'quotes') && index >= 0
+        ? demoMoneyUpdate(items[index], data, key === 'quotes' ? 'quote' : 'invoice') : {};
       if (key === 'invoices' && index >= 0 && data.status === 'paid' && items[index].status !== 'paid') {
         const booked = state.euerEntries
           .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === id && entry.status !== 'voided')
           .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-        const targetTotal = Number(data.total ?? items[index].total ?? 0);
+        const targetTotal = Number((moneyUpdate as Partial<DemoRecord>).total ?? items[index].total ?? 0);
         if (booked < targetTotal - 0.005) {
           throw new Error('Bitte den Zahlungseingang an der Rechnung erfassen. Der Status wird nach vollständiger Zahlung automatisch gesetzt.');
         }
       }
       const previous = index >= 0 ? { ...items[index] } : null;
-      const updated = { ...(items[index] || { id }), ...data, id, updatedAt: isoDate() };
+      const updated: DemoRecord = { ...(items[index] || { id }),
+        ...(key === 'invoices' || key === 'quotes' ? withoutDerivedMoneyFields(data) : data),
+        ...moneyUpdate, id, updatedAt: isoDate() };
+      if (key === 'invoices' && items[index]?.status === 'draft'
+          && (invoiceContentFields.some(field => data[field] !== undefined) || !items[index].documentSnapshot)) captureDemoInvoice(state, updated);
       if (index >= 0) items[index] = updated; else items.push(updated);
       if (key === 'invoices' && state.euerEntries.some(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === id && entry.status !== 'voided')) {
         syncDemoInvoicePaymentStatus(state, id);

@@ -1,3 +1,4 @@
+import { documentRequestBody } from '../utils/documentPayload';
 import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
@@ -346,21 +347,21 @@ class ApiService {
   async createInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<Invoice> {
     return this.request<Invoice>('/invoices', {
       method: 'POST',
-      body: JSON.stringify(invoice),
+      body: documentRequestBody(invoice),
     });
   }
 
   async createInvoiceFromJobs(invoice: Omit<Invoice, 'id' | 'createdAt'>, jobIds: string[]): Promise<Invoice> {
     return this.request<Invoice>('/invoices/from-jobs', {
       method: 'POST',
-      body: JSON.stringify({ ...invoice, sourceJobIds: jobIds }),
+      body: documentRequestBody({ ...invoice, sourceJobIds: jobIds }),
     });
   }
 
   async updateInvoice(id: string, invoice: Partial<Invoice>): Promise<Invoice> {
     return this.request<Invoice>(`/invoices/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(invoice),
+      body: documentRequestBody(invoice),
     });
   }
 
@@ -467,14 +468,14 @@ class ApiService {
   async createQuote(quote: Omit<Quote, 'id' | 'createdAt'>): Promise<Quote> {
     return this.request<Quote>('/quotes', {
       method: 'POST',
-      body: JSON.stringify(quote),
+      body: documentRequestBody(quote),
     });
   }
 
   async updateQuote(id: string, quote: Partial<Quote>): Promise<Quote> {
     return this.request<Quote>(`/quotes/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(quote),
+      body: documentRequestBody(quote),
     });
   }
 

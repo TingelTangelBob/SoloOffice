@@ -36,7 +36,7 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
   return (
     <FilterPanelContext.Provider value={isFilterOpen}>
       <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
-        <div className="flex min-w-0 items-center gap-2 lg:gap-4">
+        <div className="flex min-w-0 items-center gap-2 lg:flex-wrap lg:items-start lg:gap-4">
           <button
             type="button"
             onClick={() => setIsFilterOpen((open) => !open)}
@@ -51,8 +51,8 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
             <SlidersHorizontal className="h-4 w-4" />
             <span className="hidden sm:inline">Filter</span>
           </button>
-          <div className="order-2 hidden shrink-0 items-center gap-2 lg:flex">{filters}</div>
-          <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem]">{search}</div>
+          <div className="order-2 hidden min-w-0 flex-1 items-center gap-2 lg:flex">{filters}</div>
+          <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem] lg:basis-[16rem]">{search}</div>
         </div>
 
         {isFilterOpen && <div className="mt-3 grid gap-2 border-t border-gray-100 pt-3 lg:hidden">{filters}</div>}

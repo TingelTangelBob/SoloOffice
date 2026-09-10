@@ -1,5 +1,6 @@
 import { InvoiceItem, Invoice, JobMaterial, JobTimeEntry, NumberFormat } from '../types';
-import { formatCurrency } from './formatters';
+import { formatCurrency } from './formatters.js';
+import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 
 export interface DiscountCalculation {
   subtotal: number;
@@ -9,6 +10,8 @@ export interface DiscountCalculation {
   discountedSubtotal: number;
   taxAmount: number;
   total: number;
+  taxBreakdown: ReturnType<typeof calculateDocumentMoney>['taxBreakdown'];
+  validationError?: string;
 }
 
 /**
@@ -20,22 +23,10 @@ export function calculateItemDiscount(
   discountType?: 'percentage' | 'fixed',
   discountValue?: number
 ): number {
-  if (!discountType || !discountValue || discountValue <= 0) {
-    return 0;
-  }
-
-  const itemTotal = quantity * unitPrice;
-
-  if (discountType === 'percentage') {
-    // Prozentrabatt: maximal 100%
-    const percentage = Math.min(Math.max(discountValue, 0), 100);
-    return (itemTotal * percentage) / 100;
-  } else if (discountType === 'fixed') {
-    // Festbetrag: nicht höher als der Artikelpreis
-    return Math.min(Math.max(discountValue, 0), itemTotal);
-  }
-
-  return 0;
+  const result = calculateInvoiceWithDiscounts({
+    items: [{ id: 'preview', description: 'Position', quantity, unitPrice, taxRate: 0, total: 0, order: 1, discountType, discountValue }],
+  });
+  return result.itemDiscountAmount;
 }
 
 /**
@@ -46,132 +37,43 @@ export function calculateGlobalDiscount(
   globalDiscountType?: 'percentage' | 'fixed',
   globalDiscountValue?: number
 ): number {
-  if (!globalDiscountType || !globalDiscountValue || globalDiscountValue <= 0) {
-    return 0;
-  }
-
-  if (globalDiscountType === 'percentage') {
-    // Prozentrabatt: maximal 100%
-    const percentage = Math.min(Math.max(globalDiscountValue, 0), 100);
-    return (subtotal * percentage) / 100;
-  } else if (globalDiscountType === 'fixed') {
-    // Festbetrag: nicht höher als die Zwischensumme
-    return Math.min(Math.max(globalDiscountValue, 0), subtotal);
-  }
-
-  return 0;
+  const result = calculateInvoiceWithDiscounts({
+    items: [{ id: 'preview', description: 'Position', quantity: 1, unitPrice: subtotal, taxRate: 0, total: 0, order: 1 }],
+    globalDiscountType,
+    globalDiscountValue,
+  });
+  return result.globalDiscountAmount;
 }
 
 /**
  * Berechnet alle Rabatte und Gesamtsummen für eine Rechnung
  */
 export function calculateInvoiceWithDiscounts(invoice: Partial<Invoice>): DiscountCalculation {
-  const items = invoice.items || [];
-  
-  // Berechne Zwischensumme und Artikelrabatte
-  let subtotal = 0;
-  let itemDiscountAmount = 0;
-  
-  // Gruppiere Items nach Steuersatz für die Steuerberechnung
-  const taxBreakdown: Record<number, { taxableAmount: number; taxAmount: number }> = {};
-
-  items.forEach(item => {
-    const itemTotal = item.quantity * item.unitPrice;
-    const discount = calculateItemDiscount(
-      item.quantity,
-      item.unitPrice,
-      item.discountType,
-      item.discountValue
-    );
-    
-    subtotal += itemTotal;
-    itemDiscountAmount += discount;
-    
-    // Berechne steuerpflichtigen Betrag nach Artikelrabatt
-    const taxableItemAmount = itemTotal - discount;
-    const taxRate = item.taxRate || 0;
-    const itemTaxAmount = (taxableItemAmount * taxRate) / 100;
-    
-    if (taxBreakdown[taxRate]) {
-      taxBreakdown[taxRate].taxableAmount += taxableItemAmount;
-      taxBreakdown[taxRate].taxAmount += itemTaxAmount;
-    } else {
-      taxBreakdown[taxRate] = {
-        taxableAmount: taxableItemAmount,
-        taxAmount: itemTaxAmount
-      };
-    }
-  });
-
-  // Berechne Zwischensumme nach Artikelrabatten
-  const subtotalAfterItemDiscounts = subtotal - itemDiscountAmount;
-
-  // Berechne Gesamtrabatt (wird auf die bereits rabattierte Zwischensumme angewendet)
-  const globalDiscountAmount = calculateGlobalDiscount(
-    subtotalAfterItemDiscounts,
-    invoice.globalDiscountType,
-    invoice.globalDiscountValue
-  );
-
-  // Endgültige Zwischensumme nach allen Rabatten
-  const discountedSubtotal = subtotalAfterItemDiscounts - globalDiscountAmount;
-
-  // Neuberechnung der Steuern basierend auf dem Gesamtrabatt
-  // Der Gesamtrabatt wird proportional auf alle Steuersätze verteilt
-  let totalTaxAmount = 0;
-  
-  if (globalDiscountAmount > 0 && subtotalAfterItemDiscounts > 0) {
-    // Proportionale Verteilung des Gesamtrabatts
-    const discountRatio = globalDiscountAmount / subtotalAfterItemDiscounts;
-    
-    Object.keys(taxBreakdown).forEach(taxRateStr => {
-      const taxRate = Number(taxRateStr);
-      const breakdown = taxBreakdown[taxRate];
-      
-      // Reduziere den steuerpflichtigen Betrag proportional
-      const reducedTaxableAmount = breakdown.taxableAmount * (1 - discountRatio);
-      const reducedTaxAmount = (reducedTaxableAmount * taxRate) / 100;
-      
-      breakdown.taxableAmount = reducedTaxableAmount;
-      breakdown.taxAmount = reducedTaxAmount;
-      totalTaxAmount += reducedTaxAmount;
+  try {
+    return calculateDocumentMoney({
+      ...invoice,
+      items: Array.isArray(invoice.items) ? invoice.items : [],
+    }, {
+      documentType: invoice.documentType === 'credit_note' ? 'credit_note' : 'invoice',
+      allowIncomplete: true,
     });
-  } else {
-    // Keine Gesamtrabatte, verwende ursprüngliche Steuerberechnung
-    totalTaxAmount = Object.values(taxBreakdown).reduce((sum, breakdown) => sum + breakdown.taxAmount, 0);
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'INVALID_DOCUMENT_DATA') throw error;
+    // Unzulässige Eingaben bleiben editierbar. Die Oberfläche zeigt den Fehler
+    // anstelle einer Summe; Speichern verwendet weiterhin die strikte Prüfung.
+    return { ...calculateDocumentMoney({ items: [] }), validationError: error.message };
   }
-
-  const total = discountedSubtotal + totalTaxAmount;
-  const totalDiscountAmount = itemDiscountAmount + globalDiscountAmount;
-
-  return {
-    subtotal,
-    itemDiscountAmount,
-    globalDiscountAmount,
-    totalDiscountAmount,
-    discountedSubtotal,
-    taxAmount: totalTaxAmount,
-    total
-  };
 }
 
 /**
  * Aktualisiert ein InvoiceItem mit berechneten Rabattbeträgen
  */
 export function updateItemWithDiscount(item: InvoiceItem): InvoiceItem {
-  const discountAmount = calculateItemDiscount(
-    item.quantity,
-    item.unitPrice,
-    item.discountType,
-    item.discountValue
-  );
-
-  const itemTotal = item.quantity * item.unitPrice;
-  
+  const result = calculateInvoiceWithDiscounts({ items: [{ ...item, discountAmount: item.discountType ? item.discountAmount : 0 }] });
   return {
     ...item,
-    discountAmount,
-    total: itemTotal - discountAmount
+    discountAmount: result.itemDiscountAmount,
+    total: result.discountedSubtotal,
   };
 }
 

@@ -127,7 +127,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
     }
 
     if (document.type === 'invoice-pdf' && document.invoice) {
-      const customer = customers.find(entry => entry.id === document.invoice?.customerId);
+      const customer = document.invoice.documentSnapshot?.customer || customers.find(entry => entry.id === document.invoice?.customerId);
       if (!customer) throw new Error(`${terminology.entity.singular} nicht gefunden.`);
       const format = document.pdfFormat || 'zugferd';
       const blob = await generateInvoicePDF(document.invoice, { format, company, customer });

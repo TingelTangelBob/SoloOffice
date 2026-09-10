@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
 import { Save, X, Plus, Trash2, Calculator, Edit, ChevronUp, ChevronDown, GripVertical, Link2 } from 'lucide-react';
 import {
@@ -37,6 +37,8 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
+import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 
 // Sortable Item Component for Drag & Drop
 interface SortableInvoiceItemProps {
@@ -464,6 +466,60 @@ interface InvoiceEditorProps {
   onNavigateToSettings?: () => void;
 }
 
+interface InvoiceDraftFormData {
+  invoiceNumber: string;
+  customerId: string;
+  issueDate: string;
+  dueDate: string;
+  status: Invoice['status'];
+  notes: string;
+  globalDiscountType?: 'percentage' | 'fixed';
+  globalDiscountValue?: number;
+  globalDiscountAmount?: number;
+}
+
+const emptyCustomerData = {
+  name: '',
+  email: '',
+  address: '',
+  addressSupplement: '',
+  postalCode: '',
+  city: '',
+  country: 'Deutschland',
+  taxId: '',
+  phone: '',
+};
+
+const emptyInvoiceTemplateData = {
+  name: '',
+  description: '',
+  unitPrice: 0,
+  unit: 'Stunde',
+  taxRate: 19,
+  isDefault: false,
+};
+
+function getInvoiceDraftSnapshot(
+  formData: InvoiceDraftFormData,
+  items: InvoiceItem[],
+  attachments: InvoiceAttachment[],
+) {
+  return JSON.stringify({
+    formData: {
+      invoiceNumber: formData.invoiceNumber,
+      customerId: formData.customerId,
+      issueDate: formData.issueDate,
+      dueDate: formData.dueDate,
+      status: formData.status,
+      notes: formData.notes,
+      globalDiscountType: formData.globalDiscountType,
+      globalDiscountValue: formData.globalDiscountValue,
+    },
+    items,
+    attachments,
+  });
+}
+
 export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: InvoiceEditorProps) {
   const { confirm, notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
@@ -499,25 +555,10 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     type: 'hourlyRates'
   });
   const [editingInvoiceTemplate, setEditingInvoiceTemplate] = useState<InvoiceTemplate | null>(null);
-  const [newCustomerData, setNewCustomerData] = useState({
-    name: '',
-    email: '',
-    address: '',
-    addressSupplement: '',
-    postalCode: '',
-    city: '',
-    country: 'Deutschland',
-    taxId: '',
-    phone: ''
-  });
-  const [newInvoiceTemplateData, setNewInvoiceTemplateData] = useState({
-    name: '',
-    description: '',
-    unitPrice: 0,
-    unit: 'Stunde',
-    taxRate: 19,
-    isDefault: false
-  });
+  const [newCustomerData, setNewCustomerData] = useState(emptyCustomerData);
+  const [newInvoiceTemplateData, setNewInvoiceTemplateData] = useState(emptyInvoiceTemplateData);
+  const initialCustomerFormSnapshot = useRef(JSON.stringify(emptyCustomerData));
+  const initialInvoiceTemplateSnapshot = useRef(JSON.stringify(emptyInvoiceTemplateData));
 
   const closeInvoiceTemplateForm = () => {
     setNewInvoiceTemplateData({
@@ -565,7 +606,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     return dueDateObj.toISOString().split('T')[0];
   };
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<InvoiceDraftFormData>({
     invoiceNumber: '',
     customerId: '',
     issueDate: new Date().toISOString().split('T')[0],
@@ -578,6 +619,11 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
   });
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [attachments, setAttachments] = useState<InvoiceAttachment[]>([]);
+  const initialNewInvoiceFormData = useRef(formData);
+  const initialDraftSnapshot = useRef<string | null>(null);
+  const savingRef = useRef(false);
+  const [draftInitialized, setDraftInitialized] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Document Preview state
   const [documentPreview, setDocumentPreview] = useState<{
@@ -592,8 +638,12 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
   // Initialize form data when editing
   useEffect(() => {
+    let nextFormData: InvoiceDraftFormData;
+    let nextItems: InvoiceItem[];
+    let nextAttachments: InvoiceAttachment[];
+
     if (invoice) {
-      setFormData({
+      nextFormData = {
         invoiceNumber: invoice.invoiceNumber,
         customerId: invoice.customerId,
         issueDate: new Date(invoice.issueDate).toISOString().split('T')[0],
@@ -603,7 +653,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         globalDiscountType: invoice.globalDiscountType,
         globalDiscountValue: invoice.globalDiscountValue,
         globalDiscountAmount: invoice.globalDiscountAmount,
-      });
+      };
       // Sort items by order and ensure all items have an order value
       const sortedItems = [...invoice.items]
         .sort((a, b) => (a.order || 999) - (b.order || 999))
@@ -611,13 +661,61 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           ...item,
           order: item.order || index + 1  // Fallback to index-based order for existing items
         }));
-      setItems(sortedItems);
-      setAttachments(invoice.attachments || []);
+      nextItems = sortedItems;
+      nextAttachments = invoice.attachments || [];
+      setFormData(nextFormData);
+      setItems(nextItems);
+      setAttachments(nextAttachments);
     } else {
       // For new invoices, leave invoice number empty - it will be generated by the backend
-      setFormData(prev => ({ ...prev, invoiceNumber: '' }));
+      nextFormData = { ...initialNewInvoiceFormData.current, invoiceNumber: '' };
+      nextItems = [];
+      nextAttachments = [];
+      setFormData(nextFormData);
+      setItems(nextItems);
+      setAttachments(nextAttachments);
     }
+    initialDraftSnapshot.current = getInvoiceDraftSnapshot(nextFormData, nextItems, nextAttachments);
+    setDraftInitialized(true);
   }, [invoice]);
+
+  const isDirty = draftInitialized
+    && initialDraftSnapshot.current !== getInvoiceDraftSnapshot(formData, items, attachments);
+
+  const requestClose = useDirtyCloseGuard({
+    isDirty,
+    isDisabled: isSaving,
+    onClose,
+    confirm,
+  });
+  const requestCloseCustomerForm = useDirtyCloseGuard({
+    isDirty: showCustomerForm
+      && initialCustomerFormSnapshot.current !== JSON.stringify(newCustomerData),
+    onClose: () => setShowCustomerForm(false),
+    confirm,
+    title: `${terminology.entity.singular} schließen?`,
+    message: `Es gibt ungespeicherte Änderungen am ${terminology.entity.singular}. Möchten Sie diese wirklich verwerfen?`,
+  });
+  const requestCloseInvoiceTemplateForm = useDirtyCloseGuard({
+    isDirty: showInvoiceTemplateForm
+      && initialInvoiceTemplateSnapshot.current !== JSON.stringify(newInvoiceTemplateData),
+    onClose: closeInvoiceTemplateForm,
+    confirm,
+    title: 'Rechnungsvorlage schließen?',
+    message: 'Es gibt ungespeicherte Änderungen an der Rechnungsvorlage. Möchten Sie diese wirklich verwerfen?',
+  });
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || documentPreview.isOpen
+          || showCustomerForm || showInvoiceTemplateForm || showInvoiceTemplateManager
+          || (event.target instanceof Element && event.target.closest('[aria-modal="true"]'))) return;
+      event.preventDefault();
+      void requestClose();
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [documentPreview.isOpen, requestClose, showCustomerForm, showInvoiceTemplateForm, showInvoiceTemplateManager]);
 
   // Filter customers based on search term
   const filteredCustomers = customers.filter(customer =>
@@ -826,51 +924,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     };
     
     const calculation = calculateInvoiceWithDiscounts(invoiceData);
-    
-    // Group items by tax rate for breakdown display
-    const taxBreakdown = items.reduce((acc, item) => {
-      const itemTotal = (item.quantity * item.unitPrice) - (item.discountAmount || 0);
-      const taxRate = item.taxRate;
-      const taxAmount = itemTotal * (taxRate / 100);
-      
-      if (acc[taxRate]) {
-        acc[taxRate].taxableAmount += itemTotal;
-        acc[taxRate].taxAmount += taxAmount;
-      } else {
-        acc[taxRate] = {
-          taxableAmount: itemTotal,
-          taxAmount: taxAmount
-        };
-      }
-      
-      return acc;
-    }, {} as Record<number, { taxableAmount: number; taxAmount: number }>);
-    
-    // Adjust tax breakdown for global discount
-    if (calculation.globalDiscountAmount > 0 && calculation.subtotal > 0) {
-      const discountRatio = calculation.globalDiscountAmount / (calculation.subtotal - calculation.itemDiscountAmount);
-      Object.keys(taxBreakdown).forEach(taxRateStr => {
-        const taxRate = Number(taxRateStr);
-        const breakdown = taxBreakdown[taxRate];
-        breakdown.taxableAmount *= (1 - discountRatio);
-        breakdown.taxAmount = (breakdown.taxableAmount * taxRate) / 100;
-      });
-    }
-    
-    // Check if invoice has only 0% tax rate
     const hasOnlyZeroTax = items.length > 0 && items.every(item => item.taxRate === 0);
-    
-    return { 
-      subtotal: calculation.subtotal,
-      itemDiscountAmount: calculation.itemDiscountAmount,
-      globalDiscountAmount: calculation.globalDiscountAmount,
-      totalDiscountAmount: calculation.totalDiscountAmount,
-      discountedSubtotal: calculation.discountedSubtotal,
-      taxAmount: calculation.taxAmount, 
-      taxBreakdown, 
-      total: calculation.total, 
-      hasOnlyZeroTax 
-    };
+    return { ...calculation, hasOnlyZeroTax };
   };
 
   const handlePreview = (attachments: (InvoiceAttachment)[], initialIndex: number) => {
@@ -901,6 +956,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) return;
     if (items.length === 0) {
       notify({ variant: 'warning', message: 'Bitte fügen Sie mindestens eine Position hinzu.' });
       return;
@@ -913,6 +969,13 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     }
 
     const calculation = calculateTotals();
+    try {
+      calculateDocumentMoney({ items, globalDiscountType: formData.globalDiscountType,
+        globalDiscountValue: formData.globalDiscountValue, globalDiscountAmount: formData.globalDiscountAmount });
+    } catch (error) {
+      notify({ variant: 'warning', message: error instanceof Error ? error.message : 'Bitte prüfen Sie die Positionen und Rabatte.' });
+      return;
+    }
 
     const invoiceData: Omit<Invoice, 'id' | 'createdAt'> = {
       invoiceNumber: invoice ? formData.invoiceNumber : '', // Keep existing number for updates, empty for new invoices
@@ -932,6 +995,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
       globalDiscountAmount: calculation.globalDiscountAmount,
     };
 
+    savingRef.current = true;
+    setIsSaving(true);
     try {
       if (invoice) {
         await updateInvoice(invoice.id, invoiceData);
@@ -940,6 +1005,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         // Refresh invoices in other components
         await refreshInvoices();
       }
+      initialDraftSnapshot.current = getInvoiceDraftSnapshot(formData, items, attachments);
       onClose();
     } catch (error) {
       logger.error('Failed to save invoice', { error: (error as Error).message });
@@ -948,6 +1014,9 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         title: invoice ? 'Rechnung konnte nicht gespeichert werden' : 'Rechnung konnte nicht erstellt werden',
         message: error instanceof Error ? error.message : 'Die Rechnung konnte wegen eines unbekannten Fehlers nicht gespeichert werden.',
       });
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -960,7 +1029,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
     taxAmount, 
     taxBreakdown, 
     total, 
-    hasOnlyZeroTax 
+    hasOnlyZeroTax,
+    validationError,
   } = calculateTotals();
 
   return (
@@ -986,13 +1056,19 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           )}
         </div>
           <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 ml-4 flex-shrink-0"
+            onClick={() => void requestClose()}
+            disabled={isSaving}
+            className="text-gray-500 hover:text-gray-700 ml-4 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Rechnung schließen"
           >
             <X className="h-6 w-6" />
           </button>
         </div>
       </div>
+
+      {invoice?.documentSnapshot && (
+        <p className="text-sm text-gray-600">Beim Speichern werden die aktuellen Firmen- und Kundendaten für diesen Entwurf übernommen.</p>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
@@ -1056,10 +1132,12 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   )}
                 </div>
                 {onCreateCustomer && (
-                  <button
+                <button
                     type="button"
                     onClick={() => {
                       logger.debug('Plus button clicked in InvoiceEditor');
+                      initialCustomerFormSnapshot.current = JSON.stringify(emptyCustomerData);
+                      setNewCustomerData(emptyCustomerData);
                       setShowCustomerForm(true);
                     }}
                     className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center text-sm sm:w-auto w-full"
@@ -1315,7 +1393,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         )}
 
         {/* Totals */}
-        {items.length > 0 && (
+        {validationError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{validationError}</p>}
+        {items.length > 0 && !validationError && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Gesamtsumme</h3>
             <div className="space-y-2 text-sm sm:text-base">
@@ -1429,15 +1508,16 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         <div className="form-action-bar">
           <button
             type="submit"
-            className="btn-primary order-2 rounded-lg px-6 py-3 transition-colors sm:py-2"
+            disabled={isSaving || Boolean(validationError)}
+            className="btn-primary order-2 rounded-lg px-6 py-3 transition-colors sm:py-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Save className="h-4 w-4" />
-            <span>{invoice ? 'Aktualisieren' : 'Erstellen'}</span>
+            {isSaving ? <span>Wird gespeichert …</span> : <><Save className="h-4 w-4" /><span>{invoice ? 'Aktualisieren' : 'Erstellen'}</span></>}
           </button>
           <button
             type="button"
-            onClick={onClose}
-            className="order-1 rounded-lg border border-gray-300 px-6 py-3 text-gray-700 transition-colors hover:bg-gray-50 sm:py-2"
+            onClick={() => void requestClose()}
+            disabled={isSaving}
+            className="order-1 rounded-lg border border-gray-300 px-6 py-3 text-gray-700 transition-colors hover:bg-gray-50 sm:py-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Abbrechen
           </button>
@@ -1474,17 +1554,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                   setFormData(prev => ({ ...prev, customerId: createdCustomer.id }));
                 }
                 
-                setNewCustomerData({
-                  name: '',
-                  email: '',
-                  address: '',
-                  addressSupplement: '',
-                  postalCode: '',
-                  city: '',
-                  country: 'Deutschland',
-                  taxId: '',
-                  phone: ''
-                });
+                setNewCustomerData(emptyCustomerData);
+                initialCustomerFormSnapshot.current = JSON.stringify(emptyCustomerData);
                 setShowCustomerForm(false);
                 
                 // Refresh customers in other components
@@ -1611,7 +1682,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowCustomerForm(false)}
+                  onClick={() => void requestCloseCustomerForm()}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
                 >
                   Abbrechen
@@ -1629,7 +1700,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           icon={Edit}
           title={editingInvoiceTemplate ? 'Rechnungsvorlage bearbeiten' : 'Neue Rechnungsvorlage erstellen'}
           description="Pflegen Sie Name, Preis, Einheit und steuerliche Zuordnung der Vorlage."
-          onClose={closeInvoiceTemplateForm}
+          onClose={() => void requestCloseInvoiceTemplateForm()}
           size="md"
           zIndexClassName="z-[1000]"
         >
@@ -1661,14 +1732,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 }
                 
                 // Reset form
-                setNewInvoiceTemplateData({
-                  name: '',
-                  description: '',
-                  unitPrice: 0,
-                  unit: 'Stunde',
-                  taxRate: 19,
-                  isDefault: false
-                });
+                setNewInvoiceTemplateData(emptyInvoiceTemplateData);
+                initialInvoiceTemplateSnapshot.current = JSON.stringify(emptyInvoiceTemplateData);
                 setEditingInvoiceTemplate(null);
                 setShowInvoiceTemplateForm(false);
               } catch (error) {
@@ -1772,9 +1837,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    closeInvoiceTemplateForm();
-                  }}
+                  onClick={() => void requestCloseInvoiceTemplateForm()}
                   className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   Abbrechen
@@ -1802,14 +1865,8 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 <button
                   onClick={() => {
                     setEditingInvoiceTemplate(null);
-                    setNewInvoiceTemplateData({
-                      name: '',
-                      description: '',
-                      unitPrice: 0,
-                      unit: 'Stunde',
-                      taxRate: 19,
-                      isDefault: false
-                    });
+                    setNewInvoiceTemplateData(emptyInvoiceTemplateData);
+                    initialInvoiceTemplateSnapshot.current = JSON.stringify(emptyInvoiceTemplateData);
                     setShowInvoiceTemplateManager(false);
                     setShowInvoiceTemplateForm(true);
                   }}
@@ -1835,14 +1892,16 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       <button
                         onClick={() => {
                           setEditingInvoiceTemplate(template);
-                          setNewInvoiceTemplateData({
+                          const nextTemplateData = {
                             name: template.name,
                             description: template.description || '',
                             unitPrice: Number(template.unitPrice) || 0,
                             unit: template.unit,
                             taxRate: Number(template.taxRate) || 0,
                             isDefault: template.isDefault || false
-                          });
+                          };
+                          setNewInvoiceTemplateData(nextTemplateData);
+                          initialInvoiceTemplateSnapshot.current = JSON.stringify(nextTemplateData);
                           setShowInvoiceTemplateManager(false);
                           setShowInvoiceTemplateForm(true);
                         }}

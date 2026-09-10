@@ -3,6 +3,7 @@ import { pool } from '../database.js';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
 import { findAllJobs, findJobById } from '../queries/jobQueries.js';
+import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 
 const router = express.Router();
 
@@ -184,6 +185,7 @@ const expandRecurrence = (rule) => {
 const generateJobNumber = async (client) => {
   const currentYear = new Date().getFullYear();
   const yearPattern = `AB-${currentYear}-%`;
+  await lockDocumentNumber(client, 'job', currentYear);
   const lastJobResult = await client.query(
     'SELECT job_number FROM job_entries WHERE job_number LIKE $1 ORDER BY created_at DESC, job_number DESC LIMIT 1',
     [yearPattern]

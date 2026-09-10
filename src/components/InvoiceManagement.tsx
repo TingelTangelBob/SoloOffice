@@ -32,6 +32,8 @@ import { useFeedback } from '../context/FeedbackContext';
 import { csvFileName, downloadCsv } from '../utils/csvExport';
 import type { CsvColumn } from '../utils/csvExport';
 import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '../utils/invoicePeriod';
+import { useAuth } from '../context/AuthContext';
+import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -56,6 +58,8 @@ const INVOICE_TABLE_LAYOUT = listTableLayout({
 
 export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, onNavigate }: InvoiceManagementProps = {}) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers, addCustomer } = useCustomers();
   const { invoices, setInvoices, deleteInvoice, updateInvoice } = useInvoices();
   const { refreshJobEntries } = useJobs();
@@ -165,7 +169,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   // Check for overdue invoices automatically on every load
   useEffect(() => {
     const checkOverdueInvoices = async () => {
-      if (invoiceRecords.length === 0) return;
+      if (invoiceRecords.length === 0 || !canWrite) return;
       
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
@@ -200,7 +204,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     if (invoiceRecords.length > 0) {
       checkOverdueInvoices();
     }
-  }, [invoiceRecords, updateInvoice]);
+  }, [invoiceRecords, updateInvoice, canWrite]);
 
   const filteredInvoices = invoiceRecords.filter(invoice => {
     const invoiceNumber = invoice.invoiceNumber || '';
@@ -223,23 +227,19 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const hasInvalidInvoiceDateRange = Boolean(invoiceStartDate && invoiceEndDate && invoiceStartDate > invoiceEndDate);
 
   const handleOpenEditor = useCallback((invoice?: Invoice) => {
-    // Check if invoice is sent, reminded, or has any status other than draft and warn user
-    if (invoice && invoice.status !== 'draft') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Rechnung bearbeiten',
-        message: 'Diese Rechnung wurde bereits versendet bzw. gemahnt. Änderungen an versendeten oder gemahnten Rechnungen sollten nur in Ausnahmefällen vorgenommen werden, da sie die GoBD-Konformität beeinträchtigen können. Möchten Sie trotzdem fortfahren?',
-        onConfirm: () => {
-          setEditingInvoice(invoice || null);
-          setIsEditorOpen(true);
-        },
-        isGoBDWarning: true
-      });
-    } else {
-      setEditingInvoice(invoice || null);
-      setIsEditorOpen(true);
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
     }
-  }, []);
+
+    if (invoice && invoice.status !== 'draft') {
+      notify({ variant: 'warning', message: 'Ausgestellte Rechnungen sind inhaltlich gesperrt. Für Korrekturen können Sie eine Gutschrift erstellen.' });
+      setDocumentPreview({ isOpen: true, documents: createInvoiceAttachmentPreviewDocuments(invoice), initialIndex: 0 });
+      return;
+    }
+    setEditingInvoice(invoice || null);
+    setIsEditorOpen(true);
+  }, [canWrite, notify]);
 
   useEffect(() => {
     if (!initialInvoiceId || openedInitialInvoiceId.current === initialInvoiceId) return;
@@ -267,6 +267,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handleDelete = async (invoice: Invoice) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (!canDeleteInvoice(invoice)) {
       setConfirmModal({
         isOpen: true,
@@ -316,6 +321,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     });
   };
 
+  const handleOpenPaymentDialog = (invoice: Invoice) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    setPaymentInvoice(invoice);
+  };
+
   const handlePreview = (invoice: Invoice) => {
     // Create preview documents for the invoice
     const documents = createInvoiceAttachmentPreviewDocuments(invoice);
@@ -349,6 +362,10 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
 
   const handleDownloadConfirm = async (formats: ('zugferd' | 'xrechnung')[], markAsSent: boolean, selectedAttachmentIds: string[] = []) => {
     if (!downloadModal.invoice) return;
+    if (markAsSent && !canWrite) {
+      notify({ variant: 'warning', message: 'Zum Markieren als versendet fehlt die Schreibberechtigung.' });
+      return;
+    }
     
     // Handle bulk mode
     if (downloadModal.isBulkMode && downloadModal.bulkInvoices) {
@@ -528,13 +545,18 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handleSendEmail = async (invoice: Invoice) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     const customer = customers.find(c => c.id === invoice.customerId);
     if (!customer) {
       notify({ variant: 'error', message: `${terminology.entity.dataLabel} nicht gefunden.` });
       return;
     }
 
-    if (!customer.email) {
+    if (getActiveEmailRecipients(customer).length === 0) {
       notify({ variant: 'warning', message: terminology.entity.emailMissingMessage });
       return;
     }
@@ -551,6 +573,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handleEmailSend = async (formats: ('zugferd' | 'xrechnung')[], customText?: string, attachments?: { id: string; file: File; name: string; size: number }[], selectedInvoiceAttachmentIds?: string[], selectedEmails?: string[], manualEmails?: string[]) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (!emailModal.invoice) return;
     
     // Handle bulk mode
@@ -560,13 +587,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       try {
         let successCount = 0;
         let errorCount = 0;
+        let missingRecipientCount = 0;
         
         for (const invoice of emailModal.bulkInvoices) {
           try {
             const customer = customers.find(c => c.id === invoice.customerId);
-            if (!customer?.email) {
+            const emailAddresses = getActiveEmailRecipients(customer);
+            if (!customer || emailAddresses.length === 0) {
               logger.warn(`No email for customer of invoice ${invoice.invoiceNumber}`);
-              errorCount++;
+              missingRecipientCount++;
               continue;
             }
 
@@ -613,7 +642,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
             
             // Send email
             const result = await apiService.sendInvoiceEmailMultiFormat(
-              [customer.email],
+              emailAddresses,
               invoiceFormats,
               invoice, 
               customText,
@@ -648,10 +677,18 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
           : '';
         
-        notify({ variant: errorCount > 0 ? 'warning' : 'success', message: `${successCount} Rechnung(en) erfolgreich versendet (${formatLabels.join(', ')})${attachmentInfo}.${errorCount > 0 ? ` ${errorCount} mit Fehler.` : ''}` });
+        const failedCount = errorCount + missingRecipientCount;
+        const failureInfo = [
+          missingRecipientCount > 0 ? `${missingRecipientCount} ohne E-Mail-Adresse` : '',
+          errorCount > 0 ? `${errorCount} mit Fehler` : '',
+        ].filter(Boolean).join(', ');
+        const summary = successCount === 0
+          ? `Keine der ${emailModal.bulkInvoices.length} Rechnungen konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.`
+          : `${successCount} Rechnung(en) erfolgreich versendet (${formatLabels.join(', ')})${attachmentInfo}.${failedCount > 0 ? ` ${failureInfo}.` : ''}`;
+        notify({ variant: successCount === 0 ? 'error' : failedCount > 0 ? 'warning' : 'success', message: summary });
         
         // Clear selection and close modal
-        setSelectedInvoiceIds([]);
+        if (successCount > 0) setSelectedInvoiceIds([]);
         setEmailModal({ isOpen: false, invoice: null, customer: null, isBulkMode: false, bulkInvoices: [] });
         
       } catch (error) {
@@ -901,6 +938,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handleBulkStatusChange = async (newStatus: Invoice['status']) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (selectedInvoiceIds.length === 0) return;
     
     setIsBulkOperation(true);
@@ -919,6 +961,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handleBulkEmail = async () => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (selectedInvoiceIds.length === 0) return;
     
     const selectedInvoices = invoiceRecords.filter(inv => selectedInvoiceIds.includes(inv.id));
@@ -1250,7 +1297,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                           type="button"
                           className="action-icon-button action-icon-green"
                           title="Zahlungseingang erfassen"
-                          onClick={() => setPaymentInvoice(invoice)}
+                          onClick={() => handleOpenPaymentDialog(invoice)}
                         >
                           <Banknote className="h-4 w-4" />
                         </button>
@@ -1259,7 +1306,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         type="button"
                         onClick={() => handleOpenEditor(invoice)}
                         className="action-icon-button action-icon-indigo"
-                        title="Bearbeiten"
+                        title={invoice.status === 'draft' ? 'Bearbeiten' : 'Ausgestellte Rechnung ist gesperrt'}
+                        disabled={invoice.status !== 'draft'}
                       >
                         <Edit className="h-4 w-4" />
                       </button>
@@ -1296,8 +1344,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                     ) : (
                     <ActionMenu triggerClassName="action-icon-button action-icon-blue">
                         {invoice.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>}
-                        {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => setPaymentInvoice(invoice)}>Zahlungseingang erfassen</ActionMenuItem>}
-                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
+                        {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => handleOpenPaymentDialog(invoice)}>Zahlungseingang erfassen</ActionMenuItem>}
+                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                         <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                         <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
                         <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
@@ -1366,11 +1414,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                       <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>
                     )}
                     {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && (
-                      <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => setPaymentInvoice(invoice)}>Zahlungseingang erfassen</ActionMenuItem>
+                      <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => handleOpenPaymentDialog(invoice)}>Zahlungseingang erfassen</ActionMenuItem>
                     )}
                     
                     <>
-                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
+                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                       
                       <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                       
@@ -1423,17 +1471,30 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       />
       
       {/* Email Send Modal */}
-      <EmailSendModal
-        isOpen={emailModal.isOpen}
-        onClose={handleEmailModalClose}
-        onSend={handleEmailSend}
-        document={emailModal.invoice!}
-        documentType="invoice"
-        customer={emailModal.customer!}
-        isLoading={isSendingEmail === emailModal.invoice?.id || isBulkOperation}
-        isBulkMode={emailModal.isBulkMode}
-        bulkCount={emailModal.bulkInvoices?.length || 0}
-      />
+      {emailModal.isOpen && emailModal.invoice && emailModal.isBulkMode && (
+        <EmailSendModal
+          isOpen={true}
+          onClose={handleEmailModalClose}
+          onSend={handleEmailSend}
+          document={emailModal.invoice}
+          documentType="invoice"
+          isLoading={isSendingEmail === emailModal.invoice.id || isBulkOperation}
+          isBulkMode={true}
+          bulkCount={emailModal.bulkInvoices?.length || 0}
+        />
+      )}
+      {emailModal.isOpen && emailModal.invoice && !emailModal.isBulkMode && emailModal.customer && (
+        <EmailSendModal
+          isOpen={true}
+          onClose={handleEmailModalClose}
+          onSend={handleEmailSend}
+          document={emailModal.invoice}
+          documentType="invoice"
+          customer={emailModal.customer}
+          isLoading={isSendingEmail === emailModal.invoice.id || isBulkOperation}
+          isBulkMode={false}
+        />
+      )}
       
       {/* Download Modal */}
       <DownloadModal

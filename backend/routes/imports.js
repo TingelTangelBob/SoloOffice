@@ -1,8 +1,10 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
 import { pool } from '../database.js';
+import { calculateDocumentMoney } from '../utils/documentMoney.js';
 import logger from '../utils/logger.js';
 import { hasPermission } from '../middleware/auth.js';
+import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 
 const router = express.Router();
 const supportedResources = new Set(['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries']);
@@ -448,6 +450,9 @@ function normaliseQuoteItems(rows) {
         quantity,
         unitPrice,
         taxRate: parseNumber(pick(item, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'])) ?? 19,
+        discountType: normaliseDiscountType(pick(item, ['discountType', 'discount_type'])),
+        discountValue: parseNumber(pick(item, ['discountValue', 'discount_value'])),
+        discountAmount: parseNumber(pick(item, ['discountAmount', 'discount_amount'])),
         order: items.length + 1,
       });
     });
@@ -472,30 +477,12 @@ function normaliseQuoteItems(rows) {
 }
 
 function calculateQuoteTotals(items, row) {
-  const subtotalBeforeDiscount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const itemDiscounts = items.reduce((sum, item) => sum + (item.discountAmount || 0), 0);
-  const subtotalAfterItems = subtotalBeforeDiscount - itemDiscounts;
-  const discountType = normaliseDiscountType(pick(row, ['globalDiscountType', 'global_discount_type', 'rabattTyp', 'rabattart']));
-  const discountValue = parseNumber(pick(row, ['globalDiscountValue', 'global_discount_value', 'rabattWert', 'rabattwert'])) ?? 0;
-  const requestedDiscountAmount = parseNumber(pick(row, ['globalDiscountAmount', 'global_discount_amount', 'rabattBetrag', 'rabattbetrag']));
-  const calculatedDiscount = discountType === 'percentage'
-    ? subtotalAfterItems * discountValue / 100
-    : discountType === 'fixed' ? Math.min(discountValue, subtotalAfterItems) : 0;
-  const globalDiscountAmount = requestedDiscountAmount ?? calculatedDiscount;
-  const discountedSubtotal = Math.max(0, subtotalAfterItems - globalDiscountAmount);
-  const discountRatio = subtotalAfterItems > 0 ? Math.min(Math.max(globalDiscountAmount / subtotalAfterItems, 0), 1) : 0;
-  const taxAmount = items.reduce((sum, item) => {
-    const taxableItemTotal = item.quantity * item.unitPrice - (item.discountAmount || 0);
-    return sum + taxableItemTotal * (1 - discountRatio) * (item.taxRate || 0) / 100;
-  }, 0);
-  return {
-    subtotal: parseNumber(pick(row, ['subtotal', 'sub_total', 'netto', 'netAmount', 'net_amount', 'nettobetrag'])) ?? subtotalAfterItems,
-    taxAmount: parseNumber(pick(row, ['taxAmount', 'tax_amount', 'vatAmount', 'vat_amount', 'steuerbetrag', 'mwstBetrag'])) ?? taxAmount,
-    total: parseNumber(pick(row, ['total', 'grossAmount', 'gross_amount', 'brutto', 'gesamtbetrag', 'endbetrag'])) ?? discountedSubtotal + taxAmount,
-    globalDiscountType: discountType,
-    globalDiscountValue: discountType ? discountValue : null,
-    globalDiscountAmount,
-  };
+  return calculateDocumentMoney({
+    items,
+    globalDiscountType: normaliseDiscountType(pick(row, ['globalDiscountType', 'global_discount_type', 'rabattTyp', 'rabattart'])),
+    globalDiscountValue: parseNumber(pick(row, ['globalDiscountValue', 'global_discount_value', 'rabattWert', 'rabattwert'])) ?? 0,
+    globalDiscountAmount: parseNumber(pick(row, ['globalDiscountAmount', 'global_discount_amount', 'rabattBetrag', 'rabattbetrag'])) ?? 0,
+  }, { documentType: 'quote' });
 }
 
 async function planQuotes(client, rows, duplicateMode) {
@@ -534,7 +521,7 @@ async function planQuotes(client, rows, duplicateMode) {
       if (fallbackTotal !== null && fallbackTotal >= 0) {
         const fallbackTaxRate = parseNumber(pick(firstRow, ['itemTaxRate', 'item_tax_rate', 'taxRate', 'tax_rate', 'mwst', 'ust'])) ?? 19;
         const fallbackNet = parseNumber(pick(firstRow, ['subtotal', 'sub_total', 'netto', 'netAmount', 'net_amount', 'nettobetrag'])) ?? fallbackTotal / (1 + fallbackTaxRate / 100);
-        items = [{ description: 'Importierter Gesamtbetrag', quantity: 1, unitPrice: fallbackNet, taxRate: fallbackTaxRate, order: 1 }];
+        items = [{ description: 'Importierter Gesamtbetrag', quantity: 1, unitPrice: Math.round(fallbackNet * 100) / 100, taxRate: fallbackTaxRate, order: 1 }];
         warnings.push('Keine Einzelposition gefunden; eine Position aus der Gesamtsumme wurde erzeugt');
       }
     }
@@ -546,6 +533,15 @@ async function planQuotes(client, rows, duplicateMode) {
     const validUntil = parseDate(pick(firstRow, ['validUntil', 'valid_until', 'expirationDate', 'gueltigBis', 'gültigBis', 'gueltig', 'gültig'])) || addDays(issueDate, 30);
     if (!pick(firstRow, ['issueDate', 'issue_date', 'offerDate', 'angebotsdatum', 'ausstellungsdatum', 'datum'])) warnings.push('Ausstellungsdatum wird auf heute gesetzt');
     if (!pick(firstRow, ['validUntil', 'valid_until', 'expirationDate', 'gueltigBis', 'gültigBis', 'gueltig', 'gültig'])) warnings.push('Gültigkeit wird auf 30 Tage gesetzt');
+    let calculated;
+    try {
+      calculated = calculateQuoteTotals(items, firstRow);
+    } catch (error) {
+      entries.push(resultEntry(rowNumbers, 'error', error.message));
+      continue;
+    }
+    const claimedTotal = parseNumber(pick(firstRow, ['total', 'grossAmount', 'gross_amount', 'brutto', 'gesamtbetrag', 'endbetrag']));
+    if (claimedTotal !== null && Math.abs(claimedTotal - calculated.total) > 0.005) warnings.push('Die angegebene Gesamtsumme weicht von den Positionen ab; übernommen wird der berechnete Betrag');
     const data = {
       quoteNumber: group.quoteNumber || undefined,
       customerId: customer.id,
@@ -554,7 +550,7 @@ async function planQuotes(client, rows, duplicateMode) {
       status: normaliseStatus(pick(firstRow, ['status', 'angebotsstatus']), ['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'], 'draft'),
       notes: text(pick(firstRow, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'])),
       items,
-      ...calculateQuoteTotals(items, firstRow),
+      ...calculated,
     };
     if (!pick(firstRow, ['status', 'angebotsstatus'])) warnings.push('Status wird auf Entwurf gesetzt');
     existing.push({ id: `new-${rowNumbers[0]}`, quote_number: group.quoteNumber || `new-${rowNumbers[0]}` });
@@ -742,6 +738,28 @@ async function nextNumber(client, table, column, prefix, year) {
   return `${prefix}-${year}-${String(max + 1).padStart(3, '0')}`;
 }
 
+function importDocumentNumberLocks(resource, entries) {
+  const locks = new Map();
+  for (const entry of entries) {
+    if (!['valid', 'warning'].includes(entry.status) || entry.data?.jobNumber || entry.data?.quoteNumber) continue;
+    const documentType = resource === 'jobs' ? 'job' : resource === 'quotes' ? 'quote' : null;
+    if (!documentType) continue;
+    const date = resource === 'jobs' ? entry.data.date : entry.data.issueDate;
+    const year = new Date(`${date}T00:00:00Z`).getUTCFullYear();
+    if (!Number.isInteger(year)) continue;
+    locks.set(`${documentType}:${year}`, { documentType, year });
+  }
+  return [...locks.values()].sort((left, right) => (
+    left.documentType.localeCompare(right.documentType) || left.year - right.year
+  ));
+}
+
+async function lockImportDocumentNumbers(client, resource, entries) {
+  for (const { documentType, year } of importDocumentNumberLocks(resource, entries)) {
+    await lockDocumentNumber(client, documentType, year);
+  }
+}
+
 async function nextCustomerNumber(client) {
   const result = await client.query('SELECT customer_number FROM customers');
   const max = result.rows.reduce((highest, row) => {
@@ -870,7 +888,7 @@ async function applyQuote(client, entry) {
     await client.query(`
       INSERT INTO quote_items (quote_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    `, [quoteId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue || null, item.discountAmount || null]);
+    `, [quoteId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? null]);
   }
   return 'created';
 }
@@ -902,6 +920,7 @@ async function applyPlan(client, resource, plan) {
   if (resource === 'positions') {
     return applyPositions(client, applicable, plan.positionTemplates || []);
   }
+  await lockImportDocumentNumbers(client, resource, applicable);
   const results = [];
   for (const entry of applicable) {
     if (resource === 'customers') results.push(await applyCustomer(client, entry));

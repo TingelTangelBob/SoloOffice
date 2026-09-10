@@ -13,6 +13,7 @@ import { ImportWizard } from './ImportWizard';
 import { PageHeader } from './PageHeader';
 import { useFeedback } from '../context/FeedbackContext';
 import { ReceiptBillingDialog } from './ReceiptBillingDialog';
+import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
@@ -60,6 +61,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [reviewData, setReviewData] = useState<ReceiptExtractedData>({});
   const [originalReviewData, setOriginalReviewData] = useState<ReceiptExtractedData>({});
+  const [ocrReviewData, setOcrReviewData] = useState<ReceiptExtractedData>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -86,20 +88,6 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   }, [receiptLabel]);
 
   useEffect(() => { void loadReceipts(); }, [loadReceipts]);
-
-  useEffect(() => {
-    if (!selectedReceipt) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedReceipt(null);
-    };
-    document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [selectedReceipt]);
 
   const updateReceiptInState = (updated: Receipt) => {
     setReceipts(current => current.map(receipt => receipt.id === updated.id ? updated : receipt));
@@ -128,42 +116,86 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     }
   };
 
+  const updateReviewField = (field: EditableReceiptField, value: string) => {
+    setReviewData(current => ({ ...current, [field]: value }));
+  };
+
+  const normalizeReviewData = (data: ReceiptExtractedData = reviewData): ReceiptExtractedData => ({
+    vendorName: data.vendorName?.trim() || undefined,
+    documentDate: data.documentDate?.trim() || undefined,
+    documentNumber: data.documentNumber?.trim() || undefined,
+    netAmount: normalizeOptionalNumber(inputValue(data.netAmount), locale, company.numberFormat),
+    taxAmount: normalizeOptionalNumber(inputValue(data.taxAmount), locale, company.numberFormat),
+    grossAmount: normalizeOptionalNumber(inputValue(data.grossAmount), locale, company.numberFormat),
+    taxRate: normalizeOptionalNumber(inputValue(data.taxRate), locale, company.numberFormat),
+    currency: data.currency?.trim().toUpperCase() || undefined,
+    suggestedCategory: data.suggestedCategory,
+  });
+
+  const isReviewFieldChanged = (field: EditableReceiptField) => {
+    const normalizedReviewData = normalizeReviewData(reviewData);
+    const normalizedOcrReviewData = normalizeReviewData(ocrReviewData);
+    return comparableValue(normalizedReviewData[field]) !== comparableValue(normalizedOcrReviewData[field]);
+  };
+  const fieldClassName = (field: EditableReceiptField) => `mt-1.5 min-h-11 w-full rounded-lg border bg-white px-3 py-2.5 text-sm font-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20 ${isReviewFieldChanged(field) ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'}`;
+
+  const isReviewDirty = Boolean(selectedReceipt)
+    && JSON.stringify(normalizeReviewData(reviewData)) !== JSON.stringify(normalizeReviewData(originalReviewData));
+  const requestReviewClose = useDirtyCloseGuard({
+    isDirty: isReviewDirty,
+    isDisabled: savingReview,
+    onClose: () => setSelectedReceipt(null),
+    confirm,
+    title: 'Belegprüfung schließen?',
+    message: 'Es gibt ungespeicherte Änderungen an der Belegprüfung. Möchten Sie diese wirklich verwerfen?',
+  });
+
+  useEffect(() => {
+    if (!selectedReceipt) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') void requestReviewClose();
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [requestReviewClose, selectedReceipt]);
+
+  const confirmReviewOverwrite = async () => {
+    if (!isReviewDirty) return true;
+    return confirm({
+      title: 'Ungespeicherte Prüfungsdaten verwerfen?',
+      message: 'Die ungespeicherten Änderungen an der Belegprüfung werden verworfen. Möchten Sie fortfahren?',
+      confirmText: 'Änderungen verwerfen',
+      cancelText: 'Weiter bearbeiten',
+      isDestructive: true,
+    });
+  };
+
   const openReview = async (receipt: Receipt) => {
+    if (selectedReceipt && !(await confirmReviewOverwrite())) return;
     setError('');
     try {
       const detail = receipt.content ? receipt : await apiService.getReceipt(receipt.id);
       setSelectedReceipt(detail);
-      setOriginalReviewData({ ...(detail.ocrExtractedData || detail.extractedData || {}) });
+      setOriginalReviewData({ ...(detail.extractedData || {}) });
+      setOcrReviewData({ ...(detail.ocrExtractedData || detail.extractedData || {}) });
       setReviewData({ ...detail.extractedData });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Der Beleg konnte nicht geöffnet werden.');
     }
   };
 
-  const updateReviewField = (field: EditableReceiptField, value: string) => {
-    setReviewData(current => ({ ...current, [field]: value }));
-  };
-
-  const isReviewFieldChanged = (field: EditableReceiptField) => comparableValue(reviewData[field]) !== comparableValue(originalReviewData[field]);
-  const fieldClassName = (field: EditableReceiptField) => `mt-1.5 min-h-11 w-full rounded-lg border bg-white px-3 py-2.5 text-sm font-normal text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20 ${isReviewFieldChanged(field) ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'}`;
-
-  const normalizeReviewData = (): ReceiptExtractedData => ({
-    vendorName: reviewData.vendorName?.trim() || undefined,
-    documentDate: reviewData.documentDate?.trim() || undefined,
-    documentNumber: reviewData.documentNumber?.trim() || undefined,
-    netAmount: normalizeOptionalNumber(inputValue(reviewData.netAmount), locale, company.numberFormat),
-    taxAmount: normalizeOptionalNumber(inputValue(reviewData.taxAmount), locale, company.numberFormat),
-    grossAmount: normalizeOptionalNumber(inputValue(reviewData.grossAmount), locale, company.numberFormat),
-    taxRate: normalizeOptionalNumber(inputValue(reviewData.taxRate), locale, company.numberFormat),
-    currency: reviewData.currency?.trim().toUpperCase() || undefined,
-    suggestedCategory: reviewData.suggestedCategory,
-  });
-
   const persistReview = async () => {
     if (!selectedReceipt) return null;
-    const updated = await apiService.updateReceipt(selectedReceipt.id, { extractedData: normalizeReviewData() });
+    const normalizedData = normalizeReviewData();
+    const updated = await apiService.updateReceipt(selectedReceipt.id, { extractedData: normalizedData });
     updateReceiptInState(updated);
     setReviewData({ ...updated.extractedData });
+    setOriginalReviewData({ ...updated.extractedData });
     return updated;
   };
 
@@ -182,13 +214,16 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   };
 
   const retryOcr = async (receipt: Receipt) => {
+    if (savingReview) return;
+    if (selectedReceipt?.id === receipt.id && !(await confirmReviewOverwrite())) return;
     setBusyId(receipt.id);
     setError('');
     try {
       const updated = await apiService.retryReceiptOcr(receipt.id);
       updateReceiptInState(updated);
       if (selectedReceipt?.id === updated.id) {
-        setOriginalReviewData({ ...(updated.ocrExtractedData || updated.extractedData || {}) });
+        setOriginalReviewData({ ...(updated.extractedData || {}) });
+        setOcrReviewData({ ...(updated.ocrExtractedData || updated.extractedData || {}) });
         setReviewData({ ...updated.extractedData });
       }
       setNotice('Die lokale Belegerkennung wurde erneut ausgeführt. Bitte das Ergebnis prüfen.');
@@ -432,7 +467,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           icon={Pencil}
           title="Beleg prüfen"
           description="Prüfe die erkannten Angaben und korrigiere sie bei Bedarf."
-          onClose={() => setSelectedReceipt(null)}
+          onClose={() => void requestReviewClose()}
           size="wide"
           zIndexClassName="z-[1100]"
           footer={(
@@ -448,7 +483,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedReceipt(null)}
+                onClick={() => void requestReviewClose()}
                 className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 Abbrechen
@@ -552,7 +587,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
               <section className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-800 sm:p-6">
                 <p className="font-medium">Lokale Belegerkennung konnte nicht ausgeführt werden</p>
                 <p className="mt-1">{selectedReceipt.ocrError}</p>
-                <button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-3 inline-flex items-center gap-2 font-medium underline" disabled={busyId === selectedReceipt.id}>
+                <button type="button" onClick={() => void retryOcr(selectedReceipt)} className="mt-3 inline-flex items-center gap-2 font-medium underline" disabled={savingReview || busyId === selectedReceipt.id}>
                   <RefreshCw className="h-3.5 w-3.5" />
                   Erneut versuchen
                 </button>

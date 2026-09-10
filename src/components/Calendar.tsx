@@ -226,6 +226,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const datePickerRef = useRef<HTMLDivElement>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarEventsLoading, setCalendarEventsLoading] = useState(true);
+  const [calendarEventsError, setCalendarEventsError] = useState<string | null>(null);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -266,17 +268,22 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   // Get locale from company settings
   const locale = company?.locale || 'de-DE';
 
-  useEffect(() => {
-    const loadCalendarEvents = async () => {
-      try {
-        setCalendarEvents(await apiService.getCalendarEvents());
-      } catch (error) {
-        logger.error('Error loading calendar events:', error);
-      }
-    };
-
-    loadCalendarEvents();
+  const loadCalendarEvents = useCallback(async () => {
+    setCalendarEventsLoading(true);
+    setCalendarEventsError(null);
+    try {
+      setCalendarEvents(await apiService.getCalendarEvents());
+    } catch (error) {
+      logger.error('Error loading calendar events:', error);
+      setCalendarEventsError('Kalenderdaten konnten nicht geladen werden. Ein leerer Kalender kann auch ein Ladefehler sein.');
+    } finally {
+      setCalendarEventsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadCalendarEvents();
+  }, [loadCalendarEvents]);
 
   // Search functionality
   const searchResults = useMemo(() => {
@@ -738,6 +745,18 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     }
   };
 
+  const handleJobSaveError = async (error: unknown, actionMessage: string) => {
+    logger.error(actionMessage, error);
+    try {
+      await refreshJobEntries();
+      setJobPositions(new Map());
+      notify({ variant: 'error', message: `${actionMessage} Die Anzeige wurde mit dem Server abgeglichen.` });
+    } catch (refreshError) {
+      logger.error('Error restoring server-confirmed calendar state:', refreshError);
+      notify({ variant: 'error', message: `${actionMessage} Der serverbestätigte Kalenderzustand konnte nicht neu geladen werden.` });
+    }
+  };
+
   // Check if date is today
   const isToday = (date: Date) => {
     const today = new Date();
@@ -951,7 +970,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         jobId: draggedJob.id 
       });
     } catch (error) {
-      logger.error('Error updating job date:', error);
+      await handleJobSaveError(error, `Der ${terminology.work.singular} konnte nicht verschoben werden.`);
     } finally {
       setDraggedJob(null);
       setTimeGridDragPreview(null);
@@ -1048,7 +1067,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         jobId: draggedJob.id,
       });
     } catch (error) {
-      logger.error('Error updating job date and time:', error);
+      await handleJobSaveError(error, `Die Zeitänderung des ${terminology.work.singular} konnte nicht gespeichert werden.`);
     } finally {
       setDraggedJob(null);
       setTimeGridDragPreview(null);
@@ -1373,6 +1392,25 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         </div>
         </PageHeader>
       </div>
+
+      {calendarEventsLoading && (
+        <div role="status" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+          Kalenderdaten werden geladen …
+        </div>
+      )}
+      {calendarEventsError && (
+        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
+          <p>{calendarEventsError}</p>
+          <button
+            type="button"
+            onClick={() => void loadCalendarEvents()}
+            disabled={calendarEventsLoading}
+            className="inline-flex min-h-0 shrink-0 items-center justify-center rounded-lg border border-red-300 bg-white px-3 py-2 font-medium text-red-800 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Erneut versuchen
+          </button>
+        </div>
+      )}
 
       {/* Calendar Controls */}
       <div className="calendar-controls rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">

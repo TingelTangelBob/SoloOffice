@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
+import { readBackupSnapshot, writeBackupAtomically } from '../services/backupExport.js';
 import {
   BACKUP_ARCHIVE_LIMITS,
   BackupArchiveError,
@@ -16,6 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Define JSONB columns for each table that need special handling during restore
 const JSONB_COLUMNS = {
+  'invoices': ['document_snapshot'],
   'email_history': ['attachments', 'smtp_response'],
   'job_entries': ['materials', 'signature'],
   'job_recurrences': ['rule'],
@@ -70,8 +72,8 @@ const RESTORE_CLEAR_TABLES = [
   'customer_specific_hourly_rates', 'customer_specific_materials',
   'recurring_invoice_runs', 'recurring_invoices',
   'job_time_entries', 'job_attachments',
-  'quote_attachments', 'quote_items', 'quotes',
-  'invoice_attachments', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices',
+  'quote_attachments', 'quote_items',
+  'invoice_attachments', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices', 'quotes',
   'hourly_rates', 'material_templates', 'customers', 'company',
   'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entries', 'incoming_e_invoices'
 ];
@@ -221,7 +223,7 @@ async function getTableColumns(client, table) {
   return new Set(result.rows.map(row => row.column_name));
 }
 
-async function clearWorkspaceData(client, workspaceId) {
+export async function clearWorkspaceData(client, workspaceId) {
   for (const table of RESTORE_CLEAR_TABLES) {
     if (!WORKSPACE_SCOPED_TABLES.has(table)) continue;
     await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);
@@ -357,22 +359,11 @@ router.post('/create', async (req, res) => {
     
     const backup = {
       timestamp: now.toISOString(),
-      version: '1.0',
+      version: '3.0',
       workspaceId: req.auth.workspaceId,
       timeZone,
-      data: {}
+      ...await readBackupSnapshot(client, BACKUP_TABLES, prepareBackupRecord)
     };
-
-    for (const table of BACKUP_TABLES) {
-      try {
-        const result = await client.query(`SELECT * FROM ${table}`);
-        backup.data[table] = result.rows.map(record => prepareBackupRecord(table, record));
-        logger.debug(`Backed up ${result.rows.length} records from ${table}`);
-      } catch (error) {
-        logger.warn(`Could not backup table ${table}`, { table, error: error.message });
-        backup.data[table] = [];
-      }
-    }
 
     // Create backup directory if it doesn't exist
     const backupDir = path.join(__dirname, '../../backups');
@@ -387,7 +378,7 @@ router.post('/create', async (req, res) => {
     const filename = `backup_${req.auth.workspaceId}_${timestamp}.json`;
     const filepath = path.join(backupDir, filename);
     
-    await fs.writeFile(filepath, JSON.stringify(backup, null, 2));
+    await writeBackupAtomically(filepath, JSON.stringify(backup, null, 2));
     
     logger.info('Backup created successfully', { filename });
     
@@ -832,23 +823,12 @@ router.post('/create-zip', async (req, res) => {
     
     const backup = {
       timestamp: now.toISOString(),
-      version: '2.0',
+      version: '3.0',
       type: 'full',
       workspaceId: req.auth.workspaceId,
       timeZone,
-      data: {}
+      ...await readBackupSnapshot(client, BACKUP_TABLES, prepareBackupRecord)
     };
-
-    for (const table of BACKUP_TABLES) {
-      try {
-        const result = await client.query(`SELECT * FROM ${table}`);
-        backup.data[table] = result.rows.map(record => prepareBackupRecord(table, record));
-        logger.debug(`Backed up ${result.rows.length} records from ${table}`);
-      } catch (error) {
-        logger.warn(`Could not backup table ${table}`, { table, error: error.message });
-        backup.data[table] = [];
-      }
-    }
 
     // Create ZIP archive
     const zip = new AdmZip();
@@ -881,7 +861,7 @@ router.post('/create-zip', async (req, res) => {
     const filepath = path.join(backupDir, filename);
     
     const zipBuffer = zip.toBuffer();
-    await fs.writeFile(filepath, zipBuffer);
+    await writeBackupAtomically(filepath, zipBuffer);
     
     logger.info(`ZIP backup created successfully: ${filename}`);
     

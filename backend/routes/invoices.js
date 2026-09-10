@@ -122,11 +122,13 @@ router.post('/:id/payments', async (req, res) => {
   const client = await pool.connect();
   try {
     const amount = Number(req.body?.amount);
+    const amountCents = Math.round(amount * 100);
     const entryDate = String(req.body?.entryDate || '');
     const notes = String(req.body?.notes || '').trim();
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: 'Der Zahlungsbetrag muss größer als 0 sein.' });
+    if (!['number', 'string'].includes(typeof req.body?.amount) || !Number.isFinite(amount) || amount <= 0
+        || !Number.isSafeInteger(amountCents) || Math.abs(amount * 100 - amountCents) > 0.00001) {
+      return res.status(400).json({ error: 'Der Zahlungsbetrag muss größer als 0 sein und darf höchstens zwei Nachkommastellen haben.' });
     }
     const parsedEntryDate = new Date(`${entryDate}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || Number.isNaN(parsedEntryDate.getTime()) || parsedEntryDate.toISOString().slice(0, 10) !== entryDate) {
@@ -159,27 +161,28 @@ router.post('/:id/payments', async (req, res) => {
       WHERE source_type = 'invoice_payment' AND source_id = $1 AND status = 'active'
     `, [invoice.id]);
     const alreadyPaid = Number(paymentResult.rows[0]?.amount || 0);
-    const remaining = Math.max(0, Number(invoice.total) - alreadyPaid);
-    if (invoice.status === 'paid' || remaining < 0.005) {
+    const remainingCents = Math.max(0, Math.round(Number(invoice.total) * 100) - Math.round(alreadyPaid * 100));
+    const remaining = remainingCents / 100;
+    if (invoice.status === 'paid' || remainingCents === 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Die Rechnung ist bereits vollständig bezahlt.' });
     }
-    if (amount > remaining + 0.005) {
+    if (amountCents > remainingCents) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: `Der Zahlungsbetrag überschreitet den offenen Betrag von ${remaining.toFixed(2)} €.` });
     }
 
-    const subtotal = Number(invoice.subtotal || 0);
-    const taxRate = subtotal > 0 ? Number(invoice.tax_amount || 0) / subtotal * 100 : 0;
+    const taxableNet = Number(invoice.total) - Number(invoice.tax_amount || 0);
+    const taxRate = taxableNet > 0 ? Number(invoice.tax_amount || 0) / taxableNet * 100 : 0;
     const inserted = await client.query(`
       INSERT INTO euer_entries
         (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id)
       VALUES ('income', $1, $2, 'other_income', $3, $4, $5, 'invoice_payment', $6)
       RETURNING id, entry_type, entry_date, description, category, amount, tax_rate, notes,
         source_type, source_id, status, correction_reason, created_at, updated_at
-    `, [entryDate, `Zahlung Rechnung ${invoice.invoice_number}`, amount, taxRate, notes || null, invoice.id]);
+    `, [entryDate, `Zahlung Rechnung ${invoice.invoice_number}`, amountCents / 100, taxRate, notes || null, invoice.id]);
 
-    if (remaining - amount < 0.005) {
+    if (remainingCents === amountCents) {
       await client.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [invoice.id]);
     }
     await client.query('COMMIT');

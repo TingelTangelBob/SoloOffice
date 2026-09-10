@@ -216,6 +216,7 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
       method: 'POST',
       endpoint: '/quotes/:id/convert-to-invoice'
     });
+    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: 'Failed to convert quote to invoice' });
   }
 });

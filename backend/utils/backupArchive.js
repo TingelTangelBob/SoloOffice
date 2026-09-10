@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip';
+import { hasValidBackupManifest } from './backupIntegrity.js';
 
 export const BACKUP_ARCHIVE_LIMITS = Object.freeze({
   uploadBytes: 50 * 1024 * 1024,
@@ -88,6 +89,15 @@ export function validateBackupData(
         413,
       );
     }
+  }
+  // Historische Formate bleiben lesbar. Neue Sicherungen müssen das vollständige
+  // Manifest besitzen; ein nachträglich entferntes Manifest darf nicht durchgehen.
+  if ((backupData.version === '3.0' || backupData.manifest !== undefined)
+      && !hasValidBackupManifest(backupData)) {
+    throw new BackupArchiveError(
+      'Das Backup ist unvollständig oder beschädigt. Die Tabellen stimmen nicht mit dem Sicherungsmanifest überein.',
+      'BACKUP_INTEGRITY_INVALID',
+    );
   }
   return { totalRecords };
 }

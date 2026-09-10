@@ -96,6 +96,8 @@ export interface GlobalDiscount {
 }
 
 export interface Invoice extends Timestamps, GlobalDiscount {
+  /** Gespeicherte Dokumentdaten; Bestandsrechnungen können ohne Snapshot vorliegen. */
+  documentSnapshot?: { version: 1; capturedAt: string; company: Company; customer: Customer };
   id: UUID;
   invoiceNumber: string;
   customerId: UUID;

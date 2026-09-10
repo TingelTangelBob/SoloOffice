@@ -1,7 +1,8 @@
 import { pool } from '../database.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
-import logger from '../utils/logger.js';
-import { validateDiscountFields } from '../utils/validation.js';
+import { calculateDocumentMoney } from '../utils/documentMoney.js';
+import { captureInvoiceSnapshot } from './invoiceSnapshot.js';
+import { invoiceError, validateInvoiceHeader, validateInvoiceUpdate, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
 import { counterMatcher, formatNumberPattern, invoiceDateParts, numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,9 +17,9 @@ const REQUIRED_COMPANY_FIELDS = [
   ['bank_account', 'IBAN'],
 ];
 
-async function validateCompanyForInvoice(client) {
+export async function validateCompanyForInvoice(client) {
   const result = await client.query(`
-    SELECT name, address, postal_code, city, email, tax_id, bank_account
+    SELECT name, address, postal_code, city, email, tax_id, COALESCE(NULLIF(bank_account, ''), payment_bank_account) AS bank_account
     FROM company
     WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
     LIMIT 1
@@ -117,13 +118,6 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice',
 }
 
 export async function createInvoice(data, transactionHook) {
-  const discountValidation = validateDiscountFields(data);
-  if (!discountValidation.valid) {
-    const err = new Error(discountValidation.message);
-    err.statusCode = 400;
-    throw err;
-  }
-
   const {
     customerId,
     items = [],
@@ -132,9 +126,6 @@ export async function createInvoice(data, transactionHook) {
     issueDate = new Date().toISOString().split('T')[0],
     dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     status = 'draft',
-    globalDiscountType = null,
-    globalDiscountValue = null,
-    globalDiscountAmount = null,
     documentType = 'invoice',
     referenceInvoiceId = null,
     creditNoteReason = null,
@@ -148,6 +139,13 @@ export async function createInvoice(data, transactionHook) {
     err.statusCode = 400;
     throw err;
   }
+
+  const money = calculateDocumentMoney({ ...data, items }, { documentType });
+  validateInvoiceHeader({ status, issueDate, dueDate, customerId, items: money.items });
+  if (status === 'paid' && documentType === 'invoice') {
+    throw invoiceError('Bitte die Rechnung zunächst anlegen und anschließend den Zahlungseingang erfassen.', 409);
+  }
+  if (!Array.isArray(attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
 
   if (!Array.isArray(sourceJobIds) || sourceJobIds.some(id => !UUID_PATTERN.test(String(id)))) {
     const err = new Error('Ungültige Auftragsreferenz.');
@@ -199,15 +197,11 @@ export async function createInvoice(data, transactionHook) {
       }
     }
 
-    // Generate the number only after a recurring template has been locked.
-    const invoiceNumber = await generateInvoiceNumber(issueDate, documentType, client);
-
     // Get customer name
     const customerResult = await client.query('SELECT name FROM customers WHERE id = $1', [customerId]);
     if (customerResult.rows.length === 0) {
       throw new Error('Customer not found');
     }
-    const customerName = customerResult.rows[0].name;
 
     let sourceQuote = null;
     if (sourceQuoteId) {
@@ -279,79 +273,18 @@ export async function createInvoice(data, transactionHook) {
       sourceJobs = sourceJobResult.rows;
     }
 
-    // Calculate totals with discounts
-    let subtotalBeforeDiscounts = 0;
-    let totalItemDiscounts = 0;
+    // Quellbelege werden vor dem Nummernkreis gesperrt (gleiche Reihenfolge wie Angebotsumwandlung).
+    const invoiceNumber = await generateInvoiceNumber(issueDate, documentType, client);
 
-    // Gruppiere Items nach Steuersatz für die Steuerberechnung
-    const taxBreakdown = {};
-
-    const processedItems = items.map(item => {
-      const sign = documentType === 'credit_note' ? -1 : 1;
-      const unitPrice = Math.abs(Number(item.unitPrice || 0)) * sign;
-      const discountAmount = Math.abs(Number(item.discountAmount || 0)) * sign;
-      // Berechne Item-Total vor Rabatt
-      const itemTotalBeforeDiscount = item.quantity * unitPrice;
-      subtotalBeforeDiscounts += itemTotalBeforeDiscount;
-
-      // Berechne Item-Rabatt
-      const itemDiscountAmount = discountAmount;
-      totalItemDiscounts += itemDiscountAmount;
-
-      // Item-Total nach Item-Rabatt
-      const itemTotalAfterDiscount = itemTotalBeforeDiscount - itemDiscountAmount;
-
-      // Gruppiere nach Steuersatz für spätere Steuerberechnung
-      const taxRate = item.taxRate || 0;
-      if (!taxBreakdown[taxRate]) {
-        taxBreakdown[taxRate] = 0;
-      }
-      taxBreakdown[taxRate] += itemTotalAfterDiscount;
-
-      return {
-        ...item,
-        unitPrice,
-        discountAmount,
-        total: itemTotalAfterDiscount // Item-Total nach Rabatt (ohne Steuer)
-      };
-    });
-
-    // Subtotal nach Item-Rabatten
-    const subtotalAfterItemDiscounts = subtotalBeforeDiscounts - totalItemDiscounts;
-
-    // Global-Rabatt wird auf die bereits rabattierte Subtotal angewendet
-    const globalDiscAmount = documentType === 'credit_note'
-      ? -Math.abs(Number(globalDiscountAmount || 0))
-      : (globalDiscountAmount || 0);
-    const subtotalAfterAllDiscounts = subtotalAfterItemDiscounts - globalDiscAmount;
-
-    // Berechne Steuer proportional auf die rabattierte Subtotal
-    let taxAmount = 0;
-    if (globalDiscAmount > 0 && subtotalAfterItemDiscounts > 0) {
-      // Verteile Global-Rabatt proportional auf alle Steuersätze
-      const discountRatio = subtotalAfterAllDiscounts / subtotalAfterItemDiscounts;
-      Object.keys(taxBreakdown).forEach(rate => {
-        const taxableAmount = taxBreakdown[rate] * discountRatio;
-        taxAmount += taxableAmount * (parseFloat(rate) / 100);
-      });
-    } else {
-      // Keine Global-Rabatte: normale Steuerberechnung
-      Object.keys(taxBreakdown).forEach(rate => {
-        taxAmount += taxBreakdown[rate] * (parseFloat(rate) / 100);
-      });
-    }
-
-    const total = subtotalAfterAllDiscounts + taxAmount;
-
-    // Speichere die ursprüngliche Subtotal (vor Rabatten) in der DB für Reporting-Zwecke
-    const subtotal = subtotalBeforeDiscounts;
+    const { items: processedItems, subtotal, taxAmount, total, globalDiscountType, globalDiscountValue, globalDiscountAmount: globalDiscAmount } = money;
+    const documentSnapshot = await captureInvoiceSnapshot(client, customerId);
 
     // Insert invoice
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount, document_snapshot)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *
-    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, customerName, issueDate, dueDate, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, globalDiscAmount]);
+    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, documentSnapshot.customer.name, issueDate, dueDate, subtotal, taxAmount, total, 'draft', notes, globalDiscountType, globalDiscountValue, globalDiscAmount, JSON.stringify(documentSnapshot)]);
 
     const invoiceId = invoiceResult.rows[0].id;
 
@@ -370,7 +303,7 @@ export async function createInvoice(data, transactionHook) {
       await client.query(`
         INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue || null, item.discountAmount || null]);
+      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? null]);
     }
 
     // Insert attachments if provided
@@ -404,6 +337,9 @@ export async function createInvoice(data, transactionHook) {
       );
     }
 
+    // Positionen sind vollständig vorhanden, bevor der Entwurf ausgestellt wird.
+    if (status !== 'draft') await client.query('UPDATE invoices SET status = $1 WHERE id = $2', [status, invoiceId]);
+
     if (transactionHook) {
       await transactionHook(client, invoiceResult.rows[0]);
     }
@@ -420,208 +356,104 @@ export async function createInvoice(data, transactionHook) {
 }
 
 export async function updateInvoice(id, data) {
-  const discountValidation = validateDiscountFields(data);
-  if (!discountValidation.valid) {
-    const err = new Error(discountValidation.message);
-    err.statusCode = 400;
-    throw err;
-  }
-
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
-
-    const updateData = data;
-
-    // First, get the current invoice to preserve existing values
-    const currentInvoice = await client.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [id]);
-
-    if (currentInvoice.rows.length === 0) {
+    const currentResult = await client.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [id]);
+    if (!currentResult.rows.length) {
       await client.query('ROLLBACK');
       return null;
     }
-
-    const current = currentInvoice.rows[0];
-
-    if (updateData.sourceQuoteId !== undefined && updateData.sourceQuoteId !== current.source_quote_id) {
-      const error = new Error('Die Herkunft einer Rechnung kann nach dem Anlegen nicht geändert werden.');
-      error.statusCode = 409;
-      throw error;
+    const current = currentResult.rows[0];
+    validateInvoiceUpdate(current, data);
+    if (data.sourceQuoteId !== undefined && data.sourceQuoteId !== current.source_quote_id) {
+      throw invoiceError('Die Herkunft einer Rechnung kann nach dem Anlegen nicht geändert werden.', 409);
     }
-
-    // Recalculate totals if items are provided
-    let calculatedSubtotal = updateData.subtotal ?? current.subtotal;
-    let calculatedTaxAmount = updateData.taxAmount ?? current.tax_amount;
-    let calculatedTotal = updateData.total ?? current.total;
-
-    if (updateData.items && Array.isArray(updateData.items)) {
-      // Recalculate totals with discounts
-      let subtotalBeforeDiscounts = 0;
-      let totalItemDiscounts = 0;
-
-      // Gruppiere Items nach Steuersatz für die Steuerberechnung
-      const taxBreakdown = {};
-
-      updateData.items.forEach(item => {
-        // Berechne Item-Total vor Rabatt
-        const itemTotalBeforeDiscount = item.quantity * item.unitPrice;
-        subtotalBeforeDiscounts += itemTotalBeforeDiscount;
-
-        // Berechne Item-Rabatt
-        const itemDiscountAmount = item.discountAmount || 0;
-        totalItemDiscounts += itemDiscountAmount;
-
-        // Item-Total nach Item-Rabatt
-        const itemTotalAfterDiscount = itemTotalBeforeDiscount - itemDiscountAmount;
-
-        // Gruppiere nach Steuersatz für spätere Steuerberechnung
-        const taxRate = item.taxRate || 0;
-        if (!taxBreakdown[taxRate]) {
-          taxBreakdown[taxRate] = 0;
-        }
-        taxBreakdown[taxRate] += itemTotalAfterDiscount;
-      });
-
-      // Subtotal nach Item-Rabatten
-      const subtotalAfterItemDiscounts = subtotalBeforeDiscounts - totalItemDiscounts;
-
-      // Global-Rabatt wird auf die bereits rabattierte Subtotal angewendet
-      const globalDiscAmount = updateData.globalDiscountAmount ?? current.global_discount_amount ?? 0;
-      const subtotalAfterAllDiscounts = subtotalAfterItemDiscounts - globalDiscAmount;
-
-      // Berechne Steuer proportional auf die rabattierte Subtotal
-      let taxAmount = 0;
-      if (globalDiscAmount > 0 && subtotalAfterItemDiscounts > 0) {
-        // Verteile Global-Rabatt proportional auf alle Steuersätze
-        const discountRatio = subtotalAfterAllDiscounts / subtotalAfterItemDiscounts;
-        Object.keys(taxBreakdown).forEach(rate => {
-          const taxableAmount = taxBreakdown[rate] * discountRatio;
-          taxAmount += taxableAmount * (parseFloat(rate) / 100);
-        });
-      } else {
-        // Keine Global-Rabatte: normale Steuerberechnung
-        Object.keys(taxBreakdown).forEach(rate => {
-          taxAmount += taxBreakdown[rate] * (parseFloat(rate) / 100);
-        });
-      }
-
-      calculatedTotal = subtotalAfterAllDiscounts + taxAmount;
-      calculatedSubtotal = subtotalBeforeDiscounts;
-      calculatedTaxAmount = taxAmount;
-    }
-
-    // Merge current values with updates (but preserve invoice number)
-    const mergedData = {
-      invoiceNumber: current.invoice_number, // Always preserve existing invoice number
-      customerId: updateData.customerId ?? current.customer_id,
-      customerName: updateData.customerName ?? current.customer_name,
-      issueDate: updateData.issueDate ?? current.issue_date,
-      dueDate: updateData.dueDate ?? current.due_date,
-      subtotal: calculatedSubtotal,
-      taxAmount: calculatedTaxAmount,
-      total: calculatedTotal,
-      status: updateData.status ?? current.status,
-      notes: updateData.notes ?? current.notes,
-      globalDiscountType: updateData.globalDiscountType ?? current.global_discount_type,
-      globalDiscountValue: updateData.globalDiscountValue ?? current.global_discount_value,
-      globalDiscountAmount: updateData.globalDiscountAmount ?? current.global_discount_amount,
-      referenceInvoiceId: updateData.referenceInvoiceId !== undefined ? updateData.referenceInvoiceId : current.reference_invoice_id,
-      creditNoteReason: updateData.creditNoteReason !== undefined ? updateData.creditNoteReason : current.credit_note_reason,
-      recurringInvoiceId: updateData.recurringInvoiceId !== undefined ? updateData.recurringInvoiceId : current.recurring_invoice_id,
-      sourceQuoteId: current.source_quote_id,
-      items: updateData.items // items are handled separately
+    const value = (key, column) => data[key] !== undefined ? data[key] : current[column];
+    const itemRows = await client.query('SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY item_order', [id]);
+    const storedItems = itemRows.rows.map(row => ({
+      description: row.description, quantity: Number(row.quantity), unitPrice: Number(row.unit_price),
+      taxRate: Number(row.tax_rate), total: Number(row.total), order: row.item_order,
+      discountType: row.discount_type, discountValue: row.discount_value, discountAmount: row.discount_amount,
+    }));
+    const financialChange = ['items', 'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount']
+      .some(key => data[key] !== undefined);
+    const contentChange = INVOICE_CONTENT_FIELDS.some(key => data[key] !== undefined);
+    // Statuswechsel verändern keine historischen Centbeträge. Aus dem Request
+    // übergebene Summen werden in keinem Fall als Rechnungsbetrag übernommen.
+    const money = financialChange ? calculateDocumentMoney({
+      items: data.items !== undefined ? data.items : storedItems,
+      globalDiscountType: value('globalDiscountType', 'global_discount_type'),
+      globalDiscountValue: value('globalDiscountValue', 'global_discount_value'),
+      globalDiscountAmount: data.globalDiscountType === null ? 0 : value('globalDiscountAmount', 'global_discount_amount'),
+    }, { documentType: current.document_type || 'invoice' }) : null;
+    const merged = {
+      customerId: value('customerId', 'customer_id'), customerName: current.customer_name,
+      issueDate: value('issueDate', 'issue_date'), dueDate: value('dueDate', 'due_date'),
+      status: value('status', 'status'), notes: value('notes', 'notes'),
+      referenceInvoiceId: value('referenceInvoiceId', 'reference_invoice_id'),
+      creditNoteReason: value('creditNoteReason', 'credit_note_reason'),
+      recurringInvoiceId: current.recurring_invoice_id,
+      subtotal: money?.subtotal ?? current.subtotal,
+      taxAmount: money?.taxAmount ?? current.tax_amount,
+      total: money?.total ?? current.total,
+      globalDiscountType: money ? money.globalDiscountType : current.global_discount_type,
+      globalDiscountValue: money ? money.globalDiscountValue : current.global_discount_value,
+      globalDiscountAmount: money ? money.globalDiscountAmount : current.global_discount_amount,
+      documentSnapshot: current.document_snapshot,
     };
+    if (data.recurringInvoiceId !== undefined && data.recurringInvoiceId !== current.recurring_invoice_id) {
+      throw invoiceError('Die Herkunft einer Rechnung kann nach dem Anlegen nicht geändert werden.', 409);
+    }
+    validateInvoiceHeader({ ...merged, items: money?.items || storedItems });
+    if (current.status === 'draft' && (contentChange || !current.document_snapshot)) {
+      merged.documentSnapshot = await captureInvoiceSnapshot(client, merged.customerId);
+      merged.customerName = merged.documentSnapshot.customer.name;
+    }
+    if (data.attachments !== undefined && !Array.isArray(data.attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
 
-    const paymentResult = await client.query(`
-      SELECT COALESCE(SUM(amount), 0) AS amount
-      FROM euer_entries
-      WHERE source_type = 'invoice_payment' AND source_id = $1 AND status = 'active'
-    `, [id]);
+    const paymentResult = await client.query(`SELECT COALESCE(SUM(amount), 0) AS amount
+      FROM euer_entries WHERE source_type = 'invoice_payment' AND source_id = $1 AND status = 'active'`, [id]);
     const activePaymentAmount = Number(paymentResult.rows[0]?.amount || 0);
-    if (mergedData.status === 'paid' && current.status !== 'paid' && activePaymentAmount < Number(mergedData.total) - 0.005) {
-        const error = new Error('Bitte den Zahlungseingang an der Rechnung erfassen. Der Status wird nach vollständiger Zahlung automatisch gesetzt.');
-        error.statusCode = 409;
-        throw error;
+    if (merged.status === 'paid' && current.status !== 'paid' && activePaymentAmount < Number(merged.total) - 0.005) {
+      throw invoiceError('Bitte den Zahlungseingang an der Rechnung erfassen. Der Status wird nach vollständiger Zahlung automatisch gesetzt.', 409);
     }
     if (activePaymentAmount > 0) {
-      if (activePaymentAmount >= Number(mergedData.total) - 0.005) mergedData.status = 'paid';
+      if (activePaymentAmount >= Number(merged.total) - 0.005) merged.status = 'paid';
       else if (current.status === 'paid') {
-        const dueDate = new Date(`${String(mergedData.dueDate).slice(0, 10)}T00:00:00Z`);
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        mergedData.status = dueDate < today ? 'overdue' : 'sent';
+        merged.status = String(merged.dueDate).slice(0, 10) < new Date().toISOString().slice(0, 10) ? 'overdue' : 'sent';
       }
     }
 
-    // Update invoice
-    await client.query(`
-      UPDATE invoices
-      SET invoice_number = $1, customer_id = $2, customer_name = $3, issue_date = $4,
-          due_date = $5, subtotal = $6, tax_amount = $7, total = $8, status = $9, notes = $10,
-          global_discount_type = $11, global_discount_value = $12, global_discount_amount = $13,
-          reference_invoice_id = $14, credit_note_reason = $15, recurring_invoice_id = $16, source_quote_id = $17
-      WHERE id = $18
-      RETURNING *
-    `, [
-      mergedData.invoiceNumber,
-      mergedData.customerId,
-      mergedData.customerName,
-      mergedData.issueDate,
-      mergedData.dueDate,
-      mergedData.subtotal,
-      mergedData.taxAmount,
-      mergedData.total,
-      mergedData.status,
-      mergedData.notes,
-      mergedData.globalDiscountType,
-      mergedData.globalDiscountValue,
-      mergedData.globalDiscountAmount,
-      mergedData.referenceInvoiceId,
-      mergedData.creditNoteReason,
-      mergedData.recurringInvoiceId,
-      mergedData.sourceQuoteId,
-      id
-    ]);
-
-    // Only update items if they are provided
-    if (updateData.items) {
-      // Delete existing items
+    // Positionen vor dem Statuswechsel schreiben, damit das Ausstellen die
+    // fertig berechnete Fassung sperrt. Alle Schritte teilen eine Transaktion.
+    if (money) {
       await client.query('DELETE FROM invoice_items WHERE invoice_id = $1', [id]);
-
-      // Insert new items
-      for (let i = 0; i < updateData.items.length; i++) {
-        const item = updateData.items[i];
-        const itemOrder = item.order !== undefined ? item.order : (i + 1);
-
-        // Berechne Item-Total nach Rabatt (ohne Steuer)
-        const itemTotalBeforeDiscount = item.quantity * item.unitPrice;
-        const itemDiscountAmount = item.discountAmount || 0;
-        const itemTotal = itemTotalBeforeDiscount - itemDiscountAmount;
-
-        await client.query(`
-          INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [id, item.description, item.quantity, item.unitPrice, item.taxRate, itemTotal, itemOrder, item.discountType || null, item.discountValue || null, item.discountAmount || null]);
+      for (let i = 0; i < money.items.length; i++) {
+        const item = money.items[i];
+        await client.query(`INSERT INTO invoice_items
+          (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [id, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, i + 1,
+          item.discountType, item.discountValue, item.discountAmount]);
       }
     }
-
-    // Update attachments if provided
-    if (updateData.attachments) {
-      // Delete existing attachments
+    if (data.attachments !== undefined) {
       await client.query('DELETE FROM invoice_attachments WHERE invoice_id = $1', [id]);
-
-      // Insert new attachments
-      for (const attachment of updateData.attachments) {
-        await client.query(`
-          INSERT INTO invoice_attachments (invoice_id, name, content, content_type, size)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [id, attachment.name, attachment.content, attachment.contentType, attachment.size]);
+      for (const attachment of data.attachments) {
+        await client.query(`INSERT INTO invoice_attachments (invoice_id, name, content, content_type, size)
+          VALUES ($1,$2,$3,$4,$5)`, [id, attachment.name, attachment.content, attachment.contentType, attachment.size]);
       }
     }
-
+    await client.query(`UPDATE invoices SET customer_id=$1, customer_name=$2, issue_date=$3, due_date=$4,
+      subtotal=$5, tax_amount=$6, total=$7, status=$8, notes=$9, global_discount_type=$10,
+      global_discount_value=$11, global_discount_amount=$12, reference_invoice_id=$13,
+      credit_note_reason=$14, document_snapshot=$15 WHERE id=$16`,
+    [merged.customerId, merged.customerName, merged.issueDate, merged.dueDate, merged.subtotal,
+      merged.taxAmount, merged.total, merged.status, merged.notes, merged.globalDiscountType,
+      merged.globalDiscountValue, merged.globalDiscountAmount, merged.referenceInvoiceId,
+      merged.creditNoteReason, merged.documentSnapshot ? JSON.stringify(merged.documentSnapshot) : null, id]);
     await client.query('COMMIT');
-
     return await findInvoiceById(id);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -630,6 +462,7 @@ export async function updateInvoice(id, data) {
     client.release();
   }
 }
+
 
 export async function deleteInvoice(id) {
   const client = await pool.connect();

@@ -14,6 +14,9 @@ function dateValue(value: string | Date) {
 }
 
 export function generateZUGFeRDXML(invoice: Invoice, options: PDFOptions): string {
+  if (invoice.documentSnapshot?.version === 1) {
+    options = { ...options, company: invoice.documentSnapshot.company, customer: invoice.documentSnapshot.customer };
+  }
   const paymentInfo = getEffectivePaymentInformation(options.company);
   const currency = escapeXML(options.company.currency || 'EUR');
   const isCreditNote = invoice.documentType === 'credit_note';

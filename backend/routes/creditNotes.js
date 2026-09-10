@@ -84,8 +84,8 @@ router.put('/:id', async (req, res) => {
     })) : undefined;
     const updated = await updateInvoice(req.params.id, {
       customerId: req.body.customerId,
-      referenceInvoiceId,
-      creditNoteReason,
+      referenceInvoiceId: req.body.referenceInvoiceId !== undefined ? referenceInvoiceId : undefined,
+      creditNoteReason: req.body.creditNoteReason !== undefined ? creditNoteReason : undefined,
       issueDate: req.body.issueDate,
       dueDate: req.body.dueDate,
       items: normalizedItems,
@@ -95,7 +95,7 @@ router.put('/:id', async (req, res) => {
     res.json(updated);
   } catch (error) {
     logger.error('Failed to update credit note', { error: error.message, creditNoteId: req.params.id });
-    if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: 'Failed to update credit note' });
   }
 });

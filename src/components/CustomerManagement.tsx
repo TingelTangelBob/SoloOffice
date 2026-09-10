@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Archive, ArchiveRestore, Search, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
+import { useAuth } from '../context/AuthContext';
 import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
 import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
@@ -34,6 +35,8 @@ const CUSTOMER_INLINE_ACTIONS_MIN_WIDTH = 680 + actionColumnWidth(2) - ACTION_ME
 
 export function CustomerManagement() {
   const { confirm, notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers, addCustomer, updateCustomer, archiveCustomer, restoreCustomer, refreshCustomers } = useCustomers();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -65,6 +68,7 @@ export function CustomerManagement() {
   const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [newMaterialData, setNewMaterialData] = useState({
     name: '',
     description: '',
@@ -104,6 +108,11 @@ export function CustomerManagement() {
   });
 
   const handleOpenModal = (customer?: Customer) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Sie haben in diesem Workspace nur Leserechte für Kunden.' });
+      return;
+    }
+
     if (customer) {
       setEditingCustomer(customer);
       setFormData({
@@ -228,6 +237,7 @@ export function CustomerManagement() {
   };
 
   const requestCloseModal = () => {
+    if (isSavingCustomer) return;
     if (hasFormChanges) {
       setShowDiscardModal(true);
       return;
@@ -237,6 +247,9 @@ export function CustomerManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!canWrite || isSavingCustomer) return;
+    setIsSavingCustomer(true);
     
     // Check for duplicates
     const existingCustomer = findDuplicateCustomer(customers, formData, editingCustomer?.id);
@@ -247,27 +260,31 @@ export function CustomerManagement() {
         message: `${buildDuplicateCustomerMessage(existingCustomer, terminology.entity.singular, terminology.entity.numberShortLabel.replace(/\.$/, ''))}\n\nMöchten Sie trotzdem speichern?`,
         confirmText: 'Trotzdem speichern',
       });
-      if (!shouldContinue) return;
+      if (!shouldContinue) {
+        setIsSavingCustomer(false);
+        return;
+      }
     }
     
+    const isCreatingCustomer = !editingCustomer;
+    const failedParts: string[] = [];
+
     try {
       if (editingCustomer) {
         await updateCustomer(editingCustomer.id, formData);
       } else {
-        // Create new customer
         const newCustomer = await addCustomer(formData);
-        
-        // Add additional emails for new customer (only those that are temporary)
+
         const tempAdditionalEmails = additionalEmails.filter(email => email.id.startsWith('temp-'));
         for (const email of tempAdditionalEmails) {
           try {
             await apiService.addCustomerEmail(newCustomer.id, email.email, email.label);
           } catch (error) {
             logger.error('Error adding additional email:', error);
+            failedParts.push('zusätzliche E-Mail-Adressen');
           }
         }
 
-        // Add temporary hourly rates for new customer
         const tempHourlyRates = customerHourlyRates.filter(rate => rate.id.startsWith('temp-'));
         for (const rate of tempHourlyRates) {
           try {
@@ -280,10 +297,10 @@ export function CustomerManagement() {
             });
           } catch (error) {
             logger.error('Error adding hourly rate:', error);
+            failedParts.push('Stundensätze');
           }
         }
 
-        // Add temporary materials for new customer
         const tempMaterials = customerMaterials.filter(material => material.id.startsWith('temp-'));
         for (const material of tempMaterials) {
           try {
@@ -297,27 +314,53 @@ export function CustomerManagement() {
             });
           } catch (error) {
             logger.error('Error adding material:', error);
+            failedParts.push('Materialien');
           }
         }
-      }
-      handleCloseModal();
-      
-      // Refresh customers in case new emails/rates/materials were added
-      if (!editingCustomer) {
-        await refreshCustomers();
       }
     } catch (error) {
       logger.error('Error saving customer:', error);
       notify({ variant: 'error', message: `Fehler beim Speichern des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
+      setIsSavingCustomer(false);
+      return;
     }
+
+    // The main customer is already persisted. Close the dialog before the
+    // refresh so a failed refresh cannot invite the user to submit twice.
+    handleCloseModal();
+
+    if (isCreatingCustomer) {
+      try {
+        await refreshCustomers();
+      } catch (error) {
+        logger.error('Error refreshing customers after save:', error);
+        failedParts.push('Aktualisierung der Kundenliste');
+      }
+    }
+
+    if (failedParts.length > 0) {
+      notify({
+        variant: 'warning',
+        title: `${terminology.entity.singular} nur teilweise gespeichert`,
+        message: `Die Stammdaten wurden gespeichert. Nicht gespeichert: ${[...new Set(failedParts)].join(', ')}. Bitte prüfen Sie den ${terminology.entity.singular} und ergänzen Sie die fehlenden Daten.`,
+      });
+    } else {
+      notify({ variant: 'success', message: `${terminology.entity.singular} wurde erfolgreich gespeichert.` });
+    }
+
+    setIsSavingCustomer(false);
   };
 
   const handleDelete = (id: string) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Sie haben in diesem Workspace nur Leserechte für Kunden.' });
+      return;
+    }
     setDeleteCustomerId(id);
   };
 
   const confirmDeleteCustomer = async () => {
-    if (!deleteCustomerId) return;
+    if (!deleteCustomerId || !canWrite) return;
 
     const id = deleteCustomerId;
     setDeleteCustomerId(null);
@@ -329,6 +372,10 @@ export function CustomerManagement() {
   };
 
   const handleRestore = async (id: string) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Sie haben in diesem Workspace nur Leserechte für Kunden.' });
+      return;
+    }
     try {
       await restoreCustomer(id);
     } catch (error) {
@@ -337,6 +384,7 @@ export function CustomerManagement() {
   };
 
   const handleAddEmail = async () => {
+    if (!canWrite) return;
     if (!newEmailData.email.trim()) {
       notify({ variant: 'warning', message: 'Bitte geben Sie eine E-Mail-Adresse ein.' });
       return;
@@ -377,6 +425,7 @@ export function CustomerManagement() {
   };
 
   const handleRemoveEmail = async (emailId: string) => {
+    if (!canWrite) return;
     if (editingCustomer && !emailId.startsWith('temp-')) {
       // Remove from backend if editing existing customer
       try {
@@ -393,6 +442,7 @@ export function CustomerManagement() {
   };
 
   const handleCreateHourlyRate = async () => {
+    if (!canWrite) return;
     if (!newHourlyRateData.name || newHourlyRateData.rate <= 0) {
       notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Stundensatz ein.' });
       return;
@@ -443,6 +493,7 @@ export function CustomerManagement() {
   };
 
   const handleOpenHourlyRateModal = (rate: HourlyRate) => {
+    if (!canWrite) return;
     setEditingHourlyRate(rate);
     setIsHourlyRateModalOpen(true);
   };
@@ -453,6 +504,7 @@ export function CustomerManagement() {
   };
 
   const handleOpenCreateHourlyRateModal = () => {
+    if (!canWrite) return;
     setNewHourlyRateData({
       name: '',
       description: '',
@@ -475,6 +527,7 @@ export function CustomerManagement() {
   };
 
   const handleUpdateHourlyRate = async (rateId: string, rateData: Partial<HourlyRate>) => {
+    if (!canWrite) return;
     if (editingCustomer && !rateId.startsWith('temp-')) {
       // Update in backend if editing existing customer and not temporary
       try {
@@ -515,6 +568,7 @@ export function CustomerManagement() {
   };
 
   const handleDeleteHourlyRate = async (rateId: string) => {
+    if (!canWrite) return;
     const confirmed = await confirm({
       title: 'Stundensatz löschen',
       message: 'Möchten Sie diesen Stundensatz wirklich löschen?',
@@ -541,6 +595,7 @@ export function CustomerManagement() {
 
   // Material handlers
   const handleCreateMaterial = async () => {
+    if (!canWrite) return;
     if (!newMaterialData.name || newMaterialData.unitPrice <= 0) {
       notify({ variant: 'warning', message: 'Bitte geben Sie mindestens einen Namen und einen gültigen Preis ein.' });
       return;
@@ -593,6 +648,7 @@ export function CustomerManagement() {
   };
 
   const handleOpenMaterialModal = (material: MaterialTemplate) => {
+    if (!canWrite) return;
     setEditingMaterial(material);
     setIsMaterialModalOpen(true);
   };
@@ -603,6 +659,7 @@ export function CustomerManagement() {
   };
 
   const handleOpenCreateMaterialModal = () => {
+    if (!canWrite) return;
     setNewMaterialData({
       name: '',
       description: '',
@@ -627,6 +684,7 @@ export function CustomerManagement() {
   };
 
   const handleUpdateMaterial = async (materialId: string, materialData: Partial<MaterialTemplate>) => {
+    if (!canWrite) return;
     if (editingCustomer && !materialId.startsWith('temp-')) {
       // Update in backend if editing existing customer and not temporary
       try {
@@ -667,6 +725,7 @@ export function CustomerManagement() {
   };
 
   const handleDeleteMaterial = async (materialId: string) => {
+    if (!canWrite) return;
     const confirmed = await confirm({
       title: 'Material löschen',
       message: 'Möchten Sie dieses Material wirklich löschen?',
@@ -699,24 +758,33 @@ export function CustomerManagement() {
         <button
           type="button"
           onClick={() => setShowImport(true)}
-          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom sm:min-w-0 sm:px-4"
+          disabled={!canWrite}
+          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
           aria-label="Importieren"
-          title="Importieren"
+          title={canWrite ? 'Importieren' : 'Nur-Lesen-Zugriff: Import nicht verfügbar'}
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Importieren</span>
         </button>
         <button
           onClick={() => handleOpenModal()}
-          className="btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-white transition-all duration-300 hover:brightness-90 sm:min-w-0 sm:px-4"
+          disabled={!canWrite}
+          className="btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-white transition-all duration-300 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
           aria-label={terminology.entity.newLabel}
-          title={terminology.entity.newLabel}
+          title={canWrite ? terminology.entity.newLabel : 'Nur-Lesen-Zugriff: Anlegen nicht verfügbar'}
         >
           <Plus className="h-5 w-5" />
           <span className="hidden sm:inline">{terminology.entity.newLabel}</span>
         </button>
         </PageHeader>
       </div>
+
+      {!canWrite && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">Nur-Lesen-Zugriff</p>
+          <p className="mt-1">Sie können Kundendaten ansehen, aber keine Kunden, Importe, Zusatzdaten oder Änderungen speichern.</p>
+        </div>
+      )}
 
       {/* Search */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -786,7 +854,7 @@ export function CustomerManagement() {
                     style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }}
                     className={`sticky right-0 z-10 bg-white py-4 whitespace-nowrap text-sm font-medium ${showInlineActions ? 'px-3' : 'px-2'}`}
                   >
-                    {showInlineActions ? (
+                    {canWrite && showInlineActions ? (
                     <div className="flex flex-nowrap items-center gap-1">
                       <button
                         type="button"
@@ -805,7 +873,7 @@ export function CustomerManagement() {
                         {customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                       </button>
                     </div>
-                    ) : (
+                    ) : canWrite ? (
                     <ActionMenu menuClassName="min-w-40">
                       <ActionMenuItem
                         icon={<Edit className="h-4 w-4" />}
@@ -822,6 +890,8 @@ export function CustomerManagement() {
                         {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                       </ActionMenuItem>
                     </ActionMenu>
+                    ) : (
+                      <span className="text-xs font-normal text-gray-500" title="Nur-Lesen-Zugriff">Nur lesen</span>
                     )}
                   </td>
                 </tr>
@@ -843,7 +913,7 @@ export function CustomerManagement() {
                   )}
                   {customer.leitwegId && <p className="truncate text-xs text-gray-500">Leitweg-ID: {customer.leitwegId}</p>}
                 </div>
-                <ActionMenu containerClassName="shrink-0" menuClassName="min-w-40">
+                {canWrite ? <ActionMenu containerClassName="shrink-0" menuClassName="min-w-40">
                   <ActionMenuItem
                     icon={<Edit className="h-4 w-4" />}
                     tone="indigo"
@@ -858,7 +928,7 @@ export function CustomerManagement() {
                   >
                     {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
                   </ActionMenuItem>
-                </ActionMenu>
+                </ActionMenu> : <span className="shrink-0 text-xs text-gray-500" title="Nur-Lesen-Zugriff">Nur lesen</span>}
               </div>
               
               <div className="space-y-1">
@@ -893,7 +963,7 @@ export function CustomerManagement() {
       {/* Modal */}
       <ImportWizard
         resource="customers"
-        isOpen={showImport}
+        isOpen={showImport && canWrite}
         onClose={() => setShowImport(false)}
         onImported={refreshCustomers}
       />
@@ -904,14 +974,14 @@ export function CustomerManagement() {
           icon={Users}
           title={editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
           description="Pflegen Sie Stammdaten, Kontaktmöglichkeiten und individuelle Konditionen."
-          onClose={requestCloseModal}
+          onClose={isSavingCustomer ? () => undefined : requestCloseModal}
           onSubmit={handleSubmit}
           size="lg"
           zIndexClassName="z-[1000]"
           footer={(
             <>
-              <button type="button" onClick={requestCloseModal} className="min-h-12 flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
-              <button type="submit" className="btn-primary min-h-12 flex-1 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none">{editingCustomer ? 'Aktualisieren' : 'Erstellen'}</button>
+              <button type="button" onClick={requestCloseModal} disabled={isSavingCustomer} className="min-h-12 flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">Abbrechen</button>
+              <button type="submit" disabled={isSavingCustomer} className="btn-primary min-h-12 flex-1 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSavingCustomer ? 'Speichern …' : editingCustomer ? 'Aktualisieren' : 'Erstellen'}</button>
             </>
           )}
         >
@@ -1057,7 +1127,8 @@ export function CustomerManagement() {
                   <button
                     type="button"
                     onClick={() => setIsAddingEmail(true)}
-                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800"
+                    disabled={!canWrite}
+                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Plus className="h-4 w-4" />
                     <span>Hinzufügen</span>
@@ -1081,7 +1152,8 @@ export function CustomerManagement() {
                         <button
                           type="button"
                           onClick={() => handleRemoveEmail(email.id)}
-                          className="p-1 text-red-500 hover:text-red-700 flex-shrink-0"
+                          disabled={!canWrite}
+                          className="p-1 text-red-500 hover:text-red-700 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -1122,7 +1194,8 @@ export function CustomerManagement() {
                       <button
                         type="button"
                         onClick={handleAddEmail}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                        disabled={!canWrite}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Hinzufügen
                       </button>
@@ -1150,7 +1223,8 @@ export function CustomerManagement() {
                   <button
                     type="button"
                     onClick={handleOpenCreateHourlyRateModal}
-                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800"
+                    disabled={!canWrite}
+                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Plus className="h-4 w-4" />
                     <span>Hinzufügen</span>
@@ -1183,7 +1257,8 @@ export function CustomerManagement() {
                           <button
                             type="button"
                             onClick={() => handleOpenHourlyRateModal(rate)}
-                            className="p-1 text-blue-600 hover:text-blue-800 flex-shrink-0"
+                            disabled={!canWrite}
+                            className="p-1 text-blue-600 hover:text-blue-800 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Bearbeiten"
                           >
                             <Edit className="h-4 w-4" />
@@ -1191,7 +1266,8 @@ export function CustomerManagement() {
                           <button
                             type="button"
                             onClick={() => handleDeleteHourlyRate(rate.id)}
-                            className="p-1 text-red-500 hover:text-red-700 flex-shrink-0"
+                            disabled={!canWrite}
+                            className="p-1 text-red-500 hover:text-red-700 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Löschen"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1220,7 +1296,8 @@ export function CustomerManagement() {
                   <button
                     type="button"
                     onClick={handleOpenCreateMaterialModal}
-                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800"
+                    disabled={!canWrite}
+                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Plus className="h-4 w-4" />
                     <span>Hinzufügen</span>
@@ -1253,7 +1330,8 @@ export function CustomerManagement() {
                           <button
                             type="button"
                             onClick={() => handleOpenMaterialModal(material)}
-                            className="p-1 text-blue-600 hover:text-blue-800 flex-shrink-0"
+                            disabled={!canWrite}
+                            className="p-1 text-blue-600 hover:text-blue-800 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Bearbeiten"
                           >
                             <Edit className="h-4 w-4" />
@@ -1261,7 +1339,8 @@ export function CustomerManagement() {
                           <button
                             type="button"
                             onClick={() => handleDeleteMaterial(material.id)}
-                            className="p-1 text-red-500 hover:text-red-700 flex-shrink-0"
+                            disabled={!canWrite}
+                            className="p-1 text-red-500 hover:text-red-700 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Löschen"
                           >
                             <Trash2 className="h-4 w-4" />

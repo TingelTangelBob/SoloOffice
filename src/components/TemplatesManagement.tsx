@@ -1,4 +1,4 @@
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Bell, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCompany } from '../context/CompanyContext';
@@ -7,6 +7,7 @@ import {
   DocumentHeaderAlignment,
   DocumentLayout,
   DocumentLogoMode,
+  Company,
   DocumentTableStyle,
   DocumentTemplate,
   DocumentTemplateType,
@@ -20,6 +21,7 @@ import { apiService } from '../services/api';
 import { ImportWizard } from './ImportWizard';
 import { ThemeTabBar } from './ThemeTabBar';
 import { useFeedback } from '../context/FeedbackContext';
+import { TemplatePdfPreview } from './templates/TemplatePdfPreview';
 
 type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
 
@@ -175,7 +177,7 @@ interface TemplatePreviewProps {
   large?: boolean;
 }
 
-function TemplatePreview({ template, companyName, logo, terminologyProfile, large = false }: TemplatePreviewProps) {
+function TemplateMiniature({ template, companyName, logo, terminologyProfile, large = false }: TemplatePreviewProps) {
   const resolved = normaliseTemplate(template);
   const terminology = getTerminology(terminologyProfile);
   const isEditorial = resolved.layout === 'editorial';
@@ -201,32 +203,32 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
         : 'RECHNUNG';
   const sampleRows = template.documentType === 'reminder'
     ? [
-        ['Offener Rechnungsbetrag', '2.142,00 €'],
-        ['Mahngebühr', '5,00 €'],
-        ['Zahlungsfrist', '7 Tage'],
+        ['Offener Rechnungsbetrag', '—'],
+        ['Mahngebühr', '—'],
+        ['Zahlungsfrist', '—'],
       ]
     : template.documentType === 'orderConfirmation'
       ? [
-        ['Design Discovery', '4.320,00 €'],
-        ['Interface Design', '9.360,00 €'],
-        ['Website Design', '540,00 €'],
+        ['Design Discovery', '—'],
+        ['Interface Design', '—'],
+        ['Website Design', '—'],
       ]
     : resolved.layout === 'modern'
       ? [
-          ['Monatlicher Support', '1.280,00 €'],
-          ['Konzeption & Beratung', '2.450,00 €'],
-          ['Zusatzaufwand', '380,00 €'],
+          ['Monatlicher Support', '—'],
+          ['Konzeption & Beratung', '—'],
+          ['Zusatzaufwand', '—'],
         ]
       : resolved.layout === 'editorial'
         ? [
-            ['Projektphase: Konzeption', '4.320,00 €'],
-            ['Umsetzung & Abstimmung', '9.360,00 €'],
-            ['Übergabe & Dokumentation', '540,00 €'],
+            ['Projektphase: Konzeption', '—'],
+            ['Umsetzung & Abstimmung', '—'],
+            ['Übergabe & Dokumentation', '—'],
           ]
       : [
-          ['Beratung und Analyse', '1.850,00 €'],
-          ['Leistungserbringung', '3.420,00 €'],
-          ['Dokumentation', '680,00 €'],
+          ['Beratung und Analyse', '—'],
+          ['Leistungserbringung', '—'],
+          ['Dokumentation', '—'],
         ];
   const sampleIntro = resolved.introText || 'Vielen Dank für Ihre Anfrage. Hiermit berechnen wir Ihnen folgende Leistungen:';
   const pageBackground = isEditorial ? '#fbf8f5' : isAir ? '#fbfdfe' : '#ffffff';
@@ -269,8 +271,8 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
           </div>
           <div className="text-right" style={{ color: mutedText }}>
             <div className="font-semibold" style={{ color: documentText }}>{terminology.entity.numberShortLabel} 12345</div>
-            <div>USt-ID: DE987654321</div>
-            <div>Anspruch: Robin Richter</div>
+            <div>USt-ID: aus Firmeneinstellungen</div>
+            <div>Kontakt: aus Firmeneinstellungen</div>
           </div>
         </div>
 
@@ -308,15 +310,14 @@ function TemplatePreview({ template, companyName, logo, terminologyProfile, larg
         {resolved.showPaymentInformation && (
           <div className="mt-3 max-w-[80%]" style={{ color: mutedText }}>
             <div className="font-bold" style={{ color: documentText }}>Zahlungsinformationen</div>
-            <div>Bitte überweisen Sie den Betrag unter Angabe der Rechnungsnummer.</div>
-            <div>IBAN DE89 3704 0044 0532 0130 00 · BIC COBADEFFXXX</div>
+            <div>Zahlungsdaten aus den Firmeneinstellungen</div>
           </div>
         )}
 
         {resolved.showFooter && (
           <div className="mt-auto border-t pt-2" style={{ borderColor: `${resolved.accentColor}55`, color: mutedText }}>
-            <div className="flex justify-between gap-2"><span>{companyName || 'Ihr Firmenname'}</span><span>Ihre E-Mail-Adresse</span><span>Seite 1</span></div>
-            <div className="mt-1">Ihre Adresse · PLZ Ort · Ihre Website</div>
+            <div className="flex justify-between gap-2"><span>{companyName || 'Ihr Firmenname'}</span><span>Firmendaten aus Einstellungen</span><span>Seite 1</span></div>
+            <div className="mt-1">Adresse und Kontakt aus den Firmeneinstellungen</div>
           </div>
         )}
       </div>
@@ -329,10 +330,11 @@ interface TemplateEditorOverlayProps {
   editingTemplate: DocumentTemplate | null;
   formData: TemplateFormState;
   setFormData: Dispatch<SetStateAction<TemplateFormState>>;
-  companyName: string;
+  company: Company;
   logo?: string | null;
   terminologyProfile?: TerminologyProfile;
   isSaving: boolean;
+  isDirty: boolean;
   error: string | null;
   onClose: () => void;
   onReset: () => void;
@@ -344,19 +346,67 @@ function TemplateEditorOverlay({
   editingTemplate,
   formData,
   setFormData,
-  companyName,
+  company,
   logo,
   terminologyProfile,
   isSaving,
+  isDirty,
   error,
   onClose,
   onReset,
   onSave,
 }: TemplateEditorOverlayProps) {
   const terminology = getTerminology(terminologyProfile);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const errorId = useId();
   const [editorTab, setEditorTab] = useState<'design' | 'content'>('design');
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ logo: true, color: true, layout: true, details: true, content: true });
   const toggleSection = (section: string) => setOpenSections(previous => ({ ...previous, [section]: !previous[section] }));
+
+  useEffect(() => {
+    const initialFocus = dialogRef.current?.querySelector<HTMLElement>('[data-editor-initial-focus]');
+    initialFocus?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (isSaving) dialogRef.current?.focus();
+  }, [isSaving]);
+
+  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isSaving) {
+      if (event.key === 'Escape' || event.key === 'Tab') event.preventDefault();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+
+    const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    )).filter(element => !element.matches(':disabled') && element.getClientRects().length > 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (document.activeElement === dialogRef.current) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   const previewTemplate: DocumentTemplate = {
     id: editingTemplate?.id || 'template-preview',
     documentType: activeTab,
@@ -380,25 +430,30 @@ function TemplateEditorOverlay({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
-      <form onSubmit={onSave} className="flex h-[min(94vh,900px)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl bg-[#f4f2f0] shadow-2xl lg:flex-row">
-        <aside className="z-10 flex w-full shrink-0 flex-col overflow-y-auto bg-white/95 p-4 backdrop-blur lg:-mr-8 lg:w-[370px] lg:rounded-r-2xl lg:shadow-xl">
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg p-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900">
-              <ArrowLeft className="h-4 w-4" />
-              Zurück
-            </button>
-            <button type="button" onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900" aria-label="Editor schließen">
-              <X className="h-4 w-4" />
-            </button>
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
+      <form noValidate onSubmit={onSave} aria-busy={isSaving} className="flex h-[min(94dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl bg-[#f4f2f0] shadow-2xl">
+        <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
+          <button type="button" onClick={onClose} disabled={isSaving} data-editor-initial-focus className="inline-flex items-center gap-2 rounded-lg p-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">
+            <ArrowLeft className="h-4 w-4" />
+            Zurück
+          </button>
+          <h2 id={titleId} className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{editingTemplate ? 'Vorlage bearbeiten' : 'Neue Vorlage'}</h2>
+          <button type="button" onClick={onClose} disabled={isSaving} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50" aria-label="Editor schließen">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <fieldset disabled={isSaving} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <aside className="z-10 flex w-full shrink-0 flex-col bg-white/95 p-4 backdrop-blur lg:min-h-0 lg:w-[370px] lg:overflow-hidden lg:rounded-r-2xl lg:shadow-xl">
+          <div className="grid grid-cols-2 rounded-xl bg-gray-100 p-1 text-sm font-medium">
+            <button type="button" onClick={() => setEditorTab('design')} aria-pressed={editorTab === 'design'} className={`rounded-lg px-3 py-2 transition ${editorTab === 'design' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Design</button>
+            <button type="button" onClick={() => setEditorTab('content')} aria-pressed={editorTab === 'content'} className={`rounded-lg px-3 py-2 transition ${editorTab === 'content' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Inhalt</button>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 rounded-xl bg-gray-100 p-1 text-sm font-medium">
-            <button type="button" onClick={() => setEditorTab('design')} className={`rounded-lg px-3 py-2 transition ${editorTab === 'design' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Design</button>
-            <button type="button" onClick={() => setEditorTab('content')} className={`rounded-lg px-3 py-2 transition ${editorTab === 'content' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Inhalt</button>
-          </div>
-
-          <div className="mt-4 flex-1 space-y-4">
+          <div className="mt-4 space-y-4 pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <label className="block rounded-xl border border-gray-200 bg-white p-3 text-xs font-medium text-gray-600">Name *
+              <input name="templateName" value={formData.name} onChange={event => setValue('name', event.target.value)} aria-required="true" aria-invalid={Boolean(error) && !formData.name.trim()} aria-describedby={error && !formData.name.trim() ? errorId : undefined} required className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+            </label>
             {editorTab === 'design' ? (
               <>
                 <section className="rounded-xl border border-gray-200 bg-white p-3">
@@ -483,9 +538,8 @@ function TemplateEditorOverlay({
                   <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.content ? '' : '-rotate-90'}`} />
                 </button>
                 {openSections.content && <div>
-                  <p className="mt-1 text-xs text-gray-500">Die Texte werden direkt im PDF verwendet und rechts sofort aktualisiert.</p>
+                  <p className="mt-1 text-xs text-gray-500">Hier bearbeiten Sie die gespeicherten Vorlagentexte. Die PDF-Vorschau verwendet plausible Beispieldaten und wird nach kurzer Pause neu erzeugt.</p>
                   <div className="mt-4 space-y-4">
-                    <label className="block text-xs font-medium text-gray-600">Name *<input value={formData.name} onChange={event => setValue('name', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" required /></label>
                     <label className="block text-xs font-medium text-gray-600">Kurzbeschreibung<input value={formData.description} onChange={event => setValue('description', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
                     <label className="block text-xs font-medium text-gray-600">Betreff<input value={formData.subject} onChange={event => setValue('subject', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
                     <label className="block text-xs font-medium text-gray-600">Einleitung<textarea value={formData.introText} onChange={event => setValue('introText', event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
@@ -496,29 +550,35 @@ function TemplateEditorOverlay({
               </section>
             )}
           </div>
+        </aside>
 
-          {error && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-200 pt-4">
+        <main className="relative flex min-h-[480px] min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f2f0] lg:min-h-0">
+          <div className="flex items-center justify-between px-5 py-4 lg:pl-14">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-gray-500">Designvorschau</div>
+              <h3 className="mt-1 text-lg font-semibold text-gray-900">{formData.name || 'Neue Vorlage'}</h3>
+            </div>
+            <div className="rounded-full bg-white/70 px-3 py-1 text-xs text-gray-500">Beispieldaten</div>
+          </div>
+          <div className="flex flex-1 items-start justify-center overflow-auto px-4 pb-8 pt-2 sm:px-8">
+            <TemplatePdfPreview template={previewTemplate} company={company} large />
+          </div>
+        </main>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs text-gray-500" role="status">{isSaving ? 'Vorlage wird gespeichert …' : isDirty ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'}</p>
+            {error && <div id={errorId} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</div>}
+          </div>
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
             <div className="flex items-center gap-2">
               <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Abbrechen</button>
               <button type="button" onClick={onReset} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Änderungen zurücksetzen</button>
             </div>
             <button type="submit" disabled={isSaving} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white shadow-sm hover:brightness-90 disabled:opacity-50">{isSaving ? 'Speichert...' : 'Vorlage speichern'}</button>
           </div>
-        </aside>
-
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f2f0]">
-          <div className="flex items-center justify-between px-5 py-4 lg:pl-14">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-gray-500">Live-Vorschau</div>
-              <h2 className="mt-1 text-lg font-semibold text-gray-900">{formData.name || 'Neue Vorlage'}</h2>
-            </div>
-            <div className="rounded-full bg-white/70 px-3 py-1 text-xs text-gray-500">Beispieldaten</div>
-          </div>
-          <div className="flex flex-1 items-start justify-center overflow-auto px-4 pb-8 pt-2 sm:px-8">
-            <TemplatePreview template={previewTemplate} companyName={companyName} logo={logo} terminologyProfile={terminologyProfile} large />
-          </div>
-        </main>
+        </div>
+        </fieldset>
       </form>
     </div>
   );
@@ -544,11 +604,25 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState<TemplateFormState>(emptyForm);
+  const [editorInitialFormData, setEditorInitialFormData] = useState<TemplateFormState>(emptyForm);
   const [selectedPreview, setSelectedPreview] = useState<DocumentTemplate | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupNoticeDismissed, setSetupNoticeDismissed] = useState(() => isNoticeDismissed(TEMPLATE_SETUP_NOTICE_ID));
   const [importResource, setImportResource] = useState<ImportResource | null>(null);
+  const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const saveInFlightRef = useRef(false);
+  const isEditorDirty = Boolean(editingTemplate || isCreating) && JSON.stringify(formData) !== JSON.stringify(editorInitialFormData);
+
+  useEffect(() => {
+    if (!isEditorDirty && !isSaving) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [isEditorDirty, isSaving]);
 
   const templates = useMemo(() => {
     if (activeTab === 'general' || activeTab === 'positions' || activeTab === 'reminder') return [];
@@ -558,10 +632,15 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
 
   useEffect(() => {
     if (!editingTemplate) {
-      if (!isCreating) setFormData(emptyForm);
+      if (!isCreating) {
+        setFormData(emptyForm);
+        setEditorInitialFormData(emptyForm);
+      }
       return;
     }
-    setFormData(templateToForm(editingTemplate));
+    const nextFormData = templateToForm(editingTemplate);
+    setFormData(nextFormData);
+    setEditorInitialFormData(nextFormData);
   }, [editingTemplate, isCreating]);
 
   useEffect(() => {
@@ -575,33 +654,89 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
 
   const openCreate = () => {
     setEditingTemplate(null);
-    setFormData(getEmptyForm(activeTab as DocumentTemplateType));
+    const nextFormData = getEmptyForm(activeTab as DocumentTemplateType);
+    setFormData(nextFormData);
+    setEditorInitialFormData(nextFormData);
     setIsCreating(true);
     setError(null);
   };
 
   const openEdit = (template: DocumentTemplate) => {
+    const nextFormData = templateToForm(template);
     setIsCreating(false);
     setEditingTemplate(template);
+    setFormData(nextFormData);
+    setEditorInitialFormData(nextFormData);
     setError(null);
   };
 
-  const closeEditor = () => {
+  const confirmEditorAction: typeof confirm = async options => {
+    const previousFocus = document.activeElement;
+    const confirmed = await confirm(options);
+    window.requestAnimationFrame(() => {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    });
+    return confirmed;
+  };
+
+  const closeEditor = async (skipConfirmation = false) => {
+    if (saveInFlightRef.current && !skipConfirmation) return;
+    if (!skipConfirmation && isEditorDirty) {
+      const confirmed = await confirmEditorAction({
+        title: 'Ungespeicherte Änderungen',
+        message: 'Ungespeicherte Änderungen wirklich verwerfen?',
+        confirmText: 'Verwerfen',
+        isDestructive: true,
+      });
+      if (!confirmed) return;
+    }
+    const trigger = editorTriggerRef.current;
     setEditingTemplate(null);
     setIsCreating(false);
     setFormData(emptyForm);
+    setEditorInitialFormData(emptyForm);
+    setError(null);
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
+  };
+
+  const resetEditorChanges = async () => {
+    if (saveInFlightRef.current) return;
+    if (isEditorDirty) {
+      const confirmed = await confirmEditorAction({
+        title: 'Änderungen zurücksetzen',
+        message: 'Alle ungespeicherten Änderungen wirklich zurücksetzen?',
+        confirmText: 'Zurücksetzen',
+        isDestructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setFormData(editorInitialFormData);
     setError(null);
   };
 
-  const resetEditorChanges = () => {
-    setFormData(editingTemplate ? templateToForm(editingTemplate) : getEmptyForm(activeTab as DocumentTemplateType));
-    setError(null);
+  const handleTemplateTabChange = async (tab: TemplateTab) => {
+    if (tab === activeTab || saveInFlightRef.current) return;
+    if (isEditorDirty) {
+      const confirmed = await confirmEditorAction({
+        title: 'Ungespeicherte Änderungen',
+        message: 'Ungespeicherte Änderungen wirklich verwerfen?',
+        confirmText: 'Verwerfen',
+        isDestructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setActiveTab(tab);
+    if (editingTemplate || isCreating) await closeEditor(true);
   };
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
+    if (saveInFlightRef.current) return;
     if (!formData.name.trim()) {
       setError('Bitte vergeben Sie einen Namen für die Vorlage.');
+      event.currentTarget.querySelector<HTMLInputElement>('input[name="templateName"]')?.focus();
       return;
     }
 
@@ -625,16 +760,19 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     };
 
     try {
+      saveInFlightRef.current = true;
       setIsSaving(true);
+      setError(null);
       if (editingTemplate) {
         await updateDocumentTemplate(editingTemplate.id, templateData);
       } else {
         await addDocumentTemplate(templateData);
       }
-      closeEditor();
+      await closeEditor(true);
     } catch {
       setError('Die Vorlage konnte nicht gespeichert werden.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -685,10 +823,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
         className="sticky top-16 z-20 w-full lg:top-2"
         ariaLabel="Vorlagenbereiche"
         activeTab={activeTab}
-        onChange={tab => {
-          setActiveTab(tab);
-          closeEditor();
-        }}
+        onChange={handleTemplateTabChange}
         tabs={tabs}
       />
 
@@ -813,7 +948,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
                 Diese Vorlagen steuern das fertige PDF-Layout. Texte, Logo, Akzentfarbe, Tabelle und Fußbereich werden gemeinsam gespeichert.
               </p>
             </div>
-            <button type="button" onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
+            <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openCreate(); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
               <Plus className="h-4 w-4" />
               Vorlage hinzufügen
             </button>
@@ -826,7 +961,10 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
               <article key={template.id} className={`template-card relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
                 {template.isDefault && <span className="absolute left-1/2 top-2 z-10 inline-flex -translate-x-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
                 <button type="button" onClick={() => setSelectedPreview(template)} className="group relative block w-full bg-gray-50 p-4" aria-label={`${template.name} in großer Vorschau öffnen`}>
-                  <TemplatePreview template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
+                  <div className="space-y-2">
+                    <TemplateMiniature template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
+                    <span className="block text-center text-[11px] text-gray-500">Miniatur der PDF-Vorlage</span>
+                  </div>
                   <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
                     <Maximize2 className="h-3 w-3" /> Große Vorschau
                   </span>
@@ -837,7 +975,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
                       <h3 className="truncate text-center font-semibold text-gray-900">{template.name}</h3>
                     </div>
                     <div className="template-card-actions flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={() => openEdit(template)} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
+                      <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openEdit(template); }} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button type="button" onClick={() => handleDelete(template)} className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label={`${template.name} löschen`}>
@@ -872,13 +1010,14 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
               editingTemplate={editingTemplate}
               formData={formData}
               setFormData={setFormData}
-              companyName={company.name}
+              company={company}
               logo={company.logo}
               terminologyProfile={company.terminologyProfile}
               isSaving={isSaving}
+              isDirty={isEditorDirty}
               error={error}
-              onClose={closeEditor}
-              onReset={resetEditorChanges}
+              onClose={() => { void closeEditor(); }}
+              onReset={() => { void resetEditorChanges(); }}
               onSave={handleSave}
             />
           )}
@@ -890,18 +1029,20 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
       )}
 
       {selectedPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4" onMouseDown={() => setSelectedPreview(null)}>
-          <div role="dialog" aria-modal="true" aria-label={`${selectedPreview.name} Vorschau`} className="relative max-h-[95vh] max-w-[95vw] overflow-auto rounded-2xl bg-gray-100 p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4" onMouseDown={() => setSelectedPreview(null)}>
+          <div role="dialog" aria-modal="true" aria-label={`${selectedPreview.name} Vorschau`} className="flex h-[min(92dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-gray-100 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white p-4 sm:p-5">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">{selectedPreview.name}</h2>
-                <p className="text-sm text-gray-500">Beispielhafte PDF-Vorschau mit den aktuellen Layoutmerkmalen</p>
+                <p className="text-sm text-gray-500">Große Vorschau des real erzeugten PDFs mit Beispieldaten.</p>
               </div>
               <button type="button" onClick={() => setSelectedPreview(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-gray-600 shadow hover:bg-gray-50 hover:text-gray-900" aria-label="Vorschau schließen">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <TemplatePreview template={selectedPreview} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} large />
+            <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
+              <TemplatePdfPreview template={selectedPreview} company={company} large />
+            </div>
           </div>
         </div>
       )}

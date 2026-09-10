@@ -5,6 +5,7 @@ function mapInvoice(row) {
     id: row.id,
     invoiceNumber: row.invoice_number,
     documentType: row.document_type || 'invoice',
+    documentSnapshot: row.document_snapshot || undefined,
     referenceInvoiceId: row.reference_invoice_id,
     referenceInvoiceNumber: row.reference_invoice_number,
     sourceQuoteId: row.source_quote_id,

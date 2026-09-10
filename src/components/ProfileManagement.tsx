@@ -51,7 +51,7 @@ export function ProfileManagement() {
     }, 'Passwort geändert.');
   };
 
-  const handleDeleteAccount = () => run(async () => {
+  const handleDeleteAccount = async () => {
     const confirmed = await confirm({
       title: 'Konto endgültig löschen',
       message: 'Konto und eigene Workspaces endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.',
@@ -59,8 +59,15 @@ export function ProfileManagement() {
       isDestructive: true,
     });
     if (!confirmed) return;
-    await deleteAccount(deletePassword);
-  }, 'Konto gelöscht.');
+    setError('');
+    setMessage('');
+    try {
+      await deleteAccount(deletePassword);
+      setMessage('Konto gelöscht.');
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Die Aktion konnte nicht abgeschlossen werden.');
+    }
+  };
 
   return (
     <div className="space-y-6">

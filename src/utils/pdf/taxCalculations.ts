@@ -3,6 +3,7 @@
  */
 
 import { Invoice, JobEntry } from '../../types';
+import { calculateDocumentMoney } from '../../../backend/utils/documentMoney.js';
 
 export interface TaxBreakdown {
   [taxRate: number]: {
@@ -18,51 +19,19 @@ export interface TaxBreakdown {
  * @returns Tax breakdown by rate
  */
 export function calculateTaxBreakdown(items: Invoice['items'], invoice?: Partial<Invoice>): TaxBreakdown {
-  const taxBreakdown = items.reduce((acc, item) => {
-    // Berechne den Artikelpreis NACH Artikelrabatt
-    const itemTotal = item.quantity * item.unitPrice;
-    const itemDiscountAmount = item.discountAmount || 0;
-    const itemTotalAfterDiscount = itemTotal - itemDiscountAmount;
-    
-    const taxRate = item.taxRate;
-    const taxAmount = itemTotalAfterDiscount * (taxRate / 100);
-    
-    if (acc[taxRate]) {
-      acc[taxRate].taxableAmount += itemTotalAfterDiscount;
-      acc[taxRate].taxAmount += taxAmount;
-    } else {
-      acc[taxRate] = {
-        taxableAmount: itemTotalAfterDiscount,
-        taxAmount: taxAmount
-      };
-    }
-    
-    return acc;
-  }, {} as TaxBreakdown);
-  
-  // Wende globalen Rabatt proportional auf alle Steuersätze an
-  if (invoice?.globalDiscountAmount && invoice.globalDiscountAmount > 0) {
-    const subtotalAfterItemDiscounts = items.reduce((sum, item) => {
-      const itemTotal = item.quantity * item.unitPrice;
-      const itemDiscountAmount = item.discountAmount || 0;
-      return sum + (itemTotal - itemDiscountAmount);
-    }, 0);
-    
-    if (subtotalAfterItemDiscounts > 0) {
-      const discountRatio = invoice.globalDiscountAmount / subtotalAfterItemDiscounts;
-      
-      Object.keys(taxBreakdown).forEach(taxRateStr => {
-        const taxRate = Number(taxRateStr);
-        const breakdown = taxBreakdown[taxRate];
-        
-        // Reduziere den steuerpflichtigen Betrag proportional
-        breakdown.taxableAmount = breakdown.taxableAmount * (1 - discountRatio);
-        breakdown.taxAmount = (breakdown.taxableAmount * taxRate) / 100;
-      });
-    }
+  const result = calculateDocumentMoney({
+    items,
+    globalDiscountType: invoice?.globalDiscountType,
+    globalDiscountValue: invoice?.globalDiscountValue,
+    globalDiscountAmount: invoice?.globalDiscountAmount,
+  }, {
+    documentType: invoice?.documentType === 'credit_note' ? 'credit_note' : 'invoice',
+  });
+  if (invoice?.id && ((Number.isFinite(invoice.taxAmount) && Math.abs(result.taxAmount - Number(invoice.taxAmount)) > 0.005)
+      || (Number.isFinite(invoice.total) && Math.abs(result.total - Number(invoice.total)) > 0.005))) {
+    throw new Error('Die gespeicherten Dokumentbeträge stimmen nicht mit Positionen und Rabatten überein. Bitte prüfen Sie die Rechnung bzw. das Angebot. Ein Entwurf kann durch erneutes Speichern neu berechnet werden.');
   }
-  
-  return taxBreakdown;
+  return result.taxBreakdown;
 }
 
 /**
@@ -148,5 +117,3 @@ export function checkHasDiscounts(items: Invoice['items']): boolean {
 export function hasOnlyZeroTaxRate(items: Invoice['items']): boolean {
   return items.length > 0 && items.every(item => item.taxRate === 0);
 }
-
-

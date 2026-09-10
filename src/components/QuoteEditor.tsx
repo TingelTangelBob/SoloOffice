@@ -27,6 +27,7 @@ import { useDocumentHelpers } from '../hooks/useDocumentHelpers';
 import { Customer, Quote, QuoteItem, QuoteAttachment } from '../types';
 import { AttachmentManager } from './AttachmentManager';
 import { calculateInvoiceWithDiscounts, validateDiscount } from '../utils/discountUtils';
+import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal';
@@ -864,7 +865,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       totalDiscountAmount: result.totalDiscountAmount,
       discountedSubtotal: result.discountedSubtotal,
       taxAmount: result.taxAmount,
-      total: result.total
+      total: result.total,
+      validationError: result.validationError,
     };
   };
 
@@ -928,7 +930,17 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       }
     }
 
-    const totals = calculateTotals();
+    let totals;
+    try {
+      totals = calculateDocumentMoney({
+        items: filledItems,
+        globalDiscountType: globalDiscountType || undefined,
+        globalDiscountValue: globalDiscountValue ? parseFloat(globalDiscountValue) : undefined,
+      }, { documentType: 'quote' });
+    } catch (error) {
+      notify({ variant: 'warning', message: error instanceof Error ? error.message : 'Bitte prüfen Sie die Positionen und Rabatte.' });
+      return;
+    }
     const customer = customers.find(c => c.id === selectedCustomerId);
 
     const quoteData: Omit<Quote, 'id' | 'createdAt'> = {
@@ -937,9 +949,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       customerName: customer?.name || '',
       issueDate: new Date(issueDate),
       validUntil: new Date(validUntil),
-      items: filledItems.map(item => ({
+      items: filledItems.map((item, index) => ({
         ...item,
-        total: (item.quantity * item.unitPrice) - (item.discountAmount || 0)
+        total: totals.items[index].total,
+        discountAmount: totals.items[index].discountAmount,
       })),
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
@@ -963,7 +976,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       onClose();
     } catch (error) {
       logger.error('Fehler beim Speichern des Angebots', { error });
-      notify({ variant: 'error', message: 'Fehler beim Speichern des Angebots' });
+      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Fehler beim Speichern des Angebots' });
     }
   };
 
@@ -1020,6 +1033,10 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
   };
 
   const handleQuotePreview = () => {
+    if (totals.validationError) {
+      notify({ variant: 'warning', message: totals.validationError });
+      return;
+    }
     const customer = customers.find(currentCustomer => currentCustomer.id === selectedCustomerId);
     if (!customer) {
       notify({ variant: 'warning', message: `Bitte wählen Sie zuerst einen ${terminology.entity.singular} aus.` });
@@ -1075,7 +1092,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           <>
             <button type="button" onClick={requestClose} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
             <button type="button" onClick={handleQuotePreview} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-primary-custom px-5 py-2 text-base font-medium text-primary-custom transition hover:bg-primary-light-custom sm:flex-none"><Eye className="mr-2 h-5 w-5" />Vorschau</button>
-            <button type="submit" className="btn-primary inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
+            <button type="submit" disabled={Boolean(totals.validationError)} className="btn-primary disabled:opacity-50 inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
           </>
         )}
       >
@@ -1436,6 +1453,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
           </div>
 
           {/* Totals */}
+          {totals.validationError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{totals.validationError}</p> : (
           <div className="theme-gradient-surface theme-gradient-surface-totals space-y-3 rounded-lg border p-6 lg:pr-14">
             <div className="flex justify-between text-sm">
               <span className="theme-gradient-label">Zwischensumme:</span>
@@ -1488,6 +1506,8 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
               </div>
             )}
           </div>
+
+          )}
 
           {/* Notes & Attachments */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-5 lg:grid-cols-10">

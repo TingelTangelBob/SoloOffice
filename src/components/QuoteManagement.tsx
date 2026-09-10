@@ -23,6 +23,8 @@ import { ImportWizard } from './ImportWizard';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
+import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -44,11 +46,15 @@ const QUOTE_TABLE_LAYOUT = listTableLayout({
 
 export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [isLoadingQuotes, setIsLoadingQuotes] = useState(true);
+  const [quoteLoadError, setQuoteLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedQuoteIds, setSelectedQuoteIds] = useState<string[]>([]);
@@ -95,11 +101,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
   // Load quotes
   const loadQuotes = async () => {
+    setIsLoadingQuotes(true);
     try {
       const loadedQuotes = await apiService.getQuotes();
       setQuotes(loadedQuotes);
+      setQuoteLoadError(null);
     } catch (error) {
       logger.error('Error loading quotes:', error);
+      setQuoteLoadError('Die Angebote konnten nicht geladen werden.');
+    } finally {
+      setIsLoadingQuotes(false);
     }
   };
 
@@ -110,7 +121,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   // Check for expired quotes automatically
   useEffect(() => {
     const checkExpiredQuotes = async () => {
-      if (quotes.length === 0) return;
+      if (quotes.length === 0 || !canWrite) return;
       
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -142,7 +153,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     if (quotes.length > 0) {
       checkExpiredQuotes();
     }
-  }, [quotes]);
+  }, [quotes, canWrite]);
 
   const filteredQuotes = quotes.filter(quote => {
     const quoteNumber = quote.quoteNumber || '';
@@ -158,6 +169,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   });
 
   const handleOpenEditor = (quote?: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     // Check if quote is accepted or billed and warn user
     if (quote && (quote.status === 'accepted' || quote.status === 'billed')) {
       const statusText = quote.status === 'billed' ? 'abgerechnet' : 'akzeptiert';
@@ -180,6 +196,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleDelete = async (quote: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (quote.status !== 'draft' || Boolean(quote.convertedToInvoiceId)) {
       setConfirmModal({
         isOpen: true,
@@ -206,6 +227,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleStatusChange = async (id: string, newStatus: Quote['status']) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     try {
       await apiService.updateQuote(id, { status: newStatus });
       await loadQuotes();
@@ -215,6 +241,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleConvertToInvoice = async (quote: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (quote.status !== 'accepted') {
       notify({ variant: 'warning', message: 'Nur akzeptierte Angebote können in Rechnungen umgewandelt werden.' });
       return;
@@ -259,6 +290,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
   // Bulk operations functions
   const handleBulkStatusChange = async (newStatus: Quote['status']) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (selectedQuoteIds.length === 0) return;
     
     setIsBulkOperation(true);
@@ -278,6 +314,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleBulkEmail = async () => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     if (selectedQuoteIds.length === 0) return;
     
     const selectedQuotes = quotes.filter(quote => selectedQuoteIds.includes(quote.id));
@@ -374,6 +415,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const handlePreviewReject = async (document: PreviewDocument) => {
     const quote = document.quote;
     if (!quote || quote.status !== 'sent') return;
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
 
     try {
       await apiService.updateQuote(quote.id, { status: 'rejected' });
@@ -421,13 +466,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   const handleSendEmail = async (quote: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     const customer = customers.find(c => c.id === quote.customerId);
     if (!customer) {
       notify({ variant: 'error', message: `${terminology.entity.singular} nicht gefunden.` });
       return;
     }
 
-    if (!customer.email && (!customer.additionalEmails || customer.additionalEmails.length === 0)) {
+    if (getActiveEmailRecipients(customer).length === 0) {
       notify({ variant: 'warning', message: terminology.entity.emailMissingMessage });
       return;
     }
@@ -450,8 +500,14 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     selectedEmails?: string[], 
     manualEmails?: string[]
   ) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
     const activeQuote = emailModal.quote;
     if (!activeQuote) return;
+    if (!emailModal.isBulkMode && !emailModal.customer) return;
 
     setIsEmailSending(true);
     
@@ -462,13 +518,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       try {
         let successCount = 0;
         let errorCount = 0;
+        let missingRecipientCount = 0;
         
         for (const quote of emailModal.bulkQuotes) {
           try {
             const customer = customers.find(c => c.id === quote.customerId);
-            if (!customer?.email && (!customer?.additionalEmails || customer.additionalEmails.length === 0)) {
+            const emailAddresses = getActiveEmailRecipients(customer);
+            if (!customer || emailAddresses.length === 0) {
               logger.warn(`No email for customer of quote ${quote.quoteNumber}`);
-              errorCount++;
+              missingRecipientCount++;
               continue;
             }
 
@@ -480,7 +538,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             // Generate PDF for this quote
             const pdfBlob = await generateQuotePDF(quote, {
               company,
-              customer: customer!,
+              customer,
             });
 
             const arrayBuffer = await pdfBlob.arrayBuffer();
@@ -489,15 +547,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             const pdfBase64 = btoa(binaryString);
 
             // Send email for this quote
-            const emailAddresses = [customer!.email, ...(customer!.additionalEmails?.filter(e => e.isActive).map(e => e.email) || [])].filter(Boolean);
-            
-            await apiService.sendQuoteEmail(
+            const result = await apiService.sendQuoteEmail(
               quote.id,
               emailAddresses,
               customText,
               processedAttachments,
               pdfBase64
             );
+            if (!result.success) {
+              throw new Error(result.message || 'Der E-Mail-Versand wurde abgelehnt.');
+            }
 
             // Update quote status if it's draft
             if (quote.status === 'draft') {
@@ -512,12 +571,19 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         }
 
         await loadQuotes();
-        setSelectedQuoteIds([]);
+        if (successCount > 0) setSelectedQuoteIds([]);
         
-        if (errorCount === 0) {
-          notify({ variant: 'success', message: `Alle ${successCount} Angebote erfolgreich per E-Mail versendet!` });
+        const failedCount = errorCount + missingRecipientCount;
+        const failureInfo = [
+          missingRecipientCount > 0 ? `${missingRecipientCount} ohne E-Mail-Adresse` : '',
+          errorCount > 0 ? `${errorCount} mit Fehler` : '',
+        ].filter(Boolean).join(', ');
+        if (successCount === 0) {
+          notify({ variant: 'error', message: `Keine der ${emailModal.bulkQuotes.length} Angebote konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.` });
+        } else if (failedCount > 0) {
+          notify({ variant: 'warning', message: `${successCount} Angebote versendet; ${failureInfo}.` });
         } else {
-          notify({ variant: 'warning', message: `${successCount} Angebote versendet, bei ${errorCount} trat ein Fehler auf.` });
+          notify({ variant: 'success', message: `Alle ${successCount} Angebote erfolgreich per E-Mail versendet!` });
         }
         
         setEmailModal({ isOpen: false, quote: null, customer: null, isBulkMode: false, bulkQuotes: [] });
@@ -528,12 +594,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         return;
       } finally {
         setIsBulkOperation(false);
+        setIsEmailSending(false);
       }
     }
 
     // Single quote mode (existing logic)
-    if (!emailModal.customer) return;
-    
     try {
       // Collect all email addresses
       const allEmails: string[] = [];
@@ -585,13 +650,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('');
       const pdfBase64 = btoa(binaryString);
 
-      await apiService.sendQuoteEmail(
+      const result = await apiService.sendQuoteEmail(
         activeQuote.id,
         allEmails,
         customText,
         processedAttachments,
         pdfBase64
       );
+      if (!result.success) {
+        throw new Error(result.message || 'Der E-Mail-Versand wurde abgelehnt.');
+      }
 
       // Update quote status to 'sent' if it's currently 'draft'
       if (activeQuote.status === 'draft') {
@@ -625,7 +693,13 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         <PageHeader icon={FileCheck} title="Angebote" subtitle="Verwalten Sie Ihre Angebote">
         <button
           type="button"
-          onClick={() => setShowImport(true)}
+          onClick={() => {
+            if (!canWrite) {
+              notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+              return;
+            }
+            setShowImport(true);
+          }}
           className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom sm:min-w-0 sm:px-4"
           aria-label="Importieren"
           title="Importieren"
@@ -685,6 +759,22 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
       {/* Quote List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {isLoadingQuotes ? (
+          <div className="px-4 py-10 text-center text-gray-500">Angebote werden geladen...</div>
+        ) : quoteLoadError ? (
+          <div className="px-4 py-10 text-center">
+            <FileText className="h-12 w-12 text-red-400 mx-auto mb-4" />
+            <p className="text-red-700">{quoteLoadError}</p>
+            <button
+              type="button"
+              onClick={loadQuotes}
+              className="btn-primary mt-4 rounded-lg px-4 py-2 text-white"
+            >
+              Erneut versuchen
+            </button>
+          </div>
+        ) : (
+        <>
         <BulkSelectionHeader
           itemLabel="Angebot"
           itemLabelPlural="Angebote"
@@ -1007,6 +1097,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             <p className="text-gray-500">Keine Angebote gefunden</p>
           </div>
         )}
+        </>
+        )}
       </div>
       
       {/* Confirmation Modal */}
@@ -1021,17 +1113,28 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       />
 
       {/* Email Modal */}
-      {emailModal.isOpen && emailModal.quote && (emailModal.customer || emailModal.isBulkMode) && (
+      {emailModal.isOpen && emailModal.quote && emailModal.isBulkMode && (
         <EmailSendModal
-          isOpen={emailModal.isOpen}
+          isOpen={true}
           onClose={handleEmailModalClose}
           onSend={handleEmailSend}
           document={emailModal.quote}
           documentType="quote"
-          customer={emailModal.customer || { email: '', additionalEmails: [] }}
           isLoading={isEmailSending}
-          isBulkMode={emailModal.isBulkMode}
+          isBulkMode={true}
           bulkCount={emailModal.bulkQuotes?.length || 0}
+        />
+      )}
+      {emailModal.isOpen && emailModal.quote && !emailModal.isBulkMode && emailModal.customer && (
+        <EmailSendModal
+          isOpen={true}
+          onClose={handleEmailModalClose}
+          onSend={handleEmailSend}
+          document={emailModal.quote}
+          documentType="quote"
+          customer={emailModal.customer}
+          isLoading={isEmailSending}
+          isBulkMode={false}
         />
       )}
 

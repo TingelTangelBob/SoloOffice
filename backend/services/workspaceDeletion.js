@@ -1,4 +1,5 @@
 const WORKSPACE_DATA_DELETE_ORDER = [
+  'smtp_settings',
   'invoice_job_sources',
   'email_history',
   'customer_emails',
@@ -13,11 +14,11 @@ const WORKSPACE_DATA_DELETE_ORDER = [
   'job_recurrences',
   'quote_attachments',
   'quote_items',
-  'quotes',
   'invoice_attachments',
   'invoice_history',
   'invoice_items',
   'invoices',
+  'quotes',
   'calendar_events',
   'hourly_rates',
   'material_templates',

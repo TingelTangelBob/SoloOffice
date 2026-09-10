@@ -9,6 +9,8 @@ const execFileAsync = promisify(execFile);
 const MAX_OCR_OUTPUT = 8 * 1024 * 1024;
 const MAX_PDF_PAGES = 50;
 const DEFAULT_OCR_CONCURRENCY_LIMIT = 2;
+const DEFAULT_OCR_MAX_PENDING = 32;
+const DEFAULT_OCR_WORKSPACE_LIMIT = 4;
 const DEFAULT_OCR_TIMEOUT_MS = 120_000;
 
 const extensionByMimeType = {
@@ -32,8 +34,20 @@ export function getOcrConcurrencyLimit() {
   return positiveIntegerFromEnv('OCR_CONCURRENCY_LIMIT', DEFAULT_OCR_CONCURRENCY_LIMIT);
 }
 
+export function getOcrMaxPending() {
+  return positiveIntegerFromEnv('OCR_MAX_PENDING', DEFAULT_OCR_MAX_PENDING);
+}
+
+export function getOcrWorkspaceLimit() {
+  return positiveIntegerFromEnv('OCR_WORKSPACE_LIMIT', DEFAULT_OCR_WORKSPACE_LIMIT);
+}
+
 export function getOcrTimeoutMs() {
   return positiveIntegerFromEnv('OCR_TIMEOUT_MS', DEFAULT_OCR_TIMEOUT_MS);
+}
+
+function getOcrRetryAfterSeconds() {
+  return Math.max(1, Math.ceil(getOcrTimeoutMs() / 1000));
 }
 
 function execFileOptions(maxBuffer = MAX_OCR_OUTPUT) {
@@ -51,34 +65,89 @@ function timeoutMessage(name) {
   return `Die lokale Belegerkennung für „${name || 'Beleg'}“ hat das Zeitlimit von ${Math.round(getOcrTimeoutMs() / 1000)} Sekunden überschritten.`;
 }
 
+export class OcrQueueLimitError extends Error {
+  constructor(scope, limit) {
+    super(scope === 'workspace'
+      ? `Für diesen Workspace sind höchstens ${limit} laufende oder wartende OCR-Aufträge zulässig.`
+      : `Die globale OCR-Warteschlange nimmt höchstens ${limit} wartende Aufträge auf.`);
+    this.name = 'OcrQueueLimitError';
+    this.code = 'OCR_QUEUE_OVERLOADED';
+    this.statusCode = 429;
+    this.scope = scope;
+    this.limit = limit;
+    this.retryAfterSeconds = getOcrRetryAfterSeconds();
+  }
+}
+
+export function isOcrQueueOverloaded(error) {
+  return error?.code === 'OCR_QUEUE_OVERLOADED';
+}
+
 class OcrQueue {
   active = 0;
   pending = [];
+  workspaceLoads = new Map();
+  lastScheduledWorkspaceId;
 
-  run(task, name) {
+  release(item) {
+    this.active -= 1;
+    const workspaceLoad = this.workspaceLoads.get(item.workspaceId) || 1;
+    if (workspaceLoad <= 1) this.workspaceLoads.delete(item.workspaceId);
+    else this.workspaceLoads.set(item.workspaceId, workspaceLoad - 1);
+    this.drain();
+  }
+
+  takeNext() {
+    if (!this.pending.length) return undefined;
+    const nextDifferentIndex = this.pending.findIndex(item => item.workspaceId !== this.lastScheduledWorkspaceId);
+    const nextIndex = nextDifferentIndex >= 0 ? nextDifferentIndex : 0;
+    const [item] = this.pending.splice(nextIndex, 1);
+    this.lastScheduledWorkspaceId = item.workspaceId;
+    return item;
+  }
+
+  run(task, name, workspaceId = 'global') {
+    const queueWorkspaceId = typeof workspaceId === 'string' && workspaceId.trim() ? workspaceId : 'global';
+    const workspaceLimit = getOcrWorkspaceLimit();
+    const workspaceLoad = this.workspaceLoads.get(queueWorkspaceId) || 0;
+    if (workspaceLoad >= workspaceLimit) {
+      return Promise.reject(new OcrQueueLimitError('workspace', workspaceLimit));
+    }
+
+    const maxPending = getOcrMaxPending();
+    if (this.pending.length >= maxPending) {
+      return Promise.reject(new OcrQueueLimitError('global', maxPending));
+    }
+
     const position = this.pending.length + 1;
     const limit = getOcrConcurrencyLimit();
     if (this.active >= limit) {
       logger.warn(`Lokales OCR für „${name || 'Beleg'}“ wartet in der Warteschlange (Position ${position}; ${this.active}/${limit} Vorgänge aktiv).`);
     }
 
+    this.workspaceLoads.set(queueWorkspaceId, workspaceLoad + 1);
     return new Promise((resolve, reject) => {
-      this.pending.push({ task, resolve, reject });
+      this.pending.push({ task, resolve, reject, workspaceId: queueWorkspaceId });
       this.drain();
     });
   }
 
   drain() {
     while (this.active < getOcrConcurrencyLimit() && this.pending.length) {
-      const item = this.pending.shift();
+      const item = this.takeNext();
       this.active += 1;
       Promise.resolve()
         .then(item.task)
-        .then(item.resolve, item.reject)
-        .finally(() => {
-          this.active -= 1;
-          this.drain();
-        });
+        .then(
+          value => {
+            this.release(item);
+            item.resolve(value);
+          },
+          error => {
+            this.release(item);
+            item.reject(error);
+          },
+        );
     }
   }
 
@@ -87,6 +156,9 @@ class OcrQueue {
       active: this.active,
       pending: this.pending.length,
       limit: getOcrConcurrencyLimit(),
+      maxPending: getOcrMaxPending(),
+      workspaceLimit: getOcrWorkspaceLimit(),
+      workspaceLoads: Object.fromEntries(this.workspaceLoads),
     };
   }
 }
@@ -94,8 +166,8 @@ class OcrQueue {
 const ocrQueue = new OcrQueue();
 
 /** Queue a complete local OCR operation and expose its current load for diagnostics/tests. */
-export function runWithOcrConcurrency(task, name) {
-  return ocrQueue.run(task, name);
+export function runWithOcrConcurrency(task, name, workspaceId) {
+  return ocrQueue.run(task, name, workspaceId);
 }
 
 export function getOcrQueueStatus() {
@@ -390,40 +462,36 @@ async function runScannedPdfOcr(inputPath, tempDirectory, name) {
  * their embedded text; image-only PDFs are rendered locally and passed to
  * Tesseract. No file is sent to an external service.
  */
-export async function runLocalOcr({ content, contentType, name }) {
+export async function runLocalOcr({ content, contentType, name, workspaceId }) {
   const normalizedContentType = String(contentType || '').toLowerCase();
   const extension = extensionByMimeType[normalizedContentType];
   if (!extension) throw new Error('Für die lokale Belegerkennung werden PDF-, JPG-, PNG- oder WEBP-Dateien unterstützt.');
 
   const buffer = decodeBase64Content(content);
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'solooffice-ocr-'));
-  const inputPath = path.join(tempDirectory, `receipt${extension}`);
+  return runWithOcrConcurrency(async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'solooffice-ocr-'));
+    const inputPath = path.join(tempDirectory, `receipt${extension}`);
 
-  try {
-    await fs.writeFile(inputPath, buffer);
-    let text;
-    let confidence;
-    if (normalizedContentType === 'application/pdf') {
-      text = await extractPdfText(inputPath, name);
-      if (!text) {
-        ({ text, confidence } = await runWithOcrConcurrency(
-          () => runScannedPdfOcr(inputPath, tempDirectory, name),
-          name,
-        ));
+    try {
+      await fs.writeFile(inputPath, buffer);
+      let text;
+      let confidence;
+      if (normalizedContentType === 'application/pdf') {
+        text = await extractPdfText(inputPath, name);
+        if (!text) {
+          ({ text, confidence } = await runScannedPdfOcr(inputPath, tempDirectory, name));
+        }
+      } else {
+        ({ text, confidence } = await runTesseract(inputPath, name));
       }
-    } else {
-      ({ text, confidence } = await runWithOcrConcurrency(
-        () => runTesseract(inputPath, name),
-        name,
-      ));
-    }
 
-    return {
-      text,
-      confidence,
-      extractedData: parseExtractedData(text),
-    };
-  } finally {
-    await fs.rm(tempDirectory, { recursive: true, force: true });
-  }
+      return {
+        text,
+        confidence,
+        extractedData: parseExtractedData(text),
+      };
+    } finally {
+      await fs.rm(tempDirectory, { recursive: true, force: true });
+    }
+  }, name, workspaceId);
 }

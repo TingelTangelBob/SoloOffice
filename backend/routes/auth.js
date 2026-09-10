@@ -5,6 +5,7 @@ import { runWithRequestContext } from '../utils/requestContext.js';
 import { requireAuth, loadSession, clearAuthCookies } from '../middleware/auth.js';
 import { sendSystemEmail } from '../services/emailService.js';
 import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
+import { lockRegistrationBootstrap } from '../services/registrationBootstrap.js';
 import { persistentRateLimit } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
 import {
@@ -151,6 +152,7 @@ router.post('/register', async (req, res) => {
 
   try {
     await client.query('BEGIN');
+    await lockRegistrationBootstrap(client);
     const registrationMode = process.env.REGISTRATION_MODE || 'closed-after-first';
     const registeredUsers = await client.query('SELECT COUNT(*)::integer AS count FROM users');
     const isFirstRegistration = registeredUsers.rows[0]?.count === 0;

@@ -1,17 +1,14 @@
 import { pool } from '../database.js';
 import { findQuoteById } from '../queries/quoteQueries.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
-import { generateInvoiceNumber } from './invoiceService.js';
-import { validateDiscountFields } from '../utils/validation.js';
+import { generateInvoiceNumber, validateCompanyForInvoice } from './invoiceService.js';
+import { captureInvoiceSnapshot } from './invoiceSnapshot.js';
+import { calculateDocumentMoney } from '../utils/documentMoney.js';
+import { invoiceError } from '../utils/invoicePolicy.js';
+import { invoiceDateParts } from '../utils/invoiceNumberPattern.js';
+import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 
 export async function createQuote(data) {
-  const discountValidation = validateDiscountFields(data);
-  if (!discountValidation.valid) {
-    const err = new Error(discountValidation.message);
-    err.statusCode = 400;
-    throw err;
-  }
-
   const {
     customerId,
     items = [],
@@ -20,10 +17,11 @@ export async function createQuote(data) {
     issueDate = new Date().toISOString().split('T')[0],
     validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     status = 'draft',
-    globalDiscountType = null,
-    globalDiscountValue = null,
-    globalDiscountAmount = null,
   } = data;
+
+  const money = calculateDocumentMoney({ ...data, items }, { documentType: 'quote' });
+  if (!invoiceDateParts(issueDate) || !invoiceDateParts(validUntil)) throw invoiceError('Ungültiges Angebotsdatum.');
+  if (!Array.isArray(attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
 
   const client = await pool.connect();
 
@@ -40,6 +38,7 @@ export async function createQuote(data) {
     // Generate quote number - format: AN-YYYY-XXX
     const quoteYear = new Date(issueDate).getFullYear();
     const yearPattern = `AN-${quoteYear}-%`;
+    await lockDocumentNumber(client, 'quote', quoteYear);
     const lastQuoteResult = await client.query('SELECT quote_number FROM quotes WHERE quote_number LIKE $1 ORDER BY created_at DESC LIMIT 1', [yearPattern]);
 
     let quoteNumber;
@@ -60,93 +59,14 @@ export async function createQuote(data) {
       }
     }
 
-    // Calculate totals with discount support
-    let subtotal = 0;
-    let totalItemDiscounts = 0;
+    const { items: processedItems, subtotal, taxAmount, total, globalDiscountType, globalDiscountValue, globalDiscountAmount: finalGlobalDiscountAmount } = money;
 
-    // Group items by tax rate for proper tax calculation
-    const taxBreakdown = {};
-
-    const processedItems = items.map(item => {
-      const itemTotal = item.quantity * item.unitPrice;
-      const itemDiscount = item.discountAmount || 0;
-      const discountedItemTotal = itemTotal - itemDiscount;
-      const taxRate = item.taxRate || 0;
-
-      subtotal += itemTotal;
-      totalItemDiscounts += itemDiscount;
-
-      // Group by tax rate for later tax calculation
-      if (!taxBreakdown[taxRate]) {
-        taxBreakdown[taxRate] = { taxableAmount: 0, taxAmount: 0 };
-      }
-      taxBreakdown[taxRate].taxableAmount += discountedItemTotal;
-
-      return {
-        ...item,
-        total: discountedItemTotal // Store without tax for now
-      };
-    });
-
-    // Calculate subtotal after item discounts
-    const subtotalAfterItemDiscounts = subtotal - totalItemDiscounts;
-
-    // Apply global discount
-    let globalDiscountApplied = 0;
-
-    if (globalDiscountType && globalDiscountValue) {
-      if (globalDiscountType === 'percentage') {
-        globalDiscountApplied = (subtotalAfterItemDiscounts * globalDiscountValue) / 100;
-      } else if (globalDiscountType === 'fixed') {
-        globalDiscountApplied = Math.min(globalDiscountValue, subtotalAfterItemDiscounts);
-      }
-    }
-
-    // Use provided globalDiscountAmount if available, otherwise use calculated
-    const finalGlobalDiscountAmount = globalDiscountAmount !== null ? globalDiscountAmount : globalDiscountApplied;
-
-    // Calculate final subtotal after all discounts
-    const discountedSubtotal = subtotalAfterItemDiscounts - finalGlobalDiscountAmount;
-
-    // Recalculate taxes based on global discount
-    // The global discount is proportionally distributed across all tax rates
-    let taxAmount = 0;
-
-    if (finalGlobalDiscountAmount > 0 && subtotalAfterItemDiscounts > 0) {
-      // Proportional distribution of global discount
-      const discountRatio = finalGlobalDiscountAmount / subtotalAfterItemDiscounts;
-
-      Object.keys(taxBreakdown).forEach(taxRateStr => {
-        const taxRate = Number(taxRateStr);
-        const breakdown = taxBreakdown[taxRate];
-
-        // Reduce taxable amount proportionally
-        const reducedTaxableAmount = breakdown.taxableAmount * (1 - discountRatio);
-        const reducedTaxAmount = (reducedTaxableAmount * taxRate) / 100;
-
-        breakdown.taxableAmount = reducedTaxableAmount;
-        breakdown.taxAmount = reducedTaxAmount;
-        taxAmount += reducedTaxAmount;
-      });
-    } else {
-      // No global discount, calculate tax normally
-      Object.keys(taxBreakdown).forEach(taxRateStr => {
-        const taxRate = Number(taxRateStr);
-        const breakdown = taxBreakdown[taxRate];
-        const itemTaxAmount = (breakdown.taxableAmount * taxRate) / 100;
-        breakdown.taxAmount = itemTaxAmount;
-        taxAmount += itemTaxAmount;
-      });
-    }
-
-    const total = discountedSubtotal + taxAmount;
-
-    // Insert quote - use subtotalAfterItemDiscounts as the stored subtotal
+    // Alle Summen und Rabatte stammen aus dem gemeinsamen Rechenkern.
     const quoteResult = await client.query(`
       INSERT INTO quotes (quote_number, customer_id, customer_name, issue_date, valid_until, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
-    `, [quoteNumber, customerId, customerName, issueDate, validUntil, subtotalAfterItemDiscounts, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, finalGlobalDiscountAmount]);
+    `, [quoteNumber, customerId, customerName, issueDate, validUntil, subtotal, taxAmount, total, status, notes, globalDiscountType, globalDiscountValue, finalGlobalDiscountAmount]);
 
     const quoteId = quoteResult.rows[0].id;
 
@@ -157,7 +77,7 @@ export async function createQuote(data) {
       await client.query(`
         INSERT INTO quote_items (quote_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [quoteId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue || null, item.discountAmount || null]);
+      `, [quoteId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? null]);
     }
 
     // Insert attachments if provided
@@ -180,13 +100,6 @@ export async function createQuote(data) {
 }
 
 export async function updateQuote(id, data) {
-  const discountValidation = validateDiscountFields(data);
-  if (!discountValidation.valid) {
-    const err = new Error(discountValidation.message);
-    err.statusCode = 400;
-    throw err;
-  }
-
   const client = await pool.connect();
 
   try {
@@ -210,21 +123,41 @@ export async function updateQuote(id, data) {
       throw error;
     }
 
+    const financialChange = ['items', 'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount'].some(key => data[key] !== undefined);
+    const pick = (key, column) => data[key] !== undefined ? data[key] : current[column];
+    let money = null;
+    if (financialChange) {
+      const itemResult = await client.query('SELECT * FROM quote_items WHERE quote_id=$1 ORDER BY item_order', [id]);
+      const storedItems = itemResult.rows.map(row => ({ description: row.description,
+        quantity: row.quantity, unitPrice: row.unit_price, taxRate: row.tax_rate, order: row.item_order,
+        discountType: row.discount_type, discountValue: row.discount_value, discountAmount: row.discount_amount }));
+      money = calculateDocumentMoney({
+        items: data.items !== undefined ? data.items : storedItems,
+        globalDiscountType: pick('globalDiscountType', 'global_discount_type'),
+        globalDiscountValue: pick('globalDiscountValue', 'global_discount_value'),
+        globalDiscountAmount: data.globalDiscountType === null ? 0 : pick('globalDiscountAmount', 'global_discount_amount'),
+      }, { documentType: 'quote' });
+    }
+    const customer = await client.query('SELECT name FROM customers WHERE id=$1', [data.customerId ?? current.customer_id]);
+    if (!customer.rows.length) throw invoiceError('Kunde nicht gefunden.');
+    if (!invoiceDateParts(data.issueDate ?? current.issue_date) || !invoiceDateParts(data.validUntil ?? current.valid_until)) throw invoiceError('Ungültiges Angebotsdatum.');
+    if (data.attachments !== undefined && !Array.isArray(data.attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
+
     // Merge current values with updates (but preserve quote number)
     const mergedData = {
       quoteNumber: current.quote_number,
       customerId: updateData.customerId ?? current.customer_id,
-      customerName: updateData.customerName ?? current.customer_name,
+      customerName: customer.rows[0].name,
       issueDate: updateData.issueDate ?? current.issue_date,
       validUntil: updateData.validUntil ?? current.valid_until,
-      subtotal: updateData.subtotal ?? current.subtotal,
-      taxAmount: updateData.taxAmount ?? current.tax_amount,
-      total: updateData.total ?? current.total,
+      subtotal: money?.subtotal ?? current.subtotal,
+      taxAmount: money?.taxAmount ?? current.tax_amount,
+      total: money?.total ?? current.total,
       status: updateData.status ?? current.status,
       notes: updateData.notes ?? current.notes,
-      globalDiscountType: updateData.globalDiscountType ?? current.global_discount_type,
-      globalDiscountValue: updateData.globalDiscountValue ?? current.global_discount_value,
-      globalDiscountAmount: updateData.globalDiscountAmount ?? current.global_discount_amount,
+      globalDiscountType: money ? money.globalDiscountType : current.global_discount_type,
+      globalDiscountValue: money ? money.globalDiscountValue : current.global_discount_value,
+      globalDiscountAmount: money ? money.globalDiscountAmount : current.global_discount_amount,
       items: updateData.items
     };
 
@@ -254,18 +187,18 @@ export async function updateQuote(id, data) {
     ]);
 
     // Only update items if they are provided
-    if (updateData.items) {
+    if (money) {
       // Delete existing items
       await client.query('DELETE FROM quote_items WHERE quote_id = $1', [id]);
 
       // Insert new items
-      for (let i = 0; i < updateData.items.length; i++) {
-        const item = updateData.items[i];
+      for (let i = 0; i < money.items.length; i++) {
+        const item = money.items[i];
         const itemOrder = item.order !== undefined ? item.order : (i + 1);
         await client.query(`
           INSERT INTO quote_items (quote_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [id, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue || null, item.discountAmount || null]);
+        `, [id, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, itemOrder, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? null]);
       }
     }
 
@@ -397,6 +330,13 @@ export async function convertQuoteToInvoice(id) {
       return { error: 'Only accepted quotes can be converted to invoices', status: 400 };
     }
 
+    await validateCompanyForInvoice(client);
+    const documentSnapshot = await captureInvoiceSnapshot(client, quote.customer_id);
+    const money = calculateDocumentMoney({
+      items: quote.items || [], globalDiscountType: quote.global_discount_type,
+      globalDiscountValue: quote.global_discount_value, globalDiscountAmount: quote.global_discount_amount,
+    });
+
     // Generate invoice number after all validation has passed
     const issueDate = new Date().toISOString().split('T')[0];
     const invoiceNumber = await generateInvoiceNumber(issueDate, 'invoice', client);
@@ -405,30 +345,31 @@ export async function convertQuoteToInvoice(id) {
     const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      INSERT INTO invoices (invoice_number, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount, document_snapshot)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `, [
       invoiceNumber,
       id,
       quote.customer_id,
-      quote.customer_name,
+      documentSnapshot.customer.name,
       issueDate,
       dueDate,
-      quote.subtotal,
-      quote.tax_amount,
-      quote.total,
+      money.subtotal,
+      money.taxAmount,
+      money.total,
       'draft',
       quote.notes ? `Erstellt aus Angebot ${quote.quote_number}\n\n${quote.notes}` : `Erstellt aus Angebot ${quote.quote_number}`,
-      quote.global_discount_type,
-      quote.global_discount_value,
-      quote.global_discount_amount
+      money.globalDiscountType,
+      money.globalDiscountValue,
+      money.globalDiscountAmount,
+      JSON.stringify(documentSnapshot)
     ]);
 
     const invoiceId = invoiceResult.rows[0].id;
 
     // Copy items
-    const items = quote.items || [];
+    const items = money.items;
     for (const item of items) {
       await client.query(`
         INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
@@ -442,8 +383,8 @@ export async function convertQuoteToInvoice(id) {
         item.total,
         item.order,
         item.discountType || null,
-        item.discountValue || null,
-        item.discountAmount || null
+        item.discountValue ?? null,
+        item.discountAmount ?? null
       ]);
     }
 

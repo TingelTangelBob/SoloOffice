@@ -10,6 +10,11 @@
   "include": [
     "src/types/index.ts",
     "src/utils/csvExport.ts",
+    "src/utils/bulkEmailRecipients.ts",
+    "src/utils/discountUtils.ts",
+    "src/utils/documentPayload.ts",
+    "src/utils/pdf/taxCalculations.ts",
+    "src/utils/pdf/xmlUtils.ts",
     "src/utils/customerUtils.ts",
     "src/utils/formatters.ts",
     "src/utils/invoiceNumberPattern.ts",

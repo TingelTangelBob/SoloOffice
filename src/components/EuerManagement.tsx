@@ -499,7 +499,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
   };
 
   return <div className="space-y-6">
-    <PageHeader icon={Calculator} title="Einnahmenüberschussrechnung" subtitle="Einnahmen minus Betriebsausgaben – einfach online vorbereiten">
+    <PageHeader icon={Calculator} title="Einnahmenüberschussrechnung" shortTitle="EÜR" subtitle="Einnahmen minus Betriebsausgaben – einfach online vorbereiten">
       <select value={year} onChange={event => setYear(Number(event.target.value))} className="form-input h-11 w-[4.5rem] shrink-0 px-2 text-sm sm:w-auto sm:px-3" aria-label="Jahr auswählen" title="Jahr auswählen">
         {years.map(option => <option key={option} value={option}>{option}</option>)}
       </select>

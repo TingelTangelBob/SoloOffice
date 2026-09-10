@@ -40,6 +40,8 @@ import * as migration031 from './031_invoice_number_patterns.js';
 import * as migration032 from './032_runtime_rls_role.js';
 import * as migration033 from './033_repair_company_id_sequence.js';
 import * as migration034 from './034_repair_company_sequence_with_rls.js';
+import * as migration035 from './035_invoice_document_snapshot.js';
+import * as migration036 from './036_repair_seeded_company_sequence.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -77,6 +79,8 @@ const migrations = [
   migration032,
   migration033,
   migration034,
+  migration035,
+  migration036,
 ];
 
 /**

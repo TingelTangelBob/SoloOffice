@@ -255,7 +255,7 @@ export async function createTables() {
  */
 async function insertDefaultData(client) {
   // Check if company exists
-  const companyExists = await client.query('SELECT COUNT(*) FROM company WHERE id = 1');
+  const companyExists = await client.query('SELECT COUNT(*) FROM company');
   if (parseInt(companyExists.rows[0].count) === 0) {
     // Load default logo and icon from assets directory
     const logo = await loadImageAsBase64('./assets/SoloOffice.png');
@@ -263,11 +263,10 @@ async function insertDefaultData(client) {
 
     await client.query(`
       INSERT INTO company (
-        id, name, address, city, postal_code, country, phone, email, 
+        name, address, city, postal_code, country, phone, email,
         website, tax_id, bank_account, bic, locale, invoice_start_number, 
         logo, icon, reminder_text_stage_1, reminder_text_stage_2, reminder_text_stage_3
       ) VALUES (
-        1,
         '',
         '',
         '',
