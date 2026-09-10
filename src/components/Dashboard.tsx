@@ -15,6 +15,22 @@ import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
 import type { Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
 import { PageHeader } from './PageHeader';
+import {
+  DeltaBadge,
+  MetricBadge,
+  MetricCard,
+  MetricCardContent,
+  MetricCardDescription,
+  MetricCardFooterAction,
+  MetricCardHeader,
+  MetricCardTitle,
+  MetricEmptyState,
+  MetricValue,
+  ShareBarItem,
+  ShareBarList,
+} from './DashboardMetrics';
+import type { MetricTone } from './DashboardMetrics';
+import { RevenueAreaChart } from './RevenueAreaChart';
 
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
@@ -363,23 +379,79 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     );
   }
 
-  // Umsatz pro Monat berechnen
-  const monthlyRevenue: { [month: string]: number } = {};
+  /**
+   * Umsatzverlauf der letzten zwölf Monate.
+   *
+   * Fester Zeitraum statt „alle vorhandenen Monate“: Die Kurve behält dadurch
+   * eine gleichbleibende Rasterbreite, Monate ohne Rechnung bleiben als Lücke
+   * sichtbar, und die Karte wächst nicht mit jedem weiteren Geschäftsjahr.
+   * Die vollständige Historie steht in den Auswertungen.
+   */
+  const REVENUE_WINDOW_MONTHS = 12;
+
+  const monthKeyOf = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+  const monthlyRevenue = new Map<string, number>();
   invoices.forEach(invoice => {
-    const date = new Date(invoice.issueDate);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + invoice.total;
+    const key = monthKeyOf(new Date(invoice.issueDate));
+    monthlyRevenue.set(key, (monthlyRevenue.get(key) || 0) + Number(invoice.total || 0));
   });
-  const monthlyRevenueSorted = Object.entries(monthlyRevenue)
-    .sort((a, b) => a[0].localeCompare(b[0]));
-  const maxMonthlyRevenue = monthlyRevenueSorted.reduce(
-    (maxRevenue, [, revenue]) => Math.max(maxRevenue, revenue),
+
+  const monthStartOffsetBy = (monthsBack: number) => new Date(today.getFullYear(), today.getMonth() - monthsBack, 1);
+  const monthLabelFormat = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' });
+  const monthShortFormat = new Intl.DateTimeFormat(locale, { month: 'short' });
+
+  const revenuePoints = Array.from({ length: REVENUE_WINDOW_MONTHS }, (_, index) => {
+    const date = monthStartOffsetBy(REVENUE_WINDOW_MONTHS - 1 - index);
+    const key = monthKeyOf(date);
+
+    return {
+      key,
+      label: monthLabelFormat.format(date),
+      shortLabel: monthShortFormat.format(date).replace('.', ''),
+      value: monthlyRevenue.get(key) || 0,
+    };
+  });
+
+  const revenueWindowKeys = new Set(revenuePoints.map(point => point.key));
+  const revenueWindowTotal = revenuePoints.reduce((sum, point) => sum + point.value, 0);
+  const previousWindowTotal = Array.from({ length: REVENUE_WINDOW_MONTHS }, (_, index) => {
+    const date = monthStartOffsetBy(REVENUE_WINDOW_MONTHS * 2 - 1 - index);
+    return monthlyRevenue.get(monthKeyOf(date)) || 0;
+  }).reduce((sum, value) => sum + value, 0);
+
+  // Ohne Vergleichswert lässt sich keine Veränderung angeben. Dann entfällt die
+  // Angabe, statt einen Platzhalter zu zeigen.
+  const revenueDelta = previousWindowTotal > 0
+    ? ((revenueWindowTotal - previousWindowTotal) / previousWindowTotal) * 100
+    : null;
+
+  const money = (value: number) => formatCurrency(value, locale, company?.numberFormat, company?.currency);
+  const formatPercent = (value: number) => `${formatNumber(
+    Math.abs(value),
+    locale,
+    company?.numberFormat,
+    Math.abs(value) >= 100 ? 0 : 1,
+  )} %`;
+
+  const customerRevenue = new Map<string, number>();
+  invoices.forEach(invoice => {
+    if (!revenueWindowKeys.has(monthKeyOf(new Date(invoice.issueDate)))) return;
+    const name = invoice.customerName?.trim() || 'Ohne Zuordnung';
+    customerRevenue.set(name, (customerRevenue.get(name) || 0) + Number(invoice.total || 0));
+  });
+  const topCustomers = Array.from(customerRevenue.entries())
+    .filter(([, revenue]) => revenue > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, revenue]) => ({ name, revenue }));
+  const topCustomerMax = topCustomers.reduce((max, entry) => Math.max(max, entry.revenue), 0);
+
+  const sentInvoices = invoices.filter(invoice => invoice.status === 'sent');
+  const sentAmount = sentInvoices.reduce(
+    (sum, invoice) => sum + Number(invoice.outstandingAmount ?? invoice.total),
     0,
   );
-  const formatMonthLabel = (monthKey: string) => {
-    const [year, month] = monthKey.split('-').map(Number);
-    return new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' }).format(new Date(year, month - 1, 1));
-  };
 
   const sumOf = (status: Invoice['status']) => invoices
     .filter(invoice => invoice.status === status)
@@ -391,54 +463,64 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     .filter(invoice => invoice.status === 'overdue')
     .reduce((sum, invoice) => sum + Number(invoice.outstandingAmount ?? invoice.total), 0);
 
-  const stats = {
-    totalInvoices: invoices.length,
-    totalCustomers: customers.length,
-    totalRevenue: invoices.reduce((sum, invoice) => sum + invoice.total, 0),
-    paidInvoices: invoices.filter(invoice => invoice.status === 'paid').length,
-    draftInvoices: invoices.filter(invoice => invoice.status === 'draft').length,
-    overdueInvoices: invoices.filter(invoice => invoice.status === 'overdue').length,
-    paidAmount,
-    draftAmount: sumOf('draft'),
-    overdueAmount,
-  };
-
   /**
-   * Die Kennzahlen führen den Betrag mit: Für eine Rechnungsanwendung ist die
-   * offene Summe die eigentliche Aussage, die reine Anzahl sagt wenig.
+   * Die Kennzahlen führen den Betrag als Hauptangabe: Für eine
+   * Rechnungsanwendung ist die offene Summe die eigentliche Aussage, die reine
+   * Anzahl steht als Hinweis daneben.
    */
-  const summaryCards = [
+  const summaryCards: {
+    id: string;
+    label: string;
+    hint: string;
+    count: number;
+    amount: number;
+    icon: typeof FileText;
+    iconClass: string;
+    tone: MetricTone;
+    filter: string;
+  }[] = [
     {
       id: 'draft',
       label: 'Entwürfe',
       hint: 'Noch nicht versendet',
-      count: stats.draftInvoices,
-      amount: stats.draftAmount,
+      count: invoices.filter(invoice => invoice.status === 'draft').length,
+      amount: sumOf('draft'),
       icon: FileText,
-      accent: 'bg-amber-500',
       iconClass: 'text-amber-600',
+      tone: 'warning',
       filter: 'draft',
+    },
+    {
+      id: 'sent',
+      label: 'Versendet',
+      hint: 'Offen, Zahlungsziel läuft',
+      count: sentInvoices.length,
+      amount: sentAmount,
+      icon: Send,
+      iconClass: 'text-blue-600',
+      tone: 'info',
+      filter: 'sent',
     },
     {
       id: 'overdue',
       label: 'Überfällig',
       hint: 'Zahlungsziel überschritten',
-      count: stats.overdueInvoices,
-      amount: stats.overdueAmount,
+      count: invoices.filter(invoice => invoice.status === 'overdue').length,
+      amount: overdueAmount,
       icon: AlertTriangle,
-      accent: 'bg-red-500',
       iconClass: 'text-red-600',
+      tone: 'negative',
       filter: 'overdue',
     },
     {
       id: 'paid',
       label: 'Bezahlt',
       hint: 'Zahlungseingang verbucht',
-      count: stats.paidInvoices,
-      amount: stats.paidAmount,
+      count: invoices.filter(invoice => invoice.status === 'paid').length,
+      amount: paidAmount,
       icon: CheckCircle,
-      accent: 'bg-green-500',
       iconClass: 'text-green-600',
+      tone: 'positive',
       filter: 'paid',
     },
   ];
@@ -467,56 +549,116 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const invoicesCardSpan = ongoingCourseSeries.length > 0
+    ? 'md:col-span-2 lg:col-span-3'
+    : 'md:col-span-2 lg:col-span-4';
+
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
+    <div className="dashboard-metrics space-y-6">
       {/* Der Navigationspunkt heißt „Übersicht“; die Seitenüberschrift folgt
           derselben Bezeichnung. */}
       <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
 
-      {/* Kennzahlen. Der farbige Streifen am oberen Rand ersetzt die früheren
-          Farbflächen: Er ordnet die Karte einem Status zu, ohne den Inhalt
-          einzufärben, und trägt in beiden Farbmodi. */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        {summaryCards.map(({ id, label, hint, count, amount, icon: CardIcon, accent, iconClass, filter }) => (
+      {/* Kennzahlen. Der Betrag steht als große Angabe oben, die Anzahl als
+          eingefärbter Hinweis daneben: Die Farbe trägt den Status, ohne die
+          Karte selbst einzufärben, und wirkt in beiden Farbmodi. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        {summaryCards.map(({ id, label, hint, count, amount, icon: CardIcon, iconClass, tone, filter }) => (
           <button
             key={id}
             type="button"
             onClick={() => onNavigate('invoices', filter)}
-            className="group relative min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 sm:p-4"
+            className="flex min-w-0 flex-col rounded-xl border border-gray-100 bg-white px-4 py-4 text-left shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
+            aria-label={`${label}: ${money(amount)}, ${count} ${count === 1 ? 'Rechnung' : 'Rechnungen'}`}
           >
-            <span className={`absolute inset-x-0 top-0 h-1 ${accent}`} aria-hidden="true" />
-            {/* Symbol und Einheit weichen auf schmalen Geräten: Bei drei Spalten
-                auf 375 Pixeln bliebe die Beschriftung sonst abgeschnitten. Der
-                farbige Streifen trägt die Statuszuordnung ohnehin. */}
-            <span className="flex min-w-0 items-center gap-1.5 pt-1">
-              <CardIcon className={`hidden h-4 w-4 shrink-0 sm:block ${iconClass}`} aria-hidden="true" />
-              <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</span>
+            <span className="flex min-w-0 items-start justify-between gap-2">
+              <MetricValue className="text-lg sm:text-xl lg:text-2xl">{money(amount)}</MetricValue>
+              <MetricBadge tone={tone}>{count}</MetricBadge>
             </span>
-            <span className="mt-2 flex min-w-0 items-baseline gap-1.5">
-              <span className="text-2xl font-bold leading-none text-gray-900 sm:text-3xl">{count}</span>
-              <span className="hidden min-w-0 truncate text-[11px] text-gray-500 sm:inline">{count === 1 ? 'Rechnung' : 'Rechnungen'}</span>
-            </span>
-            <span className="mt-2 block truncate text-sm font-semibold text-gray-900">
-              {formatCurrency(amount, locale, company?.numberFormat, company?.currency)}
+            <span className="mt-2 flex min-w-0 items-center gap-1.5">
+              <CardIcon className={`h-3.5 w-3.5 shrink-0 ${iconClass}`} aria-hidden="true" />
+              <span className="min-w-0 truncate text-xs font-medium text-gray-700">{label}</span>
             </span>
             <span className="mt-0.5 hidden truncate text-[11px] text-gray-500 sm:block">{hint}</span>
           </button>
         ))}
       </div>
 
-      {/* Termine der aktuellen Kalenderwoche */}
-      <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-          <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 lg:px-6">
+      <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* Umsatzverlauf */}
+        <MetricCard className="md:col-span-2 lg:col-span-3">
+          <MetricCardHeader>
+            <div className="flex min-w-0 flex-col">
+              <MetricValue>{money(revenueWindowTotal)}</MetricValue>
+              <MetricCardDescription>Gesamtumsatz der letzten 12 Monate</MetricCardDescription>
+            </div>
+            {revenueDelta !== null && (
+              <DeltaBadge
+                value={revenueDelta}
+                formattedValue={formatPercent(revenueDelta)}
+                label="ggü. Vorjahreszeitraum"
+              />
+            )}
+          </MetricCardHeader>
+          <MetricCardContent className="px-2 pb-2 lg:px-4">
+            {revenueWindowTotal > 0 ? (
+              <RevenueAreaChart
+                points={revenuePoints}
+                formatValue={money}
+                ariaLabel={`Umsatzverlauf der letzten 12 Monate, insgesamt ${money(revenueWindowTotal)}`}
+              />
+            ) : (
+              <MetricEmptyState>In den letzten 12 Monaten wurden keine Umsätze erfasst.</MetricEmptyState>
+            )}
+          </MetricCardContent>
+          {company.reportingEnabled && (
+            <MetricCardFooterAction onClick={() => onNavigate('reporting')}>
+              Zu den Auswertungen
+            </MetricCardFooterAction>
+          )}
+        </MetricCard>
+
+        {/* Top-Kunden */}
+        <MetricCard className="md:col-span-2 lg:col-span-1">
+          <MetricCardHeader bordered>
+            <div className="min-w-0">
+              <MetricCardTitle>Top-{terminology.entity.plural}</MetricCardTitle>
+              <MetricCardDescription className="mt-1">Umsatzstärkste der letzten 12 Monate</MetricCardDescription>
+            </div>
+          </MetricCardHeader>
+          <MetricCardContent className="flex flex-1 flex-col justify-center py-1">
+            {topCustomers.length > 0 ? (
+              <ShareBarList aria-label={`Top-${terminology.entity.plural} nach Umsatz`}>
+                {topCustomers.map(({ name, revenue }) => (
+                  <ShareBarItem
+                    key={name}
+                    label={name}
+                    value={money(revenue)}
+                    share={topCustomerMax > 0 ? (revenue / topCustomerMax) * 100 : 0}
+                  />
+                ))}
+              </ShareBarList>
+            ) : (
+              <MetricEmptyState>Noch keine Umsätze erfasst.</MetricEmptyState>
+            )}
+          </MetricCardContent>
+          <MetricCardFooterAction onClick={() => onNavigate('customers')}>
+            Alle {terminology.entity.plural}
+          </MetricCardFooterAction>
+        </MetricCard>
+
+        {/* Termine der aktuellen Kalenderwoche */}
+        <MetricCard className="md:col-span-2 lg:col-span-4">
+          <MetricCardHeader bordered>
             <div className="flex min-w-0 items-start gap-3">
-              <div className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
-                <CalendarDays className="h-5 w-5" />
-              </div>
+              <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
+                <CalendarDays className="h-5 w-5" aria-hidden="true" />
+              </span>
               <div className="min-w-0">
-                <h3 className="truncate text-base font-semibold text-gray-900 lg:text-lg">Termine · KW {currentWeekNumber}</h3>
-                <p className="mt-0.5 truncate text-xs text-gray-500">
+                <MetricCardTitle>Termine · KW {currentWeekNumber}</MetricCardTitle>
+                <MetricCardDescription className="mt-1 truncate">
                   {formatDate(currentWeekStart, locale, company?.dateFormat)} – {formatDate(currentWeekEnd, locale, company?.dateFormat)}
-                </p>
+                </MetricCardDescription>
               </div>
             </div>
             <button
@@ -525,9 +667,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
             >
               Kalender
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
-          </div>
+          </MetricCardHeader>
 
           {currentWeekJobs.length > 0 ? (
             <div className="overflow-x-auto">
@@ -538,10 +680,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   return (
                     <div key={date.toISOString()} className={`min-w-0 ${isToday ? 'bg-primary-custom/5' : ''}`}>
                       <div className={`border-b border-gray-200 px-2 py-2 text-center ${isToday ? 'bg-primary-custom/10' : 'bg-gray-50'}`}>
-                        <div className="text-xs font-semibold uppercase text-gray-500">
+                        <div className="text-xs font-medium text-gray-500">
                           {date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}
                         </div>
-                        <div className={`mt-0.5 text-sm font-semibold ${isToday ? 'text-primary-custom' : 'text-gray-900'}`}>
+                        <div className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${isToday ? 'text-primary-custom' : 'text-gray-900'}`}>
                           {formatDate(date, locale, company?.dateFormat)}
                         </div>
                       </div>
@@ -580,209 +722,195 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             </div>
           ) : (
-            <div className="px-4 py-8 text-center text-sm text-gray-500 lg:px-6">
-              In dieser Kalenderwoche sind keine Termine geplant.
-            </div>
+            <MetricEmptyState>In dieser Kalenderwoche sind keine Termine geplant.</MetricEmptyState>
           )}
-      </section>
+        </MetricCard>
 
-      {/* Recent Invoices */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="px-4 lg:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-          <h3 className="text-base lg:text-lg font-semibold text-gray-900">Aktuelle Rechnungen</h3>
-          <button
-            onClick={() => onNavigate('invoices')}
-            className="hidden text-sm text-primary-custom hover:text-primary-custom/80 font-medium transition-colors tablet:inline-block"
-          >
-            Alle anzeigen →
-          </button>
-        </div>
-        
-        {/* Desktop Table View */}
-        <div className="hidden tablet:block w-full max-w-full overflow-x-auto">
-          <table className="w-full min-w-[700px]">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Datum
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rechnungsnummer
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{terminology.entity.singular}</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Betrag</th>
-                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider 2xl:w-44 2xl:px-3">
-                  <span className="sr-only">Aktionen</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {recentInvoices.map((invoice) => (
-                <tr 
-                  key={invoice.id} 
-                  className="hover:bg-gray-50 cursor-pointer transition-colors duration-200"
-                  onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
-                  title={`Zur Rechnung ${invoice.invoiceNumber}`}
-                >
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(invoice.issueDate, locale, company?.dateFormat)}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-primary-custom hover:text-primary-custom/80">
-                    <span className="inline-flex items-center gap-2">
-                      {invoice.invoiceNumber}
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(invoice.status)}`}
-                        title={getStatusLabel(invoice.status)}
-                        aria-label={getStatusLabel(invoice.status)}
-                      />
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                    {invoice.customerName}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-900">
-                    {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
-                  </td>
-                  {/* Eine Zeile hat höchstens eine Aktion. Ein Drei-Punkte-Menü
-                      würde bei bezahlten Rechnungen leer aufklappen. */}
-                  <td className="sticky right-0 z-10 w-14 bg-white px-2 py-2 whitespace-nowrap">
-                    <div
-                      className="flex items-center justify-end gap-1"
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                    >
-                      {invoice.status === 'draft' && (
-                        <button
-                          type="button"
-                          className="action-icon-button action-icon-blue"
-                          title="Per E-Mail versenden"
-                          aria-label="Per E-Mail versenden"
-                          onClick={() => handleSendEmail(invoice)}
-                        >
-                          <Send className="h-4 w-4" />
-                        </button>
-                      )}
-                      {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                        <button
-                          type="button"
-                          className="action-icon-button action-icon-green"
-                          title="Zahlungseingang in der Rechnung erfassen"
-                          aria-label="Zahlungseingang erfassen"
-                          onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
-                        >
-                          <Banknote className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* Aktuelle Rechnungen */}
+        <MetricCard className={invoicesCardSpan}>
+          <MetricCardHeader>
+            <div className="min-w-0">
+              <MetricCardTitle>Aktuelle Rechnungen</MetricCardTitle>
+              <MetricCardDescription className="mt-1">Die fünf zuletzt angelegten Rechnungen</MetricCardDescription>
+            </div>
+          </MetricCardHeader>
 
-        {/* Mobile Card View */}
-        <div className="tablet:hidden">
-          {recentInvoices.map((invoice) => (
-                <div
-                  key={invoice.id}
-                  className="p-3 sm:p-4 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
-                >
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <h4 className="min-w-0 truncate text-sm font-medium text-primary-custom">{invoice.invoiceNumber}</h4>
-                    <span
-                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${getStatusDotColor(invoice.status)}`}
-                      title={getStatusLabel(invoice.status)}
-                      aria-label={getStatusLabel(invoice.status)}
-                    />
-                  </div>
-                  <div className="mt-1 flex min-w-0 items-center gap-2 text-xs">
-                    <p className="min-w-0 truncate text-sm text-gray-900">{invoice.customerName}</p>
-                    <span className="shrink-0 text-gray-500">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</span>
-                  </div>
-                </div>
-                <div
-                    className="flex shrink-0 items-center gap-2"
-                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                  >
-                    <span className="min-w-0 text-right text-sm font-medium text-gray-900">
-                      {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
-                    </span>
-                    {invoice.status === 'draft' && (
-                      <button
-                        type="button"
-                        className="action-icon-button action-icon-blue shrink-0"
-                        title="Per E-Mail versenden"
-                        aria-label="Per E-Mail versenden"
-                        onClick={() => handleSendEmail(invoice)}
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
-                    )}
-                    {(invoice.status === 'sent' || invoice.status === 'overdue') && (
-                      <button
-                        type="button"
-                        className="action-icon-button action-icon-green shrink-0"
-                        title="Zahlungseingang in der Rechnung erfassen"
-                        aria-label="Zahlungseingang erfassen"
+          {recentInvoices.length > 0 ? (
+            <>
+              {/* Tabelle ab Tablet */}
+              <div className="hidden w-full max-w-full overflow-x-auto tablet:block">
+                <table className="w-full min-w-[700px] border-t border-gray-200">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th scope="col" className="px-3 py-2 pl-4 text-left text-xs font-medium text-gray-500 lg:pl-6">Datum</th>
+                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500">Rechnung</th>
+                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500">{terminology.entity.singular}</th>
+                      <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500">Betrag</th>
+                      <th scope="col" className="sticky right-0 z-20 w-14 bg-white px-2 py-2 text-left text-xs font-medium text-gray-500 2xl:w-44 2xl:px-3">
+                        <span className="sr-only">Aktionen</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {recentInvoices.map((invoice) => (
+                      <tr
+                        key={invoice.id}
+                        className="cursor-pointer transition-colors hover:bg-gray-50"
                         onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                        title={`Zur Rechnung ${invoice.invoiceNumber}`}
                       >
-                        <Banknote className="h-4 w-4" />
-                      </button>
-                    )}
-                </div>
+                        <td className="whitespace-nowrap px-3 py-2 pl-4 text-xs text-gray-500 tabular-nums lg:pl-6">
+                          {formatDate(invoice.issueDate, locale, company?.dateFormat)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-xs font-medium text-primary-custom">
+                              {invoice.invoiceNumber}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(invoice.status)}`} aria-hidden="true" />
+                              {getStatusLabel(invoice.status)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="max-w-[220px] truncate px-3 py-2 text-xs text-gray-700">
+                          {invoice.customerName}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs font-medium text-gray-900 tabular-nums">
+                          {money(invoice.total)}
+                        </td>
+                        {/* Eine Zeile hat höchstens eine Aktion. Ein Drei-Punkte-Menü
+                            würde bei bezahlten Rechnungen leer aufklappen. */}
+                        <td className="sticky right-0 z-10 w-14 whitespace-nowrap bg-white px-2 py-2">
+                          <div
+                            className="flex items-center justify-end gap-1"
+                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                          >
+                            {invoice.status === 'draft' && (
+                              <button
+                                type="button"
+                                className="action-icon-button action-icon-blue"
+                                title="Per E-Mail versenden"
+                                aria-label="Per E-Mail versenden"
+                                onClick={() => handleSendEmail(invoice)}
+                              >
+                                <Send className="h-4 w-4" />
+                              </button>
+                            )}
+                            {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                              <button
+                                type="button"
+                                className="action-icon-button action-icon-green"
+                                title="Zahlungseingang in der Rechnung erfassen"
+                                aria-label="Zahlungseingang erfassen"
+                                onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                              >
+                                <Banknote className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          ))}
-          {recentInvoices.length > 0 && (
-            <div className="flex justify-end px-3 py-3 sm:px-4">
-              <button
-                type="button"
-                onClick={() => onNavigate('invoices')}
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
-              >
+
+              {/* Karten unterhalb von Tablet */}
+              <div className="border-t border-gray-200 tablet:hidden">
+                {recentInvoices.map((invoice) => (
+                  <div
+                    key={invoice.id}
+                    className="cursor-pointer border-b border-gray-100 px-4 py-3 transition-colors last:border-b-0 hover:bg-gray-50"
+                    onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-xs font-medium text-primary-custom">
+                            {invoice.invoiceNumber}
+                          </span>
+                          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-gray-500">
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(invoice.status)}`} aria-hidden="true" />
+                            <span className="truncate">{getStatusLabel(invoice.status)}</span>
+                          </span>
+                        </div>
+                        <div className="mt-1 flex min-w-0 items-center gap-2">
+                          <p className="min-w-0 truncate text-xs text-gray-700">{invoice.customerName}</p>
+                          <span className="shrink-0 text-xs text-gray-500 tabular-nums">
+                            {formatDate(invoice.issueDate, locale, company?.dateFormat)}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        className="flex shrink-0 items-center gap-2"
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      >
+                        <span className="font-mono text-sm font-medium text-gray-900 tabular-nums">
+                          {money(invoice.total)}
+                        </span>
+                        {/* Der Platz für die Aktion bleibt auch in Zeilen ohne
+                            Aktion reserviert. Sonst rückt deren Betrag als
+                            einziger nach rechts und die Spalte franst aus. */}
+                        <span className="flex w-8 shrink-0 justify-end">
+                          {invoice.status === 'draft' && (
+                            <button
+                              type="button"
+                              className="action-icon-button action-icon-blue shrink-0"
+                              title="Per E-Mail versenden"
+                              aria-label="Per E-Mail versenden"
+                              onClick={() => handleSendEmail(invoice)}
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          )}
+                          {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                            <button
+                              type="button"
+                              className="action-icon-button action-icon-green shrink-0"
+                              title="Zahlungseingang in der Rechnung erfassen"
+                              aria-label="Zahlungseingang erfassen"
+                              onClick={() => onNavigate('invoices', 'all', invoice.invoiceNumber)}
+                            >
+                              <Banknote className="h-4 w-4" />
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <MetricCardFooterAction onClick={() => onNavigate('invoices')}>
                 Alle Rechnungen
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+              </MetricCardFooterAction>
+            </>
+          ) : (
+            <MetricEmptyState>Noch keine Rechnungen vorhanden.</MetricEmptyState>
           )}
-        </div>
+        </MetricCard>
 
-        {recentInvoices.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500">Noch keine Rechnungen vorhanden</p>
-          </div>
-        )}
-      </div>
-
-      <div className={`grid min-w-0 gap-4 ${ongoingCourseSeries.length > 0 ? 'lg:grid-cols-2' : ''}`}>
+        {/* Laufende Serien */}
         {ongoingCourseSeries.length > 0 && (
-          <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 lg:px-6">
+          <MetricCard className="md:col-span-2 lg:col-span-1">
+            <MetricCardHeader bordered>
               <div className="flex min-w-0 items-start gap-3">
-                <div className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
-                  <GraduationCap className="h-5 w-5" />
-                </div>
+                <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
+                  <GraduationCap className="h-5 w-5" aria-hidden="true" />
+                </span>
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-gray-900 lg:text-lg">
-                    {terminology.work.plural.toLocaleLowerCase('de-DE').includes('kurs') ? 'Laufende Kursserien' : `Laufende ${terminology.work.plural}`}
-                  </h3>
-                  <p className="mt-0.5 text-xs text-gray-500">Regelmäßige Termine im Überblick</p>
+                  <MetricCardTitle>
+                    {terminology.work.plural.toLocaleLowerCase('de-DE').includes('kurs')
+                      ? 'Laufende Kursserien'
+                      : `Laufende ${terminology.work.plural}`}
+                  </MetricCardTitle>
+                  <MetricCardDescription className="mt-1">Regelmäßige Termine im Überblick</MetricCardDescription>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onNavigate('jobs')}
-                className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
-              >
-                Alle anzeigen
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            </MetricCardHeader>
 
-            <div className="divide-y divide-gray-100">
+            <MetricCardContent className="divide-y divide-gray-100">
               {ongoingCourseSeries.slice(0, 5).map((series) => {
                 const weekAppointmentCount = series.jobs.filter((job) => {
                   const date = parseLocalJobDate(job.date);
@@ -795,89 +923,30 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     type="button"
                     onClick={() => onNavigate('jobs', undefined, undefined, undefined, series.key)}
                     className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 lg:px-6"
-                    aria-label={`${series.job.title} Kursserie öffnen`}
+                    aria-label={`${series.job.title} öffnen`}
                   >
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-yellow-500" aria-hidden="true" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-gray-900">{series.job.title}</span>
                       <span className="mt-0.5 block truncate text-xs text-gray-500">{series.job.customerName}</span>
-                    </span>
-                    <span className="shrink-0 text-right text-xs text-gray-500">
-                      <span className="block">{series.jobs.length} Termine insgesamt</span>
-                      <span className="mt-0.5 block">
+                      <span className="mt-0.5 block truncate text-[11px] text-gray-500">
                         {weekAppointmentCount === 1 ? '1 Termin diese KW' : `${weekAppointmentCount} Termine diese KW`}
                       </span>
                     </span>
+                    <MetricBadge tone="neutral">{series.jobs.length}</MetricBadge>
                   </button>
                 );
               })}
-              {ongoingCourseSeries.length > 5 && (
-                <button
-                  type="button"
-                  onClick={() => onNavigate('jobs')}
-                  className="w-full px-4 py-3 text-left text-sm font-medium text-primary-custom transition-colors hover:bg-gray-50 lg:px-6"
-                >
-                  + {ongoingCourseSeries.length - 5} weitere anzeigen
-                </button>
-              )}
-            </div>
-          </section>
-        )}
+            </MetricCardContent>
 
-        {/* Umsatz pro Monat */}
-        <section className="min-w-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="px-4 lg:px-6 py-4 border-b border-gray-200">
-          <h3 className="text-base lg:text-lg font-semibold text-gray-900">Gesamtumsatz pro Monat</h3>
-        </div>
-        {monthlyRevenueSorted.length > 0 ? (
-          <div className="space-y-3 p-4 lg:p-6">
-            {monthlyRevenueSorted.map(([month, revenue]) => {
-              const percentage = maxMonthlyRevenue > 0 ? (revenue / maxMonthlyRevenue) * 100 : 0;
-
-              return (
-                <div key={month} className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)_7rem] items-center gap-3 sm:grid-cols-[7rem_minmax(0,1fr)_9rem]">
-                  <span className="text-xs text-gray-600 sm:text-sm">{formatMonthLabel(month)}</span>
-                  <div
-                    className="h-6 w-full min-w-0 overflow-hidden rounded-full bg-gray-100"
-                    role="progressbar"
-                    aria-label={`${formatMonthLabel(month)}: ${formatCurrency(revenue, locale, company?.numberFormat, company?.currency)}`}
-                    aria-valuemin={0}
-                    aria-valuemax={maxMonthlyRevenue}
-                    aria-valuenow={revenue}
-                  >
-                    <div
-                      className="h-full rounded-full bg-primary-custom transition-all duration-500"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                  <span className="whitespace-nowrap text-right text-xs font-medium text-gray-900 sm:text-sm">
-                    {formatCurrency(revenue, locale, company?.numberFormat, company?.currency)}
-                  </span>
-                </div>
-              );
-            })}
-            {company.reportingEnabled && (
-              <div className="flex justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('reporting')}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-primary-custom transition-colors hover:text-primary-custom/80"
-                >
-                  Zu den Auswertungen
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-gray-500">
-            Keine Umsätze vorhanden
-          </div>
+            <MetricCardFooterAction onClick={() => onNavigate('jobs')}>
+              {ongoingCourseSeries.length > 5
+                ? `${ongoingCourseSeries.length - 5} weitere anzeigen`
+                : `Alle ${terminology.work.plural}`}
+            </MetricCardFooterAction>
+          </MetricCard>
         )}
-        </section>
       </div>
 
-      {/* Email Send Modal */}
       <EmailSendModal
         isOpen={emailModal.isOpen}
         onClose={handleEmailModalClose}

@@ -985,6 +985,34 @@
     --gradient-surface-value: #f3f4f6;
   }
 
+  /*
+   * Farbwerte der Übersicht.
+   *
+   * Der Dunkelmodus wird in SoloOffice über Klassenüberschreibungen gesetzt
+   * (siehe `DynamicColors.tsx`). Für SVG-Attribute wie `stroke` und `fill` und
+   * für `color-mix`-Flächen greift das nicht, weil dort keine Utility-Klasse
+   * steht. Diese Werte liegen deshalb als eigene Variablen vor.
+   *
+   * Als Linien- und Balkenfarbe dient im Dunkelmodus `--primary-on-surface`:
+   * Die frei einstellbare Akzentfarbe ist auf helle Flächen abgestimmt und
+   * erreicht auf den dunklen Karten sonst zu wenig Kontrast.
+   */
+  .dashboard-metrics {
+    --dashboard-bar-color: var(--primary-color, #2563eb);
+    --dashboard-chart-line: var(--primary-color, #2563eb);
+    --dashboard-chart-grid: #e5e7eb;
+    --dashboard-chart-axis: #6b7280;
+    --dashboard-chart-surface: #ffffff;
+  }
+
+  #app-shell[data-theme="dark"] .dashboard-metrics {
+    --dashboard-bar-color: var(--primary-on-surface, #93c5fd);
+    --dashboard-chart-line: var(--primary-on-surface, #93c5fd);
+    --dashboard-chart-grid: #374151;
+    --dashboard-chart-axis: #9ca3af;
+    --dashboard-chart-surface: #1f2937;
+  }
+
 }
 
 @layer utilities {

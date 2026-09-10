@@ -4,6 +4,15 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unveröffentlicht
 
+- Die Übersicht erhält ein einheitliches Kartenraster: Beträge stehen als
+  große Kennzahl in Festbreitenziffern, der Status als eingefärbter Hinweis
+  daneben. Neu sind eine Kennzahl für versendete, noch offene Rechnungen, ein
+  Umsatzverlauf der letzten zwölf Monate als Flächendiagramm mit Kurzinfo und
+  Vorjahresvergleich sowie eine Karte mit den umsatzstärksten Kunden. Termine,
+  aktuelle Rechnungen und laufende Serien folgen demselben Aufbau; die Aktion
+  „Alle anzeigen“ steht jeweils nur noch einmal im Kartenfuß. Das Diagramm
+  kommt ohne zusätzliche Abhängigkeit aus und misst seine Breite am
+  tatsächlich verfügbaren Platz.
 - Self-Hosting-Updates erhalten einen automatischen Backup-, Build-, Health-,
   RLS-, Migrations- und Commit-Nachweis. `git archive` bettet den exakten
   Quellcommit ein; Frontend und Backend tragen ihn als OCI-Label. Das reguläre
