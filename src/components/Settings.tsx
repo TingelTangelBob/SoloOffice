@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
-import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Edit2, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users } from 'lucide-react';
+import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
 import { ColorPicker } from './ColorPicker';
@@ -8,15 +8,13 @@ import { BackupManagement } from './BackupManagement';
 import { EmailManagement } from './EmailManagement';
 import { apiService } from '../services/api';
 import { updateFavicon } from '../utils/faviconUtils';
-import { YearlyInvoiceStartNumber, MaterialTemplate, HourlyRate, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm, ImportResource } from '../types';
+import { YearlyInvoiceStartNumber, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm } from '../types';
 import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
-import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
+import { getCurrencySymbol } from '../utils/formatters';
 import { getTerminology, terminologyProfiles } from '../utils/terminology';
 import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
-import { ImportWizard } from './ImportWizard';
-import { DialogShell } from './DialogShell';
 import { ThemeTabBar } from './ThemeTabBar';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 import { useFeedback } from '../context/FeedbackContext';
@@ -122,20 +120,7 @@ function TerminologyPreview({ profile, receiptLabel }: { profile: TerminologyDef
 
 export function Settings({ initialTab = 'app', embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
-  const {
-    company,
-    updateCompany,
-    hourlyRates,
-    setHourlyRates,
-    materialTemplates,
-    setMaterialTemplates,
-    addHourlyRate,
-    updateHourlyRate,
-    deleteHourlyRate,
-    addMaterialTemplate,
-    updateMaterialTemplate,
-    deleteMaterialTemplate,
-  } = useCompany();
+  const { company, updateCompany } = useCompany();
   const [formData, setFormData] = useState(company);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -145,12 +130,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const [showBackupManagement, setShowBackupManagement] = useState(false);
   const [showEmailManagement, setShowEmailManagement] = useState(false);
   
-  const [editingMaterial, setEditingMaterial] = useState<MaterialTemplate | null>(null);
-  const [isAddingMaterial, setIsAddingMaterial] = useState(false);
   
-  const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
-  const [isAddingRate, setIsAddingRate] = useState(false);
-  const [importResource, setImportResource] = useState<ImportResource | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>('app');
   const terminologyScrollerRef = useRef<HTMLDivElement>(null);
   const terminologyDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false, pointerId: -1 });
@@ -313,58 +293,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     }
   };
 
-  const handleSaveMaterial = async (material: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => {
-    try {
-      if (editingMaterial) {
-        await updateMaterialTemplate(editingMaterial.id, material);
-      } else {
-        await addMaterialTemplate(material);
-      }
-      setEditingMaterial(null);
-      setIsAddingMaterial(false);
-      setFeedback({ type: 'success', text: 'Materialvorlage wurde gespeichert.' });
-    } catch (error) {
-      logger.error('Error saving material template:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Materialvorlage konnte nicht gespeichert werden.' });
-    }
-  };
-
-  const handleDeleteMaterial = async (id: string) => {
-    try {
-      await deleteMaterialTemplate(id);
-      setFeedback({ type: 'success', text: 'Materialvorlage wurde gelöscht.' });
-    } catch (error) {
-      logger.error('Error deleting material template:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Materialvorlage konnte nicht gelöscht werden.' });
-    }
-  };
-
-  const handleSaveRate = async (rate: Omit<HourlyRate, 'id'>) => {
-    try {
-      if (editingRate) {
-        await updateHourlyRate(editingRate.id, rate);
-      } else {
-        await addHourlyRate(rate);
-      }
-      setEditingRate(null);
-      setIsAddingRate(false);
-      setFeedback({ type: 'success', text: 'Stundensatz wurde gespeichert.' });
-    } catch (error) {
-      logger.error('Error saving hourly rate:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Der Stundensatz konnte nicht gespeichert werden.' });
-    }
-  };
-
-  const handleDeleteRate = async (id: string) => {
-    try {
-      await deleteHourlyRate(id);
-      setFeedback({ type: 'success', text: 'Stundensatz wurde gelöscht.' });
-    } catch (error) {
-      logger.error('Error deleting hourly rate:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Der Stundensatz konnte nicht gelöscht werden.' });
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (receiptLabelError) {
@@ -450,15 +378,17 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
       </div>
 
-      {isDemoMode && (
-        <div className={`${embedded ? 'hidden' : ''} order-3 rounded-lg border border-blue-200 bg-blue-50 p-3`}>
+      {/* Der Demo-Hinweis gehört zu den allgemeinen Einstellungen. Auf den
+          übrigen Reitern stand er nur im Weg, ohne dort etwas zu erklären. */}
+      {isDemoMode && activeTab === 'app' && (
+        <div className={`${embedded ? 'hidden' : ''} order-3 rounded-xl border border-gray-200 bg-gray-50 p-4`}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-blue-600" />
-                <h3 className="text-sm font-semibold text-blue-900">Lokaler Demo-Modus</h3>
+                <Database className="h-4 w-4 text-gray-500" />
+                <h3 className="text-sm font-semibold text-gray-900">Lokaler Demo-Modus</h3>
               </div>
-              <p className="mt-1 text-xs text-blue-800">
+              <p className="mt-1 text-xs text-gray-500">
                 Testdaten und Änderungen werden nur in diesem Browser gespeichert.
               </p>
             </div>
@@ -466,7 +396,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <button
                 type="button"
                 onClick={() => { seedDemoData(formData.terminologyProfile); window.location.reload(); }}
-                className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-100"
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 Testdaten neu laden
               </button>
@@ -483,7 +413,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   resetDemoData();
                   window.location.reload();
                 }}
-                className="px-3 py-2 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50"
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:border-red-200 hover:bg-red-50"
               >
                 Demo-Daten löschen
               </button>
@@ -493,13 +423,13 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       )}
 
       <ThemeTabBar
-        className={`${embedded ? 'hidden ' : ''}order-2 sticky top-16 z-20 w-full lg:top-2`}
+        className={`${embedded ? 'hidden ' : ''}order-2 sticky top-14 z-20 w-full`}
         ariaLabel="Einstellungsbereiche"
         activeTab={activeTab}
         onChange={setActiveTab}
         tabs={[
-          { id: 'app' as const, label: 'App-Einstellungen' },
-          { id: 'general' as const, label: 'Allgemein' },
+          { id: 'app' as const, label: 'Allgemein' },
+          { id: 'general' as const, label: 'Firmendaten' },
           { id: 'invoices' as const, label: 'Rechnungen' },
           { id: 'appearance' as const, label: 'Darstellung' },
           { id: 'system' as const, label: 'E-Mail & Backup' },
@@ -595,66 +525,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </div>
             </div>
           </div>
-
-          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-start gap-3">
-              <Palette className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" />
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">Farbschema für Fachbegriffe</h4>
-                <p className="mt-1 text-xs leading-5 text-gray-500">
-                  Entscheiden Sie, ob die gewählte Fachsprache eigene App-Farben verwenden oder das Farbschema aus „Darstellung“ übernehmen soll.
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 grid items-stretch gap-3 min-[480px]:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => handleTerminologyColorSourceChange('appearance')}
-                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'appearance'
-                  ? 'border-primary-custom bg-primary-custom/10'
-                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
-              >
-                <span className="block text-sm font-semibold text-gray-900">Aus Darstellung übernehmen</span>
-                <span className="mt-1 block text-xs text-gray-500">Die Farben werden im Tab „Darstellung“ gepflegt.</span>
-                <span className="mt-0 block h-7">
-                  {terminologyColorSource === 'appearance' && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setActiveTab('appearance');
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setActiveTab('appearance');
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary-custom underline"
-                    >
-                      Darstellung öffnen <ArrowRight className="h-3 w-3" />
-                    </span>
-                  )}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTerminologyColorSourceChange('profile')}
-                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'profile'
-                  ? 'border-primary-custom bg-primary-custom/10'
-                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
-              >
-                <span className="block text-sm font-semibold text-gray-900">Profilfarben verwenden</span>
-                <span className="mt-1 block text-xs text-gray-500">Die Auswahl übernimmt die passende Akzent- und Sekundärfarbe.</span>
-                <span className="mt-0 flex h-7 items-center gap-2" aria-hidden="true">
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.accent }} />
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.secondary }} />
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Module Settings */}
@@ -739,26 +609,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   type="checkbox"
                   checked={formData.discountsEnabled !== false}
                   onChange={(e) => setFormData(prev => ({ ...prev, discountsEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Kleinunternehmerregelung (§ 19 UStG)
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Deaktiviert alle MwSt.-Berechnungen und zeigt entsprechende Klausel auf Rechnungen an
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.isSmallBusiness || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, isSmallBusiness: e.target.checked }))}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
@@ -986,113 +836,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
         {activeTab === 'general' && (
           <div className="space-y-8">
-        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
-        {/* Logo Upload */}
-        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
-          <div className="flex items-center mb-4">
-            <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
-          </div>
-          
-          <div className="space-y-4">
-            {formData.logo ? (
-              <div className="relative inline-block">
-                <img
-                  src={formData.logo}
-                  alt="Company Logo"
-                  className="h-20 lg:h-24 object-contain border border-gray-200 rounded-lg"
-                />
-                <button
-                  type="button"
-                  onClick={handleLogoRemove}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Kein Logo hochgeladen</p>
-              </div>
-            )}
-            
-            <div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                className="hidden"
-                id="logo-upload"
-              />
-              <label
-                htmlFor="logo-upload"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Logo hochladen
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Unterstützte Formate: JPG, PNG, GIF. Maximale Größe: 2MB
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Icon Upload */}
-        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
-          <div className="flex items-center mb-4">
-            <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
-          </div>
-          
-          <div className="space-y-4">
-            {formData.icon ? (
-              <div className="relative inline-block">
-                <img
-                  src={formData.icon}
-                  alt="Company Icon"
-                  className="h-16 w-16 lg:h-20 lg:w-20 object-contain border border-gray-200 rounded-lg"
-                />
-                <button
-                  type="button"
-                  onClick={handleIconRemove}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Kein Icon hochgeladen</p>
-              </div>
-            )}
-            
-            <div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleIconUpload}
-                className="hidden"
-                id="icon-upload"
-              />
-              <label
-                htmlFor="icon-upload"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Icon hochladen
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Unterstützte Formate: JPG, PNG, GIF. Empfohlen: 64x64px oder 128x128px. Maximale Größe: 1MB
-              </p>
-            </div>
-          </div>
-        </div>
-
-        </div>
-
         {onNavigate && (
           <div className="flex flex-col gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between lg:p-5">
             <div>
@@ -1294,6 +1037,25 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <option value="nonprofit">Verein / gemeinnützige Organisation</option>
                   <option value="other">Sonstige</option>
                 </select>
+              </label>
+            </div>
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-blue-200 bg-white p-3">
+              <div>
+                <label className="text-sm font-medium text-blue-900">
+                  Kleinunternehmerregelung (§ 19 UStG)
+                </label>
+                <p className="mt-1 text-xs text-blue-800">
+                  Deaktiviert alle MwSt.-Berechnungen und zeigt entsprechende Klausel auf Rechnungen an
+                </p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.isSmallBusiness || false}
+                  onChange={(e) => setFormData(prev => ({ ...prev, isSmallBusiness: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
               </label>
             </div>
           </div>
@@ -1509,6 +1271,114 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
         </div>
 
+        {/* Logo & Icon Upload */}
+        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
+        {/* Logo Upload */}
+        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+          <div className="flex items-center mb-4">
+            <Upload className="h-5 w-5 text-primary-custom mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
+          </div>
+
+          <div className="space-y-4">
+            {formData.logo ? (
+              <div className="relative inline-block">
+                <img
+                  src={formData.logo}
+                  alt="Company Logo"
+                  className="h-20 lg:h-24 object-contain border border-gray-200 rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={handleLogoRemove}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600">Kein Logo hochgeladen</p>
+              </div>
+            )}
+
+            <div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="hidden"
+                id="logo-upload"
+              />
+              <label
+                htmlFor="logo-upload"
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Logo hochladen
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Unterstützte Formate: JPG, PNG, GIF. Maximale Größe: 2MB
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Icon Upload */}
+        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+          <div className="flex items-center mb-4">
+            <Upload className="h-5 w-5 text-primary-custom mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
+          </div>
+
+          <div className="space-y-4">
+            {formData.icon ? (
+              <div className="relative inline-block">
+                <img
+                  src={formData.icon}
+                  alt="Company Icon"
+                  className="h-16 w-16 lg:h-20 lg:w-20 object-contain border border-gray-200 rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={handleIconRemove}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600">Kein Icon hochgeladen</p>
+              </div>
+            )}
+
+            <div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleIconUpload}
+                className="hidden"
+                id="icon-upload"
+              />
+              <label
+                htmlFor="icon-upload"
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Icon hochladen
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Unterstützte Formate: JPG, PNG, GIF. Empfohlen: 64x64px oder 128x128px. Maximale Größe: 1MB
+              </p>
+            </div>
+          </div>
+        </div>
+
+        </div>
+
           </div>
         )}
 
@@ -1619,167 +1489,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </p>
         </div>
 
-        {/* Position Management */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
-          <div className="flex items-center mb-4">
-            <Package className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Positionsverwaltung</h3>
-          </div>
-          
-          {/* Combined Dropdowns Setting */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h4 className="text-sm font-semibold text-blue-900 mb-2">
-                  Erweiterte Dropdown-Anzeige
-                </h4>
-                <p className="text-sm text-blue-800 mb-3">
-                  Wenn aktiviert, werden in den Dropdowns für Stundensätze und Materialien sowohl allgemeine als auch {terminology.entity.specificLabel} Einträge angezeigt. Dies ermöglicht eine bessere Übersicht aller verfügbaren Optionen.
-                </p>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="showCombinedDropdowns"
-                    checked={formData.showCombinedDropdowns === true} // Default to false
-                    onChange={(e) => setFormData(prev => ({ ...prev, showCombinedDropdowns: e.target.checked }))}
-                    className="custom-checkbox"
-                  />
-                  <label htmlFor="showCombinedDropdowns" className="ml-2 text-sm font-medium text-blue-900">
-                    Allgemeine und {terminology.entity.specificLabel} Daten in Dropdowns kombinieren
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="space-y-6">
-            {/* Hourly Rates Management */}
-            <div className="border-b border-gray-200 pb-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <Clock className="h-4 w-4 text-primary-custom mr-2" />
-                  <h4 className="text-md font-semibold text-gray-800">Stundensätze</h4>
-                </div>
-                <button type="button" onClick={() => setImportResource('hourlyRates')} className="mr-2 inline-flex items-center rounded-lg border border-primary-custom px-3 py-2 text-sm text-primary-custom hover:bg-primary-light-custom">
-                  <Upload className="mr-2 h-4 w-4" /> Importieren
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddingRate(true)}
-                  className="inline-flex items-center px-3 py-2 bg-primary-custom text-white rounded-lg hover:brightness-90 transition-colors"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Stundensatz hinzufügen
-                </button>
-              </div>
-              
-              {/* Hourly Rates List */}
-              <div className="space-y-3">
-                {hourlyRates.map((rate) => (
-                  <div key={rate.id} className={`p-3 rounded-lg border ${rate.isDefault ? 'border-primary-custom bg-primary-custom/5' : 'border-gray-200 bg-gray-50'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <h5 className="font-medium text-gray-900">{rate.name}</h5>
-                          {rate.isDefault && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-custom text-white">
-                              Standard
-                            </span>
-                          )}
-                        </div>
-                        {rate.description && (
-                          <p className="text-sm text-gray-600 mt-1">{rate.description}</p>
-                        )}
-                        <p className="text-sm font-semibold text-primary-custom mt-1">
-                          {formatCurrency(rate.rate, formData.locale || 'de-DE', formData.numberFormat, formData.currency)} / Stunde
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingRate(rate)}
-                          className="text-primary-custom hover:text-primary-custom/80 p-1"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRate(rate.id)}
-                          className="text-red-600 hover:text-red-800 p-1"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Material Templates Management */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <Package className="h-4 w-4 text-primary-custom mr-2" />
-                  <h4 className="text-md font-semibold text-gray-800">Materialvorlagen</h4>
-                </div>
-                <button type="button" onClick={() => setImportResource('materials')} className="mr-2 inline-flex items-center rounded-lg border border-primary-custom px-3 py-2 text-sm text-primary-custom hover:bg-primary-light-custom">
-                  <Upload className="mr-2 h-4 w-4" /> Importieren
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddingMaterial(true)}
-                  className="inline-flex items-center px-3 py-2 bg-primary-custom text-white rounded-lg hover:brightness-90 transition-colors"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Material hinzufügen
-                </button>
-              </div>
-              
-              {/* Material Templates List */}
-              <div className="space-y-3">
-                {materialTemplates.map((template) => (
-                  <div key={template.id} className={`p-3 rounded-lg border ${template.isDefault ? 'border-primary-custom bg-primary-custom/5' : 'border-gray-200 bg-gray-50'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <h5 className="font-medium text-gray-900">{template.name}</h5>
-                          {template.isDefault && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-custom text-white">
-                              Standard
-                            </span>
-                          )}
-                        </div>
-                        {template.description && (
-                          <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                        )}
-                        <p className="text-sm font-semibold text-primary-custom mt-1">
-                          {formatCurrency(template.unitPrice, formData.locale || 'de-DE', formData.numberFormat, formData.currency)} / {template.unit}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingMaterial(template)}
-                          className="text-primary-custom hover:text-primary-custom/80 p-1"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMaterial(template.id)}
-                          className="text-red-600 hover:text-red-800 p-1"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Yearly Invoice Start Numbers */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
@@ -1921,6 +1630,44 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <p className="text-xs text-gray-500 mt-2">
               Diese Farben gelten nur für die App-Oberfläche. Dokumente und E-Mails behalten ihre eigene Darstellung.
             </p>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-start gap-3">
+              <Palette className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" />
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Farbschema für Fachbegriffe</h4>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  Entscheiden Sie, ob die gewählte Fachsprache eigene App-Farben verwenden oder das oben gepflegte Farbschema übernehmen soll.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 grid items-stretch gap-3 min-[480px]:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => handleTerminologyColorSourceChange('appearance')}
+                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'appearance'
+                  ? 'border-primary-custom bg-primary-custom/10'
+                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Aus Farbschema übernehmen</span>
+                <span className="mt-1 block text-xs text-gray-500">Fachbegriffe verwenden die oben gewählte Primär- und Sekundärfarbe.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTerminologyColorSourceChange('profile')}
+                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'profile'
+                  ? 'border-primary-custom bg-primary-custom/10'
+                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">Profilfarben verwenden</span>
+                <span className="mt-1 block text-xs text-gray-500">Die Auswahl übernimmt die passende Akzent- und Sekundärfarbe.</span>
+                <span className="mt-2 flex h-7 items-center gap-2" aria-hidden="true">
+                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.accent }} />
+                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.secondary }} />
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2145,7 +1892,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Save Button */}
-        <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 bg-gray-50/95 px-3 py-4 backdrop-blur sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+        <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 px-3 py-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
           {feedback && (
             <div className={`w-full text-sm sm:w-auto sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
               {feedback.text}
@@ -2154,32 +1901,20 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           <button
             type="button"
             onClick={handleResetToDefaults}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 lg:px-6"
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 lg:px-6"
           >
             Zurücksetzen
           </button>
           <button
             type="submit"
             disabled={isSaving || !hasUnsavedChanges}
-            className="btn-primary rounded-xl px-4 py-2 text-white transition-colors hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 lg:px-6"
+            className="btn-primary rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50 lg:px-6"
           >
             <Save className="h-4 w-4 shrink-0" />
             <span>{isSaving ? 'Speichert...' : 'Speichern'}</span>
           </button>
         </div>
       </form>
-
-      {importResource && (
-        <ImportWizard
-          resource={importResource}
-          isOpen={true}
-          onClose={() => setImportResource(null)}
-          onImported={async () => {
-            if (importResource === 'hourlyRates') setHourlyRates(await apiService.getHourlyRates());
-            if (importResource === 'materials') setMaterialTemplates(await apiService.getMaterialTemplates());
-          }}
-        />
-      )}
 
       {/* Email Management Modal */}
       {showEmailManagement && (
@@ -2190,288 +1925,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       {showBackupManagement && (
         <BackupManagement onClose={() => setShowBackupManagement(false)} />
       )}
-
-      {/* Hourly Rate Modal */}
-      {(isAddingRate || editingRate) && (
-        <HourlyRateModal
-          rate={editingRate}
-          currencySymbol={currencySymbol}
-          locale={formData.locale || 'de-DE'}
-          numberFormat={formData.numberFormat}
-          onSave={handleSaveRate}
-          onClose={() => {
-            setIsAddingRate(false);
-            setEditingRate(null);
-          }}
-        />
-      )}
-
-      {/* Material Template Modal */}
-      {(isAddingMaterial || editingMaterial) && (
-        <MaterialTemplateModal
-          template={editingMaterial}
-          currencySymbol={currencySymbol}
-          locale={formData.locale || 'de-DE'}
-          numberFormat={formData.numberFormat}
-          onSave={handleSaveMaterial}
-          onClose={() => {
-            setIsAddingMaterial(false);
-            setEditingMaterial(null);
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-// Hourly Rate Modal Component
-interface HourlyRateModalProps {
-  rate: HourlyRate | null;
-  currencySymbol: string;
-  locale: string;
-  numberFormat?: NumberFormat;
-  onSave: (rate: Omit<HourlyRate, 'id'>) => void;
-  onClose: () => void;
-}
-
-function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, onClose }: HourlyRateModalProps) {
-  const [formData, setFormData] = useState({
-    name: rate?.name || '',
-    description: rate?.description || '',
-    rate: rate?.rate || 0,
-    taxRate: rate?.taxRate ?? 19,
-    isDefault: rate?.isDefault || false,
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.name && formData.rate > 0) {
-      onSave(formData);
-    }
-  };
-
-  return (
-    <DialogShell
-      titleId="hourly-rate-dialog-title"
-      icon={Clock}
-      title={rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
-      description="Definieren Sie einen wiederverwendbaren Stundensatz für Angebote und Rechnungen."
-      onClose={onClose}
-      onSubmit={handleSubmit}
-      size="md"
-      footer={(
-        <>
-          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
-        </>
-      )}
-    >
-        <div className="space-y-4 pb-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="z.B. Standard-Stundensatz"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Beschreibung
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Optionale Beschreibung"
-              rows={3}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Stundensatz ({currencySymbol}) *
-            </label>
-            <LocalizedNumberInput
-              required
-              min="0"
-              step="0.01"
-              value={formData.rate}
-              locale={locale}
-              numberFormat={numberFormat}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, rate: value === '' ? 0 : value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="0,00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">MwSt.-Satz</label>
-            <select
-              value={formData.taxRate}
-              onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={0}>0%</option>
-              <option value={7}>7%</option>
-              <option value={19}>19%</option>
-            </select>
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isDefaultRate"
-              checked={formData.isDefault}
-              onChange={(e) => setFormData(prev => ({ ...prev, isDefault: e.target.checked }))}
-              className="custom-checkbox"
-            />
-            <label htmlFor="isDefaultRate" className="ml-2 text-sm text-gray-700">
-              Als Standard-Stundensatz festlegen
-            </label>
-          </div>
-
-        </div>
-    </DialogShell>
-  );
-}
-
-// Material Template Modal Component
-interface MaterialTemplateModalProps {
-  template: MaterialTemplate | null;
-  currencySymbol: string;
-  locale: string;
-  numberFormat?: NumberFormat;
-  onSave: (template: Omit<MaterialTemplate, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onClose: () => void;
-}
-
-function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat, onSave, onClose }: MaterialTemplateModalProps) {
-  const [formData, setFormData] = useState({
-    name: template?.name || '',
-    description: template?.description || '',
-    unitPrice: template?.unitPrice || 0,
-    unit: template?.unit || 'Stück',
-    taxRate: template?.taxRate ?? 19,
-    isDefault: template?.isDefault || false,
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.name && formData.unitPrice > 0) {
-      onSave(formData);
-    }
-  };
-
-  return (
-    <DialogShell
-      titleId="material-template-dialog-title"
-      icon={Package}
-      title={template ? 'Materialvorlage bearbeiten' : 'Neue Materialvorlage'}
-      description="Definieren Sie eine wiederverwendbare Position für Angebote und Rechnungen."
-      onClose={onClose}
-      onSubmit={handleSubmit}
-      size="md"
-      footer={(
-        <>
-          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
-        </>
-      )}
-    >
-        <div className="space-y-4 pb-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name *
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="z.B. Schrauben M8"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Beschreibung
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Optionale Beschreibung"
-              rows={3}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Preis ({currencySymbol}) *
-              </label>
-              <LocalizedNumberInput
-                required
-                min="0"
-                step="0.01"
-                value={formData.unitPrice}
-                locale={locale}
-                numberFormat={numberFormat}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, unitPrice: value === '' ? 0 : value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0,00"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Einheit
-              </label>
-              <input
-                type="text"
-                value={formData.unit}
-                onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Stück"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isDefaultMaterial"
-              checked={formData.isDefault}
-              onChange={(e) => setFormData(prev => ({ ...prev, isDefault: e.target.checked }))}
-              className="custom-checkbox"
-            />
-            <label htmlFor="isDefaultMaterial" className="ml-2 text-sm text-gray-700">
-              Als Standard-Materialvorlage festlegen
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">MwSt.-Satz</label>
-            <select
-              value={formData.taxRate}
-              onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={0}>0%</option>
-              <option value={7}>7%</option>
-              <option value={19}>19%</option>
-            </select>
-          </div>
-
-        </div>
-    </DialogShell>
   );
 }

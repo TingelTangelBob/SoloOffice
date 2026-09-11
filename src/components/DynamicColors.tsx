@@ -372,7 +372,7 @@ export function DynamicColors() {
           color: inherit !important;
         }
         #app-shell[data-theme="dark"] .settings-save-bar {
-          background-color: rgba(17, 24, 39, 0.95) !important;
+          background-color: #0a0a0b !important;
           border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .theme-scrollbar {

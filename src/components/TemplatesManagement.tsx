@@ -1,6 +1,7 @@
 import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Bell, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
+import { PositionTemplatesPanel } from './PositionTemplatesPanel';
 import { useCompany } from '../context/CompanyContext';
 import { defaultDocumentTemplates } from '../context/CompanyProvider';
 import {
@@ -33,7 +34,6 @@ const templateTabs: Array<{ id: TemplateTab; label: string; icon: typeof FileTex
   { id: 'general', label: 'Dokumentdesign', icon: Copy },
   { id: 'invoice', label: 'Rechnungen', icon: FileText },
   { id: 'quote', label: 'Angebote', icon: FileCheck },
-  { id: 'reminder', label: 'Mahnungen', icon: Bell },
   { id: 'orderConfirmation', label: 'Bestätigungen', icon: FileCheck },
   { id: 'positions', label: 'Positionen', icon: Package },
 ];
@@ -590,10 +590,6 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     company,
     setCompany,
     documentTemplates,
-    hourlyRates,
-    materialTemplates,
-    setHourlyRates,
-    setMaterialTemplates,
     addDocumentTemplate,
     updateDocumentTemplate,
     deleteDocumentTemplate,
@@ -625,7 +621,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   }, [isEditorDirty, isSaving]);
 
   const templates = useMemo(() => {
-    if (activeTab === 'general' || activeTab === 'positions' || activeTab === 'reminder') return [];
+    if (activeTab === 'general' || activeTab === 'positions') return [];
     const source = documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates;
     return source.filter(template => template.documentType === activeTab);
   }, [activeTab, documentTemplates]);
@@ -804,10 +800,6 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     if (importResource === 'positions') {
       const updatedCompany = await apiService.getCompany();
       setCompany(previous => ({ ...previous, ...updatedCompany }));
-    } else if (importResource === 'hourlyRates') {
-      setHourlyRates(await apiService.getHourlyRates());
-    } else if (importResource === 'materials') {
-      setMaterialTemplates(await apiService.getMaterialTemplates());
     }
   };
 
@@ -844,10 +836,12 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             </div>
           </section>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Die Kennzahl zu den Mahnstufen ist mit dem Mahnungs-Reiter
+              entfallen; sie verwies auf einen Bereich, den es hier nicht mehr
+              gibt. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {[
               { value: '3', label: 'Gestaltbare Dokumentarten', text: `Rechnungen, Angebote und ${terminology.work.confirmationPluralLabel}` },
-              { value: '3', label: 'Mahnstufen', text: 'Mahntexte werden zentral in den App-Einstellungen gepflegt' },
               { value: '1', label: 'Standardlogo', text: `Wird zentral in ${terminology.organization.dataLabel} gepflegt` },
             ].map(item => (
               <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -880,63 +874,15 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
           </section>}
         </div>
       ) : activeTab === 'positions' ? (
-        <div className="space-y-6">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
-            <h2 className="text-lg font-semibold text-gray-900">Positionsvorlagen</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Stundensätze und Materialien bleiben eigene Vorlagenarten, weil sie direkt in Rechnungspositionen verwendet werden.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="font-semibold text-gray-900">Stundensätze</h3>
-              <p className="mt-2 text-2xl font-semibold text-primary-custom">{hourlyRates.length}</p>
-              <p className="text-sm text-gray-500">allgemeine Vorlagen</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="font-semibold text-gray-900">Materialien</h3>
-              <p className="mt-2 text-2xl font-semibold text-primary-custom">{materialTemplates.length}</p>
-              <p className="text-sm text-gray-500">allgemeine Vorlagen</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setImportResource('positions')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
-              <Upload className="h-4 w-4" /> Positionen importieren
+        <div className="space-y-4">
+          <PositionTemplatesPanel />
+          {/* Vorbelegte Positionen sind eine Firmeneinstellung und laufen über
+              den Import der Vorlagenseite, nicht über die Stundensatz- oder
+              Materiallisten. */}
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setImportResource('positions')} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50">
+              <Upload className="h-4 w-4" aria-hidden="true" /> Vorbelegte Positionen importieren
             </button>
-            <button type="button" onClick={() => setImportResource('hourlyRates')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
-              <Upload className="h-4 w-4" /> Stundensätze importieren
-            </button>
-            <button type="button" onClick={() => setImportResource('materials')} className="inline-flex items-center gap-2 rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom hover:bg-primary-light-custom">
-              <Upload className="h-4 w-4" /> Materialien importieren
-            </button>
-          </div>
-          {onNavigate && (
-            <button type="button" onClick={() => onNavigate('settings', 'invoices')} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
-              Positionsvorlagen in Rechnungen öffnen
-            </button>
-          )}
-        </div>
-      ) : activeTab === 'reminder' ? (
-        <div className="space-y-6">
-          <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm lg:p-6">
-            <div className="flex items-start gap-3">
-              <Bell className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-              <div>
-                <h2 className="text-lg font-semibold text-amber-950">Mahnungen werden in den App-Einstellungen verwaltet</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900">
-                  Mahntexte, Fristen und Gebühren gehören an eine zentrale Stelle. So gelten die Einstellungen zuverlässig für jede Mahnstufe und für jedes erzeugte PDF.
-                </p>
-              </div>
-            </div>
-            {onNavigate && (
-              <button type="button" onClick={() => onNavigate('settings', 'app')} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-800">
-                Zu den Mahnungseinstellungen
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            )}
-          </section>
-          <div className="guidance-panel p-4 text-sm text-gray-600">
-            Das PDF-Layout der Mahnungen bleibt für bestehende Dokumente erhalten. Die maßgeblichen Texte kommen ausschließlich aus den App-Einstellungen.
           </div>
         </div>
       ) : (
@@ -961,7 +907,10 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
               <article key={template.id} className={`template-card relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
                 {template.isDefault && <span className="absolute left-1/2 top-2 z-10 inline-flex -translate-x-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
                 <button type="button" onClick={() => setSelectedPreview(template)} className="group relative block w-full bg-gray-50 p-4" aria-label={`${template.name} in großer Vorschau öffnen`}>
-                  <div className="space-y-2">
+                  {/* Die Miniatur ist im Seitenverhältnis A4 hoch. Ohne
+                      Begrenzung füllte sie die ganze Kartenbreite und wurde
+                      dadurch so groß, dass ihr Inhalt verloren wirkte. */}
+                  <div className="mx-auto w-full max-w-[230px] space-y-2">
                     <TemplateMiniature template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
                     <span className="block text-center text-[11px] text-gray-500">Miniatur der PDF-Vorlage</span>
                   </div>

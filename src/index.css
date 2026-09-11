@@ -1430,3 +1430,17 @@
     letter-spacing: 0.02em;
   }
 }
+
+@layer components {
+  /*
+   * Aktionsleiste der Einstellungen.
+   *
+   * Vorher trug sie `bg-gray-50/95` mit Weichzeichner. Der Dunkelmodus
+   * überschreibt aber nur die exakte Klasse `bg-gray-50`, nicht die Variante
+   * mit Deckkraft – die Leiste blieb dort halbdurchsichtig hell und der
+   * Inhalt schien hindurch. Jetzt eine durchgehende Fläche aus den Tokens.
+   */
+  .settings-save-bar {
+    background-color: var(--surface-page);
+  }
+}
