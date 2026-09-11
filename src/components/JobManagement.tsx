@@ -8,7 +8,6 @@ import {
   User, 
   Calendar, 
   FileText, 
-  Search,
   Timer,
   CheckCircle,
   AlertTriangle,
@@ -34,6 +33,7 @@ import { JobEntryForm } from './JobEntryForm';
 import { JobInvoiceGenerationType, JobInvoiceGenerator } from './JobInvoiceGenerator';
 import { PageHeader } from './PageHeader';
 import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
+import { usePageSearch } from '../context/PageSearchContext';
 import { ConfirmationModal } from './ConfirmationModal';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments, createJobAttachmentPreviewDocuments } from '../utils/previewDocuments';
@@ -102,7 +102,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
   const [statusChangeFeedback, setStatusChangeFeedback] = useState<StatusChangeFeedback | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const { query: searchTerm, setQuery: setSearchTerm } = usePageSearch({ placeholder: terminology.work.searchPlaceholder });
   const [statusFilter, setStatusFilter] = useState<string>('not-invoiced');
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
@@ -166,7 +166,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
       next.add(initialRecurringGroupId);
       return next;
     });
-  }, [hasInitialRecurringGroup, initialRecurringGroupId]);
+  }, [hasInitialRecurringGroup, initialRecurringGroupId, setSearchTerm]);
 
   useEffect(() => {
     if (!initialRecurringGroupId || !hasInitialRecurringGroup) return;
@@ -969,18 +969,6 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
       {/* Filters */}
       <ResponsiveFilterBar
         hasActiveFilters={statusFilter !== 'all' || customerFilter !== 'all' || dateFilter !== 'all'}
-        search={(
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <input
-                type="text"
-                placeholder={terminology.work.searchPlaceholder}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 xl:py-1.5 2xl:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent text-sm lg:text-base"
-              />
-            </div>
-        )}
         filters={(
           <div className="flex flex-col gap-2 sm:flex-row lg:gap-4">
             {/* Status Filter */}

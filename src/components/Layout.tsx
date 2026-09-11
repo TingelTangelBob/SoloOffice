@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react';
+import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
@@ -13,6 +13,8 @@ import { DemoNotice } from './DemoNotice';
 import { TopBar } from './TopBar';
 import type { TopBarNotice } from './TopBar';
 import { isDemoMode } from '../services/demoApi';
+import { PageSearchContext } from '../context/PageSearchContext';
+import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -76,6 +78,25 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // Angemeldete Listenansicht, deren Liste das Suchfeld gerade live filtert.
+  const [pageSearch, setPageSearch] = useState<PageSearchRegistration | null>(null);
+  const registerPageSearch = useCallback((registration: PageSearchRegistration) => {
+    setPageSearch(registration);
+    // Jede Ansicht beginnt mit leerem Feld bzw. ihrer eigenen Vorbelegung –
+    // sonst würde eine liegengebliebene Eingabe die nächste Liste filtern.
+    setSearchQuery(registration.initialQuery ?? '');
+  }, []);
+  const unregisterPageSearch = useCallback(() => {
+    setPageSearch(null);
+    setSearchQuery('');
+  }, []);
+  const pageSearchValue = useMemo<PageSearchContextValue>(() => ({
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    registration: pageSearch,
+    register: registerPageSearch,
+    unregister: unregisterPageSearch,
+  }), [searchQuery, pageSearch, registerPageSearch, unregisterPageSearch]);
   const invoiceAreaActive = currentPage === 'invoices' || invoiceSubPageIds.includes(currentPage);
   const [isInvoiceMenuOpen, setIsInvoiceMenuOpen] = useState(() => invoiceAreaActive);
   const invoiceAreaWasActive = useRef(invoiceAreaActive);
@@ -368,17 +389,17 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && searchResults[0]) {
+          if (!pageSearch && event.key === 'Enter' && searchResults[0]) {
             handlePageChange(searchResults[0].page);
             setSearchQuery('');
           }
         }}
-        placeholder="Suchen..."
-        aria-label="Globale Suche"
+        placeholder={pageSearch?.placeholder ?? 'Suchen...'}
+        aria-label={pageSearch ? pageSearch.placeholder : 'Globale Suche'}
         className="h-9 w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 py-0 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"
         style={{ paddingLeft: '2.25rem' }}
       />
-      {searchQuery && (
+      {searchQuery && !pageSearch && (
         <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
           {searchResults.length > 0 ? searchResults.map((result) => (
             <button
@@ -582,6 +603,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 isDemoMode ? 'demo-bar-space' : 'safe-area-bottom'
               }`}
             >
+              <PageSearchContext.Provider value={pageSearchValue}>
               <div className={`mx-auto w-full ${contentWidthClass}`}>
               {!companySetupComplete && currentPage !== 'settings' && (
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
@@ -591,6 +613,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               )}
               {children}
               </div>
+              </PageSearchContext.Provider>
             </main>
           </div>
         </div>

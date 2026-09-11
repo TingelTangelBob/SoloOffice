@@ -2,7 +2,8 @@ import { createContext, ReactNode, SelectHTMLAttributes, useContext, useState } 
 import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 
 interface ResponsiveFilterBarProps {
-  search: ReactNode;
+  /** Optional – die Listen suchen inzwischen über das Feld der Kopfleiste. */
+  search?: ReactNode;
   filters: ReactNode;
   hasActiveFilters?: boolean;
 }
@@ -35,12 +36,12 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
 
   return (
     <FilterPanelContext.Provider value={isFilterOpen}>
-      <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
-        <div className="flex min-w-0 items-center gap-2 lg:flex-wrap lg:items-start lg:gap-4">
+      <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2 lg:flex-wrap lg:gap-3">
           <button
             type="button"
             onClick={() => setIsFilterOpen((open) => !open)}
-            className={`order-1 inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
+            className={`order-1 inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
               hasActiveFilters || isFilterOpen
                 ? 'border-primary-custom bg-primary-custom/10 text-primary-custom'
                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -52,10 +53,10 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
             <span className="hidden sm:inline">Filter</span>
           </button>
           <div className="order-2 hidden min-w-0 flex-1 items-center gap-2 lg:flex">{filters}</div>
-          <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem] lg:basis-[16rem]">{search}</div>
+          {search && <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem] lg:basis-[16rem]">{search}</div>}
         </div>
 
-        {isFilterOpen && <div className="mt-3 grid gap-2 border-t border-gray-100 pt-3 lg:hidden">{filters}</div>}
+        {isFilterOpen && <div className="mt-2 grid gap-2 border-t border-gray-200 pt-2 lg:hidden">{filters}</div>}
       </div>
     </FilterPanelContext.Provider>
   );

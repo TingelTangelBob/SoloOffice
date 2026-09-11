@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -16,6 +16,7 @@ import type { PreviewDocument } from '../utils/previewDocuments';
 import { processAttachments, AttachmentFile } from '../utils/fileUtils';
 import { PageHeader } from './PageHeader';
 import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
+import { usePageSearch } from '../context/PageSearchContext';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
@@ -55,7 +56,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(true);
   const [quoteLoadError, setQuoteLoadError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const { query: searchTerm } = usePageSearch({ placeholder: 'Angebote suchen …' });
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedQuoteIds, setSelectedQuoteIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
@@ -729,18 +730,6 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       {/* Filters */}
       <ResponsiveFilterBar
         hasActiveFilters={filterStatus !== 'all'}
-        search={(
-          <div className="relative">
-            <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Angebote suchen..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
-            />
-          </div>
-        )}
         filters={(
           <FilterSelect
             value={filterStatus}

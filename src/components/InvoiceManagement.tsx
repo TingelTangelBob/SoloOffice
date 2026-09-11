@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Search, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -20,6 +20,7 @@ import { blobToBase64 } from '../utils/blobUtils';
 import { processAttachments } from '../utils/fileUtils';
 import { PageHeader } from './PageHeader';
 import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
+import { usePageSearch } from '../context/PageSearchContext';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { InvoiceHistoryDialog } from './InvoiceHistoryDialog';
 import { InvoicePaymentDialog } from './InvoicePaymentDialog';
@@ -72,7 +73,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const openedInitialInvoiceId = useRef<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+  const { query: searchTerm } = usePageSearch({ placeholder: 'Rechnungen suchen …', initialQuery: initialSearchTerm });
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
   const [invoiceStartDate, setInvoiceStartDate] = useState('');
   const [invoiceEndDate, setInvoiceEndDate] = useState('');
@@ -161,10 +162,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     if (initialFilter) {
       setFilterStatus(initialFilter);
     }
-    if (initialSearchTerm) {
-      setSearchTerm(initialSearchTerm);
-    }
-  }, [initialFilter, initialSearchTerm]);
+  }, [initialFilter]);
 
   // Check for overdue invoices automatically on every load
   useEffect(() => {
@@ -1043,46 +1041,13 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       {/* Filters */}
       <ResponsiveFilterBar
         hasActiveFilters={filterStatus !== 'all' || Boolean(invoiceStartDate || invoiceEndDate)}
-        search={(
-          <div className="relative">
-            <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Rechnungen suchen..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
-            />
-          </div>
-        )}
         filters={(
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <label className="min-w-[9rem] flex-1 text-xs font-medium text-gray-700">
-              Von
-              <input
-                type="date"
-                value={invoiceStartDate}
-                max={invoiceEndDate || undefined}
-                onChange={(event) => setInvoiceStartDate(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                aria-label="Rechnungsdatum von"
-              />
-            </label>
-            <label className="min-w-[9rem] flex-1 text-xs font-medium text-gray-700">
-              Bis
-              <input
-                type="date"
-                value={invoiceEndDate}
-                min={invoiceStartDate || undefined}
-                onChange={(event) => setInvoiceEndDate(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                aria-label="Rechnungsdatum bis"
-              />
-            </label>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <FilterSelect
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="min-w-[11rem] rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-custom"
+              aria-label="Status"
+              className="h-9 min-w-[10rem] rounded-lg border border-gray-300 bg-white px-3 py-0 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
             >
               <option value="all">Alle Status</option>
               <option value="not-paid">Alle außer bezahlt</option>
@@ -1091,21 +1056,42 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
               <option value="paid">Bezahlt</option>
               <option value="overdue">Überfällig</option>
             </FilterSelect>
-            <div className="flex basis-full flex-wrap gap-1 pt-1">
-              <span className="mr-1 self-center text-xs text-gray-500">Schnellfilter:</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={invoiceStartDate}
+                max={invoiceEndDate || undefined}
+                onChange={(event) => setInvoiceStartDate(event.target.value)}
+                className="h-9 w-[9.5rem] rounded-lg border border-gray-300 bg-white px-2.5 py-0 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                aria-label="Rechnungsdatum von"
+                title="Von"
+              />
+              <span className="text-xs text-gray-400" aria-hidden="true">–</span>
+              <input
+                type="date"
+                value={invoiceEndDate}
+                min={invoiceStartDate || undefined}
+                onChange={(event) => setInvoiceEndDate(event.target.value)}
+                className="h-9 w-[9.5rem] rounded-lg border border-gray-300 bg-white px-2.5 py-0 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                aria-label="Rechnungsdatum bis"
+                title="Bis"
+              />
+            </div>
+            <span className="hidden h-5 w-px bg-gray-200 lg:block" aria-hidden="true" />
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
               {([
                 ['thisMonth', 'Dieser Monat'],
                 ['lastMonth', 'Letzter Monat'],
-                ['thisQuarter', 'Dieses Quartal'],
+                ['thisQuarter', 'Quartal'],
                 ['thisYear', 'Dieses Jahr'],
                 ['lastYear', 'Letztes Jahr'],
-                ['last30days', 'Letzte 30 Tage'],
+                ['last30days', '30 Tage'],
               ] as const).map(([preset, label]) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => setInvoiceTimePreset(preset)}
-                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-50"
+                  className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
                 >
                   {label}
                 </button>
@@ -1114,9 +1100,10 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                 <button
                   type="button"
                   onClick={clearInvoicePeriod}
-                  className="rounded-full px-2.5 py-1 text-xs text-gray-600 underline hover:text-gray-900"
+                  className="rounded-full px-2 py-1 text-xs text-gray-500 transition-colors hover:text-gray-900"
+                  aria-label="Zeitraum zurücksetzen"
                 >
-                  Zeitraum zurücksetzen
+                  × Zeitraum
                 </button>
               )}
             </div>
