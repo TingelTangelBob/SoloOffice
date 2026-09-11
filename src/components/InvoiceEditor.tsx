@@ -98,7 +98,7 @@ function SortableInvoiceItem({
             required
             value={item.description}
             onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
           />
         </div>
         
@@ -120,7 +120,7 @@ function SortableInvoiceItem({
                 onUpdate(item.id, 'quantity', 0);
               }
             }}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
           />
         </div>
         
@@ -142,7 +142,7 @@ function SortableInvoiceItem({
                 onUpdate(item.id, 'unitPrice', 0);
               }
             }}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
           />
         </div>
         
@@ -155,7 +155,7 @@ function SortableInvoiceItem({
             value={isSmallBusiness ? 0 : item.taxRate}
             onChange={(e) => onUpdate(item.id, 'taxRate', parseFloat(e.target.value))}
             disabled={isSmallBusiness}
-            className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+            className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom ${
               isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
             }`}
           >
@@ -181,7 +181,7 @@ function SortableInvoiceItem({
                     onUpdate(item.id, 'discountValue', undefined);
                   }
                 }}
-                className="w-10 px-1 py-1.5 text-xs border border-gray-300 rounded-l focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-10 px-1 py-1.5 text-xs border border-gray-300 rounded-l focus:outline-none focus:ring-1 focus:ring-primary-custom"
               >
                 <option value="">-</option>
                 <option value="percentage">%</option>
@@ -196,7 +196,7 @@ function SortableInvoiceItem({
                 onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                 disabled={!item.discountType}
                 placeholder="0"
-                className="flex-1 px-2 py-1.5 text-sm border border-l-0 border-gray-300 rounded-r focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+                className="flex-1 px-2 py-1.5 text-sm border border-l-0 border-gray-300 rounded-r focus:outline-none focus:ring-1 focus:ring-primary-custom disabled:bg-gray-100"
               />
             </div>
           </div>
@@ -271,7 +271,7 @@ function SortableInvoiceItem({
             required
             value={item.description}
             onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
           />
         </div>
         
@@ -294,7 +294,7 @@ function SortableInvoiceItem({
                   onUpdate(item.id, 'quantity', 0);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
             />
           </div>
           <div>
@@ -314,7 +314,7 @@ function SortableInvoiceItem({
                   onUpdate(item.id, 'unitPrice', 0);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
             />
           </div>
           <div>
@@ -325,7 +325,7 @@ function SortableInvoiceItem({
               value={isSmallBusiness ? 0 : item.taxRate}
               onChange={(e) => onUpdate(item.id, 'taxRate', parseFloat(e.target.value))}
               disabled={isSmallBusiness}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom ${
                 isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
               }`}
             >
@@ -353,7 +353,7 @@ function SortableInvoiceItem({
                       onUpdate(item.id, 'discountValue', undefined);
                     }
                   }}
-                  className="w-12 px-1 py-1.5 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  className="w-12 px-1 py-1.5 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-xs"
                 >
                   <option value="">-</option>
                   <option value="percentage">%</option>
@@ -368,7 +368,7 @@ function SortableInvoiceItem({
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   disabled={!item.discountType}
                   placeholder="0"
-                  className="flex-1 px-2 py-1.5 border border-l-0 border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 text-xs min-w-0"
+                  className="flex-1 px-2 py-1.5 border border-l-0 border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:bg-gray-100 text-xs min-w-0"
                 />
               </div>
               {item.discountType && item.discountValue && (
@@ -1104,7 +1104,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                     onFocus={() => setIsCustomerDropdownOpen(true)}
                     onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
                     placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                     required
                   />
                   {isCustomerDropdownOpen && (
@@ -1174,7 +1174,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                     }));
                   }
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             <div>
@@ -1186,7 +1186,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                 required
                 value={formData.dueDate}
                 onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Wird automatisch auf {company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30} Tage nach Rechnungsdatum gesetzt. {(company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30) === 0 && 'Bei 0 Tagen ist die Rechnung sofort fällig.'}
@@ -1214,7 +1214,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                         e.target.value = ''; // Reset dropdown
                       }
                     }}
-                    className="min-w-0 flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="min-w-0 flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                     defaultValue=""
                   >
                     <option value="">Vorlage wählen...</option>
@@ -1332,7 +1332,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                       globalDiscountValue: discountType ? prev.globalDiscountValue : undefined
                     }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 >
                   <option value="">Kein Gesamtrabatt</option>
                   <option value="percentage">Prozentual (%)</option>
@@ -1357,7 +1357,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
                     }))}
                     disabled={!formData.globalDiscountType}
                     placeholder="0"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 min-w-0"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:bg-gray-100 min-w-0"
                   />
                   <div className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-gray-600 text-sm flex items-center flex-shrink-0">
                     {formData.globalDiscountType === 'percentage' ? '%' : currencySymbol}
@@ -1488,7 +1488,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
             onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
             rows={4}
             placeholder="Zusätzliche Informationen oder Zahlungshinweise..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom resize-none"
           />
         </div>
 

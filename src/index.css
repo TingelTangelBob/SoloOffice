@@ -1444,3 +1444,32 @@
     background-color: var(--surface-page);
   }
 }
+
+/*
+ * Bewusst außerhalb von `@layer utilities`: Regeln in dieser Schicht behandelt
+ * Tailwind wie eigene Utilities und entfernt sie, wenn der Klassenname im
+ * Content-Scan nicht gefunden wird – mit dem escapten Doppelpunkt schlug genau
+ * das fehl. Als normale Regel am Dateiende stehen sie nach den generierten
+ * Utilities und gewinnen bei gleicher Spezifität.
+ */
+  /*
+   * Fokusring in der Akzentfarbe.
+   *
+   * Vorher stand an 83 Feldern `focus:ring-blue-500` – unabhängig von der
+   * eingestellten Akzentfarbe. Die daneben schon verwendete Klasse
+   * `focus:ring-primary-custom` war nirgends definiert und blieb wirkungslos.
+   * Tailwind zeichnet den Ring über `--tw-ring-color`; hier wird nur die
+   * Farbe gesetzt, die Breite kommt weiter aus `focus:ring-2`.
+   */
+  .focus\:ring-primary-custom:focus {
+    --tw-ring-color: var(--primary-color);
+  }
+
+  .focus\:ring-primary-custom\/20:focus,
+  .focus\:ring-primary-custom\/40:focus {
+    --tw-ring-color: var(--accent-edge);
+  }
+
+  .focus\:border-primary-custom:focus {
+    border-color: var(--primary-color);
+  }

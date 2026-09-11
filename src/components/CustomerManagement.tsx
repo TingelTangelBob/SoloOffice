@@ -796,7 +796,7 @@ export function CustomerManagement() {
             placeholder={terminology.entity.searchPlaceholder}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
           />
         </div>
         <label className="inline-flex shrink-0 items-center gap-2 text-sm text-gray-600">
@@ -1006,7 +1006,7 @@ export function CustomerManagement() {
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
               <div>
@@ -1017,7 +1017,7 @@ export function CustomerManagement() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   placeholder="optional"
                 />
               </div>
@@ -1030,7 +1030,7 @@ export function CustomerManagement() {
                   required
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
               <div>
@@ -1041,7 +1041,7 @@ export function CustomerManagement() {
                   type="text"
                   value={formData.addressSupplement}
                   onChange={(e) => setFormData({ ...formData, addressSupplement: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   placeholder="z.B. 2. Stock, Hintereingang"
                 />
               </div>
@@ -1055,7 +1055,7 @@ export function CustomerManagement() {
                     required
                     value={formData.postalCode}
                     onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   />
                 </div>
                 <div>
@@ -1067,7 +1067,7 @@ export function CustomerManagement() {
                     required
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   />
                 </div>
               </div>
@@ -1080,7 +1080,7 @@ export function CustomerManagement() {
                   required
                   value={formData.country}
                   onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
               <div>
@@ -1091,7 +1091,7 @@ export function CustomerManagement() {
                   type="text"
                   value={formData.taxId}
                   onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
               <div>
@@ -1103,7 +1103,7 @@ export function CustomerManagement() {
                   value={formData.leitwegId}
                   onChange={(e) => setFormData({ ...formData, leitwegId: e.target.value })}
                   placeholder="z. B. 991-12345-67"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
               <div>
@@ -1114,7 +1114,7 @@ export function CustomerManagement() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 />
               </div>
 
@@ -1174,7 +1174,7 @@ export function CustomerManagement() {
                         required
                         value={newEmailData.email}
                         onChange={(e) => setNewEmailData({ ...newEmailData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                         placeholder="name@example.com"
                       />
                     </div>
@@ -1186,7 +1186,7 @@ export function CustomerManagement() {
                         type="text"
                         value={newEmailData.label}
                         onChange={(e) => setNewEmailData({ ...newEmailData, label: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
                         placeholder="z.B. Buchhaltung, Geschäftsführung"
                       />
                     </div>
@@ -1458,7 +1458,7 @@ export function CustomerManagement() {
                     type="text"
                     value={newHourlyRateData.name}
                     onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                     placeholder="z.B. Standard, Anfahrt, Überstunden"
                   />
                 </div>
@@ -1473,7 +1473,7 @@ export function CustomerManagement() {
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setNewHourlyRateData({ ...newHourlyRateData, rate: value === '' ? 0 : value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                     placeholder="0.00"
                   />
                 </div>
@@ -1485,7 +1485,7 @@ export function CustomerManagement() {
                 <textarea
                   value={newHourlyRateData.description}
                   onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                   placeholder="Optionale Beschreibung..."
                   rows={2}
                 />
@@ -1498,7 +1498,7 @@ export function CustomerManagement() {
                   <select
                     value={newHourlyRateData.taxRate}
                     onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, taxRate: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
                   >
                     <option value={0}>0%</option>
                     <option value={7}>7%</option>
@@ -1511,7 +1511,7 @@ export function CustomerManagement() {
                     id="createRateDefault"
                     checked={newHourlyRateData.isDefault}
                     onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, isDefault: e.target.checked })}
-                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 rounded"
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-primary-custom rounded"
                   />
                   <label htmlFor="createRateDefault" className="ml-2 text-sm text-gray-700">
                     Als Standard markieren
@@ -1699,7 +1699,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
           />
         </div>
         <div>
@@ -1713,7 +1713,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
             locale={locale}
             numberFormat={numberFormat}
             onValueChange={(value) => setFormData({ ...formData, rate: value === '' ? 0 : value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
           />
         </div>
       </div>
@@ -1724,7 +1724,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
         <textarea
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
           rows={2}
         />
       </div>
@@ -1736,7 +1736,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
           <select
             value={formData.taxRate}
             onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
           >
             <option value={0}>0%</option>
             <option value={7}>7%</option>
@@ -1749,7 +1749,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
             id={`editRateDefault-${rate.id}`}
             checked={formData.isDefault}
             onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
-            className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 rounded"
+            className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-primary-custom rounded"
           />
           <label htmlFor={`editRateDefault-${rate.id}`} className="ml-2 text-sm text-gray-700">
             Als Standard markieren

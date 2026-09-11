@@ -737,7 +737,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
               placeholder="Angebote suchen..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
             />
           </div>
         )}
@@ -745,7 +745,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           <FilterSelect
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-custom"
           >
             <option value="all">Alle Status</option>
             <option value="draft">Entwurf</option>
@@ -793,7 +793,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 }
               }}
               disabled={isBulkOperation}
-              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-blue-500"
+              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom"
               defaultValue=""
               aria-label="Status ändern"
             >

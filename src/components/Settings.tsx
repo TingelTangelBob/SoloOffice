@@ -440,7 +440,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'app' && (
           <div className="space-y-8">
         {/* Terminology Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-start gap-4">
             <div>
               <div className="flex items-center gap-2">
@@ -528,7 +528,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Module Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Briefcase className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Module</h3>
@@ -639,7 +639,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
         {/* Reminder Settings - Only show if enabled */}
         {formData.remindersEnabled && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
             <div className="flex items-center mb-4">
               <Clock className="h-5 w-5 text-primary-custom mr-2" />
               <h3 className="text-lg font-semibold text-gray-900">Zahlungserinnerungen Konfiguration</h3>
@@ -837,14 +837,14 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'general' && (
           <div className="space-y-8">
         {onNavigate && (
-          <div className="flex flex-col gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between lg:p-5">
+          <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between lg:p-5">
             <div>
-              <h3 className="text-base font-semibold text-blue-900">Dokumentvorlagen</h3>
-              <p className="mt-1 text-sm text-blue-800">
+              <h3 className="text-base font-semibold text-gray-900">Dokumentvorlagen</h3>
+              <p className="mt-1 text-sm text-gray-600">
                 PDF-Layouts, Farben, Logos und Dokumenttexte werden separat in den Vorlagen verwaltet.
               </p>
             </div>
-            <button type="button" onClick={() => onNavigate('templates')} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-800">
+            <button type="button" onClick={() => onNavigate('templates')} className="inline-flex shrink-0 items-center justify-center gap-2 btn-primary rounded-lg px-4 py-2 text-sm font-medium transition-colors">
               Vorlagen öffnen
               <ArrowRight className="h-4 w-4" />
             </button>
@@ -852,7 +852,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Company Information */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Building2 className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.dataLabel}</h3>
@@ -868,20 +868,20 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
             {/* Company Header Layout Options */}
             <div className="md:col-span-2">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-blue-900 mb-2">📄 PDF-Header Layout</h4>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-gray-900 mb-2">📄 PDF-Header Layout</h4>
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <label className="text-sm font-medium text-blue-800">
+                    <label className="text-sm font-medium text-gray-600">
                       Zweizeilige Darstellung der {terminology.organization.dataLabel} im PDF-Header
                     </label>
-                    <p className="text-xs text-blue-600 mt-1">
+                    <p className="text-xs text-gray-500 mt-1">
                       Ermöglicht eine strukturiertere Darstellung im PDF-Kopfbereich
                     </p>
                   </div>
@@ -899,7 +899,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 {formData.companyHeaderTwoLine && (
                   <div className="space-y-3 ml-0 mt-4">
                     <div>
-                      <label className="block text-sm font-medium text-blue-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Erste Zeile (z. B. {terminology.organization.nameLabel}/Service)
                       </label>
                       <input
@@ -907,11 +907,11 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                         value={formData.companyHeaderLine1 || ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, companyHeaderLine1: e.target.value }))}
                         placeholder="z.B. Musterfirma Service & Beratung GmbH"
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-blue-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Zweite Zeile (z.B. Inhaber, Adresse)
                       </label>
                       <input
@@ -919,10 +919,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                         value={formData.companyHeaderLine2 || ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, companyHeaderLine2: e.target.value }))}
                         placeholder="z.B. Max Mustermann, Musterstraße 123, 12345 Musterstadt"
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                       />
                     </div>
-                    <p className="text-xs text-blue-600">
+                    <p className="text-xs text-gray-500">
                       Diese Einstellung beeinflusst nur die Darstellung im PDF-Sender-Bereich. 
                       Lassen Sie die Felder leer, um die automatische Generierung zu verwenden.
                     </p>
@@ -940,7 +940,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.address}
                 onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -953,7 +953,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.postalCode}
                 onChange={(e) => setFormData(prev => ({ ...prev, postalCode: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -966,7 +966,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.city}
                 onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -979,7 +979,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.country}
                 onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -992,7 +992,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.taxId}
                 onChange={(e) => setFormData(prev => ({ ...prev, taxId: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder="z.B. DE123456789"
               />
             </div>
@@ -1005,18 +1005,18 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 type="text"
                 value={formData.taxIdentificationNumber || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, taxIdentificationNumber: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder="z.B. 123/456/78910"
               />
             </div>
           </div>
-          <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
-            <h4 className="font-medium text-blue-900">Steuerprofil</h4>
-            <p className="mt-1 text-xs leading-5 text-blue-800">Betriebsart und Rechtsform werden in Prüfhinweisen und Exporten verwendet. Sie blenden keine Kernmenüpunkte aus.</p>
+          <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h4 className="font-medium text-gray-900">Steuerprofil</h4>
+            <p className="mt-1 text-xs leading-5 text-gray-600">Betriebsart und Rechtsform werden in Prüfhinweisen und Exporten verwendet. Sie blenden keine Kernmenüpunkte aus.</p>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium text-blue-900">
+              <label className="block text-sm font-medium text-gray-900">
                 Betriebsart
-                <select value={formData.taxBusinessType || 'commercial'} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value as TaxBusinessType }))} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select value={formData.taxBusinessType || 'commercial'} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value as TaxBusinessType }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
                   <option value="freelance">Freiberuflich</option>
                   <option value="commercial">Gewerblich</option>
                   <option value="agriculture">Land- und Forstwirtschaft</option>
@@ -1024,9 +1024,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <option value="other">Sonstige</option>
                 </select>
               </label>
-              <label className="block text-sm font-medium text-blue-900">
+              <label className="block text-sm font-medium text-gray-900">
                 Rechtsform
-                <select value={formData.legalForm || 'other'} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value as LegalForm }))} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select value={formData.legalForm || 'other'} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value as LegalForm }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
                   <option value="sole_proprietorship">Einzelunternehmen</option>
                   <option value="partnership">Personengesellschaft</option>
                   <option value="gbr">GbR</option>
@@ -1039,12 +1039,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 </select>
               </label>
             </div>
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-blue-200 bg-white p-3">
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
               <div>
-                <label className="text-sm font-medium text-blue-900">
+                <label className="text-sm font-medium text-gray-900">
                   Kleinunternehmerregelung (§ 19 UStG)
                 </label>
-                <p className="mt-1 text-xs text-blue-800">
+                <p className="mt-1 text-xs text-gray-600">
                   Deaktiviert alle MwSt.-Berechnungen und zeigt entsprechende Klausel auf Rechnungen an
                 </p>
               </div>
@@ -1062,7 +1062,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Contact Information */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Mail className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Kontaktdaten</h3>
@@ -1078,7 +1078,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.email}
                 onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -1091,7 +1091,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 required
                 value={formData.phone}
                 onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -1103,22 +1103,22 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 type="text"
                 value={formData.website || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
           </div>
         </div>
 
         {/* Payment Information - Enhanced Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <CreditCard className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Zahlungsinformationen</h3>
           </div>
           
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">💡 Verwaltung der Zahlungsdaten</h4>
-            <p className="text-sm text-blue-800">
+          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">💡 Verwaltung der Zahlungsdaten</h4>
+            <p className="text-sm text-gray-600">
               Wählen Sie, ob der Kontoinhaber automatisch dem {terminology.organization.nameInDativeLabel} folgen oder unabhängig davon gepflegt werden soll.
             </p>
           </div>
@@ -1161,7 +1161,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 }))}
                 disabled={formData.paymentInformationMode === 'company'}
                 placeholder={`${formData.name} (${terminology.organization.nameLabel} als Standard)`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:cursor-not-allowed disabled:bg-gray-100"
               />
               <p className="text-xs text-gray-500 mt-1">
                 {formData.paymentInformationMode === 'company'
@@ -1185,7 +1185,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   }
                 }))}
                 placeholder="DE89 3704 0044 0532 0130 00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -1204,7 +1204,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   }
                 }))}
                 placeholder="COBADEFFXXX"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -1223,7 +1223,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   }
                 }))}
                 placeholder="z.B. Commerzbank AG"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
             
@@ -1241,7 +1241,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   }
                 }))}
                 placeholder="z.B. Bei Zahlungsrückstand werden Verzugszinsen berechnet"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 rows={3}
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -1264,7 +1264,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   }
                 }))}
                 placeholder="z.B. Überweisung, PayPal, Barzahlung"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
               <p className="text-xs text-gray-500 mt-1">Mehrere Zahlungsarten durch Komma trennen.</p>
             </div>
@@ -1274,7 +1274,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {/* Logo & Icon Upload */}
         <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
         {/* Logo Upload */}
-        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="h-full rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
@@ -1326,7 +1326,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Icon Upload */}
-        <div className="h-full bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="h-full rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
@@ -1385,15 +1385,15 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'invoices' && (
           <div className="space-y-8">
         {/* Invoice Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <FileText className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Rechnungseinstellungen</h3>
           </div>
           
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">💡 Hinweis zur Start-Rechnungsnummer</h4>
-            <p className="text-sm text-blue-800">
+          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">💡 Hinweis zur Start-Rechnungsnummer</h4>
+            <p className="text-sm text-gray-600">
               Die Start-Rechnungsnummer wird nur bei neuen Systemen oder beim Jahreswechsel verwendet. 
               Bereits vergebene Nummern werden weitergezählt und auch nach dem Löschen eines Entwurfs nicht erneut verwendet.
               Das Muster kann unten angepasst werden.
@@ -1408,7 +1408,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   value={invoiceNumberPattern}
                   maxLength={50}
                   onChange={event => setFormData(previous => ({ ...previous, invoiceNumberPattern: event.target.value }))}
-                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${invoiceNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
+                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom ${invoiceNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
                   aria-invalid={Boolean(invoiceNumberPatternError)}
                 />
                 <span className={`mt-1 block text-xs ${invoiceNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{invoiceNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(invoiceNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
@@ -1419,7 +1419,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   value={creditNoteNumberPattern}
                   maxLength={50}
                   onChange={event => setFormData(previous => ({ ...previous, creditNoteNumberPattern: event.target.value }))}
-                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${creditNoteNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
+                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom ${creditNoteNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
                   aria-invalid={Boolean(creditNoteNumberPatternError)}
                 />
                 <span className={`mt-1 block text-xs ${creditNoteNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{creditNoteNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(creditNoteNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
@@ -1440,7 +1440,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   const value = parseInt(e.target.value);
                   setFormData(prev => ({ ...prev, defaultPaymentDays: isNaN(value) ? 30 : value }));
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Anzahl der Tage, nach denen eine Rechnung fällig wird. Bei 0 Tagen ist die Rechnung sofort fällig.
@@ -1457,7 +1457,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 max="999999"
                 value={formData.invoiceStartNumber ?? 1}
                 onChange={(e) => setFormData(prev => ({ ...prev, invoiceStartNumber: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
               <p className="text-xs text-gray-500 mt-1">Wird verwendet, wenn für das Rechnungsjahr keine eigene Startnummer hinterlegt ist.</p>
             </div>
@@ -1471,7 +1471,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <textarea
               value={formData.immediatePaymentClause || 'Rechnung ist per sofort fällig, ohne Abzug'}
               onChange={(e) => setFormData(prev => ({ ...prev, immediatePaymentClause: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               rows={2}
               placeholder="Text, der bei sofortiger Zahlung in der Rechnung angezeigt wird"
             />
@@ -1491,7 +1491,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
 
         {/* Yearly Invoice Start Numbers */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <FileText className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Rechnungsnummern</h3>
@@ -1532,7 +1532,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                     max="2100"
                     value={newYear}
                     onChange={(e) => setNewYear(parseInt(e.target.value) || new Date().getFullYear())}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   />
                 </div>
                 <div className="flex-1">
@@ -1543,13 +1543,13 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                     max="9999"
                     value={newStartNumber}
                     onChange={(e) => setNewStartNumber(parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleAddYearlyStartNumber}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="btn-primary rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 >
                   <Plus className="h-4 w-4" />
                 </button>
@@ -1568,7 +1568,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'appearance' && (
           <div className="flex flex-col gap-8">
         {/* Color Settings */}
-        <div className="order-3 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="order-3 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Palette className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Farbschema</h3>
@@ -1597,7 +1597,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   key={preset.name}
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, primaryColor: preset.primary, secondaryColor: preset.secondary }))}
-                  className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition hover:border-primary-custom hover:shadow-sm"
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition hover:border-primary-custom"
                 >
                   <span className="mb-2 block text-xs font-medium text-gray-700">{preset.name}</span>
                   <span className="flex gap-2">
@@ -1672,7 +1672,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Locale Settings */}
-        <div className="order-1 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="order-1 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Globe className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Sprache und Formatierung</h3>
@@ -1686,7 +1686,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.locale || 'de-DE'}
                 onChange={(e) => setFormData(prev => ({ ...prev, locale: e.target.value as 'de-DE' | 'en-US' | 'fr-FR' | 'es-ES' }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 <option value="de-DE">Deutsch (Deutschland) - 1.234,56 {currencySymbol}</option>
                 <option value="en-US">English (United States) - $1,234.56</option>
@@ -1704,7 +1704,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.numberFormat || 'european'}
                 onChange={(e) => setFormData(prev => ({ ...prev, numberFormat: e.target.value as NumberFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 <option value="european">Europäisch – 1.234,56</option>
                 <option value="american">Amerikanisch – 1,234.56</option>
@@ -1720,7 +1720,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.currency || 'EUR'}
                 onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 <option value="EUR">Euro (EUR)</option>
                 <option value="USD">US-Dollar (USD)</option>
@@ -1736,7 +1736,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.dateFormat || 'DD.MM.YYYY'}
                 onChange={(e) => setFormData(prev => ({ ...prev, dateFormat: e.target.value as DateFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 <option value="DD.MM.YYYY">31.12.2025</option>
                 <option value="DD/MM/YYYY">31/12/2025</option>
@@ -1751,7 +1751,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.timeFormat || '24h'}
                 onChange={(e) => setFormData(prev => ({ ...prev, timeFormat: e.target.value as TimeFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 <option value="24h">24-Stunden-Format</option>
                 <option value="12h">12-Stunden-Format</option>
@@ -1764,7 +1764,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <select
                 value={formData.timeZone || DEFAULT_TIME_ZONE}
                 onChange={(e) => setFormData(prev => ({ ...prev, timeZone: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               >
                 {TIME_ZONE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -1777,7 +1777,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
         </div>
 
-        <div className="order-2 bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="order-2 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="mb-4 flex items-center">
             <Palette className="mr-2 h-5 w-5 text-primary-custom" />
             <div>
@@ -1812,7 +1812,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'system' && (
           <div className="space-y-8">
         {/* E-Mail-Verwaltung */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Mail className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">E-Mail-Verwaltung</h3>
@@ -1829,7 +1829,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 type="button"
                 onClick={() => setShowEmailManagement(true)}
                 disabled={isDemoMode}
-                className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Mail className="h-4 w-4 mr-2" />
                 E-Mail-Verwaltung öffnen
@@ -1851,16 +1851,16 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Backup und Wiederherstellung */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">
             <Database className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Daten-Backup und Wiederherstellung</h3>
           </div>
           
           <div className="space-y-4">
-            <div className="guidance-panel border-l-4 border-l-blue-500 p-4">
-              <h4 className="font-medium text-blue-900 mb-2">Datensicherung</h4>
-              <p className="text-sm text-blue-800 mb-4">
+            <div className="guidance-panel p-4">
+              <h4 className="font-medium text-gray-900 mb-2">Datensicherung</h4>
+              <p className="text-sm text-gray-600 mb-4">
                 Erstellen Sie regelmäßig Backups Ihrer Daten, um Datenverlust zu vermeiden.
                 Ein Backup enthält {terminology.entity.plural}, Rechnungen, {terminology.work.plural} und Einstellungen; SMTP-Passwörter werden aus Sicherheitsgründen nicht exportiert.
               </p>
@@ -1868,12 +1868,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 type="button"
                 onClick={() => setShowBackupManagement(true)}
                 disabled={isDemoMode}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-300 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Database className="h-4 w-4 mr-2" />
                 Backup-Verwaltung öffnen
               </button>
-              {isDemoMode && <p className="text-xs text-blue-800 mt-2">Im Demo-Modus ist die Backup-Verwaltung deaktiviert.</p>}
+              {isDemoMode && <p className="text-xs text-gray-600 mt-2">Im Demo-Modus ist die Backup-Verwaltung deaktiviert.</p>}
             </div>
             
             <div className="guidance-panel border-l-4 border-l-amber-500 p-4">

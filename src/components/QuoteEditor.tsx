@@ -101,7 +101,7 @@ function DiscountTypeDropdown({ value, currencySymbol, onChange, onOpenChange, t
   ];
   const triggerTone = tone === 'amber'
     ? 'border-amber-200 bg-white text-amber-900 hover:bg-amber-100 focus:ring-amber-500'
-    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100 focus:ring-blue-500';
+    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100 focus:ring-primary-custom';
   const menuBorder = tone === 'amber' ? 'border-amber-200' : 'border-gray-300';
 
   useEffect(() => {
@@ -227,7 +227,7 @@ function SortableQuoteItem({
           setShowSuggestions(true);
         }}
         onFocus={() => setShowSuggestions(true)}
-        className={`w-full ${compact ? 'px-3 py-2' : 'px-2 py-1.5'} text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
+        className={`w-full ${compact ? 'px-3 py-2' : 'px-2 py-1.5'} text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom`}
         placeholder="Beschreibung der Position"
       />
       {showSuggestions && matchingTemplateSuggestions.length > 0 && (
@@ -299,7 +299,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
           />
         </div>
 
@@ -316,7 +316,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
           />
         </div>
 
@@ -334,7 +334,7 @@ function SortableQuoteItem({
               locale={company.locale}
               numberFormat={company.numberFormat}
               onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
             />
           </div>
         )}
@@ -354,7 +354,7 @@ function SortableQuoteItem({
                 locale={company.locale || 'de-DE'}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                className="w-full min-w-0 rounded border border-gray-300 px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full min-w-0 rounded border border-gray-300 px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
               />
               <DiscountTypeDropdown
@@ -453,7 +453,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
 
@@ -469,7 +469,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
           </div>
@@ -487,7 +487,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
           )}
@@ -506,7 +506,7 @@ function SortableQuoteItem({
                   locale={company.locale || 'de-DE'}
                   numberFormat={company.numberFormat}
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                  className="w-full min-w-0 rounded border border-gray-300 px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full min-w-0 rounded border border-gray-300 px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
                 />
                 <DiscountTypeDropdown
@@ -1131,7 +1131,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                       setShowCustomerDropdown(false);
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                   placeholder={terminology.entity.searchPlaceholder}
                 />
                 
@@ -1190,7 +1190,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                   setIssueDate(e.target.value);
                   setValidUntil(calculateValidUntil(e.target.value));
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
 
@@ -1204,7 +1204,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 required
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
             </div>
           </div>
@@ -1417,7 +1417,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setGlobalDiscountValue(value === '' ? '0' : String(value))}
-                    className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
                     placeholder="0"
                   />
                   <DiscountTypeDropdown
@@ -1519,7 +1519,7 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={4}
-                className="min-h-[14rem] w-full resize-none rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="min-h-[14rem] w-full resize-none rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder="Optional: Zusätzliche Informationen für das Angebot..."
               />
             </div>

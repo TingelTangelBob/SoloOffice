@@ -350,7 +350,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
               required
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               placeholder="z.B. Standard-Stundensatz"
             />
           </div>
@@ -362,7 +362,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
             <textarea
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               placeholder="Optionale Beschreibung"
               rows={3}
             />
@@ -380,7 +380,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
               locale={locale}
               numberFormat={numberFormat}
               onValueChange={(value) => setFormData(prev => ({ ...prev, rate: value === '' ? 0 : value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               placeholder="0,00"
             />
           </div>
@@ -390,7 +390,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
             <select
               value={formData.taxRate}
               onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
             >
               <option value={0}>0%</option>
               <option value={7}>7%</option>
@@ -469,7 +469,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
               required
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               placeholder="z.B. Schrauben M8"
             />
           </div>
@@ -481,7 +481,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
             <textarea
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               placeholder="Optionale Beschreibung"
               rows={3}
             />
@@ -500,7 +500,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
                 locale={locale}
                 numberFormat={numberFormat}
                 onValueChange={(value) => setFormData(prev => ({ ...prev, unitPrice: value === '' ? 0 : value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder="0,00"
               />
             </div>
@@ -513,7 +513,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
                 type="text"
                 value={formData.unit}
                 onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
                 placeholder="Stück"
               />
             </div>
@@ -537,7 +537,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
             <select
               value={formData.taxRate}
               onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
             >
               <option value={0}>0%</option>
               <option value={7}>7%</option>

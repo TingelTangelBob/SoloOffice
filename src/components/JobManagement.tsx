@@ -1079,7 +1079,7 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
                     }
                   }}
                   disabled={isBulkOperation}
-                  className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-blue-500"
+                  className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom"
                   defaultValue=""
                   aria-label="Status ändern"
                 >
