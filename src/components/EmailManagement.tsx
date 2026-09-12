@@ -25,6 +25,7 @@ import { useCompany } from '../context/CompanyContext';
 import { formatDate as formatDateValue, formatTime } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
+import { ThemeTabBar } from './ThemeTabBar';
 
 interface EmailAttachment {
   filename: string;
@@ -348,64 +349,22 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-6 flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'history'
-                ? 'border-primary-custom text-primary-custom'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <Mail className="h-4 w-4" />
-              <span>E-Mail-Historie</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('statistics')}
-            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'statistics'
-                ? 'border-primary-custom text-primary-custom'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="h-4 w-4" />
-              <span>Statistiken</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'settings'
-                ? 'border-primary-custom text-primary-custom'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <Settings className="h-4 w-4" />
-              <span>SMTP-Konfiguration</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('test')}
-            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'test'
-                ? 'border-primary-custom text-primary-custom'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <TestTube className="h-4 w-4" />
-              <span>Test-E-Mail</span>
-            </div>
-          </button>
-        </div>
+        <div className="theme-tab-group flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-x-0 border-b-0 shadow-none">
+          <ThemeTabBar
+            className="theme-tab-bar-attached theme-tab-bar-modal flex-shrink-0"
+            ariaLabel="E-Mail-Bereiche"
+            activeTab={activeTab}
+            onChange={setActiveTab}
+            tabs={[
+              { id: 'history' as const, label: 'E-Mail-Historie', icon: Mail },
+              { id: 'statistics' as const, label: 'Statistiken', icon: TrendingUp },
+              { id: 'settings' as const, label: 'SMTP-Konfiguration', icon: Settings },
+              { id: 'test' as const, label: 'Test-E-Mail', icon: TestTube },
+            ]}
+          />
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="theme-tab-panel min-h-0 flex-1 overflow-y-auto p-0">
           {/* Email History Tab */}
           {activeTab === 'history' && (
             <div className="h-full flex flex-col">
@@ -895,6 +854,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
               </div>
             </div>
           )}
+        </div>
         </div>
 
         {/* Email Detail Modal */}

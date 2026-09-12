@@ -1,5 +1,7 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { LucideIcon } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { InfoTooltip } from './InfoTooltip';
 
 interface PageHeaderProps {
   /**
@@ -11,7 +13,7 @@ interface PageHeaderProps {
   icon?: LucideIcon;
   title: string;
   shortTitle?: string;
-  /** Wird nicht mehr dargestellt; siehe `icon`. */
+  /** Wird als Hover-Infobox am Seitentitel angeboten. */
   subtitle?: string;
   children?: ReactNode;
   /**
@@ -23,33 +25,57 @@ interface PageHeaderProps {
 }
 
 /**
- * Überschrift einer Seite samt Seitenaktionen in derselben Zeile.
- *
- * Bis zur Einführung der Kopfleiste war dieser Bereich auf schmalen Geräten
- * fest am oberen Rand verankert und trug dort Symbol, Titel und Untertitel.
- * Die Verortung übernimmt jetzt die Kopfleiste; hier bleibt der Titel als
- * ruhige Überschrift dicht an der oberen linken Ecke.
+ * Registriert den Titel und die Aktionen der aktuellen Ansicht in der
+ * zentralen Kopfleiste. Der unsichtbare Platzhalter hält den vertikalen
+ * Abstand der bestehenden Seitenlayouts stabil, während die sichtbare
+ * Darstellung nur einmal in der Topbar erscheint.
  */
-export function PageHeader({ title, shortTitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
-  return (
-    <div className="page-header flex w-full flex-nowrap items-center gap-2 tablet:gap-3 lg:gap-4">
-      <div className={`min-w-0 basis-0 flex-1 items-center ${actionsTakeOverRow ? 'hidden lg:flex' : 'flex'}`}>
-        <h1
-          className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-gray-900 lg:text-xl"
-          title={title}
-        >
-          {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
-        </h1>
-      </div>
-      {children && (
-        <div
-          className={`flex min-w-0 items-center justify-end gap-1 whitespace-nowrap sm:gap-2 lg:max-w-none lg:shrink-0 lg:overflow-visible ${
-            actionsTakeOverRow ? 'flex-1' : 'max-w-[58%] shrink-0 overflow-x-auto'
-          }`}
-        >
-          {children}
+export function PageHeader({ title, shortTitle, subtitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
+  // `actionsTakeOverRow` bleibt als API-Kompatibilität erhalten. Die Topbar
+  // steuert die verfügbare Breite jetzt zentral für alle Ansichten.
+  void actionsTakeOverRow;
+  const [targets, setTargets] = useState<{ title: HTMLElement; actions: HTMLElement } | null>(null);
+
+  useEffect(() => {
+    const titleTarget = document.getElementById('topbar-page-title');
+    const actionsTarget = document.getElementById('topbar-page-actions');
+    if (titleTarget && actionsTarget) setTargets({ title: titleTarget, actions: actionsTarget });
+  }, []);
+
+  if (!targets) {
+    return (
+      <div className="page-header flex w-full flex-nowrap items-center gap-2 tablet:gap-3 lg:gap-4">
+        <div className="flex min-w-0 basis-0 flex-1 items-center">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-gray-900 lg:text-xl" title={title}>
+              {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
+            </h1>
+            {subtitle && <InfoTooltip text={subtitle} label={`Informationen zu ${title}`} />}
+          </div>
         </div>
+        {children && <div className="flex min-w-0 items-center justify-end gap-1 whitespace-nowrap sm:gap-2">{children}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {createPortal(
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h1 className="topbar-page-title min-w-0 truncate text-base font-semibold tracking-tight text-gray-900 lg:text-lg" title={title}>
+            {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
+          </h1>
+          {subtitle && <InfoTooltip text={subtitle} label={`Informationen zu ${title}`} />}
+        </div>,
+        targets.title,
       )}
-    </div>
+      {children && createPortal(
+        <div className="topbar-page-actions flex min-w-0 items-center justify-end gap-1 whitespace-nowrap sm:gap-2">
+          {children}
+        </div>,
+        targets.actions,
+      )}
+      <span className="page-header-placeholder" aria-hidden="true" />
+    </>
   );
 }

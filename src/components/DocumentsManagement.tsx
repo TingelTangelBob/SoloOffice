@@ -240,19 +240,21 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         )}
       </PageHeader>
 
-      <ThemeTabBar
-        className="sticky top-16 z-20 w-full lg:top-2"
-        ariaLabel="Belegarten"
-        activeTab={activeTab}
-        onChange={selectTab}
-        tabs={[
-          { id: 'all' as const, label: 'Alle', icon: LayoutGrid, count: tabCounts.all },
-          { id: 'receipts' as const, label: `Sonstige ${receiptLabel}`, icon: ReceiptText, count: tabCounts.receipts },
-          { id: 'incoming' as const, label: 'E-Rechnungen', icon: FileCheck2, count: tabCounts.incoming },
-        ]}
-      />
+      <div className="theme-tab-group">
+        <ThemeTabBar
+          className="theme-tab-bar-attached sticky top-16 z-20 w-full lg:top-2"
+          ariaLabel="Belegarten"
+          activeTab={activeTab}
+          onChange={selectTab}
+          tabs={[
+            { id: 'all' as const, label: 'Alle', icon: LayoutGrid, count: tabCounts.all },
+            { id: 'receipts' as const, label: `Sonstige ${receiptLabel}`, icon: ReceiptText, count: tabCounts.receipts },
+            { id: 'incoming' as const, label: 'E-Rechnungen', icon: FileCheck2, count: tabCounts.incoming },
+          ]}
+        />
 
-      {(error || notice) && (
+        <div className="theme-tab-panel space-y-4">
+        {(error || notice) && (
         <div className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
           {error ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />}
           <span className="flex-1">{error || notice}</span>
@@ -325,6 +327,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         onClose={() => setIsImportOpen(false)}
         onImported={() => setNotice('Ausgaben wurden importiert und in der EÜR gespeichert.')}
       />
+        </div>
+      </div>
       </div>
     </>
   );

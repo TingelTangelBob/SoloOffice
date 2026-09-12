@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Send, Clock, AlertCircle, Download, Eye } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye, History, ShieldAlert } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -15,6 +15,7 @@ import type { PreviewDocument } from '../utils/previewDocuments';
 import { PageHeader } from './PageHeader';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
+import { ThemeTabBar } from './ThemeTabBar';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
@@ -328,51 +329,21 @@ export function ReminderManagement() {
       )}
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-        <div className="border-b border-gray-200">
-          <div className="flex space-x-4 px-4 lg:px-6 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('eligible')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                activeTab === 'eligible'
-                  ? 'border-primary-custom text-primary-custom'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Zu mahnende Rechnungen
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                activeTab === 'history'
-                  ? 'border-primary-custom text-primary-custom'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Mahnhistorie
-            </button>
-            <button
-              onClick={() => setActiveTab('hardship')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                activeTab === 'hardship'
-                  ? 'border-primary-custom text-primary-custom'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <span className="flex items-center">
-                Härtefälle
-                {hardshipCases.length > 0 && (
-                  <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">
-                    {hardshipCases.length}
-                  </span>
-                )}
-              </span>
-            </button>
-          </div>
-        </div>
+      <div className="theme-tab-group mb-6">
+        <ThemeTabBar
+          className="theme-tab-bar-attached"
+          ariaLabel="Mahnungsbereiche"
+          activeTab={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'eligible' as const, label: 'Zu mahnende Rechnungen', icon: Bell },
+            { id: 'history' as const, label: 'Mahnhistorie', icon: History },
+            { id: 'hardship' as const, label: 'Härtefälle', icon: ShieldAlert, count: hardshipCases.length || undefined },
+          ]}
+        />
 
         {/* Tab Content */}
-        <div className="p-4 lg:p-6">
+        <div className="theme-tab-panel">
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-custom mx-auto"></div>

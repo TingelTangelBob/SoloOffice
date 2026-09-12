@@ -1,7 +1,6 @@
 import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Building2, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Package, Palette, Plus, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Palette, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
-import { PositionTemplatesPanel } from './PositionTemplatesPanel';
 import { useCompany } from '../context/CompanyContext';
 import { defaultDocumentTemplates } from '../context/CompanyProvider';
 import {
@@ -12,33 +11,23 @@ import {
   DocumentTableStyle,
   DocumentTemplate,
   DocumentTemplateType,
-  ImportResource,
   TerminologyProfile,
 } from '../types';
 import { getDocumentTemplateFallback, ResolvedDocumentTemplate } from '../utils/documentTemplateProfiles';
 import { getTerminology } from '../utils/terminology';
-import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
-import { apiService } from '../services/api';
-import { ImportWizard } from './ImportWizard';
 import { ThemeTabBar } from './ThemeTabBar';
 import { useFeedback } from '../context/FeedbackContext';
 import { TemplatePdfPreview } from './templates/TemplatePdfPreview';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
 
-type TemplateTab = 'general' | 'positions' | DocumentTemplateType;
-
-interface TemplatesManagementProps {
-  onNavigate?: (page: string, filter?: string) => void;
-}
+type TemplateTab = 'text' | DocumentTemplateType;
 
 const templateTabs: Array<{ id: TemplateTab; label: string; icon: typeof FileText }> = [
-  { id: 'general', label: 'Dokumentdesign', icon: Copy },
   { id: 'invoice', label: 'Rechnungen', icon: FileText },
   { id: 'quote', label: 'Angebote', icon: FileCheck },
   { id: 'orderConfirmation', label: 'Bestätigungen', icon: FileCheck },
-  { id: 'positions', label: 'Positionen', icon: Package },
+  { id: 'text', label: 'Textvorlagen', icon: Copy },
 ];
-
-const TEMPLATE_SETUP_NOTICE_ID = 'templates-organization-data';
 
 interface LayoutDefinition {
   id: DocumentLayout;
@@ -151,6 +140,7 @@ function getTemplateTabs(terminologyProfile?: TerminologyProfile) {
 }
 
 function getTemplateTypeLabel(type: DocumentTemplateType, terminologyProfile?: TerminologyProfile) {
+  if (type === 'reminder') return 'Mahnungen';
   return getTemplateTabs(terminologyProfile).find(tab => tab.id === type)?.label || 'Dokument';
 }
 
@@ -584,11 +574,66 @@ function TemplateEditorOverlay({
   );
 }
 
-export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
+interface TextTemplateCardProps {
+  template: DocumentTemplate;
+  terminologyProfile?: TerminologyProfile;
+  onEdit: (template: DocumentTemplate, trigger: HTMLButtonElement) => void;
+  onDelete: (template: DocumentTemplate) => void;
+}
+
+function TextTemplateCard({ template, terminologyProfile, onEdit, onDelete }: TextTemplateCardProps) {
+  const typeLabel = getTemplateTypeLabel(template.documentType, terminologyProfile);
+  const textValues = [template.subject, template.introText, template.closingText, template.paymentTerms]
+    .map(value => value?.trim())
+    .filter(Boolean);
+
+  return (
+    <article className="template-card flex h-full flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="inline-flex items-center rounded-full bg-primary-custom/10 px-2.5 py-1 text-xs font-medium text-primary-custom">{typeLabel}</span>
+          <h3 className="mt-3 truncate font-semibold text-gray-900" title={template.name}>{template.name}</h3>
+        </div>
+        {template.isDefault && <span className="shrink-0 rounded-full border border-primary-custom px-2 py-1 text-[11px] font-medium text-primary-custom">Standard</span>}
+      </div>
+
+      <dl className="mt-4 space-y-3 text-sm">
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Betreff</dt>
+          <dd className="mt-1 line-clamp-2 text-gray-800">{template.subject?.trim() || 'Kein Betreff hinterlegt'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Textbausteine</dt>
+          <dd className="mt-1 text-gray-800">{textValues.length} von 4 hinterlegt</dd>
+        </div>
+      </dl>
+
+      <div className="mt-auto flex items-center justify-end gap-2 pt-5">
+        <button
+          type="button"
+          onClick={event => onEdit(template, event.currentTarget)}
+          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-primary-custom hover:text-primary-custom"
+        >
+          <Edit2 className="h-4 w-4" /> Bearbeiten
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(template)}
+          className="inline-flex h-9 w-9 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600"
+          aria-label={`${template.name} löschen`}
+          title="Textvorlage löschen"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export function TemplatesManagement() {
   const { confirm } = useFeedback();
   const {
     company,
-    setCompany,
     documentTemplates,
     addDocumentTemplate,
     updateDocumentTemplate,
@@ -596,16 +641,15 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
   } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const tabs = getTemplateTabs(company?.terminologyProfile);
-  const [activeTab, setActiveTab] = useState<TemplateTab>('general');
+  const [activeTab, setActiveTab] = useState<TemplateTab>('invoice');
   const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [editorDocumentType, setEditorDocumentType] = useState<DocumentTemplateType | null>(null);
   const [formData, setFormData] = useState<TemplateFormState>(emptyForm);
   const [editorInitialFormData, setEditorInitialFormData] = useState<TemplateFormState>(emptyForm);
   const [selectedPreview, setSelectedPreview] = useState<DocumentTemplate | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [setupNoticeDismissed, setSetupNoticeDismissed] = useState(() => isNoticeDismissed(TEMPLATE_SETUP_NOTICE_ID));
-  const [importResource, setImportResource] = useState<ImportResource | null>(null);
   const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
   const saveInFlightRef = useRef(false);
   const isEditorDirty = Boolean(editingTemplate || isCreating) && JSON.stringify(formData) !== JSON.stringify(editorInitialFormData);
@@ -620,11 +664,16 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     return () => window.removeEventListener('beforeunload', warnBeforeUnload);
   }, [isEditorDirty, isSaving]);
 
-  const templates = useMemo(() => {
-    if (activeTab === 'general' || activeTab === 'positions') return [];
-    const source = documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates;
-    return source.filter(template => template.documentType === activeTab);
-  }, [activeTab, documentTemplates]);
+  const sourceTemplates = useMemo(
+    () => documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates,
+    [documentTemplates],
+  );
+  const templates = useMemo(() => activeTab === 'text'
+    ? []
+    : sourceTemplates.filter(template => template.documentType === activeTab), [activeTab, sourceTemplates]);
+  const textTemplates = useMemo(() => sourceTemplates.filter(template => Boolean(
+    template.subject?.trim() || template.introText?.trim() || template.closingText?.trim() || template.paymentTerms?.trim(),
+  )), [sourceTemplates]);
 
   useEffect(() => {
     if (!editingTemplate) {
@@ -648,11 +697,12 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedPreview]);
 
-  const openCreate = () => {
+  const openCreate = (documentType: DocumentTemplateType) => {
     setEditingTemplate(null);
-    const nextFormData = getEmptyForm(activeTab as DocumentTemplateType);
+    const nextFormData = getEmptyForm(documentType);
     setFormData(nextFormData);
     setEditorInitialFormData(nextFormData);
+    setEditorDocumentType(documentType);
     setIsCreating(true);
     setError(null);
   };
@@ -661,6 +711,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     const nextFormData = templateToForm(template);
     setIsCreating(false);
     setEditingTemplate(template);
+    setEditorDocumentType(template.documentType);
     setFormData(nextFormData);
     setEditorInitialFormData(nextFormData);
     setError(null);
@@ -689,6 +740,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     const trigger = editorTriggerRef.current;
     setEditingTemplate(null);
     setIsCreating(false);
+    setEditorDocumentType(null);
     setFormData(emptyForm);
     setEditorInitialFormData(emptyForm);
     setError(null);
@@ -736,7 +788,8 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
       return;
     }
 
-    const documentType = activeTab as DocumentTemplateType;
+    const documentType = editorDocumentType || 'invoice';
+    const documentTypeTemplates = sourceTemplates.filter(template => template.documentType === documentType);
     const templateData: Omit<DocumentTemplate, 'id' | 'createdAt' | 'updatedAt'> = {
       documentType,
       name: formData.name.trim(),
@@ -752,7 +805,7 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
       tableStyle: formData.tableStyle,
       showPaymentInformation: formData.showPaymentInformation,
       showFooter: formData.showFooter,
-      isDefault: editingTemplate ? editingTemplate.isDefault : templates.length === 0,
+      isDefault: editingTemplate ? editingTemplate.isDefault : documentTypeTemplates.length === 0,
     };
 
     try {
@@ -796,185 +849,135 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
     }
   };
 
-  const refreshImportedResource = async () => {
-    if (importResource === 'positions') {
-      const updatedCompany = await apiService.getCompany();
-      setCompany(previous => ({ ...previous, ...updatedCompany }));
-    }
-  };
-
   return (
     <div className="space-y-8">
       <PageHeader
         icon={Copy}
         title="Vorlagen"
-        subtitle="PDF-Layouts und Dokumentdesign zentral verwalten"
-      />
+        subtitle="PDF-Layouts und Textbausteine zentral verwalten"
+      >
+        <ActionMenu
+          variant="primary"
+          ariaLabel="Vorlage hinzufügen"
+          title="Vorlage hinzufügen"
+          triggerClassName="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white sm:px-4"
+          icon={<><Plus className="h-4 w-4" /><span className="hidden sm:inline">Vorlage hinzufügen</span></>}
+        >
+          <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Vorlage für</div>
+          <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('invoice')}>Rechnung</ActionMenuItem>
+          <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('quote')}>Angebot</ActionMenuItem>
+          <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('orderConfirmation')}>{terminology.work.confirmationLabel}</ActionMenuItem>
+          <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('reminder')}>Mahnung</ActionMenuItem>
+        </ActionMenu>
+      </PageHeader>
 
-      <ThemeTabBar
-        className="sticky top-16 z-20 w-full lg:top-2"
-        ariaLabel="Vorlagenbereiche"
-        activeTab={activeTab}
-        onChange={handleTemplateTabChange}
-        tabs={tabs}
-      />
+      <div className="theme-tab-group">
+        <ThemeTabBar
+          className="theme-tab-bar-attached sticky top-16 z-20 w-full lg:top-2"
+          ariaLabel="Vorlagenbereiche"
+          activeTab={activeTab}
+          onChange={handleTemplateTabChange}
+          tabs={tabs}
+        />
 
-      {activeTab === 'general' ? (
-        <div className="space-y-6">
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm lg:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <LayoutTemplate className="h-5 w-5 text-primary-custom" />
-                  <h2 className="text-lg font-semibold text-gray-900">Dokumentdesign</h2>
-                </div>
-                <p className="mt-2 max-w-2xl text-sm text-gray-600">
-                  Hier verwalten Sie die Gestaltung der fertigen PDF-Dokumente. Wählen Sie oben den Dokumenttyp, um Layouts, Farben, Logos, Tabellen und Texte zu bearbeiten.
-                </p>
-              </div>
-              <span className="inline-flex shrink-0 rounded-full bg-primary-custom/10 px-3 py-1 text-xs font-medium text-primary-custom">9 Layouts verfügbar</span>
-            </div>
-          </section>
-
-          {/* Die Kennzahl zu den Mahnstufen ist mit dem Mahnungs-Reiter
-              entfallen; sie verwies auf einen Bereich, den es hier nicht mehr
-              gibt. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[
-              { value: '3', label: 'Gestaltbare Dokumentarten', text: `Rechnungen, Angebote und ${terminology.work.confirmationPluralLabel}` },
-              { value: '1', label: 'Standardlogo', text: `Wird zentral in ${terminology.organization.dataLabel} gepflegt` },
-            ].map(item => (
-              <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-2xl font-semibold text-primary-custom">{item.value}</p>
-                <h3 className="mt-1 text-sm font-semibold text-gray-900">{item.label}</h3>
-                <p className="mt-1 text-xs leading-5 text-gray-500">{item.text}</p>
-              </div>
-            ))}
-          </div>
-
-          {!setupNoticeDismissed && <section className="relative rounded-xl border border-blue-200 bg-blue-50 p-4 pr-14 lg:p-5">
-            <button type="button" onClick={() => { dismissNotice(TEMPLATE_SETUP_NOTICE_ID); setSetupNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis ausblenden"><X className="h-5 w-5" /></button>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
-                <div>
-                  <h2 className="text-base font-semibold text-blue-900">{terminology.organization.dataLabel}</h2>
-                  <p className="mt-1 text-sm text-blue-800">
-                  {terminology.organization.dataLabel}, Standardlogo, Kontakt- und Zahlungsinformationen werden zentral in den Einstellungen verwaltet.
-                  </p>
-                </div>
-              </div>
-              {onNavigate && (
-                <button type="button" onClick={() => onNavigate('settings', 'general')} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-800">
-                  {terminology.organization.dataLabel} öffnen
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </section>}
-        </div>
-      ) : activeTab === 'positions' ? (
-        <div className="space-y-4">
-          <PositionTemplatesPanel />
-          {/* Vorbelegte Positionen sind eine Firmeneinstellung und laufen über
-              den Import der Vorlagenseite, nicht über die Stundensatz- oder
-              Materiallisten. */}
-          <div className="flex justify-end">
-            <button type="button" onClick={() => setImportResource('positions')} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50">
-              <Upload className="h-4 w-4" aria-hidden="true" /> Vorbelegte Positionen importieren
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between lg:p-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">{getTemplateTypeLabel(activeTab as DocumentTemplateType, company?.terminologyProfile)}</h2>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Diese Vorlagen steuern das fertige PDF-Layout. Texte, Logo, Akzentfarbe, Tabelle und Fußbereich werden gemeinsam gespeichert.
-              </p>
-            </div>
-            <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openCreate(); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90">
-              <Plus className="h-4 w-4" />
-              Vorlage hinzufügen
-            </button>
-          </div>
-
+        <div className="theme-tab-panel space-y-6">
           {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {templates.map(template => (
-              <article key={template.id} className={`template-card relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
-                {template.isDefault && <span className="absolute left-1/2 top-2 z-10 inline-flex -translate-x-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
-                <button type="button" onClick={() => setSelectedPreview(template)} className="group relative block w-full bg-gray-50 p-4" aria-label={`${template.name} in großer Vorschau öffnen`}>
-                  {/* Die Miniatur ist im Seitenverhältnis A4 hoch. Ohne
-                      Begrenzung füllte sie die ganze Kartenbreite und wurde
-                      dadurch so groß, dass ihr Inhalt verloren wirkte. */}
-                  <div className="mx-auto w-full max-w-[230px] space-y-2">
-                    <TemplateMiniature template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
-                    <span className="block text-center text-[11px] text-gray-500">Miniatur der PDF-Vorlage</span>
-                  </div>
-                  <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
-                    <Maximize2 className="h-3 w-3" /> Große Vorschau
-                  </span>
-                </button>
-                <div className="p-3">
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <div className="w-full min-w-0">
-                      <h3 className="truncate text-center font-semibold text-gray-900">{template.name}</h3>
-                    </div>
-                    <div className="template-card-actions flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openEdit(template); }} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button type="button" onClick={() => handleDelete(template)} className="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label={`${template.name} löschen`}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary-custom bg-white px-3 py-1.5 text-xs font-medium text-primary-custom transition-colors hover:bg-primary-light-custom disabled:cursor-default disabled:opacity-100" aria-label={template.isDefault ? `${template.name} ist Standard` : `${template.name} als Standard festlegen`}>
-                      {template.isDefault ? <><Check className="h-4 w-4" />Standard</> : 'Als Standard'}
-                    </button>
-                  </div>
-                  <div className="hidden">
-                    <span className="rounded-full bg-gray-100 px-2 py-1">{layoutOptions.find(option => option.id === (template.layout || 'classic'))?.label || 'Klassisch'}</span>
-                    <span className="rounded-full bg-gray-100 px-2 py-1">{template.logoMode === 'none' ? 'Ohne Logo' : terminology.organization.logoLabel}</span>
-                  </div>
-                  <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="hidden">
-                    {template.isDefault ? 'Aktive Standardvorlage' : 'Als Standard auswählen'}
-                  </button>
+          {activeTab === 'text' ? (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Textvorlagen</h2>
+                  <p className="mt-1 text-sm text-gray-500">Betreff, Einleitung, Abschluss und Zahlungshinweise je Dokumentart verwalten.</p>
                 </div>
-              </article>
-            ))}
-          </div>
+                <span className="hidden rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 sm:inline-flex">{textTemplates.length} Vorlagen</span>
+              </div>
 
-          {templates.length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-              Noch keine Vorlagen vorhanden. Legen Sie die erste Layoutvorlage an.
-            </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {textTemplates.map(template => (
+                  <TextTemplateCard
+                    key={template.id}
+                    template={template}
+                    terminologyProfile={company.terminologyProfile}
+                    onEdit={(item, trigger) => { editorTriggerRef.current = trigger; openEdit(item); }}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+
+              {textTemplates.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                  Noch keine Textvorlagen vorhanden. Legen Sie über „Vorlage hinzufügen“ die erste Vorlage an.
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {templates.map(template => (
+                  <article key={template.id} className={`template-card relative overflow-hidden rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
+                    {template.isDefault && <span className="absolute left-1/2 top-2 z-10 inline-flex -translate-x-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
+                    <button type="button" onClick={() => setSelectedPreview(template)} className="group relative block w-full bg-gray-50 p-4" aria-label={`${template.name} in großer Vorschau öffnen`}>
+                      <div className="mx-auto w-full max-w-[230px] space-y-2">
+                        <TemplateMiniature template={template} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
+                        <span className="block text-center text-[11px] text-gray-500">Miniatur der PDF-Vorlage</span>
+                      </div>
+                      <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
+                        <Maximize2 className="h-3 w-3" /> Große Vorschau
+                      </span>
+                    </button>
+                    <div className="p-3">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <div className="w-full min-w-0">
+                          <h3 className="truncate text-center font-semibold text-gray-900">{template.name}</h3>
+                        </div>
+                        <div className="template-card-actions flex shrink-0 items-center gap-1">
+                          <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openEdit(template); }} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button type="button" onClick={() => handleDelete(template)} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label={`${template.name} löschen`}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary-custom bg-white px-3 py-1.5 text-xs font-medium text-primary-custom transition-colors hover:bg-primary-light-custom disabled:cursor-default disabled:opacity-100" aria-label={template.isDefault ? `${template.name} ist Standard` : `${template.name} als Standard festlegen`}>
+                          {template.isDefault ? <><Check className="h-4 w-4" />Standard</> : 'Als Standard'}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {templates.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                  Noch keine Vorlagen vorhanden. Legen Sie über „Vorlage hinzufügen“ die erste Layoutvorlage an.
+                </div>
+              )}
+
+              <div className="guidance-panel p-4 text-sm">
+                Eigene Layouts basieren auf neun professionellen Grundlayouts. Branding, Logo, Farben, Tabelle und Textbausteine bleiben gemeinsam bearbeitbar.
+              </div>
+            </>
           )}
-
-          {(isCreating || editingTemplate) && (
-            <TemplateEditorOverlay
-              activeTab={activeTab as DocumentTemplateType}
-              editingTemplate={editingTemplate}
-              formData={formData}
-              setFormData={setFormData}
-              company={company}
-              logo={company.logo}
-              terminologyProfile={company.terminologyProfile}
-              isSaving={isSaving}
-              isDirty={isEditorDirty}
-              error={error}
-              onClose={() => { void closeEditor(); }}
-              onReset={() => { void resetEditorChanges(); }}
-              onSave={handleSave}
-            />
-          )}
-
-          <div className="guidance-panel p-4 text-sm">
-            Eigene Layouts basieren auf neun professionellen Grundlayouts. So bleiben PDFs technisch stabil, während Branding, Logo, Farben, Tabelle und Informationsblöcke angepasst werden können.
-          </div>
         </div>
+      </div>
+
+      {(isCreating || editingTemplate) && editorDocumentType && (
+        <TemplateEditorOverlay
+          activeTab={editorDocumentType}
+          editingTemplate={editingTemplate}
+          formData={formData}
+          setFormData={setFormData}
+          company={company}
+          logo={company.logo}
+          terminologyProfile={company.terminologyProfile}
+          isSaving={isSaving}
+          isDirty={isEditorDirty}
+          error={error}
+          onClose={() => { void closeEditor(); }}
+          onReset={() => { void resetEditorChanges(); }}
+          onSave={handleSave}
+        />
       )}
 
       {selectedPreview && (
@@ -994,14 +997,6 @@ export function TemplatesManagement({ onNavigate }: TemplatesManagementProps) {
             </div>
           </div>
         </div>
-      )}
-      {importResource && (
-        <ImportWizard
-          resource={importResource}
-          isOpen={true}
-          onClose={() => setImportResource(null)}
-          onImported={refreshImportedResource}
-        />
       )}
     </div>
   );

@@ -16,6 +16,7 @@ import { getTerminology, terminologyProfiles } from '../utils/terminology';
 import type { TerminologyDefinition } from '../utils/terminology';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { ThemeTabBar } from './ThemeTabBar';
+import { InfoTooltip } from './InfoTooltip';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 import { useFeedback } from '../context/FeedbackContext';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
@@ -374,9 +375,11 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
-      <div className={`${embedded ? 'hidden' : ''} order-1`}>
-        <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
-      </div>
+      {!embedded && (
+        <div className="order-1">
+          <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
+        </div>
+      )}
 
       {/* Der Demo-Hinweis gehört zu den allgemeinen Einstellungen. Auf den
           übrigen Reitern stand er nur im Weg, ohne dort etwas zu erklären. */}
@@ -422,21 +425,22 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       )}
 
-      <ThemeTabBar
-        className={`${embedded ? 'hidden ' : ''}order-2 sticky top-14 z-20 w-full`}
-        ariaLabel="Einstellungsbereiche"
-        activeTab={activeTab}
-        onChange={setActiveTab}
-        tabs={[
-          { id: 'app' as const, label: 'Allgemein' },
-          { id: 'general' as const, label: 'Firmendaten' },
-          { id: 'invoices' as const, label: 'Rechnungen' },
-          { id: 'appearance' as const, label: 'Darstellung' },
-          { id: 'system' as const, label: 'E-Mail & Backup' },
-        ]}
-      />
+      <div className={`${embedded ? '' : 'theme-tab-group order-2'}`}>
+        <ThemeTabBar
+          className={`${embedded ? 'hidden ' : ''}theme-tab-bar-attached sticky top-14 z-20 w-full`}
+          ariaLabel="Einstellungsbereiche"
+          activeTab={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'app' as const, label: 'Allgemein' },
+            { id: 'general' as const, label: 'Firmendaten' },
+            { id: 'invoices' as const, label: 'Rechnungen' },
+            { id: 'appearance' as const, label: 'Darstellung' },
+            { id: 'system' as const, label: 'E-Mail & Backup' },
+          ]}
+        />
 
-      <form onSubmit={handleSubmit} className="order-4 space-y-8">
+      <form onSubmit={handleSubmit} className={`${embedded ? '' : 'theme-tab-panel'} space-y-8`}>
         {activeTab === 'app' && (
           <div className="space-y-8">
         {/* Terminology Settings */}
@@ -446,10 +450,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <div className="flex items-center gap-2">
                 <SettingsIcon className="h-5 w-5 text-primary-custom" />
                 <h3 className="text-lg font-semibold text-gray-900">Begriffe &amp; Fachsprache</h3>
+                <InfoTooltip text="Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert." />
               </div>
-              <p className="mt-1 max-w-3xl text-sm text-gray-500">
-                Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert.
-              </p>
             </div>
           </div>
 
@@ -498,12 +500,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
 
           <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <label htmlFor="receipt-label" className="block text-sm font-semibold text-gray-900">
-              Bezeichnung für den Belegbereich
-            </label>
-            <p className="mt-1 text-xs leading-5 text-gray-500">
-              Dieser Name erscheint in der Navigation und als Überschrift, zum Beispiel „Belege“, „Ausgabenbelege“ oder „Dokumente“.
-            </p>
+            <div className="flex items-center gap-2">
+              <label htmlFor="receipt-label" className="block text-sm font-semibold text-gray-900">
+                Bezeichnung für den Belegbereich
+              </label>
+              <InfoTooltip text="Dieser Name erscheint in der Navigation und als Überschrift, zum Beispiel „Belege“, „Ausgabenbelege“ oder „Dokumente“." />
+            </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
               <div className="flex-1">
                 <input
@@ -532,6 +534,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           <div className="flex items-center mb-4">
             <Briefcase className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Module</h3>
+            <InfoTooltip text="Aktivieren Sie nur die Bereiche, die Sie in der Anwendung benötigen. Deaktivierte Module verschwinden aus der Navigation." />
           </div>
           
           <div className="space-y-4">
@@ -1915,6 +1918,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </button>
         </div>
       </form>
+      </div>
 
       {/* Email Management Modal */}
       {showEmailManagement && (

@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, FolderOpen, ListChecks, Clock3, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { DemoNotice } from './DemoNotice';
 import { TopBar } from './TopBar';
 import type { TopBarNotice } from './TopBar';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { isDemoMode } from '../services/demoApi';
 import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
@@ -44,6 +45,7 @@ const SIDEBAR_MIN_WIDTH = 72;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_COMPACT_BREAKPOINT = 176;
 const SIDEBAR_STORAGE_KEY = 'solooffice-sidebar-settings';
+const LANDING_PAGE_URL = 'https://solooffice.de';
 
 interface SidebarSettings {
   width: number;
@@ -65,6 +67,14 @@ function readSidebarSettings(): SidebarSettings {
   }
 }
 
+/** Initialen aus dem Anzeigenamen; bei nur einem Wort dessen erste zwei Zeichen. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '–';
+  if (parts.length === 1) return parts[0].slice(0, 2).toLocaleUpperCase('de-DE');
+  return (parts[0][0] + parts[parts.length - 1][0]).toLocaleUpperCase('de-DE');
+}
+
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -78,6 +88,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // Angemeldete Listenansicht, deren Liste das Suchfeld gerade live filtert.
   const [pageSearch, setPageSearch] = useState<PageSearchRegistration | null>(null);
   const registerPageSearch = useCallback((registration: PageSearchRegistration) => {
@@ -134,6 +146,16 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     }
     taxAreaWasActive.current = taxAreaActive;
   }, [taxAreaActive]);
+
+  useEffect(() => {
+    setIsSearchOpen(false);
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [isSearchOpen]);
 
   useEffect(() => {
     try {
@@ -193,12 +215,22 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const sidebarStyle = {
     '--sidebar-width': `${sidebarRenderWidth}px`,
   } as CSSProperties;
-  const wideContentPages = ['invoices', 'quotes', 'jobs', 'calendar', 'customers', 'reporting'];
-  const contentWidthClass = currentPage === 'templates'
-    ? 'max-w-[1440px]'
-    : wideContentPages.includes(currentPage)
-      ? 'max-w-[1600px]'
-      : 'max-w-7xl';
+  /* Zwei bewusst sichtbare Seitenraster: datenreiche Ansichten nutzen die
+     gesamte verfügbare Breite, Formulare und Übersichten bleiben auf sehr
+     großen Monitoren lesbar begrenzt. */
+  const fullWidthPages = [
+    'invoices', 'quotes', 'jobs', 'calendar', 'customers', 'reporting',
+    'documents', 'templates', 'euer', 'fixed-assets', 'recurring-invoices',
+    'credit-notes', 'reminders', 'positions',
+  ];
+  const contentWidthClass = fullWidthPages.includes(currentPage) ? 'max-w-none' : 'max-w-[1760px]';
+  const accountName = user?.displayName?.trim() || 'Konto';
+  const accountInitials = initialsOf(accountName);
+  const appVersion = import.meta.env.VITE_APP_VERSION;
+  const versionLabel = appVersion && appVersion !== 'dev' ? `v${appVersion.replace(/^v/i, '')}` : 'Entwicklungsstand';
+  const openLandingPage = (path: string) => {
+    window.open(`${LANDING_PAGE_URL}${path}`, '_blank', 'noopener,noreferrer');
+  };
 
   const baseNavItems: NavItem[] = [
     { id: 'dashboard', label: 'Übersicht', icon: Home },
@@ -238,8 +270,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const settingsNavItem = { id: 'settings', label: 'Einstellungen', icon: Settings };
   const workspaceNavItem = { id: 'workspace', label: 'Workspace', icon: Building2 };
   const templatesNavItem = { id: 'templates', label: 'Vorlagen', icon: Copy };
+  const positionsNavItem = { id: 'positions', label: 'Positionen', icon: Package };
   const bottomNavItems = [
     { id: 'customers', label: terminology.entity.navLabel, icon: Users },
+    positionsNavItem,
     templatesNavItem,
     settingsNavItem,
     workspaceNavItem,
@@ -302,13 +336,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const overdueCount = invoices.filter((invoice) => invoice.status === 'overdue').length;
   const draftCount = invoices.filter((invoice) => invoice.status === 'draft').length;
   const topBarNotices: TopBarNotice[] = [
-    ...(companySetupComplete ? [] : [{
-      id: 'company',
-      label: 'Firmendaten unvollständig',
-      detail: 'Für belastbare Rechnungen fehlen Pflichtangaben.',
-      page: 'settings',
-      tone: 'warning' as const,
-    }]),
     ...(overdueCount > 0 ? [{
       id: 'overdue',
       label: `${overdueCount} ${overdueCount === 1 ? 'überfällige Rechnung' : 'überfällige Rechnungen'}`,
@@ -382,43 +409,69 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
    * `allNavItems`, Kunden, Rechnungen, Angebote und Aufträge zugreifen.
    */
   const searchSlot = (
-    <div className="relative">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(event) => setSearchQuery(event.target.value)}
-        onKeyDown={(event) => {
-          if (!pageSearch && event.key === 'Enter' && searchResults[0]) {
-            handlePageChange(searchResults[0].page);
-            setSearchQuery('');
-          }
-        }}
-        placeholder={pageSearch?.placeholder ?? 'Suchen...'}
-        aria-label={pageSearch ? pageSearch.placeholder : 'Globale Suche'}
-        className="h-9 w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 py-0 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"
-        style={{ paddingLeft: '2.25rem' }}
-      />
-      {searchQuery && !pageSearch && (
-        <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          {searchResults.length > 0 ? searchResults.map((result) => (
-            <button
-              key={`${result.page}-${result.id}`}
-              type="button"
-              onClick={() => {
-                handlePageChange(result.page);
-                setSearchQuery('');
-              }}
-              className="w-full px-3 py-2 text-left hover:bg-gray-50"
-            >
-              <div className="truncate text-sm font-medium text-gray-900">{result.title}</div>
-              <div className="truncate text-xs text-gray-500">{result.subtitle}</div>
-            </button>
-          )) : (
-            <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>
-          )}
-        </div>
-      )}
+    <div className={`topbar-search ${isSearchOpen ? 'topbar-search-open' : ''}`}>
+      <button
+        type="button"
+        className="topbar-search-toggle md:hidden"
+        onClick={() => setIsSearchOpen(true)}
+        aria-label="Suche öffnen"
+        title="Suche öffnen"
+      >
+        <Search className="h-5 w-5" />
+      </button>
+      <div className={`topbar-search-input-wrap ${isSearchOpen ? '' : 'hidden md:block'}`}>
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          ref={searchInputRef}
+          type="text"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && isSearchOpen) {
+              setIsSearchOpen(false);
+              return;
+            }
+            if (!pageSearch && event.key === 'Enter' && searchResults[0]) {
+              handlePageChange(searchResults[0].page);
+              setSearchQuery('');
+            }
+          }}
+          placeholder={pageSearch?.placeholder ?? 'Suchen...'}
+          aria-label={pageSearch ? pageSearch.placeholder : 'Globale Suche'}
+          className="topbar-search-input h-9 w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 py-0 pl-10 pr-10 text-sm text-gray-900 outline-none transition focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"
+        />
+        {isSearchOpen && (
+          <button
+            type="button"
+            className="topbar-search-close md:hidden"
+            onClick={() => setIsSearchOpen(false)}
+            aria-label="Suche schließen"
+            title="Suche schließen"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        {searchQuery && !pageSearch && (
+          <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            {searchResults.length > 0 ? searchResults.map((result) => (
+              <button
+                key={`${result.page}-${result.id}`}
+                type="button"
+                onClick={() => {
+                  handlePageChange(result.page);
+                  setSearchQuery('');
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-gray-50"
+              >
+                <div className="truncate text-sm font-medium text-gray-900">{result.title}</div>
+                <div className="truncate text-xs text-gray-500">{result.subtitle}</div>
+              </button>
+            )) : (
+              <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -569,6 +622,69 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     );
                   })}
                 </ul>
+
+                {!companySetupComplete && (
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange('settings')}
+                    className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
+                    aria-label="Firmendaten vervollständigen"
+                    title={isSidebarCompact ? 'Firmendaten vervollständigen' : undefined}
+                  >
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
+                      <strong>Firmendaten vervollständigen:</strong>
+                      <span>Pflichtangaben fehlen</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  </button>
+                )}
+
+                <div className="sidebar-account mt-2">
+                  <ActionMenu
+                    containerClassName="w-full"
+                    ariaLabel={`Konto von ${accountName} öffnen`}
+                    title="Konto"
+                    menuClassName="sidebar-account-menu min-w-[18rem]"
+                    triggerClassName="sidebar-account-trigger"
+                    icon={(
+                      <span className="sidebar-account-content">
+                        <span className="sidebar-account-avatar" aria-hidden="true">{accountInitials}</span>
+                        <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-account-label min-w-0 flex-1 text-left`}>
+                          <span className="block truncate text-sm font-semibold">{accountName}</span>
+                          <span className="block truncate text-xs text-gray-500">{workspace?.name || 'Workspace'}</span>
+                        </span>
+                        <MoreHorizontal className="sidebar-account-more h-5 w-5 shrink-0" aria-hidden="true" />
+                      </span>
+                    )}
+                  >
+                    <div className="sidebar-account-menu-header">
+                      <span className="sidebar-account-avatar" aria-hidden="true">{accountInitials}</span>
+                      <span className="min-w-0">
+                        <strong className="block truncate text-sm text-gray-900">{accountName}</strong>
+                        <span className="block truncate text-xs text-gray-500">{workspace?.name || 'Workspace'}</span>
+                      </span>
+                    </div>
+                    <div className="pt-1">
+                      <ActionMenuItem icon={<UserRound className="h-4 w-4" />} onClick={() => handlePageChange('profile')}>Benutzerdaten</ActionMenuItem>
+                      <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => handlePageChange('workspace')}>Vertragsdaten</ActionMenuItem>
+                      <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => openLandingPage('/preise')}>Tarif</ActionMenuItem>
+                      <ActionMenuItem icon={<FolderOpen className="h-4 w-4" />} onClick={() => handlePageChange('documents')}>Dokumente</ActionMenuItem>
+                      {company.jobTrackingEnabled && <ActionMenuItem icon={<ListChecks className="h-4 w-4" />} onClick={() => handlePageChange('jobs')}>Aufgaben</ActionMenuItem>}
+                      {company.jobTrackingEnabled && <ActionMenuItem icon={<Clock3 className="h-4 w-4" />} onClick={() => handlePageChange('calendar')}>Zeiterfassung</ActionMenuItem>}
+                    </div>
+                    <div className="sidebar-account-menu-section">
+                      <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/datenschutz')}>Datenschutzerklärung</ActionMenuItem>
+                      <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/impressum')}>Impressum</ActionMenuItem>
+                    </div>
+                    <div className="sidebar-account-meta">
+                      <span>Kundennummer: —</span>
+                      <span>{versionLabel}</span>
+                    </div>
+                    <div className="sidebar-account-menu-section">
+                      <ActionMenuItem icon={<LogOut className="h-4 w-4" />} tone="red" onClick={() => { void logout(); }}>Abmelden</ActionMenuItem>
+                    </div>
+                  </ActionMenu>
+                </div>
               </div>
             </div>
             <div
@@ -591,12 +707,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               isSidebarCompact={isSidebarCompact}
               onToggleSidebar={toggleSidebar}
               notices={topBarNotices}
-              userName={user?.displayName || 'Konto'}
-              userEmail={user?.email}
-              workspaceName={workspace?.name || 'Workspace'}
               onNavigate={handlePageChange}
               onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-              onLogout={() => { void logout(); }}
             />
             <main
               className={`min-w-0 flex-1 p-3 sm:p-4 lg:p-6 ${
@@ -605,12 +717,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             >
               <PageSearchContext.Provider value={pageSearchValue}>
               <div className={`mx-auto w-full ${contentWidthClass}`}>
-              {!companySetupComplete && currentPage !== 'settings' && (
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
-                  <span><strong>Firmendaten vervollständigen:</strong> Für belastbare Rechnungen und E-Rechnungen fehlen noch Pflichtangaben.</span>
-                  <button type="button" onClick={() => handlePageChange('settings')} className="rounded-lg bg-orange-600 px-3 py-2 font-medium text-white hover:bg-orange-700">Zu den Einstellungen</button>
-                </div>
-              )}
               {children}
               </div>
               </PageSearchContext.Provider>

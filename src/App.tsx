@@ -16,6 +16,7 @@ const QuoteManagement = lazy(() => import('./components/QuoteManagement').then((
 const QuoteEditor = lazy(() => import('./components/QuoteEditor').then(({ QuoteEditor: page }) => ({ default: page })));
 const Settings = lazy(() => import('./components/Settings').then(({ Settings: page }) => ({ default: page })));
 const TemplatesManagement = lazy(() => import('./components/TemplatesManagement').then(({ TemplatesManagement: page }) => ({ default: page })));
+const PositionTemplatesManagement = lazy(() => import('./components/PositionTemplatesManagement').then(({ PositionTemplatesManagement: page }) => ({ default: page })));
 const JobManagement = lazy(() => import('./components/JobManagement').then(({ JobManagement: page }) => ({ default: page })));
 const Calendar = lazy(() => import('./components/Calendar').then(({ Calendar: page }) => ({ default: page })));
 const ReportingManagement = lazy(() => import('./components/ReportingManagement').then(({ ReportingManagement: page }) => ({ default: page })));
@@ -156,7 +157,9 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'workspace':
         return <WorkspaceManagement />;
       case 'templates':
-        return <TemplatesManagement onNavigate={onPageChange} />;
+        return <TemplatesManagement />;
+      case 'positions':
+        return <PositionTemplatesManagement />;
       default:
         return <Dashboard onNavigate={onPageChange} />;
     }

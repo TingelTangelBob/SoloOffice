@@ -944,6 +944,43 @@ export function DynamicColors() {
           color: #ffffff !important;
         }
 
+        #app-shell[data-theme="dark"] .topbar-search-input {
+          background-color: #0f0f11 !important;
+          border-color: #2f2f34 !important;
+          color: #fafafa !important;
+        }
+        #app-shell[data-theme="dark"] .sidebar-account-trigger {
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
+          color: #fafafa !important;
+        }
+        #app-shell[data-theme="dark"] .sidebar-account-trigger:hover {
+          background-color: #232326 !important;
+          border-color: #3f3f46 !important;
+        }
+        #app-shell[data-theme="dark"] .sidebar-setup-notice {
+          background-color: #21170f !important;
+          border-color: #75451b !important;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-group,
+        #app-shell[data-theme="dark"] .theme-tab-panel {
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
+        }
+        #app-shell[data-theme="dark"] .theme-tab-bar-attached {
+          background-color: #0f0f11 !important;
+          border-bottom-color: #2f2f34 !important;
+        }
+        #app-shell[data-theme="dark"] .info-tooltip-bubble {
+          background-color: #202a35 !important;
+          border-color: #3f4b5a !important;
+          color: #f8fafc !important;
+        }
+        #app-shell[data-theme="dark"] .info-tooltip-bubble::after {
+          background-color: #202a35 !important;
+          border-color: #3f4b5a !important;
+        }
+
         /* Terminologie previews use the app theme without losing their profile accent. */
         #app-shell[data-theme="dark"] .terminology-profile-card,
         #app-shell[data-theme="dark"] .terminology-preview {
@@ -951,7 +988,9 @@ export function DynamicColors() {
           border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .terminology-profile-card-selected {
-          background-color: #0a0a0b !important;
+          background-color: #101116 !important;
+          border-color: var(--accent-edge) !important;
+          box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.18) !important;
         }
         #app-shell[data-theme="dark"] .terminology-preview-header {
           background-color: #0a0a0b !important;
