@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { CircleHelp } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 
 interface InfoTooltipProps {
   text: string;
@@ -18,7 +18,7 @@ export function InfoTooltip({ text, label = 'Weitere Informationen' }: InfoToolt
         aria-label={label}
         aria-describedby={tooltipId}
       >
-        <CircleHelp className="h-4 w-4" aria-hidden="true" />
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
       </button>
       <span id={tooltipId} role="tooltip" className="info-tooltip-bubble">
         {text}
