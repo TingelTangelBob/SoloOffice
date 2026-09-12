@@ -427,7 +427,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
       <div className={`${embedded ? '' : 'theme-tab-group order-2'}`}>
         <ThemeTabBar
-          className={`${embedded ? 'hidden ' : ''}theme-tab-bar-attached sticky top-14 z-20 w-full`}
+          className={`${embedded ? 'hidden ' : ''}theme-tab-bar-attached w-full`}
           ariaLabel="Einstellungsbereiche"
           activeTab={activeTab}
           onChange={setActiveTab}

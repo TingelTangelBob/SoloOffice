@@ -873,7 +873,7 @@ export function TemplatesManagement() {
 
       <div className="theme-tab-group">
         <ThemeTabBar
-          className="theme-tab-bar-attached sticky top-16 z-20 w-full lg:top-2"
+          className="theme-tab-bar-attached w-full"
           ariaLabel="Vorlagenbereiche"
           activeTab={activeTab}
           onChange={handleTemplateTabChange}

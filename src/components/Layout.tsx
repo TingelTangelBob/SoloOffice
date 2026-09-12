@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, FolderOpen, ListChecks, Clock3, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
+import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -598,7 +598,23 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 ))}
               </div>
 
-              <div className="shrink-0 border-t border-gray-200 pt-2">
+              {!companySetupComplete && (
+                <button
+                  type="button"
+                  onClick={() => handlePageChange('settings')}
+                  className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
+                  aria-label="Firmendaten vervollständigen"
+                  title={isSidebarCompact ? 'Firmendaten vervollständigen' : undefined}
+                >
+                  <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
+                    <strong>Firmendaten vervollständigen:</strong>
+                    <span>Pflichtangaben fehlen</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                </button>
+              )}
+
+              <div className="mt-2 shrink-0 border-t border-gray-200 pt-2">
                 {!isSidebarCompact && <p className="nav-group-label">Verwaltung</p>}
                 <ul className="space-y-0.5">
                   {bottomNavItems.map((item) => {
@@ -623,28 +639,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   })}
                 </ul>
 
-                {!companySetupComplete && (
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange('settings')}
-                    className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
-                    aria-label="Firmendaten vervollständigen"
-                    title={isSidebarCompact ? 'Firmendaten vervollständigen' : undefined}
-                  >
-                    <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
-                      <strong>Firmendaten vervollständigen:</strong>
-                      <span>Pflichtangaben fehlen</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  </button>
-                )}
-
                 <div className="sidebar-account mt-2">
                   <ActionMenu
                     containerClassName="w-full"
                     ariaLabel={`Konto von ${accountName} öffnen`}
                     title="Konto"
-                    menuClassName="sidebar-account-menu min-w-[18rem]"
+                    menuClassName="sidebar-account-menu"
                     triggerClassName="sidebar-account-trigger"
                     icon={(
                       <span className="sidebar-account-content">
@@ -666,11 +666,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     </div>
                     <div className="pt-1">
                       <ActionMenuItem icon={<UserRound className="h-4 w-4" />} onClick={() => handlePageChange('profile')}>Benutzerdaten</ActionMenuItem>
-                      <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => handlePageChange('workspace')}>Vertragsdaten</ActionMenuItem>
                       <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => openLandingPage('/preise')}>Tarif</ActionMenuItem>
-                      <ActionMenuItem icon={<FolderOpen className="h-4 w-4" />} onClick={() => handlePageChange('documents')}>Dokumente</ActionMenuItem>
-                      {company.jobTrackingEnabled && <ActionMenuItem icon={<ListChecks className="h-4 w-4" />} onClick={() => handlePageChange('jobs')}>Aufgaben</ActionMenuItem>}
-                      {company.jobTrackingEnabled && <ActionMenuItem icon={<Clock3 className="h-4 w-4" />} onClick={() => handlePageChange('calendar')}>Zeiterfassung</ActionMenuItem>}
                     </div>
                     <div className="sidebar-account-menu-section">
                       <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/datenschutz')}>Datenschutzerklärung</ActionMenuItem>

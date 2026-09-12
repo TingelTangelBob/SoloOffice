@@ -242,7 +242,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
 
       <div className="theme-tab-group">
         <ThemeTabBar
-          className="theme-tab-bar-attached sticky top-16 z-20 w-full lg:top-2"
+          className="theme-tab-bar-attached w-full"
           ariaLabel="Belegarten"
           activeTab={activeTab}
           onChange={selectTab}

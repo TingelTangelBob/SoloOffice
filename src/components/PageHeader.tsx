@@ -1,7 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { InfoTooltip } from './InfoTooltip';
 
 interface PageHeaderProps {
   /**
@@ -13,7 +12,10 @@ interface PageHeaderProps {
   icon?: LucideIcon;
   title: string;
   shortTitle?: string;
-  /** Wird als Hover-Infobox am Seitentitel angeboten. */
+  /**
+   * Alte Seitenbeschreibung für die bestehende Seiten-API. Seitentitel
+   * bleiben bewusst ruhig und zeigen keine zusätzliche Info-Schaltfläche.
+   */
   subtitle?: string;
   children?: ReactNode;
   /**
@@ -30,7 +32,7 @@ interface PageHeaderProps {
  * Abstand der bestehenden Seitenlayouts stabil, während die sichtbare
  * Darstellung nur einmal in der Topbar erscheint.
  */
-export function PageHeader({ title, shortTitle, subtitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
+export function PageHeader({ title, shortTitle, children, actionsTakeOverRow = false }: PageHeaderProps) {
   // `actionsTakeOverRow` bleibt als API-Kompatibilität erhalten. Die Topbar
   // steuert die verfügbare Breite jetzt zentral für alle Ansichten.
   void actionsTakeOverRow;
@@ -50,7 +52,6 @@ export function PageHeader({ title, shortTitle, subtitle, children, actionsTakeO
             <h1 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-gray-900 lg:text-xl" title={title}>
               {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
             </h1>
-            {subtitle && <InfoTooltip text={subtitle} label={`Informationen zu ${title}`} />}
           </div>
         </div>
         {children && <div className="flex min-w-0 items-center justify-end gap-1 whitespace-nowrap sm:gap-2">{children}</div>}
@@ -65,7 +66,6 @@ export function PageHeader({ title, shortTitle, subtitle, children, actionsTakeO
           <h1 className="topbar-page-title min-w-0 truncate text-base font-semibold tracking-tight text-gray-900 lg:text-lg" title={title}>
             {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
           </h1>
-          {subtitle && <InfoTooltip text={subtitle} label={`Informationen zu ${title}`} />}
         </div>,
         targets.title,
       )}

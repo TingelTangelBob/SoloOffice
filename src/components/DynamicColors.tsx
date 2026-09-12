@@ -174,8 +174,8 @@ export function DynamicColors() {
       {`
         /* Button styles */
         /* Primäraktionen tragen Tinte statt der Akzentfarbe: fast schwarz im
-           Hellmodus, fast weiß im Dunkelmodus. Die Akzentfarbe bleibt für
-           Links, Fokus, aktive Navigation und Diagramme reserviert. */
+           Hellmodus und ein ruhiges Anthrazit im Dunkelmodus. Die Akzentfarbe
+           bleibt für Links, Fokus, aktive Navigation und Diagramme reserviert. */
         #app-shell .btn-primary {
           background-color: var(--ink-solid) !important;
           border-color: var(--ink-solid) !important;
@@ -349,7 +349,7 @@ export function DynamicColors() {
           color: #e5e7eb;
         }
         #app-shell[data-theme="dark"] .theme-tab-bar {
-          background-color: #141416 !important;
+          background-color: transparent !important;
           border-color: #2f2f34 !important;
           box-shadow: none !important;
         }
@@ -368,7 +368,7 @@ export function DynamicColors() {
            Regel gewinnt die allgemeine Zählerfarbe darüber: gleiche
            Spezifität, ebenfalls wichtig gesetzt, und sie steht weiter oben. */
         #app-shell[data-theme="dark"] .theme-tab-active .theme-tab-count {
-          background-color: var(--accent-edge) !important;
+          background-color: var(--accent-tint) !important;
           color: inherit !important;
         }
         #app-shell[data-theme="dark"] .settings-save-bar {
@@ -390,6 +390,13 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .bg-white {
           background-color: #141416 !important;
+        }
+        /* Weiße Aktionsflächen sind im Dunkelmodus genauso ruhig wie die
+           übrigen Bedienelemente. Karten und Dialogflächen behalten dagegen
+           ihr bewusst helleres Oberflächen-Token. */
+        #app-shell[data-theme="dark"] button.bg-white,
+        #app-shell[data-theme="dark"] button[class*="bg-white/"] {
+          background-color: #29292e !important;
         }
         /* Die Seitenleiste liegt auf der Seitenfläche, nicht auf einer eigenen
            gehobenen Fläche. Die Regel steht hier und nicht in index.css, weil
@@ -968,7 +975,7 @@ export function DynamicColors() {
           border-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .theme-tab-bar-attached {
-          background-color: #0f0f11 !important;
+          background-color: transparent !important;
           border-bottom-color: #2f2f34 !important;
         }
         #app-shell[data-theme="dark"] .info-tooltip-bubble {
