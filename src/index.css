@@ -1514,7 +1514,8 @@
      Kalenderaktionen bleiben bewusst bei ihrem eigenen 40px-Raster. */
   .topbar-page-actions > button,
   .topbar-page-actions > a,
-  .topbar-page-actions .action-menu-trigger {
+  .topbar-page-actions .action-menu-trigger,
+  .topbar-page-actions .action-menu-trigger-primary {
     height: 2.25rem !important;
     min-height: 2.25rem !important;
   }
