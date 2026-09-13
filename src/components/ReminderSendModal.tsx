@@ -398,7 +398,7 @@ export function ReminderSendModal({
           </div>
 
           {/* Content */}
-          <div className="p-6 space-y-6">
+          <div className="form-consistent-fields p-6 space-y-6">
             {/* Invoice Info */}
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-3">

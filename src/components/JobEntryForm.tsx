@@ -105,9 +105,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     company.currency
   );
 
-  const sectionSelectClass = 'box-border h-[36px] min-h-[36px] max-h-[36px] w-full rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom';
-  const sectionIconButtonClass = 'theme-control-button box-border inline-flex h-[36px] min-h-[36px] max-h-[36px] w-[36px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
-  const sectionActionButtonClass = 'btn-primary box-border inline-flex h-[36px] min-h-[36px] max-h-[36px] w-[36px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
+  const sectionSelectClass = 'form-input form-input-compact text-xs sm:px-3 sm:text-sm';
+  const sectionIconButtonClass = 'theme-control-button box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
+  const sectionActionButtonClass = 'btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
 
   const { getHourlyRatesForCustomer, getCombinedHourlyRatesForCustomer, getCombinedMaterialTemplatesForCustomer } = useDocumentHelpers();
 
@@ -848,7 +848,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     required
                     value={vacationForm.title}
                     onChange={(event) => setVacationForm((previous) => ({ ...previous, title: event.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                     placeholder="z. B. Sommerurlaub"
                   />
                 </div>
@@ -883,7 +883,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     value={vacationForm.notes}
                     onChange={(event) => setVacationForm((previous) => ({ ...previous, notes: event.target.value }))}
                     rows={3}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
+                    className="form-input"
                     placeholder="Weitere Informationen"
                   />
                 </div>
@@ -898,7 +898,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     type="text"
                     value={formData.title}
                     onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
                     placeholder="z. B. Deutsch-Kurs B2"
                   />
                 </div>
@@ -924,7 +924,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     type="text"
                     value={formData.externalJobNumber}
                     onChange={(e) => setFormData(prev => ({ ...prev, externalJobNumber: e.target.value }))}
-                    className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
                     placeholder="Optional"
                   />
                 </div>
@@ -934,7 +934,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <SelectWithChevron
                     value={formData.status}
                     onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }))}
-                    className="h-[38px] w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact text-xs sm:px-3 sm:text-sm"
                   >
                     <option value="draft">Entwurf</option>
                     <option value="in-progress">In Bearbeitung</option>
@@ -956,7 +956,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         onFocus={() => setIsCustomerDropdownOpen(true)}
                         onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
                         placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                        className="form-input form-input-compact"
                       />
                       {isCustomerDropdownOpen && (
                         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
@@ -1022,7 +1022,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       setIsDirty(true);
                       setFormData(previous => ({ ...previous, timeZone: event.target.value }));
                     }}
-                    className="box-border h-[38px] min-h-0 w-full rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-custom sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact text-xs sm:px-3 sm:text-sm"
                     aria-label="Zeitzone des Kurses"
                   >
                     {TIME_ZONE_OPTIONS.map((option) => (
@@ -1117,7 +1117,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           const maxInterval = recurrenceIntervalUnit === 'week' ? 52 : recurrenceIntervalUnit === 'month' ? 12 : 10;
                           setRecurrenceInterval(Math.min(maxInterval, Math.max(1, Number(event.target.value) || 1)));
                         }}
-                        className="w-[4.75rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                        className="form-input form-input-compact w-[4.75rem] px-2 text-sm"
                       />
                     <SelectWithChevron
                       containerClassName="w-[7rem] shrink-0"
@@ -1137,7 +1137,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             : [...previous, startWeekday].sort((a, b) => a - b));
                         }
                       }}
-                      className="h-[38px] w-[7rem] rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                      className="form-input form-input-compact w-[7rem] px-2 text-sm"
                     >
                       <option value="week">Woche(n)</option>
                       <option value="month">Monat(e)</option>
@@ -1156,7 +1156,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           const maxDuration = recurrenceIntervalUnit === 'week' ? 104 : recurrenceIntervalUnit === 'month' ? 120 : 100;
                           setRecurrenceDurationCount(Math.min(maxDuration, Math.max(1, Number(event.target.value) || 1)));
                         }}
-                        className="w-[4.75rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                        className="form-input form-input-compact w-[4.75rem] px-2 text-sm"
                       />
                     <span>{recurrenceIntervalUnit === 'week' ? 'Wochen' : recurrenceIntervalUnit === 'month' ? 'Monate' : 'Jahre'}</span>
                   </label>
@@ -1216,7 +1216,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 rows={2}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input"
                 placeholder="Detaillierte Beschreibung ..."
               />
             </div>
@@ -1228,7 +1228,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 value={formData.notes || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
                 rows={2}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input"
                 placeholder={formData.location === 'Vor Ort'
                   ? 'Interner Hinweis, z. B. abweichender Ausführungsort ...'
                   : 'Interner Hinweis ...'}
@@ -1319,7 +1319,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           type="text"
                           value={timeEntry.description}
                           onChange={(e) => updateTimeEntry(index, 'description', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                          className="form-input form-input-compact text-xs"
                           placeholder="z.B. Anfahrt, Montage..."
                         />
                       </div>
@@ -1342,7 +1342,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                               }
                             }}
                             required
-                            className="w-full px-1 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                            className="form-input form-input-compact px-1 text-xs"
                           />
                         </div>
                         <div>
@@ -1353,7 +1353,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             type="text"
                             value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
-                            className="w-full px-1 py-1 border border-gray-300 rounded text-xs bg-gray-100"
+                            className="form-input form-input-compact px-1 text-xs bg-gray-100"
                           />
                         </div>
                       </div>
@@ -1370,7 +1370,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             type="text"
                             value={timeEntry.description}
                             onChange={(e) => updateTimeEntry(index, 'description', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                            className="form-input form-input-compact text-sm"
                             placeholder="z.B. Anfahrt, Montage, Beratung..."
                           />
                         </div>
@@ -1392,7 +1392,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                               }
                             }}
                             required
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                            className="form-input form-input-compact text-sm"
                           />
                         </div>
 
@@ -1404,7 +1404,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             type="text"
                             value={formatMoney(Number(timeEntry.hourlyRate || 0))}
                             readOnly
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
+                            className="form-input form-input-compact text-sm bg-gray-100"
                           />
                         </div>
                         
@@ -1417,7 +1417,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             value={company?.isSmallBusiness ? 0 : timeEntry.taxRate}
                             onChange={(e) => updateTimeEntry(index, 'taxRate', parseFloat(e.target.value))}
                             disabled={company?.isSmallBusiness}
-                            className={`w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom ${
+                            className={`form-input form-input-compact text-sm ${
                               company?.isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
                             }`}
                           >
@@ -1435,7 +1435,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             type="text"
                             value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
+                            className="form-input form-input-compact text-sm bg-gray-100"
                           />
                         </div>
                       </div>
@@ -1565,7 +1565,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           type="text"
                           value={material.description}
                           onChange={(e) => updateMaterial(index, 'description', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                          className="form-input form-input-compact text-sm"
                           placeholder="Beschreibung..."
                         />
                       </div>
@@ -1584,7 +1584,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                               updateMaterial(index, 'quantity', 0);
                             }
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                          className="form-input form-input-compact text-sm"
                         />
                       </div>
 
@@ -1602,7 +1602,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                               updateMaterial(index, 'unitPrice', 0);
                             }
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                          className="form-input form-input-compact text-sm"
                         />
                       </div>
 
@@ -1615,7 +1615,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           value={company?.isSmallBusiness ? 0 : material.taxRate}
                           onChange={(e) => updateMaterial(index, 'taxRate', parseFloat(e.target.value))}
                           disabled={company?.isSmallBusiness}
-                          className={`w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary-custom ${
+                          className={`form-input form-input-compact text-sm ${
                             company?.isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
                           }`}
                         >
@@ -1632,7 +1632,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             type="text"
                             value={formatMoney(Number(material.total) || 0)}
                             readOnly
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
+                            className="form-input form-input-compact text-sm bg-gray-100"
                           />
                         </div>
                           <button
@@ -1689,7 +1689,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       {/* Customer Creation Modal */}
       {showCustomerForm && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-lg p-4 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
             </h3>
@@ -1735,7 +1735,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 logger.error('Error creating customer:', error);
                 notify({ variant: 'error', message: `Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
               }
-            }} className="space-y-4">
+            }} className="form-consistent-fields space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name *
@@ -1745,7 +1745,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   required
                   value={newCustomerData.name}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1756,7 +1756,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   type="email"
                   value={newCustomerData.email}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                   placeholder="optional"
                 />
               </div>
@@ -1769,7 +1769,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   required
                   value={newCustomerData.address}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1782,7 +1782,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     required
                     value={newCustomerData.postalCode}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, postalCode: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
                 <div>
@@ -1794,7 +1794,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     required
                     value={newCustomerData.city}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
               </div>
@@ -1807,7 +1807,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   required
                   value={newCustomerData.country}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, country: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1818,7 +1818,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   type="text"
                   value={newCustomerData.taxId}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, taxId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1829,7 +1829,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   type="tel"
                   value={newCustomerData.phone}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div className="form-action-bar pt-4">

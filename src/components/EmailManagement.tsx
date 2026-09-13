@@ -633,7 +633,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         value={smtpSettings.smtp_host}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_host: e.target.value }))}
                         placeholder="smtp.gmail.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                     <div>
@@ -647,7 +647,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         max="65535"
                         value={smtpSettings.smtp_port}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 587 }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                   </div>
@@ -676,7 +676,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         value={smtpSettings.smtp_user}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_user: e.target.value }))}
                         placeholder="ihr-email@example.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                     <div>
@@ -689,7 +689,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         value={smtpSettings.smtp_pass}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_pass: e.target.value }))}
                         placeholder={smtpSettings.smtp_pass ? '****' : 'Ihr SMTP-Passwort'}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                   </div>
@@ -705,7 +705,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         value={smtpSettings.email_from}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, email_from: e.target.value }))}
                         placeholder="noreply@example.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                     <div>
@@ -717,7 +717,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                         value={smtpSettings.email_from_name}
                         onChange={(e) => setSmtpSettings(prev => ({ ...prev, email_from_name: e.target.value }))}
                         placeholder="SoloOffice"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                        className="form-input form-input-compact"
                       />
                     </div>
                   </div>
@@ -731,7 +731,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       value={testEmailRecipient}
                       onChange={(e) => setTestEmailRecipient(e.target.value)}
                       placeholder="test@example.com"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                      className="form-input form-input-compact"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Standard-Empfänger für Test-E-Mails
@@ -796,7 +796,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       value={testEmailRecipient}
                       onChange={(e) => setTestEmailRecipient(e.target.value)}
                       placeholder="empfaenger@example.com"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                      className="form-input form-input-compact"
                     />
                   </div>
 
@@ -809,7 +809,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       value={testEmailSubject}
                       onChange={(e) => setTestEmailSubject(e.target.value)}
                         placeholder="Test-E-Mail von SoloOffice"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                      className="form-input form-input-compact"
                     />
                   </div>
 
@@ -822,7 +822,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       onChange={(e) => setTestEmailMessage(e.target.value)}
                       placeholder="Zusätzliche Nachricht für die Test-E-Mail..."
                       rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                      className="form-input"
                     />
                   </div>
 

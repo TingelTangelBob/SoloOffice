@@ -1267,7 +1267,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                         required
                         value={newEmailData.email}
                         onChange={(e) => setNewEmailData({ ...newEmailData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                        className="form-input form-input-compact"
                         placeholder="name@example.com"
                       />
                     </div>
@@ -1279,7 +1279,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                         type="text"
                         value={newEmailData.label}
                         onChange={(e) => setNewEmailData({ ...newEmailData, label: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                        className="form-input form-input-compact"
                         placeholder="z.B. Buchhaltung, Geschäftsführung"
                       />
                     </div>
@@ -1551,7 +1551,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                     type="text"
                     value={newHourlyRateData.name}
                     onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+            className="form-input form-input-compact text-sm"
                     placeholder="z.B. Standard, Anfahrt, Überstunden"
                   />
                 </div>
@@ -1566,7 +1566,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setNewHourlyRateData({ ...newHourlyRateData, rate: value === '' ? 0 : value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+            className="form-input form-input-compact text-sm"
                     placeholder="0.00"
                   />
                 </div>
@@ -1578,7 +1578,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 <textarea
                   value={newHourlyRateData.description}
                   onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+          className="form-input text-sm"
                   placeholder="Optionale Beschreibung..."
                   rows={2}
                 />
@@ -1591,7 +1591,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   <select
                     value={newHourlyRateData.taxRate}
                     onChange={(e) => setNewHourlyRateData({ ...newHourlyRateData, taxRate: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+          className="form-input form-input-compact text-sm"
                   >
                     <option value={0}>0%</option>
                     <option value={7}>7%</option>
@@ -1657,7 +1657,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                     type="text"
                     value={newMaterialData.name}
                     onChange={(e) => setNewMaterialData({ ...newMaterialData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
                     placeholder="z.B. Kleinmaterial, Kabel, Schrauben"
                   />
                 </div>
@@ -1672,7 +1672,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setNewMaterialData({ ...newMaterialData, unitPrice: value === '' ? 0 : value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    className="form-input form-input-compact text-sm"
                     placeholder="0.00"
                   />
                 </div>
@@ -1684,7 +1684,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 <textarea
                   value={newMaterialData.description}
                   onChange={(e) => setNewMaterialData({ ...newMaterialData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input text-sm"
                   placeholder="Optionale Beschreibung..."
                   rows={2}
                 />
@@ -1698,7 +1698,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                     type="text"
                     value={newMaterialData.unit}
                     onChange={(e) => setNewMaterialData({ ...newMaterialData, unit: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
                     placeholder="z.B. Stück, Meter, kg"
                   />
                 </div>
@@ -1709,7 +1709,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   <select
                     value={newMaterialData.taxRate}
                     onChange={(e) => setNewMaterialData({ ...newMaterialData, taxRate: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
                   >
                     <option value={0}>0%</option>
                     <option value={7}>7%</option>
@@ -1792,7 +1792,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                    className="form-input form-input-compact text-sm"
           />
         </div>
         <div>
@@ -1806,7 +1806,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
             locale={locale}
             numberFormat={numberFormat}
             onValueChange={(value) => setFormData({ ...formData, rate: value === '' ? 0 : value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                    className="form-input form-input-compact text-sm"
           />
         </div>
       </div>
@@ -1817,7 +1817,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
         <textarea
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+          className="form-input text-sm"
           rows={2}
         />
       </div>
@@ -1829,7 +1829,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
           <select
             value={formData.taxRate}
             onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+          className="form-input form-input-compact text-sm"
           >
             <option value={0}>0%</option>
             <option value={7}>7%</option>
@@ -1909,7 +1909,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
           />
         </div>
         <div>
@@ -1923,7 +1923,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
             locale={locale}
             numberFormat={numberFormat}
             onValueChange={(value) => setFormData({ ...formData, unitPrice: value === '' ? 0 : value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    className="form-input form-input-compact text-sm"
           />
         </div>
       </div>
@@ -1934,7 +1934,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
         <textarea
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input text-sm"
           rows={2}
         />
       </div>
@@ -1947,7 +1947,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
             type="text"
             value={formData.unit}
             onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
           />
         </div>
         <div>
@@ -1957,7 +1957,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
           <select
             value={formData.taxRate}
             onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+          className="form-input form-input-compact text-sm"
           >
             <option value={0}>0%</option>
             <option value={7}>7%</option>

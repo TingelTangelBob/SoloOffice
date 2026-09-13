@@ -113,7 +113,7 @@ export function DialogShell({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
+          className={`form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </form>
@@ -122,7 +122,7 @@ export function DialogShell({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
+          className={`form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </section>

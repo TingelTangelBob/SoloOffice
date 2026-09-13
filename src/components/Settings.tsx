@@ -440,7 +440,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           ]}
         />
 
-      <form onSubmit={handleSubmit} className={`${embedded ? '' : 'theme-tab-panel'} space-y-8`}>
+      <form onSubmit={handleSubmit} className={`${embedded ? '' : 'theme-tab-panel'} form-consistent-fields space-y-8`}>
         {activeTab === 'app' && (
           <div className="space-y-8">
         {/* Terminology Settings */}

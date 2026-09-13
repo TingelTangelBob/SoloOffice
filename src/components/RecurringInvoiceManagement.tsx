@@ -101,8 +101,8 @@ const runStatusLabels: Record<string, string> = {
 };
 
 const fieldLabelClassName = 'block min-w-0 text-sm font-medium text-gray-700';
-const controlClassName = 'mt-1.5 block min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20 disabled:cursor-not-allowed disabled:bg-gray-100';
-const textAreaClassName = `${controlClassName} min-h-24 resize-y`;
+const controlClassName = 'form-input form-input-compact mt-1.5 w-full text-sm text-gray-900 shadow-sm transition disabled:cursor-not-allowed disabled:bg-gray-100';
+const textAreaClassName = 'form-input mt-1.5 min-h-24 resize-y text-sm text-gray-900 shadow-sm transition';
 
 export function RecurringInvoiceManagement() {
   const { confirm } = useFeedback();

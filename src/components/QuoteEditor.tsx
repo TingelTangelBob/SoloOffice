@@ -216,7 +216,7 @@ function SortableQuoteItem({
     : [];
   const [isDiscountDropdownOpen, setIsDiscountDropdownOpen] = useState(false);
 
-  const renderDescriptionField = (compact = false) => (
+  const renderDescriptionField = () => (
     <div className="relative">
       <input
         type="text"
@@ -227,7 +227,7 @@ function SortableQuoteItem({
           setShowSuggestions(true);
         }}
         onFocus={() => setShowSuggestions(true)}
-        className={`w-full ${compact ? 'px-3 py-2' : 'px-2 py-1.5'} text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom`}
+        className="form-input form-input-compact text-sm"
         placeholder="Beschreibung der Position"
       />
       {showSuggestions && matchingTemplateSuggestions.length > 0 && (
@@ -299,7 +299,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
 
@@ -316,7 +316,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
 
@@ -334,7 +334,7 @@ function SortableQuoteItem({
               locale={company.locale}
               numberFormat={company.numberFormat}
               onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+              className="form-input form-input-compact"
             />
           </div>
         )}
@@ -354,7 +354,7 @@ function SortableQuoteItem({
                 locale={company.locale || 'de-DE'}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                className="w-full min-w-0 rounded border border-gray-300 px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact min-w-0 pr-12 text-sm"
                 placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
               />
               <DiscountTypeDropdown
@@ -372,7 +372,7 @@ function SortableQuoteItem({
         {/* Gesamt - 1 column */}
         <div className="min-w-0">
           <output
-            className={`flex min-h-[2.25rem] min-w-0 items-center justify-end gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-right text-sm ${
+            className={`flex min-h-[38px] min-w-0 items-center justify-end gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-right text-sm ${
               discountAmount > 0 ? 'text-green-600 font-semibold' : 'text-gray-900'
             }`}
             aria-label={`Gesamt ${currencySymbol}`}
@@ -437,7 +437,7 @@ function SortableQuoteItem({
             <label className="block text-xs font-medium text-gray-700 mb-1">
               Beschreibung *
             </label>
-            {renderDescriptionField(true)}
+            {renderDescriptionField()}
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -453,7 +453,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact"
               />
             </div>
 
@@ -469,7 +469,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact"
               />
             </div>
           </div>
@@ -487,7 +487,7 @@ function SortableQuoteItem({
                 locale={company.locale}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact"
               />
             </div>
           )}
@@ -506,7 +506,7 @@ function SortableQuoteItem({
                   locale={company.locale || 'de-DE'}
                   numberFormat={company.numberFormat}
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                  className="w-full min-w-0 rounded border border-gray-300 px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact min-w-0 pr-12 text-sm"
                   placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
                 />
                 <DiscountTypeDropdown
@@ -1113,7 +1113,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 placeholder={quote ? "" : "Wird automatisch generiert"}
                 disabled={true}
                 readOnly={true}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                className="form-input form-input-compact w-full bg-gray-100 text-gray-500"
               />
               <p className="text-xs text-gray-500 mt-1">
                 {quote ? "Angebotsnummern können nach der Erstellung nicht mehr geändert werden" : "Die Angebotsnummer wird beim Speichern automatisch generiert (Format: AN-YYYY-XXX)"}
@@ -1135,7 +1135,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                       setShowCustomerDropdown(false);
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact w-full"
                   placeholder={terminology.entity.searchPlaceholder}
                 />
                 
@@ -1194,7 +1194,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                   setIssueDate(e.target.value);
                   setValidUntil(calculateValidUntil(e.target.value));
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact w-full"
               />
             </div>
 
@@ -1208,7 +1208,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 required
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input form-input-compact w-full"
               />
             </div>
           </div>
@@ -1421,7 +1421,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setGlobalDiscountValue(value === '' ? '0' : String(value))}
-                    className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact pr-12 text-sm"
                     placeholder="0"
                   />
                   <DiscountTypeDropdown
@@ -1435,7 +1435,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 </div>
 
                 <div
-                  className="min-w-0 flex-[1_1_8rem] rounded border border-gray-300 bg-gray-100 px-2 py-1.5 text-right text-sm font-semibold text-gray-900"
+                  className="form-input form-input-compact min-w-0 flex-[1_1_8rem] bg-gray-100 text-right text-sm font-semibold text-gray-900"
                   style={{ gridColumn: discountColumnStart + 1 }}
                   aria-label={`Rabattbetrag -${formatMoney(totals.globalDiscountAmount)}`}
                 >

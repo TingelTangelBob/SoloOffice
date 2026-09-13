@@ -210,22 +210,22 @@
    */
   .form-input {
     display: block;
-    min-height: 2.5rem;
+    min-height: 2.375rem;
     width: 100%;
     border: 1px solid #d1d5db;
     border-radius: 0.5rem;
     background-color: #ffffff;
     color: #111827;
     padding: 0.5rem 0.75rem;
-    font-size: 1rem;
-    line-height: 1.5rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
     outline: none;
     transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
   }
 
-  /* Dialogfelder im Kundenformular verwenden dieselbe 38px-Höhe wie die
-     Eingaben im Formular zum Anlegen eines Auftrags. */
+  /* Standardfelder verwenden dieselbe 38px-Höhe wie die Eingaben im Formular
+     zum Anlegen eines Auftrags. */
   .form-input-compact {
     height: 2.375rem;
     min-height: 2.375rem;
@@ -2071,3 +2071,17 @@
   .focus\:border-primary-custom:focus {
     border-color: var(--primary-color);
   }
+
+/*
+ * Formulare verwenden dieselbe kompakte Einzelzeilen-Höhe wie „Neuer Auftrag“.
+ * Textareas, Auswahlfelder für Checkboxen/Radios und Datei-/Farbfelder bleiben
+ * davon ausgenommen, damit ihre eigene Größe und Bedienung erhalten bleibt.
+ */
+.form-consistent-fields input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]),
+.form-consistent-fields select {
+  box-sizing: border-box;
+  height: 2.375rem;
+  min-height: 2.375rem;
+  max-height: 2.375rem;
+  line-height: 1.25rem;
+}

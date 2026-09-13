@@ -219,7 +219,7 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
               <h3 className="font-semibold text-gray-900">Kunde zuordnen</h3>
               <p className="mt-1 text-sm text-gray-500">Die Originaldatei und die erkannten Werte bleiben unverändert.</p>
               <label htmlFor="incoming-e-invoice-customer" className="mt-4 block text-sm font-medium text-gray-700">Kunde
-                <select id="incoming-e-invoice-customer" value={selected.linkedCustomerId || ''} onChange={event => void linkCustomer(event.target.value)} disabled={linking} className="mt-1.5 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm outline-none focus:border-primary-custom focus:ring-2 focus:ring-primary-custom/20"><option value="">Bitte auswählen</option>{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.customerNumber} · {customer.name}</option>)}</select>
+                <select id="incoming-e-invoice-customer" value={selected.linkedCustomerId || ''} onChange={event => void linkCustomer(event.target.value)} disabled={linking} className="form-input form-input-compact mt-1.5 w-full"><option value="">Bitte auswählen</option>{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.customerNumber} · {customer.name}</option>)}</select>
               </label>
               {linking && <p className="mt-2 flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Zuordnung wird gespeichert …</p>}
             </section>

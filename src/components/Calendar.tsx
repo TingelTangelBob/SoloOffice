@@ -2303,7 +2303,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               } catch (error) {
                 logger.error('Error creating customer:', error);
               }
-            }} className="space-y-4">
+            }} className="form-consistent-fields space-y-4">
               <div>
                 <label htmlFor="customerName" className="block text-sm font-medium text-gray-700 mb-2">
                   Name *
@@ -2314,7 +2314,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   required
                   value={newCustomerData.name}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 
@@ -2327,7 +2327,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   id="customerEmail"
                   value={newCustomerData.email}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 
@@ -2340,7 +2340,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   id="customerAddress"
                   value={newCustomerData.address}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 
@@ -2354,7 +2354,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     id="customerPostalCode"
                     value={newCustomerData.postalCode}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, postalCode: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
                 <div>
@@ -2366,7 +2366,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     id="customerCity"
                     value={newCustomerData.city}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
               </div>
@@ -2380,7 +2380,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   id="customerCountry"
                   value={newCustomerData.country}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, country: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 
@@ -2393,7 +2393,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   id="customerTaxId"
                   value={newCustomerData.taxId}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, taxId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 
@@ -2406,7 +2406,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   id="customerPhone"
                   value={newCustomerData.phone}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
 

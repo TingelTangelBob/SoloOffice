@@ -98,7 +98,7 @@ function SortableInvoiceItem({
             required
             value={item.description}
             onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
         
@@ -120,7 +120,7 @@ function SortableInvoiceItem({
                 onUpdate(item.id, 'quantity', 0);
               }
             }}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
         
@@ -142,7 +142,7 @@ function SortableInvoiceItem({
                 onUpdate(item.id, 'unitPrice', 0);
               }
             }}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
         
@@ -155,7 +155,7 @@ function SortableInvoiceItem({
             value={isSmallBusiness ? 0 : item.taxRate}
             onChange={(e) => onUpdate(item.id, 'taxRate', parseFloat(e.target.value))}
             disabled={isSmallBusiness}
-            className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-custom ${
+            className={`form-input form-input-compact ${
               isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
             }`}
           >
@@ -181,7 +181,7 @@ function SortableInvoiceItem({
                     onUpdate(item.id, 'discountValue', undefined);
                   }
                 }}
-                className="w-10 px-1 py-1.5 text-xs border border-gray-300 rounded-l focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                className="form-input form-input-compact w-10 rounded-l px-1 text-xs"
               >
                 <option value="">-</option>
                 <option value="percentage">%</option>
@@ -196,7 +196,7 @@ function SortableInvoiceItem({
                 onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                 disabled={!item.discountType}
                 placeholder="0"
-                className="flex-1 px-2 py-1.5 text-sm border border-l-0 border-gray-300 rounded-r focus:outline-none focus:ring-1 focus:ring-primary-custom disabled:bg-gray-100"
+                className="form-input form-input-compact min-w-0 flex-1 rounded-r border-l-0 px-2 text-sm disabled:bg-gray-100"
               />
             </div>
           </div>
@@ -207,7 +207,7 @@ function SortableInvoiceItem({
           <label className="block text-xs font-medium text-gray-700 mb-1">
             Summe
           </label>
-          <div className="text-sm font-medium text-gray-900 py-1.5 px-2 bg-gray-50 border border-gray-200 rounded">
+          <div className="flex min-h-[38px] items-center rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-900">
             {formatCurrency(
               (item.quantity * item.unitPrice) - (item.discountAmount || 0),
               company.locale,
@@ -271,7 +271,7 @@ function SortableInvoiceItem({
             required
             value={item.description}
             onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+            className="form-input form-input-compact"
           />
         </div>
         
@@ -294,7 +294,7 @@ function SortableInvoiceItem({
                   onUpdate(item.id, 'quantity', 0);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+              className="form-input form-input-compact"
             />
           </div>
           <div>
@@ -314,7 +314,7 @@ function SortableInvoiceItem({
                   onUpdate(item.id, 'unitPrice', 0);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+              className="form-input form-input-compact"
             />
           </div>
           <div>
@@ -325,7 +325,7 @@ function SortableInvoiceItem({
               value={isSmallBusiness ? 0 : item.taxRate}
               onChange={(e) => onUpdate(item.id, 'taxRate', parseFloat(e.target.value))}
               disabled={isSmallBusiness}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom ${
+              className={`form-input form-input-compact ${
                 isSmallBusiness ? 'bg-gray-100 cursor-not-allowed' : ''
               }`}
             >
@@ -353,7 +353,7 @@ function SortableInvoiceItem({
                       onUpdate(item.id, 'discountValue', undefined);
                     }
                   }}
-                  className="w-12 px-1 py-1.5 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-xs"
+                  className="form-input form-input-compact w-12 rounded-l-lg px-1 text-xs"
                 >
                   <option value="">-</option>
                   <option value="percentage">%</option>
@@ -368,7 +368,7 @@ function SortableInvoiceItem({
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   disabled={!item.discountType}
                   placeholder="0"
-                  className="flex-1 px-2 py-1.5 border border-l-0 border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:bg-gray-100 text-xs min-w-0"
+                  className="form-input form-input-compact min-w-0 flex-1 rounded-r-lg border-l-0 px-2 text-xs disabled:bg-gray-100"
                 />
               </div>
               {item.discountType && item.discountValue && (
@@ -1052,7 +1052,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
           </>
         )}
       >
-        <div className="space-y-4 pb-2 sm:space-y-5">
+        <div className="space-y-3 pb-2 sm:space-y-4">
           {invoice?.documentSnapshot && (
             <p className="text-sm text-gray-600">Beim Speichern werden die aktuellen Firmen- und Kundendaten für diesen Entwurf übernommen.</p>
           )}
@@ -1067,133 +1067,137 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
             </div>
           )}
 
-        {/* Basic Information */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Grundinformationen</h3>
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rechnungsnummer
-              </label>
-              <input
-                type="text"
-                value={formData.invoiceNumber}
-                placeholder={invoice ? "" : "Wird automatisch generiert"}
-                disabled={true}
-                readOnly={true}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Die Rechnungsnummer wird beim Speichern nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {terminology.entity.singular} *
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 relative">
+          {/* Basic Information */}
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">Grundinformationen</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 tablet:grid-cols-[minmax(10rem,0.7fr)_minmax(0,1.3fr)]">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                    Rechnungsnummer
+                  </label>
                   <input
                     type="text"
-                    value={customerSearchTerm}
-                    onChange={handleCustomerSearchChange}
-                    onFocus={() => setIsCustomerDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
-                    placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                    required
+                    value={formData.invoiceNumber}
+                    placeholder={invoice ? "" : "Wird automatisch generiert"}
+                    disabled={true}
+                    readOnly={true}
+                    className="form-input form-input-compact w-full bg-gray-100 text-gray-500"
                   />
-                  {isCustomerDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                      {filteredCustomers.length > 0 ? (
-                        filteredCustomers.map(customer => (
-                          <button
-                            key={customer.id}
-                            type="button"
-                            onClick={() => handleCustomerSelect(customer)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="font-medium text-sm break-words">{formatCustomerNumber(customer.customerNumber)} - {customer.name}</div>
-                            {customer.email && (
-                              <div className="text-xs text-gray-500 break-words">{customer.email}</div>
-                            )}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-gray-500 text-sm">
-                          {terminology.entity.noResults}
+                  <p className="text-xs text-gray-500 mt-1">
+                    {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Die Rechnungsnummer wird beim Speichern nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                    {terminology.entity.singular} *
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <input
+                        type="text"
+                        value={customerSearchTerm}
+                        onChange={handleCustomerSearchChange}
+                        onFocus={() => setIsCustomerDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 200)}
+                        placeholder={`${terminology.entity.singular} suchen oder auswählen...`}
+                        className="form-input form-input-compact w-full"
+                        required
+                      />
+                      {isCustomerDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {filteredCustomers.length > 0 ? (
+                            filteredCustomers.map(customer => (
+                              <button
+                                key={customer.id}
+                                type="button"
+                                onClick={() => handleCustomerSelect(customer)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium text-sm break-words">{formatCustomerNumber(customer.customerNumber)} - {customer.name}</div>
+                                {customer.email && (
+                                  <div className="text-xs text-gray-500 break-words">{customer.email}</div>
+                                )}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-gray-500 text-sm">
+                              {terminology.entity.noResults}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
+                    {onCreateCustomer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          logger.debug('Plus button clicked in InvoiceEditor');
+                          initialCustomerFormSnapshot.current = JSON.stringify(emptyCustomerData);
+                          setNewCustomerData(emptyCustomerData);
+                          setShowCustomerForm(true);
+                        }}
+                        className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 p-0 text-sm text-white transition-colors hover:bg-blue-600"
+                        title={terminology.entity.newLabel}
+                      >
+                        <Plus className="h-4 w-4 mr-2 sm:mr-0" />
+                        <span className="sm:hidden">{terminology.entity.newLabel}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {onCreateCustomer && (
-                <button
-                    type="button"
-                    onClick={() => {
-                      logger.debug('Plus button clicked in InvoiceEditor');
-                      initialCustomerFormSnapshot.current = JSON.stringify(emptyCustomerData);
-                      setNewCustomerData(emptyCustomerData);
-                      setShowCustomerForm(true);
+              </div>
+              <div className="grid grid-cols-1 gap-3 tablet:grid-cols-2">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                    Rechnungsdatum *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.issueDate}
+                    onChange={(e) => {
+                      const newIssueDate = e.target.value;
+                      try {
+                        setFormData(prev => ({
+                          ...prev,
+                          issueDate: newIssueDate,
+                          dueDate: calculateDueDate(newIssueDate)
+                        }));
+                      } catch (error) {
+                        logger.warn('Error calculating due date', { error: (error as Error).message });
+                        // Nur das Issue Date aktualisieren wenn Berechnung fehlschlägt
+                        setFormData(prev => ({
+                          ...prev,
+                          issueDate: newIssueDate
+                        }));
+                      }
                     }}
-                    className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center text-sm sm:w-auto w-full"
-                          title={terminology.entity.newLabel}
-                  >
-                    <Plus className="h-4 w-4 mr-2 sm:mr-0" />
-                    <span className="sm:hidden">{terminology.entity.newLabel}</span>
-                  </button>
-                )}
+                    className="form-input form-input-compact w-full"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                    Fälligkeitsdatum *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                    className="form-input form-input-compact w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Wird automatisch auf {company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30} Tage nach Rechnungsdatum gesetzt. {(company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30) === 0 && 'Bei 0 Tagen ist die Rechnung sofort fällig.'}
+                  </p>
+                </div>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rechnungsdatum *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.issueDate}
-                onChange={(e) => {
-                  const newIssueDate = e.target.value;
-                  try {
-                    setFormData(prev => ({ 
-                      ...prev, 
-                      issueDate: newIssueDate,
-                      dueDate: calculateDueDate(newIssueDate)
-                    }));
-                  } catch (error) {
-                    logger.warn('Error calculating due date', { error: (error as Error).message });
-                    // Nur das Issue Date aktualisieren wenn Berechnung fehlschlägt
-                    setFormData(prev => ({ 
-                      ...prev, 
-                      issueDate: newIssueDate
-                    }));
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fälligkeitsdatum *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.dueDate}
-                onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Wird automatisch auf {company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30} Tage nach Rechnungsdatum gesetzt. {(company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30) === 0 && 'Bei 0 Tagen ist die Rechnung sofort fällig.'}
-              </p>
-            </div>
           </div>
-        </div>
 
         {/* Items */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <div className="flex flex-col gap-4 mb-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3 flex flex-col gap-3">
             <h3 className="text-lg font-semibold text-gray-900">Positionen</h3>
             
             {/* Mobile-first layout for controls */}
@@ -1210,7 +1214,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                         e.target.value = ''; // Reset dropdown
                       }
                     }}
-                    className="min-w-0 flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom text-sm"
+                    className="form-input form-input-compact min-w-0 flex-1 text-sm"
                     defaultValue=""
                   >
                     <option value="">Vorlage wählen...</option>
@@ -1254,7 +1258,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                       isOpen: true,
                       type: 'materials'
                     })}
-                    className="min-h-0 p-2.5 text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:text-blue-800 hover:bg-blue-100 transition-colors flex-shrink-0"
+                    className="inline-flex h-[38px] min-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-0 text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-800"
                     title="Stundensätze und Materialien verwalten"
                   >
                     <Edit className="h-4 w-4" />
@@ -1266,7 +1270,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
               <button
                 type="button"
                 onClick={addItem}
-                className="btn-primary min-h-0 px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-colors w-full md:w-auto whitespace-nowrap"
+                className="btn-primary inline-flex h-[38px] min-h-[38px] items-center justify-center space-x-2 rounded-lg px-4 text-sm transition-colors w-full md:w-auto whitespace-nowrap"
               >
                 <Plus className="h-4 w-4" />
                 <span>Manuell hinzufügen</span>
@@ -1283,7 +1287,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
               items={items.map(item => item.id)} 
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {items.map((item, index) => (
                   <SortableInvoiceItem
                     key={item.id}
@@ -1311,9 +1315,9 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
 
         {/* Global Discount Section */}
         {items.length > 0 && discountsEnabled && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gesamtrabatt</h3>
-            <div className="grid grid-cols-1 gap-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">Gesamtrabatt</h3>
+            <div className="grid grid-cols-1 gap-3 tablet:grid-cols-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Rabatttyp
@@ -1328,7 +1332,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                       globalDiscountValue: discountType ? prev.globalDiscountValue : undefined
                     }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact w-full"
                 >
                   <option value="">Kein Gesamtrabatt</option>
                   <option value="percentage">Prozentual (%)</option>
@@ -1353,9 +1357,9 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     }))}
                     disabled={!formData.globalDiscountType}
                     placeholder="0"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:bg-gray-100 min-w-0"
+                    className="form-input form-input-compact min-w-0 flex-1 rounded-l-lg border-r-0 disabled:bg-gray-100"
                   />
-                  <div className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-gray-600 text-sm flex items-center flex-shrink-0">
+                  <div className="flex h-[38px] shrink-0 items-center rounded-r-lg border border-l-0 border-gray-300 bg-gray-100 px-3 text-sm text-gray-600">
                     {formData.globalDiscountType === 'percentage' ? '%' : currencySymbol}
                   </div>
                 </div>
@@ -1365,7 +1369,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Rabattbetrag
                 </label>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-medium">
+                <div className="flex min-h-[38px] items-center rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm font-medium text-gray-900">
                   {formatMoney(globalDiscountAmount || 0)}
                 </div>
               </div>
@@ -1391,8 +1395,8 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
         {/* Totals */}
         {validationError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{validationError}</p>}
         {items.length > 0 && !validationError && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gesamtsumme</h3>
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">Gesamtsumme</h3>
             <div className="space-y-2 text-sm sm:text-base">
               <div className="flex justify-between">
                 <span className="text-gray-600">Zwischensumme:</span>
@@ -1477,20 +1481,20 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
         )}
 
         {/* Notes */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Notizen</h3>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Notizen</h3>
           <textarea
             value={formData.notes}
             onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-            rows={4}
+            rows={3}
             placeholder="Zusätzliche Informationen oder Zahlungshinweise..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom resize-none"
+            className="form-input resize-none"
           />
         </div>
 
         {/* Attachments */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Anhänge</h3>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">Anhänge</h3>
           <AttachmentManager
             attachments={attachments}
             onAttachmentsChange={setAttachments}
@@ -1506,7 +1510,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
       {/* Customer Creation Modal */}
       {showCustomerForm && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
             </h3>
@@ -1543,7 +1547,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 logger.error('Failed to create customer', { error: (error as Error).message });
                 notify({ variant: 'error', message: `Fehler beim Erstellen des ${terminology.entity.genitive}. Bitte versuchen Sie es erneut.` });
               }
-            }} className="space-y-4">
+            }} className="form-consistent-fields space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name *
@@ -1553,7 +1557,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   required
                   value={newCustomerData.name}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1564,7 +1568,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   type="email"
                   value={newCustomerData.email}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                   placeholder="optional"
                 />
               </div>
@@ -1577,7 +1581,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   required
                   value={newCustomerData.address}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1588,7 +1592,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   type="text"
                   value={newCustomerData.addressSupplement}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, addressSupplement: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                   placeholder="z.B. 2. Stock, Hintereingang"
                 />
               </div>
@@ -1602,7 +1606,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     required
                     value={newCustomerData.postalCode}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, postalCode: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
                 <div>
@@ -1614,7 +1618,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     required
                     value={newCustomerData.city}
                     onChange={(e) => setNewCustomerData({ ...newCustomerData, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                   />
                 </div>
               </div>
@@ -1627,7 +1631,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   required
                   value={newCustomerData.country}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, country: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1638,7 +1642,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   type="text"
                   value={newCustomerData.taxId}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, taxId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div>
@@ -1649,7 +1653,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   type="tel"
                   value={newCustomerData.phone}
                   onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                 />
               </div>
               <div className="form-action-bar pt-4">
@@ -1719,7 +1723,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 console.error('Error saving invoice template:', error);
                 notify({ variant: 'error', message: 'Fehler beim Speichern der Rechnungsvorlage. Bitte versuchen Sie es erneut.' });
               }
-            }} className="space-y-5 pb-2">
+            }} className="form-consistent-fields space-y-5 pb-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name *
@@ -1728,7 +1732,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   type="text"
                   value={newInvoiceTemplateData.name}
                   onChange={(e) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                   placeholder="z.B. Beratung, Analyse, Konzeption..."
                   required
                 />
@@ -1741,7 +1745,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 <textarea
                   value={newInvoiceTemplateData.description}
                   onChange={(e) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input"
                   placeholder="Optionale Beschreibung..."
                   rows={2}
                 />
@@ -1759,7 +1763,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, unitPrice: value === '' ? 0 : value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                     placeholder="0.00"
                     required
                   />
@@ -1772,7 +1776,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     type="text"
                     value={newInvoiceTemplateData.unit}
                     onChange={(e) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, unit: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact"
                     placeholder="z.B. Stunde, Tag, Projekt..."
                   />
                 </div>
@@ -1785,7 +1789,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 <select
                   value={newInvoiceTemplateData.taxRate}
                   onChange={(e) => setNewInvoiceTemplateData({ ...newInvoiceTemplateData, taxRate: parseFloat(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact"
                   required
                 >
                   <option value={0}>0% (Steuerbefreit)</option>

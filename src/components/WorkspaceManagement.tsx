@@ -129,7 +129,7 @@ export function WorkspaceManagement() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <form onSubmit={handleRenameWorkspace} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <form onSubmit={handleRenameWorkspace} className="form-consistent-fields rounded-lg border border-gray-100 bg-gray-50 p-4">
             <label className="block text-sm font-medium text-gray-700">
               Workspace-Name
               <input required maxLength={255} value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} disabled={!canManageWorkspace} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100" />
@@ -140,7 +140,7 @@ export function WorkspaceManagement() {
             </div>
           </form>
 
-          <form onSubmit={handleCreateWorkspace} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <form onSubmit={handleCreateWorkspace} className="form-consistent-fields rounded-lg border border-gray-100 bg-gray-50 p-4">
             <label className="block text-sm font-medium text-gray-700">
               Neuer Workspace
               <input required maxLength={255} value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="z. B. Nebenprojekt" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
@@ -186,7 +186,7 @@ export function WorkspaceManagement() {
           <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <h2 className="mb-1 font-semibold text-gray-900">Mitarbeiter einladen</h2>
             <p className="mb-4 text-sm text-gray-500">Einladungen gelten sieben Tage und können sicher weitergegeben werden.</p>
-            <form onSubmit={handleInvite} className="space-y-2">
+            <form onSubmit={handleInvite} className="form-consistent-fields space-y-2">
               <input type="email" required value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="E-Mail-Adresse" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
               <div className="flex flex-wrap gap-2">
                 <select value={inviteRole} onChange={event => setInviteRole(event.target.value as Exclude<WorkspaceRole, 'owner'>)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="member">Mitarbeiter</option><option value="admin">Administrator</option><option value="viewer">Nur lesen</option></select>

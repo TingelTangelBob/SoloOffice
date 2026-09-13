@@ -200,7 +200,7 @@ export function EmailSendModal(props: EmailSendModalProps) {
           </button>
         </div>
         
-        <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 flex-1 min-h-0 overflow-y-auto">
+        <div className="form-consistent-fields p-4 lg:p-6 space-y-4 lg:space-y-6 flex-1 min-h-0 overflow-y-auto">
           {/* E-Mail Details */}
           <div className="bg-primary-custom/10 border border-primary-custom/30 rounded-lg p-3 lg:p-4">
             <h4 className="text-sm font-semibold text-primary-custom mb-2">

@@ -421,7 +421,7 @@ function TemplateEditorOverlay({
 
   return (
     <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
-      <form noValidate onSubmit={onSave} aria-busy={isSaving} className="flex h-[min(94dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl bg-[#f4f2f0] shadow-2xl">
+      <form noValidate onSubmit={onSave} aria-busy={isSaving} className="form-consistent-fields flex h-[min(94dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl bg-[#f4f2f0] shadow-2xl">
         <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
           <button type="button" onClick={onClose} disabled={isSaving} data-editor-initial-focus className="inline-flex items-center gap-2 rounded-lg p-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">
             <ArrowLeft className="h-4 w-4" />

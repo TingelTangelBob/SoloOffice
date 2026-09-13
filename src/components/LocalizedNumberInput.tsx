@@ -17,6 +17,7 @@ export function LocalizedNumberInput({
   onBlur,
   onFocus,
   inputMode = 'decimal',
+  className = '',
   ...inputProps
 }: LocalizedNumberInputProps) {
   const [draftValue, setDraftValue] = useState(() => formatDecimalInput(value, locale, numberFormat));
@@ -68,6 +69,7 @@ export function LocalizedNumberInput({
         }
       }}
       onBlur={handleBlur}
+      className={`form-input form-input-compact ${className}`.trim()}
     />
   );
 }

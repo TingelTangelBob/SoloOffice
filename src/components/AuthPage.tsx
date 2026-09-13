@@ -108,7 +108,7 @@ export function AuthPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+        <form onSubmit={handleSubmit} className="form-consistent-fields space-y-4" autoComplete="on">
           {(isRegistration || isInvitation) && (
             <div className="grid grid-cols-2 gap-3">
               <label htmlFor="auth-first-name" className="text-sm text-gray-700">Vorname<input id="auth-first-name" name="given-name" value={firstName} onChange={event => setFirstName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth given-name" /></label>

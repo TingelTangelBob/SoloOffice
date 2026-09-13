@@ -259,7 +259,7 @@ export function SignaturePad({ isOpen, onClose, onSave, title = "Unterschrift", 
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto p-4">
+        <div className="form-consistent-fields space-y-4 overflow-y-auto p-4">
           {/* Customer Name Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

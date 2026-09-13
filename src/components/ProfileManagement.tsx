@@ -79,7 +79,7 @@ export function ProfileManagement() {
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-3"><UserRound className="h-5 w-5 text-primary-custom" /><div><h2 className="font-semibold text-gray-900">Persönliche Daten</h2><p className="text-sm text-gray-500">{user?.email}</p></div></div>
-          <form onSubmit={submitProfile} className="space-y-4">
+          <form onSubmit={submitProfile} className="form-consistent-fields space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <label className="text-sm text-gray-700">Vorname<input value={firstName} onChange={event => setFirstName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
               <label className="text-sm text-gray-700">Nachname<input value={lastName} onChange={event => setLastName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
@@ -90,7 +90,7 @@ export function ProfileManagement() {
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-3"><Shield className="h-5 w-5 text-primary-custom" /><div><h2 className="font-semibold text-gray-900">Passwort & Sitzungen</h2><p className="text-sm text-gray-500">Beim Passwortwechsel werden andere Sitzungen beendet.</p></div></div>
-          <form onSubmit={submitPassword} className="space-y-3">
+          <form onSubmit={submitPassword} className="form-consistent-fields space-y-3">
             <input type="password" required minLength={10} value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} placeholder="Aktuelles Passwort" className="w-full rounded-lg border border-gray-300 px-3 py-2" autoComplete="current-password" />
             <input type="password" required minLength={10} value={newPassword} onChange={event => setNewPassword(event.target.value)} placeholder="Neues Passwort (mind. 10 Zeichen)" className="w-full rounded-lg border border-gray-300 px-3 py-2" autoComplete="new-password" />
             <div className="flex flex-wrap gap-2"><button className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white">Passwort ändern</button><button type="button" onClick={() => run(logoutAll, 'Alle Sitzungen wurden beendet.')} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700">Alle Sitzungen beenden</button></div>
@@ -103,7 +103,7 @@ export function ProfileManagement() {
       <section className="rounded-xl border border-red-200 bg-red-50 p-5">
         <h2 className="font-semibold text-red-900">Konto löschen</h2>
         <p className="mt-1 text-sm text-red-800">Eigene Workspaces und Kontodaten werden endgültig gelöscht. Geteilte Workspaces müssen vorher übertragen werden.</p>
-        <form onSubmit={event => { event.preventDefault(); void handleDeleteAccount(); }} className="mt-3 flex flex-wrap gap-2">
+        <form onSubmit={event => { event.preventDefault(); void handleDeleteAccount(); }} className="form-consistent-fields mt-3 flex flex-wrap gap-2">
           <input type="password" required minLength={10} value={deletePassword} onChange={event => setDeletePassword(event.target.value)} placeholder="Aktuelles Passwort bestätigen" className="min-w-[240px] flex-1 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm" />
           <button type="submit" className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">Konto endgültig löschen</button>
         </form>

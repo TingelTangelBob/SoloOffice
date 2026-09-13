@@ -124,7 +124,7 @@ export function LocalizedTimeInput({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-invalid={Boolean(inputValue && !parseTimeValue(inputValue, timeFormat))}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+        className="form-input form-input-compact pr-10"
       />
       <button
         type="button"

@@ -503,7 +503,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact text-sm"
                   />
                 </div>
                 <div>
@@ -514,7 +514,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact text-sm"
                   />
                 </div>
                 <div>
@@ -524,7 +524,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   <select
                     value={selectedCustomer}
                     onChange={(e) => setSelectedCustomer(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input form-input-compact text-sm"
                   >
                     <option value="">Alle {terminology.entity.plural}</option>
                     {customers.map((customer) => (
@@ -679,7 +679,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   onChange={(e) => {
                     setSelectedYear(parseInt(e.target.value));
                   }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact text-sm"
                 >
                   {Array.from({ length: 5 }, (_, i) => {
                     const year = new Date().getFullYear() - i;
