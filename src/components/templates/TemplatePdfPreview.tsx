@@ -69,7 +69,7 @@ export function TemplatePdfPreview({ template, company, large = false }: Templat
             data={previewUrl}
             type="application/pdf"
             aria-label={`${template.name} als PDF`}
-            className={large ? 'h-[min(68dvh,700px)] w-[min(100%,520px)] rounded border border-gray-300 bg-white shadow-sm' : 'h-[min(48vw,420px)] w-full rounded border border-gray-300 bg-white'}
+            className={large ? 'h-[min(78dvh,820px)] w-[min(100%,680px)] rounded border border-gray-300 bg-white shadow-sm' : 'h-[min(48vw,420px)] w-full rounded border border-gray-300 bg-white'}
           >
             <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-gray-600">
               <span>Die PDF-Darstellung wird in diesem Browser nicht eingebettet.</span>

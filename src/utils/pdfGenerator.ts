@@ -579,6 +579,17 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
   yPosition = await addJobHeader();
   resetFont(pdf, darkText);
 
+  if (template.introText?.trim()) {
+    const introLines = pdf.splitTextToSize(template.introText.trim(), pageWidth - 40);
+    await handlePageBreak(introLines.length * 4.5 + 8, 20);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(grayText);
+    pdf.text(introLines, margins.left, yPosition);
+    yPosition += introLines.length * 4.5 + 7;
+    resetFont(pdf, darkText);
+  }
+
   // === JOB DESCRIPTION ===
   if (job.description) {
     pdf.setFontSize(10);
@@ -838,6 +849,24 @@ export async function generateJobPDF(job: JobEntry, options: JobPDFOptions): Pro
     
     pdf.text(splitNotes, margins.left, yPosition);
     yPosition += splitNotes.length * 4.5 + 6;
+  }
+
+  if (template.paymentTerms?.trim() || template.closingText?.trim()) {
+    await handlePageBreak(24, 20);
+    yPosition += 4;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(grayText);
+    if (template.paymentTerms?.trim()) {
+      const paymentLines = pdf.splitTextToSize(template.paymentTerms.trim(), pageWidth - 40);
+      pdf.text(paymentLines, margins.left, yPosition);
+      yPosition += paymentLines.length * 4.5 + 5;
+    }
+    if (template.closingText?.trim()) {
+      const closingLines = pdf.splitTextToSize(template.closingText.trim(), pageWidth - 40);
+      pdf.text(closingLines, margins.left, yPosition);
+    }
+    resetFont(pdf, darkText);
   }
 
   // Customer signature

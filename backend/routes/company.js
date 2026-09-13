@@ -277,6 +277,13 @@ router.put('/', async (req, res) => {
       updates.push(`document_templates = $${paramIndex++}`);
       values.push(JSON.stringify(req.body.documentTemplates));
     }
+    if (req.body.documentTextTemplates !== undefined) {
+      if (!Array.isArray(req.body.documentTextTemplates)) {
+        return res.status(400).json({ error: 'documentTextTemplates must be an array' });
+      }
+      updates.push(`document_text_templates = $${paramIndex++}`);
+      values.push(JSON.stringify(req.body.documentTextTemplates));
+    }
     
     // Handle payment information fields
     if (paymentInfo) {

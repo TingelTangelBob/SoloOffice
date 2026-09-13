@@ -12,6 +12,7 @@ import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { getReminderTextForStage } from '../utils/documentTextTemplates';
 
 interface ReminderSendModalProps {
   isOpen: boolean;
@@ -56,9 +57,8 @@ export function ReminderSendModal({
   });
 
   // Get reminder configuration
-  const reminderText = stage === 1 ? company.reminderTextStage1 :
-                       stage === 2 ? company.reminderTextStage2 :
-                       company.reminderTextStage3;
+  const reminderText = getReminderTextForStage(company, stage);
+  const reminderTextOverride = customText.trim() && customText.trim() !== reminderText.trim() ? customText : '';
   
   // Calculate cumulative fees (sum of all stages up to current)
   const cumulativeFee = (() => {
@@ -127,7 +127,7 @@ export function ReminderSendModal({
       const pdfBlob = await generateReminderPDF(
         invoice,
         stage,
-        customText || reminderText || '',
+        reminderTextOverride,
         cumulativeFee,
         {
           format: 'zugferd',
@@ -172,7 +172,7 @@ export function ReminderSendModal({
         const pdfBlob = await generateReminderPDF(
           inv,
           stage,
-          customText || reminderText || '',
+          reminderTextOverride,
           cumulativeFee,
           {
             format: 'zugferd',
@@ -249,7 +249,7 @@ export function ReminderSendModal({
           const reminderPdfBlob = await generateReminderPDF(
             inv,
             stage,
-            customText || reminderText || '',
+            reminderTextOverride,
             cumulativeFee,
             {
               format: 'zugferd',

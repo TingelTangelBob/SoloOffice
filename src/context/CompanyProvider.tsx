@@ -7,6 +7,7 @@ import { updateFavicon, updatePageTitle } from '../utils/faviconUtils';
 import logger from '../utils/logger';
 import { DEFAULT_TIME_ZONE } from '../utils/timeZones';
 import { CompanyContext, type CompanyContextType } from './CompanyContext';
+import { defaultDocumentTextTemplates } from '../utils/documentTextTemplates';
 
 // ============================================================================
 // Default Values
@@ -22,6 +23,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Für die von uns erbrachten Leistungen und Lieferungen berechnen wir Ihnen:',
     closingText: 'Vielen Dank für Ihr Vertrauen. Für Rückfragen zu dieser Rechnung sind wir gerne für Sie da.',
     paymentTerms: 'Bitte überweisen Sie den Rechnungsbetrag bis zum Fälligkeitsdatum unter Angabe der Rechnungsnummer.',
+    textMode: 'global',
     layout: 'classic',
     accentColor: '#2563eb',
     logoMode: 'company',
@@ -40,6 +42,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Danke für die Zusammenarbeit. Die folgenden Leistungen stellen wir Ihnen wie vereinbart in Rechnung:',
     closingText: 'Bei Fragen zur Rechnung oder zu einzelnen Positionen erreichen Sie uns jederzeit.',
     paymentTerms: 'Zahlbar innerhalb der vereinbarten Frist. Bitte geben Sie als Verwendungszweck die Rechnungsnummer an.',
+    textMode: 'global',
     layout: 'modern',
     accentColor: '#0f766e',
     logoMode: 'company',
@@ -57,6 +60,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Mit dieser Abrechnung erhalten Sie die im aktuellen Projektabschnitt erbrachten Leistungen und vereinbarten Auslagen im Überblick:',
     closingText: 'Wir freuen uns, das Projekt gemeinsam weiterzuführen. Wenn einzelne Positionen Fragen aufwerfen, sprechen Sie uns gerne an.',
     paymentTerms: 'Die Zahlung erfolgt gemäß den vereinbarten Projekt- und Zahlungsbedingungen.',
+    textMode: 'global',
     layout: 'editorial',
     accentColor: '#b0894f',
     logoMode: 'company',
@@ -74,6 +78,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Vielen Dank für Ihre Anfrage. Gerne unterbreiten wir Ihnen folgendes Angebot:',
     closingText: 'Wir freuen uns auf Ihre Rückmeldung.',
     paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    textMode: 'global',
     layout: 'classic',
     accentColor: '#2563eb',
     logoMode: 'company',
@@ -92,6 +97,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Auf Basis der besprochenen Anforderungen bieten wir Ihnen folgende Projektleistungen an:',
     closingText: 'Gerne erläutern wir die einzelnen Positionen in einem persönlichen Gespräch.',
     paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    textMode: 'global',
     layout: 'editorial',
     accentColor: '#b0894f',
     logoMode: 'company',
@@ -109,6 +115,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     introText: 'Für den vereinbarten Leistungsumfang bieten wir Ihnen pauschal an:',
     closingText: 'Wir freuen uns auf die weitere Zusammenarbeit.',
     paymentTerms: 'Dieses Angebot ist 30 Tage gültig.',
+    textMode: 'global',
     layout: 'minimal',
     accentColor: '#111827',
     logoMode: 'company',
@@ -129,6 +136,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     tableStyle: 'light',
     showPaymentInformation: true,
     showFooter: true,
+    textMode: 'global',
     isDefault: true,
   },
   {
@@ -143,6 +151,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     tableStyle: 'dark',
     showPaymentInformation: true,
     showFooter: true,
+    textMode: 'global',
   },
   {
     id: 'order-confirmation-editorial',
@@ -156,6 +165,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
     tableStyle: 'accent',
     showPaymentInformation: true,
     showFooter: true,
+    textMode: 'global',
   },
   {
     id: 'reminder-friendly',
@@ -176,6 +186,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
       stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
       stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
     },
+    textMode: 'global',
     isDefault: true,
   },
   {
@@ -197,6 +208,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
       stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
       stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
     },
+    textMode: 'global',
   },
   {
     id: 'reminder-final',
@@ -217,6 +229,7 @@ export const defaultDocumentTemplates: DocumentTemplate[] = [
       stage2: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.',
       stage3: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend eingehen, behalten wir uns weitere Schritte vor.',
     },
+    textMode: 'global',
   },
 ];
 
@@ -278,6 +291,7 @@ export const defaultCompany: Company = {
   reminderFeeStage2: 0,
   reminderFeeStage3: 0,
   documentTemplates: defaultDocumentTemplates,
+  documentTextTemplates: defaultDocumentTextTemplates,
 };
 
 // ============================================================================
@@ -329,6 +343,12 @@ export function CompanyProvider({
         documentTemplates: updatedCompany.documentTemplates?.length
           ? updatedCompany.documentTemplates
           : previousCompany.documentTemplates || defaultDocumentTemplates.map(template => ({ ...template })),
+        documentTextTemplates: updatedCompany.documentTextTemplates?.length
+          ? updatedCompany.documentTextTemplates
+          : previousCompany.documentTextTemplates || defaultDocumentTextTemplates.map(template => ({
+              ...template,
+              reminderTexts: template.reminderTexts ? { ...template.reminderTexts } : undefined,
+            })),
       }));
     } catch (error) {
       logger.error('Error updating company:', { error: error instanceof Error ? error.message : String(error) });

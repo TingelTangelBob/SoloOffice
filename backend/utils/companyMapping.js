@@ -73,6 +73,7 @@ export function mapCompanyRow(row) {
     bankAccount: row.bank_account || row.payment_bank_account,
     bic: row.bic || row.payment_bic,
     invoiceTemplates: jsonArray(row.invoice_templates),
-    documentTemplates: jsonArray(row.document_templates)
+    documentTemplates: jsonArray(row.document_templates),
+    documentTextTemplates: jsonArray(row.document_text_templates)
   };
 }

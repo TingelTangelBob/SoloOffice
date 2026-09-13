@@ -36,33 +36,6 @@ const colorPresets = [
   { name: 'Koralle', primary: '#ea580c', secondary: '#475569' },
 ] as const;
 
-const reminderTemplates = {
-  stage1: [
-    { id: 'friendly', label: 'Freundliche Erinnerung', text: 'Wir möchten Sie freundlich daran erinnern, dass die Zahlung der unten aufgeführten Rechnung noch aussteht. Bitte begleichen Sie den offenen Betrag innerhalb der nächsten Tage.' },
-    { id: 'short', label: 'Kurz und sachlich', text: 'Für die unten aufgeführte Rechnung konnten wir bisher keinen Zahlungseingang feststellen. Bitte prüfen Sie den Vorgang und überweisen Sie den offenen Betrag zeitnah.' },
-    { id: 'service', label: 'Serviceorientiert', text: 'Vielleicht ist die Zahlung der unten aufgeführten Rechnung im Alltag untergegangen. Wir bitten Sie, den offenen Betrag zu prüfen und bei Gelegenheit zu begleichen. Falls Sie bereits gezahlt haben, betrachten Sie diese Nachricht bitte als gegenstandslos.' },
-  ],
-  stage2: [
-    { id: 'clear', label: 'Deutliche Zahlungsaufforderung', text: 'Leider konnten wir trotz unserer Zahlungserinnerung noch keinen Zahlungseingang feststellen. Bitte begleichen Sie den offenen Betrag umgehend.' },
-    { id: 'deadline', label: 'Mit Zahlungsfrist', text: 'Der offene Rechnungsbetrag ist weiterhin nicht bei uns eingegangen. Wir bitten Sie, die Zahlung innerhalb von sieben Tagen nach Erhalt dieser Mahnung vorzunehmen.' },
-    { id: 'formal', label: 'Formell und sachlich', text: 'Hiermit mahnen wir die noch ausstehende Zahlung der unten aufgeführten Rechnung an. Bitte überweisen Sie den offenen Betrag unverzüglich unter Angabe der Rechnungsnummer.' },
-  ],
-  stage3: [
-    { id: 'final', label: 'Letzte Mahnung', text: 'Dies ist unsere letzte Mahnung. Sollte der offene Rechnungsbetrag nicht umgehend bei uns eingehen, behalten wir uns weitere Schritte zur Durchsetzung unserer Forderung vor.' },
-    { id: 'legal', label: 'Vor rechtlichen Schritten', text: 'Der offene Rechnungsbetrag ist trotz unserer bisherigen Mahnungen weiterhin nicht ausgeglichen. Bitte zahlen Sie innerhalb von sieben Tagen, um weitere Maßnahmen und zusätzliche Kosten zu vermeiden.' },
-    { id: 'firm', label: 'Kurz und bestimmt', text: 'Wir fordern Sie letztmalig auf, den offenen Rechnungsbetrag unverzüglich zu begleichen. Nach fruchtlosem Ablauf der Zahlungsfrist werden wir die Forderung ohne weitere Ankündigung weiterverfolgen.' },
-  ],
-} as const;
-
-type ReminderTemplateStage = keyof typeof reminderTemplates;
-
-function getSelectedReminderTemplate(stage: ReminderTemplateStage, text?: string) {
-  const normalizedText = text?.trim();
-  if (!normalizedText) return undefined;
-  const templates = reminderTemplates[stage] as ReadonlyArray<{ id: string; label: string; text: string }>;
-  return templates.find(template => template.text.trim() === normalizedText);
-}
-
 function TerminologyPreview({ profile, receiptLabel }: { profile: TerminologyDefinition; receiptLabel: string }) {
   const preview = profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
   const menuItems = [
@@ -246,9 +219,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       reminderFeeStage1: 0,
       reminderFeeStage2: 0,
       reminderFeeStage3: 0,
-      reminderTextStage1: reminderTemplates.stage1[0].text,
-      reminderTextStage2: reminderTemplates.stage2[0].text,
-      reminderTextStage3: reminderTemplates.stage3[0].text,
     });
     setFeedback({ type: 'success', text: 'Standardeinstellungen wurden im Formular gesetzt. Mit „Speichern“ übernehmen.' });
   };
@@ -311,6 +281,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       const terminologyProfileChanged = company.terminologyProfile !== formData.terminologyProfile;
       delete companySettings.invoiceTemplates;
       delete companySettings.documentTemplates;
+      delete companySettings.documentTextTemplates;
+      delete companySettings.reminderTextStage1;
+      delete companySettings.reminderTextStage2;
+      delete companySettings.reminderTextStage3;
       await updateCompany(companySettings);
       if (isDemoMode && terminologyProfileChanged) {
         window.location.reload();
@@ -364,12 +338,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
     setFormData(prev => ({ ...prev, icon: null }));
     // Update favicon immediately to remove the custom icon
     updateFavicon(null);
-  };
-
-  const selectedReminderTemplates = {
-    stage1: getSelectedReminderTemplate('stage1', formData.reminderTextStage1),
-    stage2: getSelectedReminderTemplate('stage2', formData.reminderTextStage2),
-    stage3: getSelectedReminderTemplate('stage3', formData.reminderTextStage3),
   };
 
   return (
@@ -738,98 +706,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 <p className="text-xs text-gray-500 mt-2">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen</p>
               </div>
 
-              {/* Reminder Texts */}
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Mahntexte</h4>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      1. Mahnung (freundlich)
-                    </label>
-                    <select
-                      value={selectedReminderTemplates.stage1?.id || ''}
-                      onChange={(e) => {
-                        const template = reminderTemplates.stage1.find(item => item.id === e.target.value);
-                        if (template) setFormData(prev => ({ ...prev, reminderTextStage1: template.text }));
-                      }}
-                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    >
-                      <option value="">Vorlage auswählen...</option>
-                      {reminderTemplates.stage1.map(template => (
-                        <option key={template.id} value={template.id}>{template.label}</option>
-                      ))}
-                    </select>
-                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage1 ? 'text-primary-custom' : 'text-gray-500'}`}>
-                      {selectedReminderTemplates.stage1 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage1.label}` : formData.reminderTextStage1?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
-                    </p>
-                    <textarea
-                      value={formData.reminderTextStage1 || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage1: e.target.value }))}
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                      placeholder="Freundliche Zahlungserinnerung..."
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      2. Mahnung (bestimmt)
-                    </label>
-                    <select
-                      value={selectedReminderTemplates.stage2?.id || ''}
-                      onChange={(e) => {
-                        const template = reminderTemplates.stage2.find(item => item.id === e.target.value);
-                        if (template) setFormData(prev => ({ ...prev, reminderTextStage2: template.text }));
-                      }}
-                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    >
-                      <option value="">Vorlage auswählen...</option>
-                      {reminderTemplates.stage2.map(template => (
-                        <option key={template.id} value={template.id}>{template.label}</option>
-                      ))}
-                    </select>
-                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage2 ? 'text-primary-custom' : 'text-gray-500'}`}>
-                      {selectedReminderTemplates.stage2 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage2.label}` : formData.reminderTextStage2?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
-                    </p>
-                    <textarea
-                      value={formData.reminderTextStage2 || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage2: e.target.value }))}
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                      placeholder="Bestimmte Zahlungsaufforderung..."
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      3. Mahnung (letzte Mahnung)
-                    </label>
-                    <select
-                      value={selectedReminderTemplates.stage3?.id || ''}
-                      onChange={(e) => {
-                        const template = reminderTemplates.stage3.find(item => item.id === e.target.value);
-                        if (template) setFormData(prev => ({ ...prev, reminderTextStage3: template.text }));
-                      }}
-                      className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    >
-                      <option value="">Vorlage auswählen...</option>
-                      {reminderTemplates.stage3.map(template => (
-                        <option key={template.id} value={template.id}>{template.label}</option>
-                      ))}
-                    </select>
-                    <p className={`mb-2 text-xs ${selectedReminderTemplates.stage3 ? 'text-primary-custom' : 'text-gray-500'}`}>
-                      {selectedReminderTemplates.stage3 ? `Ausgewählte Vorlage: ${selectedReminderTemplates.stage3.label}` : formData.reminderTextStage3?.trim() ? 'Individueller Mahntext (keine Vorlage)' : 'Keine Vorlage ausgewählt'}
-                    </p>
-                    <textarea
-                      value={formData.reminderTextStage3 || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reminderTextStage3: e.target.value }))}
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                      placeholder="Letzte Mahnung vor rechtlichen Schritten..."
-                    />
-                  </div>
-                </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                <strong className="font-semibold text-gray-900">Mahntexte</strong>
+                <p className="mt-1">Die Texte für alle drei Mahnstufen bearbeiten Sie zentral unter Verwaltung → Vorlagen → Textvorlagen.</p>
               </div>
             </div>
           </div>

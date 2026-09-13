@@ -8,6 +8,7 @@ import {
   DocumentTemplateType,
   ReminderStage,
 } from '../types';
+import { getDocumentTemplateTextMode, resolveDocumentTextTemplate } from './documentTextTemplates';
 
 export interface ResolvedDocumentTemplate extends DocumentTemplate {
   layout: DocumentLayout;
@@ -41,7 +42,7 @@ const fallbackProfiles: Record<DocumentTemplateType, Omit<ResolvedDocumentTempla
     showFooter: true,
   },
   reminder: {
-    description: 'PDF-Layout für Mahnungen; Mahntexte werden in den App-Einstellungen gepflegt.',
+    description: 'PDF-Layout für Mahnungen; die Mahntexte werden zentral in den Textvorlagen gepflegt.',
     layout: 'editorial',
     accentColor: '#b0894f',
     logoMode: 'company',
@@ -73,10 +74,16 @@ export function resolveDocumentTemplate(
   const fallback = fallbackProfiles[documentType];
   const candidates = (company.documentTemplates || []).filter(template => template.documentType === documentType);
   const selected = candidates.find(template => template.isDefault) || candidates[0];
+  const textDefaults = resolveDocumentTextTemplate(company, documentType);
+  const textMode = selected ? getDocumentTemplateTextMode(company, selected) : 'global';
   const selectedFields: Partial<DocumentTemplate> = selected ? { ...selected } : {};
   delete selectedFields.id;
   delete selectedFields.documentType;
   delete selectedFields.name;
+
+  const resolvedReminderTexts = textMode === 'custom'
+    ? { ...textDefaults.reminderTexts, ...selected?.reminderTexts }
+    : textDefaults.reminderTexts;
 
   return {
     id: selected?.id || `${documentType}-default`,
@@ -84,6 +91,12 @@ export function resolveDocumentTemplate(
     name: selected?.name || 'Standardlayout',
     ...fallback,
     ...selectedFields,
+    textMode,
+    subject: textMode === 'custom' ? (selected?.subject ?? textDefaults.subject) : textDefaults.subject,
+    introText: textMode === 'custom' ? (selected?.introText ?? textDefaults.introText) : textDefaults.introText,
+    closingText: textMode === 'custom' ? (selected?.closingText ?? textDefaults.closingText) : textDefaults.closingText,
+    paymentTerms: textMode === 'custom' ? (selected?.paymentTerms ?? textDefaults.paymentTerms) : textDefaults.paymentTerms,
+    reminderTexts: resolvedReminderTexts,
     layout: selected?.layout || fallback.layout,
     accentColor: isHexColor(selected?.accentColor) ? selected.accentColor : fallback.accentColor,
     logoMode: selected?.logoMode || fallback.logoMode,

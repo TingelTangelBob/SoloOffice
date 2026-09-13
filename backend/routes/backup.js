@@ -21,7 +21,7 @@ const JSONB_COLUMNS = {
   'email_history': ['attachments', 'smtp_response'],
   'job_entries': ['materials', 'signature'],
   'job_recurrences': ['rule'],
-  'company': ['payment_methods', 'invoice_templates', 'document_templates'],
+  'company': ['payment_methods', 'invoice_templates', 'document_templates', 'document_text_templates'],
   'receipts': ['extracted_data', 'ocr_extracted_data'],
   'euer_entry_history': ['old_data', 'new_data'],
   'invoice_history': ['old_data', 'new_data'],

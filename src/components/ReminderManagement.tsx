@@ -113,10 +113,6 @@ export function ReminderManagement() {
         return;
       }
 
-      // Get reminder text and fee from company settings for the specific stage
-      const reminderText = stage === 1 ? company.reminderTextStage1 :
-                          stage === 2 ? company.reminderTextStage2 :
-                          company.reminderTextStage3;
       const fee = stage === 1 ? company.reminderFeeStage1 :
                   stage === 2 ? company.reminderFeeStage2 :
                   company.reminderFeeStage3;
@@ -125,7 +121,7 @@ export function ReminderManagement() {
       const pdfBlob = await generateReminderPDF(
         invoice,
         stage,
-        reminderText || '',
+        '',
         fee || 0,
         { format: 'zugferd', company, customer }
       );
@@ -152,10 +148,6 @@ export function ReminderManagement() {
         return;
       }
 
-      // Get reminder text and fee from company settings for the specific stage
-      const reminderText = stage === 1 ? company.reminderTextStage1 :
-                          stage === 2 ? company.reminderTextStage2 :
-                          company.reminderTextStage3;
       const fee = stage === 1 ? company.reminderFeeStage1 :
                   stage === 2 ? company.reminderFeeStage2 :
                   company.reminderFeeStage3;
@@ -164,7 +156,7 @@ export function ReminderManagement() {
       const pdfBlob = await generateReminderPDF(
         invoice,
         stage,
-        reminderText || '',
+        '',
         fee || 0,
         { format: 'zugferd', company, customer }
       );

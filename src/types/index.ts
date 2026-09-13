@@ -450,6 +450,8 @@ export interface Company extends ReminderSettings, CompanyHeader {
   invoiceTemplates?: InvoiceTemplate[];
   // Document templates for invoices, quotes and reminders
   documentTemplates?: DocumentTemplate[];
+  // Shared text templates used as defaults by document templates
+  documentTextTemplates?: DocumentTextTemplate[];
   // Legacy fields (deprecated)
   bankAccount?: string;
   bic?: string;
@@ -508,11 +510,25 @@ export type DocumentLayout =
 export type DocumentLogoMode = 'company' | 'none';
 export type DocumentHeaderAlignment = 'left' | 'center' | 'split';
 export type DocumentTableStyle = 'light' | 'dark' | 'accent';
+export type DocumentTemplateTextMode = 'global' | 'custom';
 
 export interface ReminderTemplateTexts {
   stage1?: string;
   stage2?: string;
   stage3?: string;
+}
+
+export interface DocumentTextTemplate {
+  id: UUID;
+  documentType: DocumentTemplateType;
+  name: string;
+  subject?: string;
+  introText?: string;
+  closingText?: string;
+  paymentTerms?: string;
+  reminderTexts?: ReminderTemplateTexts;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface DocumentTemplate {
@@ -524,6 +540,8 @@ export interface DocumentTemplate {
   introText?: string;
   closingText?: string;
   paymentTerms?: string;
+  /** Whether this PDF layout uses the shared text template or its own texts. */
+  textMode?: DocumentTemplateTextMode;
   /** Visual PDF layout profile. Older templates without these fields use a safe default. */
   layout?: DocumentLayout;
   accentColor?: string;

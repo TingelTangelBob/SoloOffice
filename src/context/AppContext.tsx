@@ -70,6 +70,9 @@ function DataLoader({ children }: DataLoaderProps) {
             showPaymentInformation: template.showPaymentInformation ?? defaults.showPaymentInformation,
             showFooter: template.showFooter ?? defaults.showFooter,
             reminderTexts: template.reminderTexts || defaults.reminderTexts,
+            // A missing mode is intentional for older non-default layouts:
+            // the resolver can then detect whether their old texts were custom.
+            textMode: template.textMode || (template.isDefault ? 'global' : undefined),
           } : template;
         });
         const documentTemplates = storedDocumentTemplates.length > 0
@@ -80,6 +83,9 @@ function DataLoader({ children }: DataLoaderProps) {
                 .map(template => ({ ...template })),
             ]
           : defaultDocumentTemplates.map(template => ({ ...template }));
+        // Keep an empty value empty so the text resolver can still migrate
+        // older reminder fields and layout texts on first use.
+        const documentTextTemplates = companyData.documentTextTemplates || [];
 
         companyContext.setCompany({
           ...companyData,
@@ -87,6 +93,7 @@ function DataLoader({ children }: DataLoaderProps) {
           terminologyProfile: companyData.terminologyProfile || defaultCompany.terminologyProfile,
           paymentInformationMode: companyData.paymentInformationMode || defaultCompany.paymentInformationMode,
           documentTemplates,
+          documentTextTemplates,
         });
         companyContext.setMaterialTemplates(materialTemplatesData);
         companyContext.setHourlyRates(hourlyRatesData);

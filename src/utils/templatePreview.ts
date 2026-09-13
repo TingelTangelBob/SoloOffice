@@ -1,6 +1,8 @@
 import type { Company, Customer, DocumentTemplate, Invoice, JobEntry, Quote } from '../types';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 import { generateInvoicePDF, generateJobPDF, generateQuotePDF, generateReminderPDF } from './pdfGenerator';
+import { getDocumentTemplateTextMode } from './documentTextTemplates';
+import { resolveDocumentTemplate } from './documentTemplateProfiles';
 
 export interface TemplatePreviewResult {
   blob: Blob;
@@ -164,7 +166,11 @@ function companyWithPreviewTemplate(company: Company, template: DocumentTemplate
 
   return {
     ...company,
-    documentTemplates: [...templates, { ...template, isDefault: true }],
+    documentTemplates: [...templates, {
+      ...template,
+      isDefault: true,
+      textMode: getDocumentTemplateTextMode(company, template),
+    }],
   };
 }
 
@@ -188,10 +194,11 @@ export async function generateTemplatePreview(template: DocumentTemplate, compan
       return { blob, fileName: `Vorschau_${previewJob.jobNumber}.pdf` };
     }
     case 'reminder': {
+      const reminderTemplate = resolveDocumentTemplate(previewCompany, 'reminder');
       const blob = await generateReminderPDF(
         previewInvoice,
         1,
-        template.introText || 'Bitte begleichen Sie den offenen Rechnungsbetrag innerhalb der Zahlungsfrist.',
+        reminderTemplate.reminderTexts?.stage1?.trim() || 'Bitte begleichen Sie den offenen Rechnungsbetrag innerhalb der Zahlungsfrist.',
         previewCompany.reminderFeeStage1 || 0,
         { format: 'pdf', company: previewCompany, customer: templatePreviewCustomer },
       );

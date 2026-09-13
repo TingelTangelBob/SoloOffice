@@ -1898,6 +1898,67 @@
     background-color: var(--surface-raised);
   }
 
+  /* Vorlageneditor: alle Flächen folgen den App-Variablen. Die frühere
+     Mischung aus weißen Flächen und festen Beige-Tönen blieb im Dunkelmodus
+     sichtbar und ließ den Editor wie ein fremdes Fenster wirken. */
+  #app-shell .template-editor-shell {
+    background-color: var(--surface-page);
+    color: var(--ink-strong);
+  }
+
+  #app-shell .template-editor-header,
+  #app-shell .template-editor-sidebar,
+  #app-shell .template-editor-footer {
+    background-color: var(--surface-raised);
+    border-color: var(--line-soft);
+  }
+
+  #app-shell .template-editor-main {
+    background-color: var(--surface-page);
+    color: var(--ink-strong);
+  }
+
+  #app-shell .template-editor-section {
+    background-color: var(--surface-raised);
+    border-color: var(--line-soft);
+  }
+
+  #app-shell .template-editor-tabs,
+  #app-shell .template-editor-text-source {
+    background-color: var(--surface-sunken);
+    border-color: var(--line-soft);
+  }
+
+  #app-shell .template-editor-tab-active {
+    background-color: var(--surface-hover);
+    color: var(--ink-strong);
+  }
+
+  #app-shell .template-editor-preview-label {
+    background-color: var(--surface-raised);
+  }
+
+  #app-shell .template-card-preview-surface {
+    background-color: var(--surface-sunken);
+  }
+
+  #app-shell .template-text-table-wrap {
+    background-color: var(--surface-raised);
+    border-color: var(--line-soft);
+  }
+
+  #app-shell .template-text-table thead {
+    background-color: var(--surface-sunken);
+  }
+
+  #app-shell .template-text-table tr {
+    border-color: var(--line-soft);
+  }
+
+  #app-shell .template-text-table tbody tr:hover {
+    background-color: var(--surface-hover);
+  }
+
   .info-tooltip {
     position: relative;
     display: inline-flex;
