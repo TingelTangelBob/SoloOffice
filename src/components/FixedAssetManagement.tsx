@@ -170,7 +170,7 @@ export function FixedAssetManagement() {
     }
   };
 
-  return <div className="space-y-6">
+  return <div className="page-root space-y-6">
     <PageHeader icon={Boxes} title="Anlagenverzeichnis" subtitle="Anlagegüter und vorbereitende lineare Abschreibung für die Steuerunterlagen">
       <select value={year} onChange={event => setYear(Number(event.target.value))} className="form-input h-11 w-[4.5rem] shrink-0 px-2 text-sm sm:w-auto sm:px-3" aria-label="Jahr auswählen" title="Jahr auswählen">{Array.from({ length: 6 }, (_, index) => currentYear - index).map(option => <option key={option} value={option}>{option}</option>)}</select>
       <button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Anlage erfassen" title="Anlage erfassen"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Anlage erfassen</span></button>
@@ -185,7 +185,15 @@ export function FixedAssetManagement() {
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><div className="flex items-center gap-2"><Boxes className="h-5 w-5 text-primary-custom" /><h2 className="text-lg font-semibold text-gray-900">Erfasste Anlagegüter</h2></div></div>
-      {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">Anlagen werden geladen …</div> : assets.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Noch keine Anlagegüter erfasst.</div> : <>
+      {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">Anlagen werden geladen …</div> : assets.length === 0 ? (
+        <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
+          <p>Noch keine Anlagegüter erfasst.</p>
+          <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+            <Plus className="h-4 w-4" />
+            Anlage erfassen
+          </button>
+        </div>
+      ) : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full min-w-[850px]">
             <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bezeichnung</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Anschaffung</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Kosten</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">AfA {year}</th><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th><th style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>

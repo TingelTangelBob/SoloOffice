@@ -11,6 +11,7 @@ import { PageHeader } from './PageHeader';
 const MAX_XML_SIZE = 10 * 1024 * 1024;
 
 interface IncomingEInvoicesManagementProps {
+  searchQuery?: string;
   embedded?: boolean;
 }
 
@@ -23,7 +24,7 @@ function statusLabel(invoice: IncomingEInvoice) {
 }
 
 export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoicesManagement(
-  { embedded = false }: IncomingEInvoicesManagementProps,
+  { searchQuery = '', embedded = false }: IncomingEInvoicesManagementProps,
   ref: ForwardedRef<IncomingEInvoicesManagementHandle>,
 ) {
   const { customers } = useCustomers();
@@ -39,6 +40,19 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
   useImperativeHandle(ref, () => ({ openUpload }), [openUpload]);
 
   const customerNames = useMemo(() => new Map(customers.map(customer => [customer.id, customer.name])), [customers]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('de-DE');
+    if (!query) return invoices;
+    return invoices.filter(invoice => [
+      invoice.filename,
+      invoice.format,
+      invoice.supplierName,
+      invoice.issueDate,
+      invoice.validationStatus,
+      customerNames.get(invoice.linkedCustomerId || ''),
+    ].some(value => value?.toLocaleLowerCase('de-DE').includes(query)));
+  }, [customerNames, invoices, searchQuery]);
 
   useEffect(() => {
     let active = true;
@@ -150,9 +164,13 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
             <span className="mt-3 block font-medium text-gray-800">Noch keine E-Rechnung eingegangen</span>
             <span className="mt-1 block text-sm text-gray-500">XRechnung- oder CII-XML auswählen</span>
           </button>
+        ) : filteredInvoices.length === 0 ? (
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
+            Keine passenden E-Rechnungen gefunden.
+          </div>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {invoices.map(invoice => (
+            {filteredInvoices.map(invoice => (
               <article key={invoice.id} className="document-card flex h-full min-w-0 flex-col rounded-xl border border-gray-200 p-4 transition hover:border-gray-300 hover:shadow-sm">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-1 items-start gap-3">

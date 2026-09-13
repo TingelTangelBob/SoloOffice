@@ -44,7 +44,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
     return { count: linkedInvoiceIds.size + legacyPaidInvoices.length, income };
   }, [creditNotes, euerEntries, invoices, year]);
 
-  return <div className="space-y-6">
+  return <div className="page-root space-y-6">
     <PageHeader icon={Calculator} title="Steuern" subtitle="Steuerübersicht und Einnahmenüberschussrechnung" />
 
     {!noticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">

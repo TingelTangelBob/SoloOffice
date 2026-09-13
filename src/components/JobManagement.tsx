@@ -54,6 +54,7 @@ import { useFeedback } from '../context/FeedbackContext';
 
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
+  initialFilter?: string;
   initialRecurringGroupId?: string;
 }
 
@@ -84,7 +85,7 @@ type DisplayedJob = {
 const JOB_STATUS_INDICATOR_WIDTH = 22;
 const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
 
-export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManagementProps = {}) {
+export function JobManagement({ onNavigate, initialFilter, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
@@ -179,6 +180,12 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
 
     return () => window.cancelAnimationFrame(frame);
   }, [expandedRecurringGroups, hasInitialRecurringGroup, initialRecurringGroupId]);
+
+  useEffect(() => {
+    if (initialFilter !== 'new') return;
+    setEditingJob(null);
+    setShowForm(true);
+  }, [initialFilter]);
 
   // Filter and search jobs
   const filteredJobs = useMemo(() => {
@@ -785,9 +792,9 @@ export function JobManagement({ onNavigate, initialRecurringGroupId }: JobManage
   }
 
   return (
-    <div className="space-y-8 xl:space-y-4 2xl:space-y-8">
+    <div className="page-root space-y-8 xl:space-y-4 2xl:space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
+      <div className="page-header-slot flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
         <PageHeader icon={Briefcase} title={terminology.work.managementLabel}>
         
         <div className="flex shrink-0 flex-row gap-2">

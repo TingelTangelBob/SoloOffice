@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Archive, ArchiveRestore, Search, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Archive, ArchiveRestore, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useAuth } from '../context/AuthContext';
@@ -18,6 +18,7 @@ import { DialogShell } from './DialogShell';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { usePageSearch } from '../context/PageSearchContext';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -33,7 +34,11 @@ const formatCustomerAddress = (customer: Customer) => (
  */
 const CUSTOMER_INLINE_ACTIONS_MIN_WIDTH = 680 + actionColumnWidth(2) - ACTION_MENU_COLUMN_WIDTH;
 
-export function CustomerManagement() {
+interface CustomerManagementProps {
+  initialFilter?: string;
+}
+
+export function CustomerManagement({ initialFilter }: CustomerManagementProps = {}) {
   const { confirm, notify } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
@@ -41,11 +46,11 @@ export function CustomerManagement() {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
+  const { query: searchTerm } = usePageSearch({ placeholder: terminology.entity.searchPlaceholder });
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
   const showInlineActions = tableWidth >= CUSTOMER_INLINE_ACTIONS_MIN_WIDTH;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
   const [additionalEmails, setAdditionalEmails] = useState<CustomerEmail[]>([]);
   const [newEmailData, setNewEmailData] = useState({ email: '', label: '' });
   const [isAddingEmail, setIsAddingEmail] = useState(false);
@@ -91,6 +96,7 @@ export function CustomerManagement() {
     phone: '',
   });
   const initialFormSnapshot = useRef('');
+  const handledInitialNewCustomer = useRef(false);
 
   useEffect(() => {
     void refreshCustomers(showArchived).catch(error => logger.error('Error loading customer archive:', error));
@@ -99,11 +105,12 @@ export function CustomerManagement() {
   const filteredCustomers = customers.filter(customer => {
     const customerName = customer.name || '';
     const customerEmail = customer.email || '';
-    const searchTermLower = searchTerm.toLowerCase();
+    const searchTermLower = searchTerm.toLocaleLowerCase(company.locale || 'de-DE');
     
     return (
-      customerName.toLowerCase().includes(searchTermLower) ||
-      customerEmail.toLowerCase().includes(searchTermLower)
+      customerName.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+      customerEmail.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+      (customer.customerNumber || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower)
     );
   });
 
@@ -217,6 +224,16 @@ export function CustomerManagement() {
     });
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (initialFilter !== 'new') {
+      handledInitialNewCustomer.current = false;
+      return;
+    }
+    if (handledInitialNewCustomer.current) return;
+    handledInitialNewCustomer.current = true;
+    handleOpenModal();
+  }, [handleOpenModal, initialFilter]);
 
   const hasFormChanges = JSON.stringify({
     formData,
@@ -751,9 +768,9 @@ export function CustomerManagement() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <div className="page-header-slot flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={Users} title={terminology.entity.navLabel} subtitle={`Verwalten Sie Ihre ${terminology.entity.dataLabel}`}>
         <button
           type="button"
@@ -786,28 +803,14 @@ export function CustomerManagement() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder={terminology.entity.searchPlaceholder}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
-          />
-        </div>
-        <label className="inline-flex shrink-0 items-center gap-2 text-sm text-gray-600">
-          <input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />
-          Archivierte anzeigen
-        </label>
-        </div>
-      </div>
-
       {/* Customer List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex justify-end border-b border-gray-100 px-4 py-2.5">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />
+            Archivierte anzeigen
+          </label>
+        </div>
         {/* Desktop Table View */}
         <div ref={tableRef} className="hidden tablet:block w-full min-w-0 max-w-full overflow-x-auto">
           <table className="w-full min-w-[680px]">
@@ -954,8 +957,14 @@ export function CustomerManagement() {
         </div>
 
         {filteredCustomers.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500">{terminology.entity.noResults}</p>
+          <div className="p-8 text-center">
+            <p className="text-gray-500">{searchTerm ? terminology.entity.noResults : `Noch keine ${terminology.entity.plural} vorhanden.`}</p>
+            {!searchTerm && canWrite && (
+              <button type="button" onClick={() => handleOpenModal()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+                <Plus className="h-4 w-4" />
+                {terminology.entity.newLabel}
+              </button>
+            )}
           </div>
         )}
       </div>

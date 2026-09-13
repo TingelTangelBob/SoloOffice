@@ -688,9 +688,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <div className="page-header-slot flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={FileCheck} title="Angebote" subtitle="Verwalten Sie Ihre Angebote">
         <button
           type="button"
@@ -1081,9 +1081,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         )}
 
         {filteredQuotes.length === 0 && (
-          <div className="text-center py-8">
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">Keine Angebote gefunden</p>
+          <div className="p-8 text-center">
+            <FileText className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+            <p className="text-gray-500">{quotes.length === 0 ? 'Noch keine Angebote vorhanden.' : 'Keine Angebote gefunden'}</p>
+            {quotes.length === 0 && canWrite && (
+              <button type="button" onClick={() => handleOpenEditor()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+                <Plus className="h-4 w-4" />
+                Neues Angebot
+              </button>
+            )}
           </div>
         )}
         </>

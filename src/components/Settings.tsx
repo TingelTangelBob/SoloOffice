@@ -373,10 +373,10 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   };
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="page-root flex flex-col gap-3">
       {/* Header */}
       {!embedded && (
-        <div className="order-1">
+        <div className="page-header-slot order-1">
           <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
         </div>
       )}

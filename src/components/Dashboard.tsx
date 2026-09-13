@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { AlertTriangle, Banknote, CalendarDays, CheckCircle, ChevronRight, FileText, GraduationCap, Home, Send } from 'lucide-react';
+import { AlertTriangle, Banknote, Briefcase, CalendarDays, CheckCircle, ChevronRight, FileText, GraduationCap, Home, Send, Upload, Users } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -554,10 +554,37 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     : 'md:col-span-2 lg:col-span-4';
 
   return (
-    <div className="dashboard-metrics space-y-6">
+    <div className="dashboard-metrics page-root space-y-6">
       {/* Der Navigationspunkt heißt „Übersicht“; die Seitenüberschrift folgt
           derselben Bezeichnung. */}
       <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
+
+      <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm lg:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">Schnellzugriff</h2>
+            <p className="mt-1 text-sm text-gray-500">Häufige Grundfunktionen direkt aus der Übersicht starten.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <button type="button" onClick={() => onNavigate('invoices', 'new')} className="action-button justify-center whitespace-nowrap" aria-label="Neue Rechnung schreiben">
+              <FileText className="h-4 w-4 text-primary-custom" />
+              Rechnung schreiben
+            </button>
+            <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="action-button justify-center whitespace-nowrap" aria-label="Beleg hochladen">
+              <Upload className="h-4 w-4 text-primary-custom" />
+              Beleg hochladen
+            </button>
+            <button type="button" onClick={() => onNavigate('customers', 'new')} className="action-button justify-center whitespace-nowrap" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
+              <Users className="h-4 w-4 text-primary-custom" />
+              {terminology.entity.newLabel}
+            </button>
+            <button type="button" onClick={() => onNavigate('jobs', 'new')} className="action-button justify-center whitespace-nowrap" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
+              <Briefcase className="h-4 w-4 text-primary-custom" />
+              {terminology.work.newLabel}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Kennzahlen. Der Betrag steht als große Angabe oben, die Anzahl als
           eingefärbter Hinweis daneben: Die Farbe trägt den Status, ohne die
@@ -683,7 +710,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                         <div className="text-xs font-medium text-gray-500">
                           {date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}
                         </div>
-                        <div className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${isToday ? 'text-primary-custom' : 'text-gray-900'}`}>
+                        <div className={`mt-0.5 text-sm font-semibold tabular-nums ${isToday ? 'text-primary-custom' : 'text-gray-900'}`}>
                           {formatDate(date, locale, company?.dateFormat)}
                         </div>
                       </div>
@@ -776,7 +803,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                         <td className="max-w-[220px] truncate px-3 py-2 text-xs text-gray-700">
                           {invoice.customerName}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs font-medium text-gray-900 tabular-nums">
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-xs font-medium text-gray-900 tabular-nums">
                           {money(invoice.total)}
                         </td>
                         {/* Eine Zeile hat höchstens eine Aktion. Ein Drei-Punkte-Menü
@@ -846,7 +873,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                         className="flex shrink-0 items-center gap-2"
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
                       >
-                        <span className="font-mono text-sm font-medium text-gray-900 tabular-nums">
+                        <span className="text-sm font-medium text-gray-900 tabular-nums">
                           {money(invoice.total)}
                         </span>
                         {/* Der Platz für die Aktion bleibt auch in Zeilen ohne

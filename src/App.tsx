@@ -111,9 +111,9 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'dashboard':
         return <Dashboard onNavigate={onPageChange} />;
       case 'customers':
-        return <CustomerManagement />;
+        return <CustomerManagement initialFilter={currentPageState.filter} />;
       case 'jobs':
-        return <JobManagement onNavigate={onPageChange} initialRecurringGroupId={currentPageState.jobSeriesId} />;
+        return <JobManagement onNavigate={onPageChange} initialFilter={currentPageState.filter} initialRecurringGroupId={currentPageState.jobSeriesId} />;
       case 'calendar':
         return <Calendar onNavigate={onPageChange} />;
       case 'invoices':

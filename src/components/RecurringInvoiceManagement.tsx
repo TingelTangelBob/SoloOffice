@@ -338,7 +338,7 @@ export function RecurringInvoiceManagement() {
   const draftTotal = form.items.reduce((sum, item) => sum + itemTotal(item), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="page-root space-y-6">
       <PageHeader
         icon={CalendarClock}
         title="Wiederkehrende Rechnungen"
@@ -383,6 +383,10 @@ export function RecurringInvoiceManagement() {
           <CalendarClock className="mx-auto mb-3 h-10 w-10 text-gray-400" />
           <p className="font-medium text-gray-700">Noch keine Vorlagen</p>
           <p className="mt-1 text-sm text-gray-500">Legen Sie Ihre erste wiederkehrende Rechnung an.</p>
+          <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+            <Plus className="h-4 w-4" />
+            Vorlage anlegen
+          </button>
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">

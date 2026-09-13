@@ -321,9 +321,9 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   }), [euerRows]);
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       {/* Header */}
-      <div>
+      <div className="page-header-slot">
         <PageHeader
           icon={BarChart3}
           title="Auswertungen"

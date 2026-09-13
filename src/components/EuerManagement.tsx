@@ -498,7 +498,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
     setNotice('PDF-Export für den Steuerberater wurde erstellt.');
   };
 
-  return <div className="space-y-6">
+  return <div className="page-root space-y-6">
     <PageHeader icon={Calculator} title="Einnahmenüberschussrechnung" shortTitle="EÜR" subtitle="Einnahmen minus Betriebsausgaben – einfach online vorbereiten">
       <select value={year} onChange={event => setYear(Number(event.target.value))} className="form-input h-11 w-[4.5rem] shrink-0 px-2 text-sm sm:w-auto sm:px-3" aria-label="Jahr auswählen" title="Jahr auswählen">
         {years.map(option => <option key={option} value={option}>{option}</option>)}
@@ -557,7 +557,13 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p></div>
-      {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">EÜR-Buchungen werden geladen …</div> : rows.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">Für {year} sind noch keine Buchungen vorhanden.</div> : <>
+      {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">EÜR-Buchungen werden geladen …</div> : rows.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
+        <p>Für {year} sind noch keine Buchungen vorhanden.</p>
+        <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+          <Plus className="h-4 w-4" />
+          Buchung erfassen
+        </button>
+      </div> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
             <thead className="bg-gray-50"><tr><th className="w-28 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>

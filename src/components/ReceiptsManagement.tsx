@@ -17,6 +17,7 @@ import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
+  searchQuery?: string;
   embedded?: boolean;
 }
 
@@ -48,7 +49,7 @@ function normalizeOptionalNumber(value: string, locale: string, numberFormat?: '
 }
 
 export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
-  { onNavigate, embedded = false }: ReceiptsManagementProps,
+  { onNavigate, searchQuery = '', embedded = false }: ReceiptsManagementProps,
   ref: ForwardedRef<ReceiptsManagementHandle>,
 ) {
   const { confirm } = useFeedback();
@@ -88,6 +89,22 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   }, [receiptLabel]);
 
   useEffect(() => { void loadReceipts(); }, [loadReceipts]);
+
+  const filteredReceipts = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase(locale);
+    if (!query) return receipts;
+    return receipts.filter(receipt => {
+      const data = receipt.extractedData || {};
+      return [
+        receipt.name,
+        data.vendorName,
+        data.documentNumber,
+        data.documentDate,
+        data.suggestedCategory,
+        receipt.ocrStatus,
+      ].some(value => value?.toLocaleLowerCase(locale).includes(query));
+    });
+  }, [locale, receipts, searchQuery]);
 
   const updateReceiptInState = (updated: Receipt) => {
     setReceipts(current => current.map(receipt => receipt.id === updated.id ? updated : receipt));
@@ -416,9 +433,13 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
             <span className="mt-3 block font-medium text-gray-800">Noch keine {receiptLabel}</span>
             <span className="mt-1 block text-sm text-gray-500">Datei auswählen oder direkt mit der Kamera aufnehmen</span>
           </button>
+        ) : filteredReceipts.length === 0 ? (
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
+            Keine passenden {receiptLabel} gefunden.
+          </div>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {receipts.map(receipt => {
+            {filteredReceipts.map(receipt => {
               const data = receipt.extractedData || {};
               const busy = busyId === receipt.id;
               const displayName = receipt.name || data.documentNumber || 'Beleg';

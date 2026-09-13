@@ -101,7 +101,7 @@ export function WorkspaceManagement() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-root space-y-6">
       <PageHeader
         icon={Users}
         title="Workspace"

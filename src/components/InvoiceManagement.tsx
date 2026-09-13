@@ -73,6 +73,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const openedInitialInvoiceId = useRef<string | null>(null);
+  const openedInitialNewInvoice = useRef(false);
   const { query: searchTerm } = usePageSearch({ placeholder: 'Rechnungen suchen …', initialQuery: initialSearchTerm });
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
   const [invoiceStartDate, setInvoiceStartDate] = useState('');
@@ -159,7 +160,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
 
   // Update filter and search when initialFilter/initialSearchTerm props change
   useEffect(() => {
-    if (initialFilter) {
+    if (initialFilter && initialFilter !== 'new') {
       setFilterStatus(initialFilter);
     }
   }, [initialFilter]);
@@ -247,6 +248,17 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     openedInitialInvoiceId.current = initialInvoiceId;
     handleOpenEditor(invoice);
   }, [handleOpenEditor, initialInvoiceId, invoiceRecords]);
+
+  useEffect(() => {
+    if (initialFilter !== 'new') {
+      openedInitialNewInvoice.current = false;
+      return;
+    }
+    if (openedInitialNewInvoice.current) return;
+    openedInitialNewInvoice.current = true;
+    setFilterStatus('not-paid');
+    handleOpenEditor();
+  }, [handleOpenEditor, initialFilter]);
 
   const handleCloseEditor = () => {
     setIsEditorOpen(false);
@@ -1008,9 +1020,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   }
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <div className="page-header-slot flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={Receipt} title="Rechnungen" subtitle="Verwalten Sie Ihre Rechnungen">
         <div className="flex items-center gap-2">
           <button
@@ -1427,9 +1439,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         )}
 
         {filteredInvoices.length === 0 && (
-          <div className="text-center py-8">
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">Keine Rechnungen gefunden</p>
+          <div className="p-8 text-center">
+            <FileText className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+            <p className="text-gray-500">{invoiceRecords.length === 0 ? 'Noch keine Rechnungen vorhanden.' : 'Keine Rechnungen gefunden'}</p>
+            {invoiceRecords.length === 0 && canWrite && (
+              <button type="button" onClick={() => handleOpenEditor()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
+                <Plus className="h-4 w-4" />
+                Neue Rechnung
+              </button>
+            )}
           </div>
         )}
       </div>

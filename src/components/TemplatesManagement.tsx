@@ -850,7 +850,7 @@ export function TemplatesManagement() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       <PageHeader
         icon={Copy}
         title="Vorlagen"

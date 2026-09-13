@@ -281,7 +281,7 @@ export function ReminderManagement() {
     : null;
 
   return (
-    <div className="space-y-8">
+    <div className="page-root space-y-8">
       {/* Reminder Send Modal */}
       {reminderModal.isOpen && reminderModal.invoice && customer && (
         <ReminderSendModal
@@ -305,7 +305,7 @@ export function ReminderManagement() {
       />
 
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="page-header-slot flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
           icon={Bell}
           title="Mahnungen"

@@ -5,7 +5,6 @@ import {
   ChevronLeft, 
   ChevronRight, 
   ChevronDown,
-  Search,
   Plus,
   Share2,
   X,
@@ -32,6 +31,7 @@ import { calculateTotalHours } from '../utils/jobUtils';
 import { formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { apiService } from '../services/api';
 import { downloadCalendarIcs } from '../utils/icsExport';
+import { usePageSearch } from '../context/PageSearchContext';
 
 interface CalendarProps {
   onNavigate?: (page: string) => void;
@@ -214,10 +214,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
    */
   const [dayPreview, setDayPreview] = useState<{ date: Date; anchor: DOMRect } | null>(null);
   const [jobPositions, setJobPositions] = useState<Map<string, number>>(new Map());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'workweek' | 'month'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -267,6 +263,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
   // Get locale from company settings
   const locale = company?.locale || 'de-DE';
+  const { query: searchQuery } = usePageSearch({ placeholder: terminology.work.searchPlaceholder });
 
   const loadCalendarEvents = useCallback(async () => {
     setCalendarEventsLoading(true);
@@ -285,55 +282,36 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     void loadCalendarEvents();
   }, [loadCalendarEvents]);
 
-  // Search functionality
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    
-    const query = searchQuery.toLowerCase();
-    return jobEntries.filter((job: JobEntry) => {
-      const customer = customers.find(c => c.id === job.customerId);
-      const jobTitle = job.title || '';
-      const jobDescription = job.description || '';
-      const jobCustomerName = job.customerName || '';
-      const customerName = customer?.name || '';
-      const jobJobNumber = job.jobNumber || '';
-      const jobExternalJobNumber = job.externalJobNumber || '';
-      
-      return (
-        jobTitle.toLowerCase().includes(query) ||
-        jobDescription.toLowerCase().includes(query) ||
-        jobCustomerName.toLowerCase().includes(query) ||
-        customerName.toLowerCase().includes(query) ||
-        jobJobNumber.toLowerCase().includes(query) ||
-        jobExternalJobNumber.toLowerCase().includes(query)
-      );
-    });
-  }, [searchQuery, jobEntries, customers]);
+  // Die Kopfleiste filtert die sichtbaren Kalenderdaten. Termine und Abwesenheiten
+  // bleiben dabei gemeinsam durchsuchbar; die Suche braucht keinen zweiten,
+  // seitenlokalen Eingabebereich mehr.
+  const filteredJobEntries = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase(locale);
+    if (!query) return jobEntries;
 
-  // Effect to clear highlight after 2 seconds
-  useEffect(() => {
-    if (highlightedJobId) {
-      const timer = setTimeout(() => {
-        setHighlightedJobId(null);
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [highlightedJobId]);
+    return jobEntries.filter((job) => [
+      job.title,
+      job.description,
+      job.customerName,
+      customers.find(customer => customer.id === job.customerId)?.name,
+      job.jobNumber,
+      job.externalJobNumber,
+      job.notes,
+      job.location,
+    ].some(value => value?.toLocaleLowerCase(locale).includes(query)));
+  }, [customers, jobEntries, locale, searchQuery]);
 
-  // Effect to close search results when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element;
-      if (target && !target.closest('.search-container')) {
-        setShowSearchResults(false);
-      }
-    };
+  const filteredCalendarEvents = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase(locale);
+    if (!query) return calendarEvents;
 
-    if (showSearchResults) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showSearchResults]);
+    return calendarEvents.filter(event => [
+      event.title,
+      event.notes,
+      event.startDate,
+      event.endDate,
+    ].some(value => value?.toLocaleLowerCase(locale).includes(query)));
+  }, [calendarEvents, locale, searchQuery]);
 
   // Die Tagesvorschau ist an eine Zelle geheftet und muss sich schließen,
   // sobald sich deren Position ändern kann.
@@ -383,33 +361,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     document.addEventListener('mousedown', handleDatePickerClickOutside);
     return () => document.removeEventListener('mousedown', handleDatePickerClickOutside);
   }, [showDatePicker]);
-
-  // Function to jump to job date and highlight it
-  const jumpToJob = (job: JobEntry) => {
-    const jobDate = new Date(job.date);
-    setSelectedDate(jobDate);
-    
-    // Update current date for month view
-    setCurrentDate(new Date(jobDate.getFullYear(), jobDate.getMonth(), 1));
-    
-    // Update week start for mobile view
-    setCurrentWeekStart(getWeekStart(jobDate));
-    
-    // Expand the date if it has many jobs
-    const dateKey = jobDate.toDateString();
-    const jobsOnDate = getJobsForDate(jobDate);
-    if (jobsOnDate.length > 3) {
-      setExpandedDates(prev => new Set([...prev, dateKey]));
-    }
-    
-    // Highlight the job
-    setHighlightedJobId(job.id);
-    
-    // Close search results
-    setShowSearchResults(false);
-    setSearchQuery('');
-    setIsSearchOpen(false);
-  };
 
   // Calendar navigation
   const goToPreviousMonth = () => {
@@ -660,7 +611,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const jobsByDate = useMemo(() => {
     const groupedJobs = new Map<string, JobEntry[]>();
 
-    jobEntries.forEach((job) => {
+    filteredJobEntries.forEach((job) => {
       const dateKey = toDateKey(new Date(job.date));
       const jobsForDate = groupedJobs.get(dateKey) || [];
       jobsForDate.push(job);
@@ -682,7 +633,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     });
 
     return groupedJobs;
-  }, [jobEntries, jobPositions]);
+  }, [filteredJobEntries, jobPositions]);
 
   const getJobsForDate = (date: Date) => jobsByDate.get(toDateKey(date)) || [];
 
@@ -715,7 +666,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
   const getEventsForDate = (date: Date) => {
     const dateKey = toDateKey(date);
-    return calendarEvents.filter((event) => event.startDate <= dateKey && event.endDate >= dateKey);
+    return filteredCalendarEvents.filter((event) => event.startDate <= dateKey && event.endDate >= dateKey);
   };
 
   const handleVacationSubmit = async (event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -1268,15 +1219,15 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const previewStatus = previewingJob?.status === 'draft' ? 'Geplant' : previewingJob ? getStatusLabel(previewingJob.status) : '';
 
   return (
-    <div className="space-y-3 lg:space-y-3">
+    <div className="page-root space-y-3 lg:space-y-3">
       {/* Header */}
-      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <PageHeader icon={CalendarDays} title="Kalender" actionsTakeOverRow={isSearchOpen}>
+      <div className="page-header-slot flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader icon={CalendarDays} title="Kalender">
         <div className="calendar-toolbar-actions flex min-w-0 flex-1 items-center justify-end gap-2 lg:flex-none lg:shrink-0">
         <button
           type="button"
           onClick={handleNewEntry}
-          className="calendar-toolbar-control calendar-toolbar-outline order-3 inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:min-w-0 sm:px-4"
+          className="calendar-toolbar-control calendar-toolbar-outline inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-primary-custom px-2 text-sm text-primary-custom transition-colors hover:bg-primary-custom/10 sm:min-w-0 sm:px-4"
           aria-label="Neuen Eintrag erstellen"
           title="Neuen Eintrag erstellen"
         >
@@ -1286,109 +1237,13 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         <button
           type="button"
           onClick={() => setShowShareDialog(true)}
-          className="calendar-toolbar-control calendar-toolbar-button order-2 inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-w-0 sm:px-3"
+          className="calendar-toolbar-control calendar-toolbar-button inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-w-0 sm:px-3"
           aria-label="Kalender teilen"
           title="Kalender teilen"
         >
           <Share2 className="h-4 w-4" />
           <span className="hidden sm:inline">Teilen</span>
         </button>
-        <div className="relative order-1 min-w-0 flex-1 search-container lg:flex-none">
-          {isSearchOpen ? (
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder={terminology.work.searchPlaceholder}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setShowSearchResults(e.target.value.trim().length > 0);
-              }}
-              onFocus={() => setShowSearchResults(searchQuery.trim().length > 0)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setSearchQuery('');
-                  setShowSearchResults(false);
-                  setIsSearchOpen(false);
-                }
-              }}
-              autoFocus
-              className="h-10 pl-10 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent w-full sm:w-64 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setShowSearchResults(false);
-                setIsSearchOpen(false);
-              }}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600"
-              aria-label="Suche schließen"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsSearchOpen(true)}
-              className="calendar-toolbar-control calendar-toolbar-button min-h-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:border-transparent focus:ring-2 focus:ring-primary-custom"
-              aria-label={terminology.work.searchPlaceholder}
-              title={terminology.work.searchPlaceholder}
-            >
-              <Search className="h-4 w-4" />
-            </button>
-          )}
-          
-          {/* Search Results Dropdown */}
-          {isSearchOpen && showSearchResults && searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
-              {searchResults.map((job) => {
-                const customer = customers.find(c => c.id === job.customerId);
-                const jobDate = new Date(job.date);
-                const totalHours = calculateTotalHours(job);
-                
-                return (
-                  <div
-                    key={job.id}
-                    onClick={() => jumpToJob(job)}
-                    className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center">
-                          <span className="font-medium text-gray-900 truncate">
-                            {job.title}
-                          </span>
-                        </div>
-                        <div className="mt-1 text-sm text-gray-600">
-                          <div className="truncate">{customer?.name || job.customerName}</div>
-                          <div className="mt-1 truncate">
-                            {formatDate(jobDate, locale, company?.dateFormat)} · {formatNumber(totalHours, locale, company?.numberFormat, 1)}h
-                          </div>
-                          {job.jobNumber && (
-                            <div className="mt-1 truncate">{job.jobNumber}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className={`ml-3 px-2 py-1 rounded text-xs font-medium ${getStatusColor(job.status)}`}>
-                        {getStatusLabel(job.status)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* No Results Message */}
-          {isSearchOpen && showSearchResults && searchQuery.trim() && searchResults.length === 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 text-center text-gray-500">
-              {terminology.work.noResults}
-            </div>
-          )}
-        </div>
         </div>
         </PageHeader>
       </div>
@@ -1665,7 +1520,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                     ${draggedJob && draggedJob.id !== job.id && 
                                       new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                       'border-blue-300 border-dashed' : ''}
-                                    ${highlightedJobId === job.id ? 'ring-2 ring-red-500 bg-red-100 border-red-500' : ''}
                                   `}
                                   title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                                 >
@@ -1862,9 +1716,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 event.stopPropagation();
                                 handleJobDoubleClick(job);
                               }}
-                              className={`absolute left-1 right-1 z-20 cursor-pointer overflow-hidden rounded border p-1.5 text-xs shadow-sm ${getStatusColor(job.status)} ${
-                                highlightedJobId === job.id ? 'ring-2 ring-red-500' : ''
-                              }`}
+                              className={`absolute left-1 right-1 z-20 cursor-pointer overflow-hidden rounded border p-1.5 text-xs shadow-sm ${getStatusColor(job.status)}`}
                               style={{
                                 top: `${((visibleStart - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
                                 height: `${Math.max(32, ((visibleEnd - visibleStart) / 60) * CALENDAR_HOUR_HEIGHT)}px`,
@@ -2006,7 +1858,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               ${draggedJob && draggedJob.id !== job.id && 
                                 new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                 'border-blue-300 border-dashed' : ''}
-                              ${highlightedJobId === job.id ? 'ring-2 ring-red-500 bg-red-100 border-red-500' : ''}
                               transition-all duration-150
                             `}
                             title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}

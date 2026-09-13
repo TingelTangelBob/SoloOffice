@@ -10,6 +10,7 @@ import { ImportWizard } from './ImportWizard';
 import { PageHeader } from './PageHeader';
 import { ReceiptsManagement, type ReceiptsManagementHandle } from './ReceiptsManagement';
 import { ThemeTabBar } from './ThemeTabBar';
+import { usePageSearch } from '../context/PageSearchContext';
 
 type DocumentsTab = 'all' | 'receipts' | 'incoming';
 type DocumentKind = Exclude<DocumentsTab, 'all'>;
@@ -107,6 +108,9 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
   const { company } = useCompany();
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const [activeTab, setActiveTab] = useState<DocumentsTab>(() => normalizeTab(initialTab));
+  const { query: searchQuery } = usePageSearch({
+    placeholder: activeTab === 'incoming' ? 'E-Rechnungen suchen …' : `${receiptLabel} suchen …`,
+  });
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [incomingInvoices, setIncomingInvoices] = useState<IncomingEInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,6 +151,18 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
     ...receipts.map(receipt => toUnifiedReceipt(receipt, company.locale || 'de-DE', company.dateFormat || 'DD.MM.YYYY')),
     ...incomingInvoices.map(invoice => toUnifiedIncoming(invoice, company.locale || 'de-DE', company.dateFormat || 'DD.MM.YYYY')),
   ].sort((left, right) => new Date(right.date || 0).getTime() - new Date(left.date || 0).getTime()), [company.dateFormat, company.locale, incomingInvoices, receipts]);
+
+  const filteredDocuments = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase(company.locale || 'de-DE');
+    if (!query) return documents;
+    return documents.filter(document => [
+      document.title,
+      document.typeLabel,
+      document.meta,
+      document.supplier,
+      document.statusLabel,
+    ].some(value => value?.toLocaleLowerCase(company.locale || 'de-DE').includes(query)));
+  }, [company.locale, documents, searchQuery]);
 
   const tabCounts = {
     all: documents.length,
@@ -198,7 +214,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
   return (
     <>
       <input ref={receiptUploadInputRef} type="file" accept={RECEIPT_UPLOAD_ACCEPT} capture="environment" multiple className="hidden" onChange={handleOverviewUpload} disabled={uploadingReceipt} />
-      <div className="space-y-4 sm:space-y-6">
+      <div className="page-root space-y-4 sm:space-y-6">
       <PageHeader icon={FileScan} title={receiptLabel} subtitle={`${receiptLabel} und elektronische Rechnungen an einem Ort verwalten`}>
         {(activeTab === 'all' || activeTab === 'receipts') && (
           <>
@@ -281,9 +297,13 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
               <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>
               <p className="mt-1 text-sm text-gray-500">Nutze oben die Upload-Aktionen oder wähle eine Belegart, um einen normalen Beleg oder eine E-Rechnung zu übernehmen.</p>
             </div>
+          ) : filteredDocuments.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
+              Keine passenden {receiptLabel} gefunden.
+            </div>
           ) : (
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {documents.map(document => {
+              {filteredDocuments.map(document => {
                 const isIncoming = document.kind === 'incoming';
                 const Icon = isIncoming ? FileCheck2 : FileScan;
                 return (
@@ -319,8 +339,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
         </section>
       )}
 
-      {activeTab === 'receipts' && <ReceiptsManagement ref={receiptsManagementRef} onNavigate={onNavigate} embedded />}
-      {activeTab === 'incoming' && <IncomingEInvoicesManagement ref={incomingEInvoicesRef} embedded />}
+      {activeTab === 'receipts' && <ReceiptsManagement ref={receiptsManagementRef} onNavigate={onNavigate} searchQuery={searchQuery} embedded />}
+      {activeTab === 'incoming' && <IncomingEInvoicesManagement ref={incomingEInvoicesRef} searchQuery={searchQuery} embedded />}
       <ImportWizard
         resource="euerEntries"
         isOpen={isImportOpen}

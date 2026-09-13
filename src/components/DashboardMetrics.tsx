@@ -5,7 +5,7 @@ import { ChevronRight, Minus, TrendingDown, TrendingUp } from 'lucide-react';
  * Bausteine der Übersicht.
  *
  * Das Raster folgt einem einheitlichen Kartenaufbau: oben eine große Kennzahl
- * in Festbreitenziffern, darunter eine ruhige Beschreibung, rechts oben ein
+ * in einer ruhigen, einheitlichen UI-Schrift, darunter eine Beschreibung, rechts oben ein
  * kompakter Hinweis (Anzahl oder Veränderung). Listen sitzen randlos in der
  * Karte, die weiterführende Aktion steht mittig im Kartenfuß.
  *
@@ -67,7 +67,7 @@ export function MetricCardTitle({ className = '', children }: { className?: stri
  */
 export function MetricValue({ className = '', children }: { className?: string; children: ReactNode }) {
   return (
-    <p className={`truncate font-mono text-2xl font-semibold leading-none tracking-tight text-gray-900 tabular-nums ${className}`}>
+    <p className={`truncate font-sans text-2xl font-semibold leading-none tracking-tight text-gray-900 tabular-nums ${className}`}>
       {children}
     </p>
   );
@@ -206,7 +206,7 @@ export function ShareBarItem({
       />
       <span className="relative z-10 min-w-0 flex-1 truncate text-sm text-gray-900">{label}</span>
       <span
-        className="relative z-10 shrink-0 truncate text-right font-mono text-sm font-medium text-gray-900 tabular-nums"
+        className="relative z-10 shrink-0 truncate text-right font-sans text-sm font-medium text-gray-900 tabular-nums"
         style={{ width: VALUE_COLUMN }}
       >
         {value}

@@ -189,7 +189,7 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
           style={{ left: tooltipLeft, top: tooltipTop }}
         >
           <p className="whitespace-nowrap text-[11px] text-gray-500">{activePoint.label}</p>
-          <p className="whitespace-nowrap font-mono text-xs font-semibold text-gray-900 tabular-nums">
+          <p className="whitespace-nowrap font-sans text-xs font-semibold text-gray-900 tabular-nums">
             {formatValue(activePoint.value)}
           </p>
         </div>
