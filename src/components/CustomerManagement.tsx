@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Archive, ArchiveRestore, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Archive, ArchiveRestore, Mail, Phone, MapPin, X, Clock, Package, Users, Upload, Download, Building2, UserRound, FileText, FileCheck, Briefcase, StickyNote } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useAuth } from '../context/AuthContext';
-import { Customer, CustomerEmail, HourlyRate, MaterialTemplate } from '../types';
+import { Customer, CustomerEmail, CustomerType, HourlyRate, MaterialTemplate } from '../types';
 import { apiService } from '../services/api';
 import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
 import { PageHeader } from './PageHeader';
@@ -16,9 +16,9 @@ import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { DialogShell } from './DialogShell';
 import { useElementWidth } from '../hooks/useElementWidth';
-import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
 import { usePageSearch } from '../context/PageSearchContext';
+import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -27,18 +27,22 @@ const formatCustomerAddress = (customer: Customer) => (
   ].filter(Boolean).join(', ')
 );
 
-/**
- * Die Kundentabelle wächst mit ihrem Inhalt und hat laut `min-w-[680px]` eine
- * Mindestbreite. Ausgeschriebene Icon-Aktionen brauchen den Unterschied
- * zwischen Aktionsspalte und Menüspalte zusätzlich.
- */
-const CUSTOMER_INLINE_ACTIONS_MIN_WIDTH = 680 + actionColumnWidth(2) - ACTION_MENU_COLUMN_WIDTH;
-
 interface CustomerManagementProps {
   initialFilter?: string;
+  initialCustomerId?: string;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
 }
 
-export function CustomerManagement({ initialFilter }: CustomerManagementProps = {}) {
+function customerTypeLabel(customerType?: CustomerType): string {
+  return customerType === 'organization' ? 'Organisation' : 'Person';
+}
+
+function CustomerTypeIcon({ customerType, className = 'h-4 w-4' }: { customerType?: CustomerType; className?: string }) {
+  const Icon = customerType === 'organization' ? Building2 : UserRound;
+  return <Icon className={className} aria-hidden="true" />;
+}
+
+export function CustomerManagement({ initialFilter, initialCustomerId, onNavigate }: CustomerManagementProps = {}) {
   const { confirm, notify } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
@@ -48,7 +52,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const { query: searchTerm } = usePageSearch({ placeholder: terminology.entity.searchPlaceholder });
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
-  const showInlineActions = tableWidth >= CUSTOMER_INLINE_ACTIONS_MIN_WIDTH;
+  const showAddressColumn = tableWidth >= 920;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [additionalEmails, setAdditionalEmails] = useState<CustomerEmail[]>([]);
@@ -85,6 +89,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
   const [formData, setFormData] = useState({
     customerNumber: '',
     name: '',
+    customerType: 'person' as CustomerType,
     email: '',
     address: '',
     addressSupplement: '',
@@ -94,9 +99,11 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     taxId: '',
     leitwegId: '',
     phone: '',
+    notes: '',
   });
   const initialFormSnapshot = useRef('');
   const handledInitialNewCustomer = useRef(false);
+  const handledInitialCustomerEdit = useRef(false);
 
   useEffect(() => {
     void refreshCustomers(showArchived).catch(error => logger.error('Error loading customer archive:', error));
@@ -110,7 +117,9 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     return (
       customerName.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
       customerEmail.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
-      (customer.customerNumber || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower)
+      (customer.customerNumber || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+      (customer.phone || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+      (customer.city || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower)
     );
   });
 
@@ -125,6 +134,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
       setFormData({
         customerNumber: customer.customerNumber,
         name: customer.name,
+        customerType: customer.customerType || 'person',
         email: customer.email,
         address: customer.address,
         addressSupplement: customer.addressSupplement || '',
@@ -134,6 +144,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         taxId: customer.taxId || '',
         leitwegId: customer.leitwegId || '',
         phone: customer.phone || '',
+        notes: customer.notes || '',
       });
       setAdditionalEmails(customer.additionalEmails || []);
       setCustomerHourlyRates(customer.hourlyRates || []);
@@ -142,6 +153,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         formData: {
           customerNumber: customer.customerNumber,
           name: customer.name,
+          customerType: customer.customerType || 'person',
           email: customer.email,
           address: customer.address,
           addressSupplement: customer.addressSupplement || '',
@@ -151,6 +163,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
           taxId: customer.taxId || '',
           leitwegId: customer.leitwegId || '',
           phone: customer.phone || '',
+          notes: customer.notes || '',
         },
         additionalEmails: customer.additionalEmails || [],
         customerHourlyRates: customer.hourlyRates || [],
@@ -167,6 +180,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
       setFormData({
         customerNumber,
         name: '',
+        customerType: 'person',
         email: '',
         address: '',
         addressSupplement: '',
@@ -176,6 +190,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         taxId: '',
         leitwegId: '',
         phone: '',
+        notes: '',
       });
       setAdditionalEmails([]);
       setCustomerHourlyRates([]);
@@ -184,6 +199,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         formData: {
           customerNumber,
           name: '',
+          customerType: 'person',
           email: '',
           address: '',
           addressSupplement: '',
@@ -193,6 +209,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
           taxId: '',
           leitwegId: '',
           phone: '',
+          notes: '',
         },
         additionalEmails: [],
         customerHourlyRates: [],
@@ -234,6 +251,18 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     handledInitialNewCustomer.current = true;
     handleOpenModal();
   }, [handleOpenModal, initialFilter]);
+
+  useEffect(() => {
+    if (initialFilter !== 'edit' || !initialCustomerId) {
+      handledInitialCustomerEdit.current = false;
+      return;
+    }
+    if (handledInitialCustomerEdit.current) return;
+    const customer = customers.find(item => item.id === initialCustomerId);
+    if (!customer) return;
+    handledInitialCustomerEdit.current = true;
+    handleOpenModal(customer);
+  }, [customers, handleOpenModal, initialCustomerId, initialFilter]);
 
   const hasFormChanges = JSON.stringify({
     formData,
@@ -348,7 +377,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
 
     if (isCreatingCustomer) {
       try {
-        await refreshCustomers();
+        await refreshCustomers(showArchived);
       } catch (error) {
         logger.error('Error refreshing customers after save:', error);
         failedParts.push('Aktualisierung der Kundenliste');
@@ -383,6 +412,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     setDeleteCustomerId(null);
     try {
       await archiveCustomer(id);
+      await refreshCustomers(showArchived);
     } catch (error) {
       logger.error('Error archiving customer:', error);
     }
@@ -395,6 +425,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     }
     try {
       await restoreCustomer(id);
+      await refreshCustomers(showArchived);
     } catch (error) {
       logger.error('Error restoring customer:', error);
     }
@@ -767,6 +798,88 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     }
   };
 
+  const openCustomerPage = (customer: Customer, tab?: string) => {
+    onNavigate?.('customer', customer.id, tab);
+  };
+
+  const renderCustomerActions = (customer: Customer) => (
+    <ActionMenu containerClassName="shrink-0" menuClassName="min-w-56">
+      <ActionMenuItem
+        icon={<UserRound className="h-4 w-4" />}
+        tone="blue"
+        onClick={() => openCustomerPage(customer)}
+      >
+        Kundenseite öffnen
+      </ActionMenuItem>
+      {canWrite && (
+        <>
+          <ActionMenuItem
+            icon={<Edit className="h-4 w-4" />}
+            tone="indigo"
+            onClick={() => handleOpenModal(customer)}
+          >
+            Bearbeiten
+          </ActionMenuItem>
+          <ActionMenuItem
+            icon={<FileText className="h-4 w-4" />}
+            tone="blue"
+            onClick={() => onNavigate?.('invoices', 'new', customer.id)}
+          >
+            Rechnung schreiben
+          </ActionMenuItem>
+          {company.quotesEnabled && (
+            <ActionMenuItem
+              icon={<FileCheck className="h-4 w-4" />}
+              tone="orange"
+              onClick={() => onNavigate?.('quote-editor', 'new', customer.id)}
+            >
+              Angebot erstellen
+            </ActionMenuItem>
+          )}
+          {company.jobTrackingEnabled && (
+            <ActionMenuItem
+              icon={<Briefcase className="h-4 w-4" />}
+              tone="green"
+              onClick={() => onNavigate?.('jobs', 'new', customer.id)}
+            >
+              {terminology.work.newLabel}
+            </ActionMenuItem>
+          )}
+          <ActionMenuItem
+            icon={<StickyNote className="h-4 w-4" />}
+            tone="gray"
+            onClick={() => openCustomerPage(customer, 'notes')}
+          >
+            Notiz hinzufügen
+          </ActionMenuItem>
+        </>
+      )}
+      <ActionMenuItem
+        icon={<Download className="h-4 w-4" />}
+        tone="gray"
+        onClick={() => downloadCustomerCsv([customer], `kunde-${customer.customerNumber}`)}
+      >
+        Als CSV exportieren
+      </ActionMenuItem>
+      <ActionMenuItem
+        icon={<Download className="h-4 w-4" />}
+        tone="gray"
+        onClick={() => downloadCustomerPdf([customer], `kunde-${customer.customerNumber}`)}
+      >
+        Als PDF exportieren
+      </ActionMenuItem>
+      {canWrite && (
+        <ActionMenuItem
+          icon={customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+          tone={customer.isActive === false ? 'green' : 'red'}
+          onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
+        >
+          {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
+        </ActionMenuItem>
+      )}
+    </ActionMenu>
+  );
+
   return (
     <div className="page-root space-y-8">
       {/* Header */}
@@ -782,6 +895,28 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         >
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Importieren</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadCustomerCsv(filteredCustomers)}
+          disabled={filteredCustomers.length === 0}
+          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
+          aria-label="Kunden als CSV exportieren"
+          title="Kunden als CSV exportieren"
+        >
+          <Download className="h-4 w-4" />
+          <span className="hidden sm:inline">CSV</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadCustomerPdf(filteredCustomers)}
+          disabled={filteredCustomers.length === 0}
+          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
+          aria-label="Kunden als PDF exportieren"
+          title="Kunden als PDF exportieren"
+        >
+          <Download className="h-4 w-4" />
+          <span className="hidden sm:inline">PDF</span>
         </button>
         <button
           onClick={() => handleOpenModal()}
@@ -804,98 +939,53 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
       )}
 
       {/* Customer List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex justify-end border-b border-gray-100 px-4 py-2.5">
+      <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+          <p className="text-sm text-gray-500">
+            {filteredCustomers.length} {filteredCustomers.length === 1 ? terminology.entity.singular : terminology.entity.plural}
+            {showArchived && <span className="ml-1">· Archiv inklusive</span>}
+          </p>
           <label className="inline-flex items-center gap-2 text-sm text-gray-600">
             <input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />
             Archivierte anzeigen
           </label>
         </div>
         {/* Desktop Table View */}
-        <div ref={tableRef} className="hidden tablet:block w-full min-w-0 max-w-full overflow-x-auto">
-          <table className="w-full min-w-[680px]">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+          <table className={`w-full ${showAddressColumn ? 'min-w-[980px]' : 'min-w-[780px]'}`}>
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Kontakt
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Adresse
-                </th>
-                <th
-                  style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }}
-                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}
-                >
+                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th className="w-32 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kunden-Nr.</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">E-Mail</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Telefon</th>
+                {showAddressColumn && <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Adresse</th>}
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 bg-white">
               {filteredCustomers.map((customer) => (
-                <tr key={customer.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{customer.name}</div>
-                    <div className="text-sm text-gray-500">{terminology.entity.numberShortLabel} {formatCustomerNumber(customer.customerNumber)}</div>
-                  {customer.taxId && (
-                      <div className="text-sm text-gray-500">USt-IdNr: {customer.taxId}</div>
-                    )}
-                    {customer.leitwegId && <div className="text-sm text-gray-500">Leitweg-ID: {customer.leitwegId}</div>}
+                <tr key={customer.id} className="transition-colors hover:bg-gray-50">
+                  <td className="max-w-[260px] px-5 py-3">
+                    <button type="button" onClick={() => openCustomerPage(customer)} className="group flex min-w-0 items-start gap-2 text-left">
+                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary-custom/10 text-primary-custom">
+                        <CustomerTypeIcon customerType={customer.customerType} className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
+                        <span className="mt-0.5 block truncate text-xs text-gray-500">{customerTypeLabel(customer.customerType)}{customer.isActive === false ? ' · Archiviert' : ''}</span>
+                        {(customer.taxId || customer.leitwegId) && <span className="mt-0.5 block truncate text-xs text-gray-500">{customer.taxId ? `USt-IdNr. ${customer.taxId}` : `Leitweg-ID ${customer.leitwegId}`}</span>}
+                      </span>
+                    </button>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-900">
-                      <span className="min-w-0 truncate">{customer.email}</span>
-                      {customer.phone && <span className="shrink-0 text-gray-500">{customer.phone}</span>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="break-words text-sm text-gray-900">{formatCustomerAddress(customer)}</div>
-                  </td>
-                  <td
-                    style={{ width: showInlineActions ? actionColumnWidth(2) : ACTION_MENU_COLUMN_WIDTH }}
-                    className={`sticky right-0 z-10 bg-white py-4 whitespace-nowrap text-sm font-medium ${showInlineActions ? 'px-3' : 'px-2'}`}
-                  >
-                    {canWrite && showInlineActions ? (
-                    <div className="flex flex-nowrap items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenModal(customer)}
-                        className="action-icon-button action-icon-indigo"
-                        title="Bearbeiten"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
-                        className={`action-icon-button ${customer.isActive === false ? 'action-icon-green' : 'action-icon-red'}`}
-                        title={customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
-                      >
-                        {customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    ) : canWrite ? (
-                    <ActionMenu menuClassName="min-w-40">
-                      <ActionMenuItem
-                        icon={<Edit className="h-4 w-4" />}
-                        tone="indigo"
-                        onClick={() => handleOpenModal(customer)}
-                      >
-                        Bearbeiten
-                      </ActionMenuItem>
-                      <ActionMenuItem
-                        icon={customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                        tone={customer.isActive === false ? 'green' : 'red'}
-                        onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
-                      >
-                        {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
-                      </ActionMenuItem>
-                    </ActionMenu>
-                    ) : (
-                      <span className="text-xs font-normal text-gray-500" title="Nur-Lesen-Zugriff">Nur lesen</span>
-                    )}
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 tabular-nums">{formatCustomerNumber(customer.customerNumber)}</td>
+                  <td className="max-w-[220px] px-4 py-3 text-sm text-gray-700"><span className="block truncate">{customer.email || '–'}</span></td>
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{customer.phone || '–'}</td>
+                  {showAddressColumn && <td className="max-w-[260px] px-4 py-3 text-sm text-gray-700"><span className="block truncate">{formatCustomerAddress(customer) || '–'}</span></td>}
+                  <td className="sticky right-0 z-10 bg-white px-2 py-3 text-sm font-medium">
+                    {renderCustomerActions(customer)}
                   </td>
                 </tr>
               ))}
@@ -906,51 +996,22 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         {/* Mobile Card View */}
         <div className="tablet:hidden">
           {filteredCustomers.map((customer) => (
-            <div key={customer.id} className="p-4 border-b border-gray-200 last:border-b-0">
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-medium text-gray-900">{customer.name}</h3>
-                  <p className="truncate text-xs text-gray-500">{terminology.entity.numberShortLabel} {customer.customerNumber}</p>
-                  {customer.taxId && (
-                    <p className="truncate text-xs text-gray-500">USt-IdNr: {customer.taxId}</p>
-                  )}
-                  {customer.leitwegId && <p className="truncate text-xs text-gray-500">Leitweg-ID: {customer.leitwegId}</p>}
-                </div>
-                {canWrite ? <ActionMenu containerClassName="shrink-0" menuClassName="min-w-40">
-                  <ActionMenuItem
-                    icon={<Edit className="h-4 w-4" />}
-                    tone="indigo"
-                    onClick={() => handleOpenModal(customer)}
-                  >
-                    Bearbeiten
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    icon={customer.isActive === false ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                    tone={customer.isActive === false ? 'green' : 'red'}
-                    onClick={() => customer.isActive === false ? void handleRestore(customer.id) : handleDelete(customer.id)}
-                  >
-                    {customer.isActive === false ? 'Wiederherstellen' : 'Archivieren'}
-                  </ActionMenuItem>
-                </ActionMenu> : <span className="shrink-0 text-xs text-gray-500" title="Nur-Lesen-Zugriff">Nur lesen</span>}
+            <div key={customer.id} className="border-b border-gray-200 p-4 last:border-b-0">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <button type="button" onClick={() => openCustomerPage(customer)} className="group flex min-w-0 items-start gap-2 text-left">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-custom/10 text-primary-custom"><CustomerTypeIcon customerType={customer.customerType} /></span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
+                    <span className="block truncate text-xs text-gray-500">{customerTypeLabel(customer.customerType)} · {terminology.entity.numberShortLabel} {customer.customerNumber}</span>
+                    {customer.isActive === false && <span className="block text-xs text-amber-600">Archiviert</span>}
+                  </span>
+                </button>
+                {renderCustomerActions(customer)}
               </div>
-              
-              <div className="space-y-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                  <div className="flex min-w-0 flex-auto items-center gap-2 text-gray-900">
-                    <Mail className="h-3 w-3 shrink-0 text-gray-400" />
-                    <span className="min-w-0 truncate">{customer.email}</span>
-                  </div>
-                  {customer.phone && (
-                    <div className="flex shrink-0 items-center gap-2 text-gray-600">
-                      <Phone className="h-3 w-3 shrink-0 text-gray-400" />
-                      <span>{customer.phone}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex min-w-0 items-start gap-2 text-sm text-gray-600">
-                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
-                  <span className="min-w-0 break-words">{formatCustomerAddress(customer)}</span>
-                </div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="flex min-w-0 items-center gap-2 text-gray-700"><Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="truncate">{customer.email || '–'}</span></div>
+                <div className="flex min-w-0 items-center gap-2 text-gray-700"><Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="truncate">{customer.phone || '–'}</span></div>
+                <div className="flex min-w-0 items-start gap-2 text-gray-600 sm:col-span-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="break-words">{formatCustomerAddress(customer) || '–'}</span></div>
               </div>
             </div>
           ))}
@@ -958,7 +1019,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
 
         {filteredCustomers.length === 0 && (
           <div className="p-8 text-center">
-            <p className="text-gray-500">{searchTerm ? terminology.entity.noResults : `Noch keine ${terminology.entity.plural} vorhanden.`}</p>
+            <p className="text-gray-500">{searchTerm ? terminology.entity.noResults : showArchived ? `Keine ${terminology.entity.plural} gefunden.` : `Noch keine ${terminology.entity.plural} vorhanden.`}</p>
             {!searchTerm && canWrite && (
               <button type="button" onClick={() => handleOpenModal()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
                 <Plus className="h-4 w-4" />
@@ -974,7 +1035,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
         resource="customers"
         isOpen={showImport && canWrite}
         onClose={() => setShowImport(false)}
-        onImported={refreshCustomers}
+        onImported={() => refreshCustomers(showArchived)}
       />
 
       {isModalOpen && (
@@ -982,10 +1043,10 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
           titleId="customer-dialog-title"
           icon={Users}
           title={editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
-          description="Pflegen Sie Stammdaten, Kontaktmöglichkeiten und individuelle Konditionen."
+          description="Stammdaten, Kontakte und Konditionen verwalten."
           onClose={isSavingCustomer ? () => undefined : requestCloseModal}
           onSubmit={handleSubmit}
-          size="lg"
+          size="wide"
           zIndexClassName="z-[1000]"
           footer={(
             <>
@@ -995,27 +1056,48 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
           )}
         >
               <div className="space-y-5 pb-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+                <label className="block text-sm font-medium text-gray-700">
                   {terminology.entity.numberLabel}
+                  <input
+                    type="text"
+                    value={formData.customerNumber}
+                    disabled
+                    className="form-input mt-1 w-full bg-gray-100 text-gray-600"
+                  />
                 </label>
-                <input
-                  type="text"
-                  value={formData.customerNumber}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
-                />
+                <fieldset>
+                  <legend className="mb-1 text-sm font-medium text-gray-700">Kundenart</legend>
+                  <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Kundenart auswählen">
+                    {(['person', 'organization'] as CustomerType[]).map(type => {
+                      const selected = formData.customerType === type;
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setFormData({ ...formData, customerType: type })}
+                          className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${selected ? 'border-primary-custom bg-primary-light-custom text-primary-custom' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+                        >
+                          <CustomerTypeIcon customerType={type} className="h-4 w-4" />
+                          {customerTypeLabel(type)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Name *
+                  {formData.customerType === 'organization' ? 'Name der Organisation' : 'Name'} *
                 </label>
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                 />
               </div>
               <div>
@@ -1026,7 +1108,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                   placeholder="optional"
                 />
               </div>
@@ -1039,7 +1121,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   required
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                 />
               </div>
               <div>
@@ -1050,7 +1132,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   type="text"
                   value={formData.addressSupplement}
                   onChange={(e) => setFormData({ ...formData, addressSupplement: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                   placeholder="z.B. 2. Stock, Hintereingang"
                 />
               </div>
@@ -1064,7 +1146,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                     required
                     value={formData.postalCode}
                     onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input w-full"
                   />
                 </div>
                 <div>
@@ -1076,7 +1158,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                     required
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                    className="form-input w-full"
                   />
                 </div>
               </div>
@@ -1089,7 +1171,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   required
                   value={formData.country}
                   onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                 />
               </div>
               <div>
@@ -1100,7 +1182,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   type="text"
                   value={formData.taxId}
                   onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                 />
               </div>
               <div>
@@ -1112,7 +1194,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   value={formData.leitwegId}
                   onChange={(e) => setFormData({ ...formData, leitwegId: e.target.value })}
                   placeholder="z. B. 991-12345-67"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
                 />
               </div>
               <div>
@@ -1123,7 +1205,20 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                  className="form-input w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notizen
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  maxLength={5000}
+                  rows={3}
+                  className="form-input w-full resize-y"
+                  placeholder="Interne Hinweise zum Kunden"
                 />
               </div>
 

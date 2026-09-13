@@ -23,10 +23,13 @@ export interface CustomerEmail {
   isActive: boolean;
 }
 
+export type CustomerType = 'person' | 'organization';
+
 export interface Customer extends Timestamps {
   id: UUID;
   customerNumber: string;
   name: string;
+  customerType?: CustomerType;
   email: string;
   address: string;
   addressSupplement?: string;
@@ -36,6 +39,7 @@ export interface Customer extends Timestamps {
   taxId?: string;
   leitwegId?: string;
   phone?: string;
+  notes?: string;
   isActive?: boolean;
   additionalEmails?: CustomerEmail[];
   hourlyRates?: HourlyRate[];

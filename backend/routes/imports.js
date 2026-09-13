@@ -71,6 +71,13 @@ function parseBoolean(value) {
   return false;
 }
 
+function normaliseCustomerType(value) {
+  const source = normaliseKey(value);
+  return ['organisation', 'organization', 'firma', 'unternehmen', 'company', 'org'].includes(source)
+    ? 'organization'
+    : 'person';
+}
+
 function parseDate(value) {
   const source = text(value);
   if (!source) return null;
@@ -235,9 +242,16 @@ async function planCustomers(client, rows, duplicateMode) {
   const seen = new Set();
   const entries = [];
   rows.forEach((row, index) => {
+    const customerId = text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id']));
     const number = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr']));
     const name = text(pick(row, ['name', 'customerName', 'customer_name', 'kundenname', 'kunde']));
     const email = text(pick(row, ['email', 'eMail', 'mail', 'emailAddress']));
+    const additionalEmails = pick(row, ['additionalEmails', 'additional_emails', 'weitereEmails', 'weitere_eMails', 'secondaryEmail']);
+    const customerType = pick(row, ['customerType', 'customer_type', 'customerKind', 'customer_kind', 'kundenart', 'kundentyp', 'type', 'typ']);
+    const hourlyRates = pick(row, ['hourlyRates', 'hourly_rates', 'stundensaetze', 'stundensätze']);
+    const materials = pick(row, ['materials', 'materialien', 'material_templates']);
+    const leitwegId = pick(row, ['leitwegId', 'leitweg_id', 'leitweg', 'buyerReference', 'buyer_reference']);
+    const active = pick(row, ['isActive', 'is_active', 'active', 'aktiv']);
     const identity = customerIdentity(row);
     const currentRow = rowNumber(row, index);
     if (!name) {
@@ -250,22 +264,31 @@ async function planCustomers(client, rows, duplicateMode) {
     }
     seen.add(identity);
     const match = existing.find(customer =>
-      (number && normaliseKey(customer.customer_number) === normaliseKey(number))
+      (customerId && customer.id === customerId)
+      || (number && normaliseKey(customer.customer_number) === normaliseKey(number))
       || (email && normaliseKey(customer.email) === normaliseKey(email))
       || (!number && !email && normaliseKey(customer.name) === normaliseKey(name))
     );
     const data = {
       customerNumber: number || undefined,
       name,
+      ...(customerType !== undefined ? { customerType: normaliseCustomerType(customerType) } : {}),
       email: email || '',
-      additionalEmails: pick(row, ['additionalEmails', 'additional_emails', 'weitereEmails']),
+      ...(additionalEmails !== undefined ? { additionalEmails } : {}),
       address: text(pick(row, ['address', 'adresse', 'street', 'strasse', 'straße'])),
       addressSupplement: text(pick(row, ['addressSupplement', 'address_supplement', 'adresszusatz'])),
       city: text(pick(row, ['city', 'ort', 'town'])),
       postalCode: text(pick(row, ['postalCode', 'postal_code', 'postcode', 'zip', 'plz'])),
       country: text(pick(row, ['country', 'land'])) || 'Deutschland',
       taxId: text(pick(row, ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id'])),
+      leitwegId: text(leitwegId),
       phone: text(pick(row, ['phone', 'telephone', 'tel', 'telefon', 'mobile'])),
+      ...(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung']) !== undefined
+        ? { notes: text(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'])) }
+        : {}),
+      ...(active !== undefined ? { isActive: parseBoolean(active) } : {}),
+      ...(hourlyRates !== undefined ? { hourlyRates: parseStructuredArray(hourlyRates) } : {}),
+      ...(materials !== undefined ? { materials: parseStructuredArray(materials) } : {}),
     };
     const warnings = [];
     if (!data.email) warnings.push('E-Mail fehlt');
@@ -781,27 +804,61 @@ async function insertAdditionalEmails(client, customerId, value) {
   }
 }
 
+async function replaceCustomerPricing(client, customerId, data) {
+  if (Object.prototype.hasOwnProperty.call(data, 'hourlyRates')) {
+    await client.query('DELETE FROM customer_specific_hourly_rates WHERE customer_id = $1', [customerId]);
+    for (const rate of Array.isArray(data.hourlyRates) ? data.hourlyRates : []) {
+      const name = text(rate?.name || rate?.title);
+      const value = Number(rate?.rate ?? rate?.hourlyRate);
+      if (!name || !Number.isFinite(value) || value < 0) continue;
+      await client.query(`
+        INSERT INTO customer_specific_hourly_rates (customer_id, name, description, rate, tax_rate, is_default)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [customerId, name, text(rate?.description), value, Number(rate?.taxRate ?? 19), Boolean(rate?.isDefault)]);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'materials')) {
+    await client.query('DELETE FROM customer_specific_materials WHERE customer_id = $1', [customerId]);
+    for (const material of Array.isArray(data.materials) ? data.materials : []) {
+      const name = text(material?.name || material?.title);
+      const value = Number(material?.unitPrice ?? material?.price);
+      if (!name || !Number.isFinite(value) || value < 0) continue;
+      await client.query(`
+        INSERT INTO customer_specific_materials (customer_id, name, description, unit_price, unit, tax_rate, is_default)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [customerId, name, text(material?.description), value, text(material?.unit) || 'Stück', Number(material?.taxRate ?? 19), Boolean(material?.isDefault)]);
+    }
+  }
+}
+
 async function applyCustomer(client, entry) {
   const data = entry.data;
   if (entry.status === 'update') {
     const result = await client.query(`
       UPDATE customers
-      SET name = $1, email = $2, address = $3, address_supplement = $4, city = $5,
-          postal_code = $6, country = $7, tax_id = $8, phone = $9
-      WHERE id = $10
+      SET name = $1, customer_type = COALESCE($2, customer_type), email = $3, address = $4, address_supplement = $5, city = $6,
+          postal_code = $7, country = $8, tax_id = $9, leitweg_id = $10, phone = $11, notes = $12,
+          is_active = COALESCE($13, is_active)
+      WHERE id = $14
       RETURNING id
-    `, [data.name, data.email || null, data.address, data.addressSupplement || null, data.city, data.postalCode, data.country, data.taxId || null, data.phone || null, entry.existingId]);
+    `, [data.name, data.customerType ? normaliseCustomerType(data.customerType) : null, data.email || null, data.address, data.addressSupplement || null, data.city, data.postalCode, data.country, data.taxId || null, data.leitwegId || null, data.phone || null, data.notes || null, data.isActive ?? null, entry.existingId]);
     if (result.rows.length === 0) throw new Error('Bestehender Kunde wurde nicht gefunden.');
-    await insertAdditionalEmails(client, entry.existingId, data.additionalEmails);
+    if (Object.prototype.hasOwnProperty.call(data, 'additionalEmails')) {
+      await client.query('DELETE FROM customer_emails WHERE customer_id = $1', [entry.existingId]);
+      await insertAdditionalEmails(client, entry.existingId, data.additionalEmails);
+    }
+    await replaceCustomerPricing(client, entry.existingId, data);
     return 'updated';
   }
   const customerNumber = data.customerNumber || await nextCustomerNumber(client);
   const result = await client.query(`
-    INSERT INTO customers (customer_number, name, email, address, address_supplement, city, postal_code, country, tax_id, phone)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    INSERT INTO customers (customer_number, name, customer_type, email, address, address_supplement, city, postal_code, country, tax_id, leitweg_id, phone, notes, is_active)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, TRUE))
     RETURNING id
-  `, [customerNumber, data.name, data.email || null, data.address || '', data.addressSupplement || null, data.city || '', data.postalCode || '', data.country || 'Deutschland', data.taxId || null, data.phone || null]);
+  `, [customerNumber, data.name, normaliseCustomerType(data.customerType), data.email || null, data.address || '', data.addressSupplement || null, data.city || '', data.postalCode || '', data.country || 'Deutschland', data.taxId || null, data.leitwegId || null, data.phone || null, data.notes || null, data.isActive ?? null]);
   await insertAdditionalEmails(client, result.rows[0].id, data.additionalEmails);
+  await replaceCustomerPricing(client, result.rows[0].id, data);
   return 'created';
 }
 

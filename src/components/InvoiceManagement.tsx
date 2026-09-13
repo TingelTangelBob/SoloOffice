@@ -40,7 +40,8 @@ interface InvoiceManagementProps {
   initialFilter?: string;
   initialSearchTerm?: string;
   initialInvoiceId?: string;
-  onNavigate?: (page: string) => void;
+  initialCustomerId?: string;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
 }
 
 /**
@@ -57,7 +58,7 @@ const INVOICE_TABLE_LAYOUT = listTableLayout({
   statusDotWidth: 32,
 });
 
-export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, onNavigate }: InvoiceManagementProps = {}) {
+export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, initialCustomerId, onNavigate }: InvoiceManagementProps = {}) {
   const { notify } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
@@ -1013,6 +1014,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           logger.debug('onCreateCustomer called in InvoiceManagement');
           setShowCustomerForm(true);
         }}
+        initialCustomerId={initialCustomerId}
         onNavigateToCustomers={() => onNavigate && onNavigate('customers')}
         onNavigateToSettings={() => onNavigate && onNavigate('settings')}
       />

@@ -55,6 +55,7 @@ import { useFeedback } from '../context/FeedbackContext';
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
   initialFilter?: string;
+  initialCustomerId?: string;
   initialRecurringGroupId?: string;
 }
 
@@ -85,7 +86,7 @@ type DisplayedJob = {
 const JOB_STATUS_INDICATOR_WIDTH = 22;
 const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
 
-export function JobManagement({ onNavigate, initialFilter, initialRecurringGroupId }: JobManagementProps = {}) {
+export function JobManagement({ onNavigate, initialFilter, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
@@ -754,6 +755,7 @@ export function JobManagement({ onNavigate, initialFilter, initialRecurringGroup
     return (
       <JobEntryForm
         job={editingJob}
+        initialCustomerId={initialCustomerId}
         customers={customers}
         onSubmit={handleFormSubmit}
         onCancel={() => {

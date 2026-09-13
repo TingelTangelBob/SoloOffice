@@ -14,6 +14,8 @@ interface DialogShellProps {
   onSubmit?: FormEventHandler<HTMLFormElement>;
   onChange?: FormEventHandler<HTMLFormElement>;
   size?: 'md' | 'lg' | 'wide' | 'xl';
+  /** Kleine Dialoge wachsen mit dem Inhalt und scrollen erst am Maximalmaß. */
+  fitContent?: boolean;
   zIndexClassName?: string;
 }
 
@@ -36,8 +38,15 @@ export function DialogShell({
   onSubmit,
   onChange,
   size = 'lg',
+  fitContent = false,
   zIndexClassName = 'z-50',
 }: DialogShellProps) {
+  const dialogHeightClass = fitContent
+    ? 'h-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),42rem)]'
+    : 'h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2.5rem)] sm:max-h-[calc(100dvh-2.5rem)]';
+  const dialogGridClass = fitContent
+    ? 'grid-rows-[auto_auto_auto]'
+    : 'grid-rows-[auto_minmax(0,1fr)_auto]';
   const content = (
     <>
       {/* Zusätzliche Kopfaktionen (etwa der Umschalter Auftrag/Urlaub) stehen
@@ -104,7 +113,7 @@ export function DialogShell({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`grid h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] w-full ${sizeClasses[size]} grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg bg-white shadow-2xl sm:h-[calc(100dvh-2.5rem)] sm:max-h-[calc(100dvh-2.5rem)]`}
+          className={`grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </form>
@@ -113,7 +122,7 @@ export function DialogShell({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`grid h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] w-full ${sizeClasses[size]} grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg bg-white shadow-2xl sm:h-[calc(100dvh-2.5rem)] sm:max-h-[calc(100dvh-2.5rem)]`}
+          className={`grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </section>

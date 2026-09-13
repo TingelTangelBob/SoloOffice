@@ -11,6 +11,7 @@ import { AuthPage } from './components/AuthPage';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
 const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
+const CustomerDetail = lazy(() => import('./components/CustomerDetail').then(({ CustomerDetail: page }) => ({ default: page })));
 const InvoiceManagement = lazy(() => import('./components/InvoiceManagement').then(({ InvoiceManagement: page }) => ({ default: page })));
 const QuoteManagement = lazy(() => import('./components/QuoteManagement').then(({ QuoteManagement: page }) => ({ default: page })));
 const QuoteEditor = lazy(() => import('./components/QuoteEditor').then(({ QuoteEditor: page }) => ({ default: page })));
@@ -111,13 +112,19 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'dashboard':
         return <Dashboard onNavigate={onPageChange} />;
       case 'customers':
-        return <CustomerManagement initialFilter={currentPageState.filter} />;
+        return <CustomerManagement
+          initialFilter={currentPageState.filter}
+          initialCustomerId={currentPageState.filter === 'edit' ? currentPageState.searchTerm : undefined}
+          onNavigate={onPageChange}
+        />;
+      case 'customer':
+        return <CustomerDetail customerId={currentPageState.filter} initialTab={currentPageState.searchTerm} onNavigate={onPageChange} />;
       case 'jobs':
-        return <JobManagement onNavigate={onPageChange} initialFilter={currentPageState.filter} initialRecurringGroupId={currentPageState.jobSeriesId} />;
+        return <JobManagement onNavigate={onPageChange} initialFilter={currentPageState.filter} initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined} initialRecurringGroupId={currentPageState.jobSeriesId} />;
       case 'calendar':
         return <Calendar onNavigate={onPageChange} />;
       case 'invoices':
-        return <InvoiceManagement initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.searchTerm} initialInvoiceId={currentPageState.invoiceId} onNavigate={onPageChange} />;
+        return <InvoiceManagement initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.filter === 'new' ? undefined : currentPageState.searchTerm} initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined} initialInvoiceId={currentPageState.invoiceId} onNavigate={onPageChange} />;
       case 'recurring-invoices':
         return <RecurringInvoiceManagement />;
       case 'credit-notes':
@@ -141,6 +148,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
           : null;
         return <QuoteEditor
           quote={quoteToEdit}
+          initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined}
           onClose={() => onPageChange('quotes')}
           onNavigateToCustomers={() => onPageChange('customers')}
           onNavigateToSettings={() => onPageChange('settings')}

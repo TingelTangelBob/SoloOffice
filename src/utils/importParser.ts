@@ -43,6 +43,8 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     label: 'Kunden',
     description: 'Kundenlisten aus CSV, TSV oder JSON übernehmen und bestehende Kunden automatisch erkennen.',
     fields: [
+      { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id'] },
+      { key: 'customerType', label: 'Kundenart', aliases: ['customerType', 'customer_type', 'customerKind', 'customer_kind', 'kundenart', 'kundentyp', 'type', 'typ'] },
       { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer'] },
       { key: 'name', label: 'Name', aliases: ['name', 'customerName', 'customer_name', 'kundenname', 'kunde', 'customer'], required: true },
       { key: 'email', label: 'E-Mail', aliases: ['email', 'eMail', 'mail', 'emailAddress', 'email_address'] },
@@ -53,7 +55,12 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'city', label: 'Ort', aliases: ['city', 'town', 'ort', 'stadt'] },
       { key: 'country', label: 'Land', aliases: ['country', 'land', 'countryName'] },
       { key: 'taxId', label: 'Steuer-ID / USt-IdNr.', aliases: ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id', 'ustIdNr', 'steuerId'] },
+      { key: 'leitwegId', label: 'Leitweg-ID', aliases: ['leitwegId', 'leitweg_id', 'leitweg', 'buyerReference', 'buyer_reference'] },
       { key: 'phone', label: 'Telefon', aliases: ['phone', 'telephone', 'tel', 'telefon', 'mobile', 'mobil'] },
+      { key: 'notes', label: 'Notizen', aliases: ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'] },
+      { key: 'isActive', label: 'Aktiv', aliases: ['isActive', 'is_active', 'active', 'aktiv'] },
+      { key: 'hourlyRates', label: 'Stundensätze als JSON', aliases: ['hourlyRates', 'hourly_rates', 'stundensaetze', 'stundensätze'] },
+      { key: 'materials', label: 'Materialien als JSON', aliases: ['materials', 'materialien', 'material_templates'] },
     ],
   },
   jobs: {

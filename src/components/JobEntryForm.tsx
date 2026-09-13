@@ -24,6 +24,7 @@ import { useFeedback } from '../context/FeedbackContext';
 
 interface JobEntryFormProps {
   job?: JobEntry | null;
+  initialCustomerId?: string;
   customers: Customer[];
   defaultDate?: Date | null;
   onSubmit: (jobData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => void | boolean | Promise<void | boolean>;
@@ -90,7 +91,7 @@ function SelectWithChevron({ className = '', containerClassName = '', children, 
   );
 }
 
-export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
+export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
   const { notify } = useFeedback();
   const { addCustomer, refreshCustomers } = useCustomers();
   const { company, hourlyRates } = useCompany();
@@ -235,8 +236,8 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
       const initialFormData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'> = {
         jobNumber: '', // Will be auto-generated
         externalJobNumber: '',
-        customerId: '',
-        customerName: '',
+        customerId: initialCustomerId || '',
+        customerName: customers.find(customer => customer.id === initialCustomerId)?.name || '',
         customerAddress: '',
         location: 'Vor Ort',
         timeZone: workspaceTimeZone,
@@ -273,7 +274,7 @@ export function JobEntryForm({ job, customers, defaultDate, onSubmit, onCancel, 
     setIsDirty(false);
     setFormError('');
     setEntryType('job');
-  }, [job, hourlyRates, defaultDate, workspaceTimeZone]);
+  }, [customers, defaultDate, hourlyRates, initialCustomerId, job, workspaceTimeZone]);
 
   // Filter customers based on search term
   const filteredCustomers = customers.filter(customer =>

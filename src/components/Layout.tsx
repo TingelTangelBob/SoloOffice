@@ -220,11 +220,14 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
      gesamte verfügbare Breite, Formulare und Übersichten bleiben auf sehr
      großen Monitoren lesbar begrenzt. */
   const fullWidthPages = [
-    'invoices', 'quotes', 'jobs', 'calendar', 'customers', 'reporting',
+    'invoices', 'quotes', 'jobs', 'calendar', 'reporting',
     'documents', 'templates', 'euer', 'fixed-assets', 'recurring-invoices',
     'credit-notes', 'reminders', 'positions',
   ];
-  const contentWidthClass = fullWidthPages.includes(currentPage) ? 'max-w-none' : 'max-w-[1760px]';
+  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace'];
+  const contentWidthClass = compactWidthPages.includes(currentPage)
+    ? 'max-w-[1140px]'
+    : fullWidthPages.includes(currentPage) ? 'max-w-none' : 'max-w-[1760px]';
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);
   const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -279,6 +282,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     settingsNavItem,
     workspaceNavItem,
   ];
+  const isNavItemActive = (itemId: string) => itemId === 'customers'
+    ? currentPage === 'customers' || currentPage === 'customer'
+    : currentPage === itemId;
 
   const navItems: NavItem[] = [
     ...baseNavItems,
@@ -625,16 +631,17 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 <ul className="space-y-0.5">
                   {bottomNavItems.map((item) => {
                     const Icon = item.icon;
+                    const isActive = isNavItemActive(item.id);
                     return (
                       <li key={item.id}>
                         <button
                           type="button"
                           onClick={() => handlePageChange(item.id)}
                           aria-label={item.label}
-                          aria-current={currentPage === item.id ? 'page' : undefined}
+                          aria-current={isActive ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
                           className={`nav-row flex w-full items-center py-1 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-2.5'} ${
-                            currentPage === item.id ? 'nav-active' : 'nav-row-muted'
+                            isActive ? 'nav-active' : 'nav-row-muted'
                           }`}
                         >
                           <Icon className={`h-4 w-4 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-2.5'}`} />

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { AlertTriangle, Banknote, Briefcase, CalendarDays, CheckCircle, ChevronRight, FileText, GraduationCap, Home, Send, Upload, Users } from 'lucide-react';
+import { Banknote, Briefcase, CalendarDays, ChevronRight, FileText, GraduationCap, Home, Send, Upload, Users } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -29,7 +29,6 @@ import {
   ShareBarItem,
   ShareBarList,
 } from './DashboardMetrics';
-import type { MetricTone } from './DashboardMetrics';
 import { RevenueAreaChart } from './RevenueAreaChart';
 
 import { getTerminology } from '../utils/terminology';
@@ -447,84 +446,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     .map(([name, revenue]) => ({ name, revenue }));
   const topCustomerMax = topCustomers.reduce((max, entry) => Math.max(max, entry.revenue), 0);
 
-  const sentInvoices = invoices.filter(invoice => invoice.status === 'sent');
-  const sentAmount = sentInvoices.reduce(
-    (sum, invoice) => sum + Number(invoice.outstandingAmount ?? invoice.total),
-    0,
-  );
-
-  const sumOf = (status: Invoice['status']) => invoices
-    .filter(invoice => invoice.status === status)
-    .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-  const paidAmount = invoices.reduce((sum, invoice) => (
-    sum + Number(invoice.paidAmount ?? (invoice.status === 'paid' ? invoice.total : 0))
-  ), 0);
-  const overdueAmount = invoices
-    .filter(invoice => invoice.status === 'overdue')
-    .reduce((sum, invoice) => sum + Number(invoice.outstandingAmount ?? invoice.total), 0);
-
-  /**
-   * Die Kennzahlen führen den Betrag als Hauptangabe: Für eine
-   * Rechnungsanwendung ist die offene Summe die eigentliche Aussage, die reine
-   * Anzahl steht als Hinweis daneben.
-   */
-  const summaryCards: {
-    id: string;
-    label: string;
-    hint: string;
-    count: number;
-    amount: number;
-    icon: typeof FileText;
-    iconClass: string;
-    tone: MetricTone;
-    filter: string;
-  }[] = [
-    {
-      id: 'draft',
-      label: 'Entwürfe',
-      hint: 'Noch nicht versendet',
-      count: invoices.filter(invoice => invoice.status === 'draft').length,
-      amount: sumOf('draft'),
-      icon: FileText,
-      iconClass: 'text-amber-600',
-      tone: 'warning',
-      filter: 'draft',
-    },
-    {
-      id: 'sent',
-      label: 'Versendet',
-      hint: 'Offen, Zahlungsziel läuft',
-      count: sentInvoices.length,
-      amount: sentAmount,
-      icon: Send,
-      iconClass: 'text-blue-600',
-      tone: 'info',
-      filter: 'sent',
-    },
-    {
-      id: 'overdue',
-      label: 'Überfällig',
-      hint: 'Zahlungsziel überschritten',
-      count: invoices.filter(invoice => invoice.status === 'overdue').length,
-      amount: overdueAmount,
-      icon: AlertTriangle,
-      iconClass: 'text-red-600',
-      tone: 'negative',
-      filter: 'overdue',
-    },
-    {
-      id: 'paid',
-      label: 'Bezahlt',
-      hint: 'Zahlungseingang verbucht',
-      count: invoices.filter(invoice => invoice.status === 'paid').length,
-      amount: paidAmount,
-      icon: CheckCircle,
-      iconClass: 'text-green-600',
-      tone: 'positive',
-      filter: 'paid',
-    },
-  ];
-
   const recentInvoices = [...invoices]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
@@ -559,57 +480,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           derselben Bezeichnung. */}
       <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
 
-      <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm lg:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-gray-900">Schnellzugriff</h2>
-            <p className="mt-1 text-sm text-gray-500">Häufige Grundfunktionen direkt aus der Übersicht starten.</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-            <button type="button" onClick={() => onNavigate('invoices', 'new')} className="action-button justify-center whitespace-nowrap" aria-label="Neue Rechnung schreiben">
-              <FileText className="h-4 w-4 text-primary-custom" />
-              Rechnung schreiben
-            </button>
-            <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="action-button justify-center whitespace-nowrap" aria-label="Beleg hochladen">
-              <Upload className="h-4 w-4 text-primary-custom" />
-              Beleg hochladen
-            </button>
-            <button type="button" onClick={() => onNavigate('customers', 'new')} className="action-button justify-center whitespace-nowrap" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
-              <Users className="h-4 w-4 text-primary-custom" />
-              {terminology.entity.newLabel}
-            </button>
-            <button type="button" onClick={() => onNavigate('jobs', 'new')} className="action-button justify-center whitespace-nowrap" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
-              <Briefcase className="h-4 w-4 text-primary-custom" />
-              {terminology.work.newLabel}
-            </button>
-          </div>
+      <section className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm lg:p-5">
+        <h2 className="text-base font-semibold text-gray-900">Schnellzugriff</h2>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <button type="button" onClick={() => onNavigate('invoices', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label="Neue Rechnung schreiben">
+            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><FileText className="h-7 w-7" /></span>
+            Rechnung schreiben
+          </button>
+          <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label="Beleg hochladen">
+            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Upload className="h-7 w-7" /></span>
+            Beleg hochladen
+          </button>
+          <button type="button" onClick={() => onNavigate('customers', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
+            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Users className="h-7 w-7" /></span>
+            {terminology.entity.newLabel}
+          </button>
+          <button type="button" onClick={() => onNavigate('jobs', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
+            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Briefcase className="h-7 w-7" /></span>
+            {terminology.work.newLabel}
+          </button>
         </div>
       </section>
-
-      {/* Kennzahlen. Der Betrag steht als große Angabe oben, die Anzahl als
-          eingefärbter Hinweis daneben: Die Farbe trägt den Status, ohne die
-          Karte selbst einzufärben, und wirkt in beiden Farbmodi. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        {summaryCards.map(({ id, label, hint, count, amount, icon: CardIcon, iconClass, tone, filter }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onNavigate('invoices', filter)}
-            className="flex min-w-0 flex-col rounded-xl border border-gray-100 bg-white px-4 py-4 text-left shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
-            aria-label={`${label}: ${money(amount)}, ${count} ${count === 1 ? 'Rechnung' : 'Rechnungen'}`}
-          >
-            <span className="flex min-w-0 items-start justify-between gap-2">
-              <MetricValue className="text-lg sm:text-xl lg:text-2xl">{money(amount)}</MetricValue>
-              <MetricBadge tone={tone}>{count}</MetricBadge>
-            </span>
-            <span className="mt-2 flex min-w-0 items-center gap-1.5">
-              <CardIcon className={`h-3.5 w-3.5 shrink-0 ${iconClass}`} aria-hidden="true" />
-              <span className="min-w-0 truncate text-xs font-medium text-gray-700">{label}</span>
-            </span>
-            <span className="mt-0.5 hidden truncate text-[11px] text-gray-500 sm:block">{hint}</span>
-          </button>
-        ))}
-      </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Umsatzverlauf */}

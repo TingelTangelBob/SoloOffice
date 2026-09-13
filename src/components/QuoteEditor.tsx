@@ -542,13 +542,14 @@ function SortableQuoteItem({
 
 interface QuoteEditorProps {
   quote?: Quote | null;
+  initialCustomerId?: string;
   onClose: () => void;
   onCreateCustomer?: () => void;
   onNavigateToCustomers?: () => void;
   onNavigateToSettings?: () => void;
 }
 
-export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: QuoteEditorProps) {
+export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: QuoteEditorProps) {
   const { notify } = useFeedback();
   const { customers } = useCustomers();
   const { company } = useCompany();
@@ -673,13 +674,16 @@ export function QuoteEditor({ quote, onClose, onCreateCustomer, onNavigateToCust
       setIssueDate(today);
       setValidUntil(calculateValidUntil(today));
       setQuoteNumber('');
+      const initialCustomer = customers.find(customer => customer.id === initialCustomerId);
+      setSelectedCustomerId(initialCustomer?.id || initialCustomerId || '');
+      setCustomerSearchTerm(initialCustomer ? `${formatCustomerNumber(initialCustomer.customerNumber)} - ${initialCustomer.name}` : '');
       setGlobalDiscountType('');
       setGlobalDiscountValue('');
       setShowGlobalDiscountRow(false);
       setItems([createEmptyItem(1)]);
     }
     setIsDirty(false);
-  }, [quote, customers, createEmptyItem, discountsEnabled]);
+  }, [createEmptyItem, customers, discountsEnabled, initialCustomerId, quote]);
 
   const requestClose = () => {
     if (isDirty) {

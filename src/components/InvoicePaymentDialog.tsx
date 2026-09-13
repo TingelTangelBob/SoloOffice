@@ -85,6 +85,7 @@ export function InvoicePaymentDialog({ invoice, onClose, onSaved }: InvoicePayme
       onClose={saving ? () => {} : onClose}
       onSubmit={submit}
       size="md"
+      fitContent
       footer={(
         <>
           <button type="button" onClick={onClose} disabled={saving} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50">Abbrechen</button>

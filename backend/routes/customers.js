@@ -4,6 +4,31 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
+function normalizeCustomerType(value) {
+  return value === 'organization' ? 'organization' : 'person';
+}
+
+function mapCustomerRow(row) {
+  return {
+    id: row.id,
+    customerNumber: row.customer_number,
+    name: row.name,
+    customerType: normalizeCustomerType(row.customer_type),
+    email: row.email,
+    address: row.address,
+    addressSupplement: row.address_supplement,
+    city: row.city,
+    postalCode: row.postal_code,
+    country: row.country,
+    taxId: row.tax_id,
+    leitwegId: row.leitweg_id,
+    phone: row.phone,
+    notes: row.notes || undefined,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+  };
+}
+
 // Get all customers
 router.get('/', async (req, res) => {
   try {
@@ -23,6 +48,8 @@ router.get('/', async (req, res) => {
         c.tax_id,
         c.leitweg_id,
         c.phone,
+        c.customer_type,
+        c.notes,
         c.is_active,
         c.created_at,
         -- Additional emails (JSON aggregation)
@@ -89,24 +116,12 @@ router.get('/', async (req, res) => {
       WHERE ${includeArchived ? 'TRUE' : 'c.is_active = TRUE'}
       GROUP BY 
         c.id, c.customer_number, c.name, c.email, c.address, c.address_supplement, c.city, 
-        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.is_active, c.created_at
+        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.customer_type, c.notes, c.is_active, c.created_at
       ORDER BY c.created_at DESC
     `);
     
     const customers = result.rows.map(row => ({
-      id: row.id,
-      customerNumber: row.customer_number,
-      name: row.name,
-      email: row.email,
-      address: row.address,
-      addressSupplement: row.address_supplement,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      taxId: row.tax_id,
-      leitwegId: row.leitweg_id,
-      phone: row.phone,
-      isActive: row.is_active,
+      ...mapCustomerRow(row),
       additionalEmails: row.additional_emails || [],
       hourlyRates: (row.hourly_rates || []).map(rate => ({
         ...rate,
@@ -118,7 +133,6 @@ router.get('/', async (req, res) => {
         unitPrice: parseFloat(material.unitPrice),
         taxRate: parseFloat(material.taxRate)
       })),
-      createdAt: row.created_at
     }));
     res.json(customers);
   } catch (error) {
@@ -152,6 +166,8 @@ router.get('/:id', async (req, res) => {
         c.tax_id,
         c.leitweg_id,
         c.phone,
+        c.customer_type,
+        c.notes,
         c.is_active,
         c.created_at,
         -- Additional emails (JSON aggregation)
@@ -220,7 +236,7 @@ router.get('/:id', async (req, res) => {
       WHERE c.id = $1
       GROUP BY 
         c.id, c.customer_number, c.name, c.email, c.address, c.address_supplement, c.city, 
-        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.is_active, c.created_at
+        c.postal_code, c.country, c.tax_id, c.leitweg_id, c.phone, c.customer_type, c.notes, c.is_active, c.created_at
     `, [id]);
     
     if (result.rows.length === 0) {
@@ -229,19 +245,7 @@ router.get('/:id', async (req, res) => {
 
     const row = result.rows[0];
     const customer = {
-      id: row.id,
-      customerNumber: row.customer_number,
-      name: row.name,
-      email: row.email,
-      address: row.address,
-      addressSupplement: row.address_supplement,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      taxId: row.tax_id,
-      leitwegId: row.leitweg_id,
-      phone: row.phone,
-      isActive: row.is_active,
+      ...mapCustomerRow(row),
       additionalEmails: row.additional_emails || [],
       hourlyRates: (row.hourly_rates || [])
         .map(rate => ({
@@ -280,7 +284,6 @@ router.get('/:id', async (req, res) => {
           }
           return a.name.localeCompare(b.name);
         }),
-      createdAt: row.created_at
     };
     
     res.json(customer);
@@ -299,7 +302,20 @@ router.get('/:id', async (req, res) => {
 // Create new customer
 router.post('/', async (req, res) => {
   try {
-    const { name, email, address, addressSupplement, city, postalCode, country, taxId, leitwegId, phone } = req.body;
+    const {
+      name,
+      customerType,
+      email,
+      address,
+      addressSupplement,
+      city,
+      postalCode,
+      country,
+      taxId,
+      leitwegId,
+      phone,
+      notes,
+    } = req.body;
 
     // Generate customer number - find highest existing number and increment
     // Always format as 4-digit number with leading zeros (e.g., 0001, 0002, etc.)
@@ -319,28 +335,13 @@ router.post('/', async (req, res) => {
     }
 
     const result = await query(`
-      INSERT INTO customers (customer_number, name, email, address, address_supplement, city, postal_code, country, tax_id, leitweg_id, phone)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      INSERT INTO customers (customer_number, name, customer_type, email, address, address_supplement, city, postal_code, country, tax_id, leitweg_id, phone, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
-    `, [customerNumber, name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, leitwegId || null, phone]);
+    `, [customerNumber, name, normalizeCustomerType(customerType), email || null, address, addressSupplement || null, city, postalCode, country, taxId, leitwegId || null, phone || null, notes || null]);
 
     const row = result.rows[0];
-    const customer = {
-      id: row.id,
-      customerNumber: row.customer_number,
-      name: row.name,
-      email: row.email,
-      address: row.address,
-      addressSupplement: row.address_supplement,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      taxId: row.tax_id,
-      leitwegId: row.leitweg_id,
-      phone: row.phone,
-      isActive: row.is_active,
-      createdAt: row.created_at
-    };
+    const customer = mapCustomerRow(row);
 
     res.status(201).json(customer);
   } catch (error) {
@@ -359,37 +360,40 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, address, addressSupplement, city, postalCode, country, taxId, leitwegId, phone } = req.body;
+    const existingResult = await query('SELECT * FROM customers WHERE id = $1', [id]);
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    const existing = existingResult.rows[0];
+    const {
+      name = existing.name,
+      customerType = existing.customer_type,
+      email = existing.email,
+      address = existing.address,
+      addressSupplement = existing.address_supplement,
+      city = existing.city,
+      postalCode = existing.postal_code,
+      country = existing.country,
+      taxId = existing.tax_id,
+      leitwegId = existing.leitweg_id,
+      phone = existing.phone,
+      notes = existing.notes,
+    } = req.body;
 
     const result = await query(`
       UPDATE customers 
-      SET name = $1, email = $2, address = $3, address_supplement = $4, city = $5, postal_code = $6, 
-          country = $7, tax_id = $8, leitweg_id = $9, phone = $10
-      WHERE id = $11
+      SET name = $1, customer_type = $2, email = $3, address = $4, address_supplement = $5, city = $6, postal_code = $7,
+          country = $8, tax_id = $9, leitweg_id = $10, phone = $11, notes = $12
+      WHERE id = $13
       RETURNING *
-    `, [name, email || null, address, addressSupplement || null, city, postalCode, country, taxId, leitwegId || null, phone, id]);
+    `, [name, normalizeCustomerType(customerType), email || null, address, addressSupplement || null, city, postalCode, country, taxId || null, leitwegId || null, phone || null, notes || null, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
     const row = result.rows[0];
-    const customer = {
-      id: row.id,
-      customerNumber: row.customer_number,
-      name: row.name,
-      email: row.email,
-      address: row.address,
-      addressSupplement: row.address_supplement,
-      city: row.city,
-      postalCode: row.postal_code,
-      country: row.country,
-      taxId: row.tax_id,
-      leitwegId: row.leitweg_id,
-      phone: row.phone,
-      isActive: row.is_active,
-      createdAt: row.created_at
-    };
+    const customer = mapCustomerRow(row);
 
     res.json(customer);
   } catch (error) {

@@ -36,7 +36,10 @@ export function CustomerProvider({ children, initialCustomers = [] }: CustomerPr
     try {
       const updatedCustomer = await apiService.updateCustomer(id, customerData);
       setCustomers(prev => prev.map(customer =>
-        customer.id === id ? updatedCustomer : customer
+        // The backend update response intentionally contains only the base
+        // customer row. Preserve already loaded child collections such as
+        // additional e-mails, rates and materials.
+        customer.id === id ? { ...customer, ...updatedCustomer } : customer
       ));
     } catch (error) {
       logger.error('Error updating customer:', error);

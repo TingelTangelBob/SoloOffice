@@ -54,7 +54,7 @@ function getDemoDataStorageKey(): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 6;
+const DEMO_SEED_VERSION = 7;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -160,6 +160,12 @@ function demoSlug(value: string): string {
     .replace(/^\.|\.$/g, '');
 }
 
+function demoCustomerType(name: string): 'person' | 'organization' {
+  return /(gmbh|gbr|ag\b|kg\b|partner|handwerk|design|beratung|immobilien|solutions|verein|werk|zentrum|stelle|hilfe|projekt|kanzlei|praxis|steuerberatung|notariat|architektur|apotheke|büro|schulträger|förderverein|bildungswerk)/i.test(name)
+    ? 'organization'
+    : 'person';
+}
+
 function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoState {
   const fixture = demoProfileFixtures[profile] || demoProfileFixtures.customers;
   const cities = ['Berlin', 'Hamburg', 'München', 'Köln', 'Leipzig', 'Bremen', 'Dresden', 'Freiburg'];
@@ -169,6 +175,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     id: generateUUID(),
     customerNumber: String(1001 + index),
     name,
+    customerType: demoCustomerType(name),
     email: `${demoSlug(name)}@demo.solooffice.de`,
     address: `${streets[index % streets.length]} ${12 + index}`,
     city: cities[index % cities.length],
@@ -352,14 +359,17 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
   const customers: DemoRecord[] = [
     {
       id: generateUUID(), customerNumber: '1001', name: 'Musterkunde GmbH', email: 'kontakt@musterkunde.de',
+      customerType: 'organization',
       address: 'Hauptstraße 12', city: 'Berlin', postalCode: '10115', country: 'Deutschland', phone: '+49 30 123456', createdAt: isoDate(-30),
     },
     {
       id: generateUUID(), customerNumber: '1002', name: 'Kolkman & Partner', email: 'office@kolkman.de',
+      customerType: 'organization',
       address: 'Marktplatz 4', city: 'Hamburg', postalCode: '20095', country: 'Deutschland', phone: '+49 40 987654', createdAt: isoDate(-20),
     },
     {
       id: generateUUID(), customerNumber: '1003', name: 'Beispiel Handwerk', email: 'info@beispiel-handwerk.de',
+      customerType: 'organization',
       address: 'Werkstraße 8', city: 'München', postalCode: '80331', country: 'Deutschland', phone: '+49 89 456789', createdAt: isoDate(-10),
     },
   ];
@@ -666,6 +676,37 @@ function demoImportText(value: unknown): string {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function demoImportBoolean(value: unknown): boolean | undefined {
+  const normalized = demoImportText(value).toLocaleLowerCase('de-DE');
+  if (!normalized) return undefined;
+  if (['true', '1', 'ja', 'yes', 'y', 'x'].includes(normalized)) return true;
+  if (['false', '0', 'nein', 'no', 'n'].includes(normalized)) return false;
+  return undefined;
+}
+
+function demoImportStructuredArray(value: unknown): DemoRecord[] {
+  if (Array.isArray(value)) return value as DemoRecord[];
+  const source = demoImportText(value);
+  if (!source) return [];
+  try {
+    const parsed = JSON.parse(source);
+    return Array.isArray(parsed) ? parsed as DemoRecord[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function demoImportCustomerType(value: unknown): 'person' | 'organization' {
+  const normalized = demoImportText(value)
+    .toLocaleLowerCase('de-DE')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/ü/g, 'u');
+  return ['organisation', 'organization', 'firma', 'unternehmen', 'company', 'org'].includes(normalized)
+    ? 'organization'
+    : 'person';
+}
+
 function demoImportDate(value: unknown): string | null {
   const source = demoImportText(value);
   if (!source) return null;
@@ -847,21 +888,34 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
 
     if (resource === 'customers') {
       const existing = collection.find(item =>
-        (row.customerNumber && String(item.customerNumber).toLocaleLowerCase() === demoImportText(row.customerNumber).toLocaleLowerCase())
+        (row.customerId && String(item.id) === demoImportText(row.customerId))
+        || (row.customerNumber && String(item.customerNumber).toLocaleLowerCase() === demoImportText(row.customerNumber).toLocaleLowerCase())
         || (row.email && String(item.email || '').toLocaleLowerCase() === demoImportText(row.email).toLocaleLowerCase())
         || (!row.customerNumber && !row.email && String(item.name || '').toLocaleLowerCase() === name.toLocaleLowerCase())
       );
+      const rawCustomerType = row.customerType || row.customer_type || row.customerKind || row.kundenart || row.kundentyp;
+      const rawAdditionalEmails = row.additionalEmails || row.additional_emails || row.weitereEmails;
+      const rawNotes = row.notes || row.note || row.notizen;
       const customerData = {
         name,
         customerNumber: demoImportText(row.customerNumber) || undefined,
+        ...(rawCustomerType !== undefined ? { customerType: demoImportCustomerType(rawCustomerType) } : {}),
         email: demoImportText(row.email),
+        ...(rawAdditionalEmails !== undefined ? { additionalEmails: demoImportStructuredArray(rawAdditionalEmails) } : {}),
         address: demoImportText(row.address),
         addressSupplement: demoImportText(row.addressSupplement),
         postalCode: demoImportText(row.postalCode),
         city: demoImportText(row.city),
         country: demoImportText(row.country) || 'Deutschland',
         taxId: demoImportText(row.taxId),
+        leitwegId: demoImportText(row.leitwegId || row.leitweg_id || row.leitweg),
         phone: demoImportText(row.phone),
+        ...(rawNotes !== undefined ? { notes: demoImportText(rawNotes) } : {}),
+        ...(demoImportBoolean(row.isActive || row.active || row.aktiv) !== undefined
+          ? { isActive: demoImportBoolean(row.isActive || row.active || row.aktiv) }
+          : {}),
+        hourlyRates: demoImportStructuredArray(row.hourlyRates || row.hourly_rates || row.stundensaetze),
+        materials: demoImportStructuredArray(row.materials || row.materialien),
       } as unknown as DemoRecord;
       if (existing && duplicateMode === 'update') entries.push({ rowNumbers: [rowNumber], status: 'update', message: 'Bestehender Kunde wird aktualisiert.', data: customerData, existingId: existing.id });
       else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Kunde bereits vorhanden.' });
@@ -935,7 +989,7 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
           const target = state.customers.find(item => item.id === entry.existingId);
           if (target) Object.assign(target, entry.data, { id: target.id, updatedAt: isoDate() });
         } else {
-          state.customers.push({ ...entry.data, id: generateUUID(), customerNumber: entry.data.customerNumber || String(1001 + state.customers.length), createdAt: isoDate() });
+          state.customers.push({ ...entry.data, id: generateUUID(), customerNumber: entry.data.customerNumber || String(1001 + state.customers.length), customerType: entry.data.customerType || 'person', createdAt: isoDate() });
         }
       } else if (resource === 'jobs') {
         state.jobs.push({ ...entry.data, id: generateUUID(), jobNumber: entry.data.jobNumber || `AB-${new Date().getFullYear()}-${String(state.jobs.length + 1).padStart(3, '0')}`, createdAt: isoDate(), updatedAt: isoDate() });
