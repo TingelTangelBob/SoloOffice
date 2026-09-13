@@ -217,17 +217,10 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     '--sidebar-width': `${sidebarRenderWidth}px`,
   } as CSSProperties;
   /* Zwei bewusst sichtbare Seitenraster: datenreiche Ansichten nutzen die
-     gesamte verfügbare Breite, Formulare und Übersichten bleiben auf sehr
-     großen Monitoren lesbar begrenzt. */
-  const fullWidthPages = [
-    'invoices', 'quotes', 'jobs', 'calendar', 'reporting',
-    'documents', 'templates', 'euer', 'fixed-assets', 'recurring-invoices',
-    'credit-notes', 'reminders', 'positions',
-  ];
+     gesamte verfügbare Breite, Verwaltungs- und Accountseiten bleiben auf
+     großen Monitoren mit 1140px lesbar begrenzt. */
   const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace'];
-  const contentWidthClass = compactWidthPages.includes(currentPage)
-    ? 'max-w-[1140px]'
-    : fullWidthPages.includes(currentPage) ? 'max-w-none' : 'max-w-[1760px]';
+  const contentWidthClass = compactWidthPages.includes(currentPage) ? 'max-w-[1140px]' : 'max-w-none';
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);
   const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -654,6 +647,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
 
                 <div className="sidebar-account mt-2">
                   <ActionMenu
+                    key={currentPage}
                     containerClassName="w-full"
                     ariaLabel={`Konto von ${accountName} öffnen`}
                     title="Konto"
