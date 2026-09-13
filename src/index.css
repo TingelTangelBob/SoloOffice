@@ -190,6 +190,17 @@
 
 @layer components {
   /*
+   * Dialoge können direkt unter einem `space-y-*`-Seitenwurzel-Element
+   * gerendert werden. Tailwind setzt dann auf den Overlay-Wrapper ungewollt
+   * `margin-top`; der eigentlich viewportweite Fixed-Layer beginnt dadurch
+   * unterhalb der Topbar. Der Overlay darf niemals Teil des Seitenabstands
+   * sein.
+   */
+  .dialog-overlay {
+    margin: 0 !important;
+  }
+
+  /*
    * Gemeinsame Formularfelder.
    *
    * `form-input` wird in den Dialogen bewusst als semantische Komponente

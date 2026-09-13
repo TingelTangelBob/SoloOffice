@@ -101,7 +101,7 @@ export function DialogShell({
 
   return (
     <div
-      className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center overflow-hidden bg-gray-950/55 p-3 backdrop-blur-[2px] sm:p-5`}
+      className={`dialog-overlay fixed inset-0 ${zIndexClassName} flex items-center justify-center overflow-hidden bg-gray-950/55 p-3 backdrop-blur-[2px] sm:p-5`}
       onMouseDown={event => {
         if (event.target === event.currentTarget) onClose();
       }}
