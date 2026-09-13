@@ -116,7 +116,7 @@ export function PositionTemplatesPanel() {
       <section className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
         <h2 className="text-base font-semibold text-gray-900">Positionsvorlagen</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Stundensätze und Materialien werden direkt in Rechnungs- und Angebotspositionen verwendet.
+          Hier verwalten Sie Stundensätze und Materialien, die Sie in Rechnungen und Angeboten wiederverwenden können.
         </p>
         <label className="mt-4 flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <input
@@ -126,9 +126,9 @@ export function PositionTemplatesPanel() {
             className="custom-checkbox mt-0.5"
           />
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-gray-900">Allgemeine und {terminology.entity.specificLabel} Einträge in Auswahlfeldern kombinieren</span>
+            <span className="block text-sm font-medium text-gray-900">Auch {terminology.entity.specificLabel} Einträge anzeigen</span>
             <span className="mt-0.5 block text-xs text-gray-500">
-              Zeigt in den Auswahlfeldern für Stundensätze und Materialien beide Arten von Einträgen an. Wird sofort gespeichert.
+              Dann sehen Sie neben den allgemeinen Einträgen zusätzlich die {terminology.entity.specificLabel} Einträge. Die Änderung wird sofort gespeichert.
             </span>
           </span>
         </label>
