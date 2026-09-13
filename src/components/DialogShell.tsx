@@ -47,27 +47,28 @@ export function DialogShell({
   const dialogGridClass = fitContent
     ? 'grid-rows-[auto_minmax(0,1fr)_auto]'
     : 'grid-rows-[auto_minmax(0,1fr)_auto]';
+  const compactHeader = size === 'md';
   const content = (
     <>
       {/* Zusätzliche Kopfaktionen (etwa der Umschalter Auftrag/Urlaub) stehen
           auf schmalen Geräten in einer eigenen Zeile über dem Titel. Nebeneinander
           bliebe für die Beschreibung sonst nur ein Wort pro Zeile übrig. */}
       <header
-        className={`flex shrink-0 items-start justify-between gap-x-4 gap-y-3 bg-white px-5 py-4 sm:flex-nowrap sm:px-10 sm:py-7 ${
+        className={`flex shrink-0 items-start justify-between gap-x-4 gap-y-3 bg-white px-5 py-4 sm:flex-nowrap ${compactHeader ? 'sm:px-6 sm:py-5' : 'sm:px-10 sm:py-7'} ${
           headerActions ? 'flex-wrap' : 'flex-nowrap'
         }`}
       >
-        <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-5">
+        <div className={`flex min-w-0 flex-1 items-start gap-3 ${compactHeader ? 'sm:gap-4' : 'sm:gap-5'}`}>
           {Icon && (
-            <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-[60px] sm:w-[60px]">
-              <Icon className="h-6 w-6 sm:h-8 sm:w-8" />
+            <div className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom ${compactHeader ? 'sm:h-14 sm:w-14' : 'sm:h-[60px] sm:w-[60px]'}`}>
+              <Icon className={`h-6 w-6 ${compactHeader ? 'sm:h-7 sm:w-7' : 'sm:h-8 sm:w-8'}`} />
             </div>
           )}
           <div className="min-w-0">
-            <h2 id={titleId} className="text-xl font-semibold leading-tight text-gray-900 sm:text-3xl">
+            <h2 id={titleId} className={`text-xl font-semibold leading-tight text-gray-900 ${compactHeader ? 'sm:text-2xl' : 'sm:text-3xl'}`}>
               {title}
             </h2>
-            {description && <p className="mt-1 text-sm leading-6 text-gray-500 sm:text-lg sm:leading-7">{description}</p>}
+            {description && <p className={`mt-1 text-sm text-gray-500 ${compactHeader ? 'leading-5 sm:text-base sm:leading-6' : 'leading-6 sm:text-lg sm:leading-7'}`}>{description}</p>}
           </div>
         </div>
         <div

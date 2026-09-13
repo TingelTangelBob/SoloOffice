@@ -329,7 +329,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
       titleId="hourly-rate-dialog-title"
       icon={Clock}
       title={rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
-      description="Definieren Sie einen wiederverwendbaren Stundensatz für Angebote und Rechnungen."
+      description="Für Angebote und Rechnungen wiederverwenden."
       onClose={onClose}
       onSubmit={handleSubmit}
       size="md"
