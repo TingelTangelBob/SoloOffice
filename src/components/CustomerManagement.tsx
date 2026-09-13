@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Archive, ArchiveRestore, Mail, Phone, MapPin, X, Clock, Package, Users, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -114,7 +114,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
     );
   });
 
-  const handleOpenModal = (customer?: Customer) => {
+  const handleOpenModal = useCallback((customer?: Customer) => {
     if (!canWrite) {
       notify({ variant: 'warning', message: 'Sie haben in diesem Workspace nur Leserechte für Kunden.' });
       return;
@@ -223,7 +223,7 @@ export function CustomerManagement({ initialFilter }: CustomerManagementProps = 
       isDefault: false
     });
     setIsModalOpen(true);
-  };
+  }, [canWrite, customers, notify]);
 
   useEffect(() => {
     if (initialFilter !== 'new') {
