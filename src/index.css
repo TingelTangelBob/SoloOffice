@@ -224,6 +224,14 @@
     transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
   }
 
+  /* Dialogfelder im Kundenformular verwenden dieselbe 38px-Höhe wie die
+     Eingaben im Formular zum Anlegen eines Auftrags. */
+  .form-input-compact {
+    height: 2.375rem;
+    min-height: 2.375rem;
+    max-height: 2.375rem;
+  }
+
   .form-input::placeholder {
     color: #9ca3af;
     opacity: 1;
@@ -501,6 +509,32 @@
     background-color: var(--primary-color);
     color: var(--primary-text-color);
     filter: brightness(0.9);
+  }
+
+  /* Ein gemeinsamer Export-Trigger spart Platz in der Topbar und bleibt auch
+     im dunklen Theme eine ruhige, neutrale Seitenaktion. */
+  .action-menu-export-trigger {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 0.5rem;
+    background-color: var(--surface-raised);
+    color: var(--ink-muted);
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .action-menu-export-trigger:hover {
+    border-color: var(--line-strong);
+    background-color: var(--surface-hover);
+    color: var(--ink-strong);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
   }
 
   .template-card-actions > button {

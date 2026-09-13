@@ -323,6 +323,17 @@ export function DynamicColors() {
           color: var(--primary-on-surface) !important;
         }
 
+        #app-shell .action-menu-export-trigger {
+          background-color: var(--surface-raised) !important;
+          border-color: var(--line-strong) !important;
+          color: var(--ink-muted) !important;
+        }
+        #app-shell .action-menu-export-trigger:hover {
+          background-color: var(--surface-hover) !important;
+          border-color: var(--line-strong) !important;
+          color: var(--ink-strong) !important;
+        }
+
         #app-shell .action-menu-trigger-primary {
           background-color: var(--primary-color) !important;
           color: var(--primary-text-color) !important;
@@ -957,6 +968,16 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .action-menu-trigger:hover {
           background-color: #2f2f34 !important;
           color: #eff6ff !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-export-trigger {
+          background-color: #141416 !important;
+          border-color: #2f2f34 !important;
+          color: #9a9aa2 !important;
+        }
+        #app-shell[data-theme="dark"] .action-menu-export-trigger:hover {
+          background-color: #232326 !important;
+          border-color: #2f2f34 !important;
+          color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .action-menu {
           background-color: #141416 !important;

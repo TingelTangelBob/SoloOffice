@@ -896,28 +896,28 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Importieren</span>
         </button>
-        <button
-          type="button"
-          onClick={() => downloadCustomerCsv(filteredCustomers)}
-          disabled={filteredCustomers.length === 0}
-          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
-          aria-label="Kunden als CSV exportieren"
-          title="Kunden als CSV exportieren"
+        <ActionMenu
+          ariaLabel="Export"
+          title="Kunden exportieren"
+          icon={<><Download className="h-4 w-4" /><span className="hidden sm:inline">Export</span></>}
+          triggerClassName="action-menu-export-trigger"
+          menuClassName="min-w-52"
         >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">CSV</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => downloadCustomerPdf(filteredCustomers)}
-          disabled={filteredCustomers.length === 0}
-          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
-          aria-label="Kunden als PDF exportieren"
-          title="Kunden als PDF exportieren"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">PDF</span>
-        </button>
+          <ActionMenuItem
+            icon={<Download className="h-4 w-4" />}
+            onClick={() => downloadCustomerCsv(filteredCustomers)}
+            disabled={filteredCustomers.length === 0}
+          >
+            Als CSV exportieren
+          </ActionMenuItem>
+          <ActionMenuItem
+            icon={<Download className="h-4 w-4" />}
+            onClick={() => downloadCustomerPdf(filteredCustomers)}
+            disabled={filteredCustomers.length === 0}
+          >
+            Als PDF exportieren
+          </ActionMenuItem>
+        </ActionMenu>
         <button
           onClick={() => handleOpenModal()}
           disabled={!canWrite}
@@ -1047,6 +1047,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           onClose={isSavingCustomer ? () => undefined : requestCloseModal}
           onSubmit={handleSubmit}
           size="wide"
+          fitContent={!editingCustomer}
           zIndexClassName="z-[1000]"
           footer={(
             <>
@@ -1055,19 +1056,19 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
             </>
           )}
         >
-              <div className="space-y-5 pb-2">
-              <div className="grid gap-4 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-                <label className="block text-sm font-medium text-gray-700">
+              <div className="space-y-4 pb-2">
+              <div className="grid gap-3 tablet:grid-cols-[minmax(10rem,0.7fr)_minmax(0,1.3fr)]">
+                <label className="block text-xs font-medium text-gray-700 sm:text-sm">
                   {terminology.entity.numberLabel}
                   <input
                     type="text"
                     value={formData.customerNumber}
                     disabled
-                    className="form-input mt-1 w-full bg-gray-100 text-gray-600"
+                    className="form-input form-input-compact mt-1 w-full bg-gray-100 text-gray-600"
                   />
                 </label>
                 <fieldset>
-                  <legend className="mb-1 text-sm font-medium text-gray-700">Kundenart</legend>
+                  <legend className="mb-1 text-xs font-medium text-gray-700 sm:text-sm">Kundenart</legend>
                   <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Kundenart auswählen">
                     {(['person', 'organization'] as CustomerType[]).map(type => {
                       const selected = formData.customerType === type;
@@ -1078,7 +1079,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                           role="radio"
                           aria-checked={selected}
                           onClick={() => setFormData({ ...formData, customerType: type })}
-                          className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${selected ? 'border-primary-custom bg-primary-light-custom text-primary-custom' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+                          className={`inline-flex h-[38px] min-h-[38px] max-h-[38px] items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${selected ? 'border-primary-custom bg-primary-light-custom text-primary-custom' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
                         >
                           <CustomerTypeIcon customerType={type} className="h-4 w-4" />
                           {customerTypeLabel(type)}
@@ -1089,7 +1090,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 </fieldset>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
                   {formData.customerType === 'organization' ? 'Name der Organisation' : 'Name'} *
                 </label>
                 <input
@@ -1097,119 +1098,107 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="form-input w-full"
+                  className="form-input form-input-compact w-full"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="grid gap-3 tablet:grid-cols-2">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   E-Mail
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                    placeholder="optional"
+                  />
                 </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="form-input w-full"
-                  placeholder="optional"
-                />
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
+                  Telefon
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                  />
+                </label>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="grid gap-3 tablet:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   Adresse *
+                  <input
+                    type="text"
+                    required
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                  />
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="form-input w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   Adresszusatz
+                  <input
+                    type="text"
+                    value={formData.addressSupplement}
+                    onChange={(e) => setFormData({ ...formData, addressSupplement: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                    placeholder="z. B. 2. Stock"
+                  />
                 </label>
-                <input
-                  type="text"
-                  value={formData.addressSupplement}
-                  onChange={(e) => setFormData({ ...formData, addressSupplement: e.target.value })}
-                  className="form-input w-full"
-                  placeholder="z.B. 2. Stock, Hintereingang"
-                />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    PLZ *
-                  </label>
+              <div className="grid gap-3 tablet:grid-cols-[minmax(7rem,0.65fr)_minmax(0,1.35fr)_minmax(9rem,0.8fr)]">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
+                  PLZ *
                   <input
                     type="text"
                     required
                     value={formData.postalCode}
                     onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                    className="form-input w-full"
+                    className="form-input form-input-compact mt-1 w-full"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stadt *
-                  </label>
+                </label>
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
+                  Stadt *
                   <input
                     type="text"
                     required
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="form-input w-full"
+                    className="form-input form-input-compact mt-1 w-full"
                   />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                </label>
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   Land *
+                  <input
+                    type="text"
+                    required
+                    value={formData.country}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                  />
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.country}
-                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  className="form-input w-full"
-                />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="grid gap-3 tablet:grid-cols-2">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   USt-IdNr.
+                  <input
+                    type="text"
+                    value={formData.taxId}
+                    onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                    className="form-input form-input-compact mt-1 w-full"
+                  />
                 </label>
-                <input
-                  type="text"
-                  value={formData.taxId}
-                  onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
-                  className="form-input w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
                   Leitweg-ID (XRechnung)
+                  <input
+                    type="text"
+                    value={formData.leitwegId}
+                    onChange={(e) => setFormData({ ...formData, leitwegId: e.target.value })}
+                    placeholder="z. B. 991-12345-67"
+                    className="form-input form-input-compact mt-1 w-full"
+                  />
                 </label>
-                <input
-                  type="text"
-                  value={formData.leitwegId}
-                  onChange={(e) => setFormData({ ...formData, leitwegId: e.target.value })}
-                  placeholder="z. B. 991-12345-67"
-                  className="form-input w-full"
-                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Telefon
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="form-input w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
                   Notizen
                 </label>
                 <textarea
