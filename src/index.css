@@ -189,6 +189,47 @@
 }
 
 @layer components {
+  /*
+   * Gemeinsame Formularfelder.
+   *
+   * `form-input` wird in den Dialogen bewusst als semantische Komponente
+   * verwendet. Ohne eine eigene Definition fiel ein leeres Input-Feld auf
+   * die Browser-Defaults zurück; im dunklen Theme war dadurch weder Fläche
+   * noch Rahmen zuverlässig erkennbar.
+   */
+  .form-input {
+    display: block;
+    min-height: 2.5rem;
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background-color: #ffffff;
+    color: #111827;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+
+  .form-input::placeholder {
+    color: #9ca3af;
+    opacity: 1;
+  }
+
+  .form-input:focus {
+    border-color: var(--primary-color, #2563eb);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #2563eb) 18%, transparent);
+  }
+
+  .form-input:disabled {
+    cursor: not-allowed;
+    background-color: #f3f4f6;
+    color: #6b7280;
+    opacity: 1;
+  }
+
   /* Gemeinsame Tab-Leiste für Einstellungen und Vorlagen. */
   .theme-tab-bar {
     display: flex;

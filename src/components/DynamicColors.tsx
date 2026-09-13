@@ -912,6 +912,22 @@ export function DynamicColors() {
           color: #fafafa !important;
           border-color: #2f2f34 !important;
         }
+        #app-shell[data-theme="dark"] .form-input {
+          background-color: #18181b !important;
+          color: #f4f4f5 !important;
+          border-color: #3f3f46 !important;
+        }
+        #app-shell[data-theme="dark"] .form-input::placeholder {
+          color: #a1a1aa !important;
+        }
+        #app-shell[data-theme="dark"] .form-input:focus {
+          border-color: var(--primary-on-surface) !important;
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 28%, transparent) !important;
+        }
+        #app-shell[data-theme="dark"] .form-input:disabled {
+          background-color: #232326 !important;
+          color: #a1a1aa !important;
+        }
         #app-shell[data-theme="dark"] select:not(.select-with-chevron) {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
         }
