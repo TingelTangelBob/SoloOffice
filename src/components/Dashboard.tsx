@@ -480,27 +480,24 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           derselben Bezeichnung. */}
       <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
 
-      <section className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm lg:p-5">
-        <h2 className="text-base font-semibold text-gray-900">Schnellzugriff</h2>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <button type="button" onClick={() => onNavigate('invoices', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label="Neue Rechnung schreiben">
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><FileText className="h-7 w-7" /></span>
+      <div className="dashboard-quick-actions grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <button type="button" onClick={() => onNavigate('invoices', 'new')} className="dashboard-quick-action group" aria-label="Neue Rechnung schreiben">
+            <span className="dashboard-quick-action-icon"><FileText className="h-7 w-7" /></span>
             Rechnung schreiben
           </button>
-          <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label="Beleg hochladen">
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Upload className="h-7 w-7" /></span>
+          <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="dashboard-quick-action group" aria-label="Beleg hochladen">
+            <span className="dashboard-quick-action-icon"><Upload className="h-7 w-7" /></span>
             Beleg hochladen
           </button>
-          <button type="button" onClick={() => onNavigate('customers', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Users className="h-7 w-7" /></span>
+          <button type="button" onClick={() => onNavigate('customers', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
+            <span className="dashboard-quick-action-icon"><Users className="h-7 w-7" /></span>
             {terminology.entity.newLabel}
           </button>
-          <button type="button" onClick={() => onNavigate('jobs', 'new')} className="group flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-4 text-center text-sm font-semibold text-gray-800 transition hover:border-primary-custom hover:bg-primary-light-custom hover:text-primary-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-light-custom text-primary-custom transition-transform group-hover:scale-105"><Briefcase className="h-7 w-7" /></span>
+          <button type="button" onClick={() => onNavigate('jobs', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
+            <span className="dashboard-quick-action-icon"><Briefcase className="h-7 w-7" /></span>
             {terminology.work.newLabel}
           </button>
-        </div>
-      </section>
+      </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Umsatzverlauf */}

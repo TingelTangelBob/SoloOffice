@@ -549,6 +549,20 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .border-gray-300 {
           border-color: #2f2f34 !important;
         }
+        /* Tailwind setzt bei divide-* die Rahmenfarbe auf den direkten
+           Geschwisterelementen. Die normalen border-gray-*-Regeln greifen
+           dort deshalb nicht und ließen Tabellenzeilen im Dunkelmodus fast
+           weiß erscheinen. */
+        #app-shell[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+        #app-shell[data-theme="dark"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+          border-color: #232326 !important;
+        }
+        #app-shell[data-theme="dark"] .divide-gray-300 > :not([hidden]) ~ :not([hidden]) {
+          border-color: #2f2f34 !important;
+        }
+        #app-shell[data-theme="dark"] table tbody tr + tr {
+          border-top-color: #232326 !important;
+        }
         #app-shell[data-theme="dark"] .nav-active {
           background-color: var(--accent-tint) !important;
           color: var(--primary-on-surface) !important;

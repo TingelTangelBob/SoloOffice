@@ -1214,6 +1214,60 @@
     --dashboard-chart-surface: #141416;
   }
 
+  /* Schnellzugriff bleibt als Reihe einzelner Aktionen sichtbar, ohne eine
+     zusätzliche Karte um die vier Schaltflächen. Alle Flächen und Kanten
+     folgen den Theme-Variablen, damit der Dunkelmodus keine weißen Buttons
+     übernimmt. */
+  #app-shell .dashboard-quick-action {
+    display: flex;
+    min-height: 7rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--container-radius);
+    background-color: var(--surface-raised);
+    padding: 1rem 0.75rem;
+    text-align: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ink-strong);
+    transition: background-color 150ms ease, border-color 150ms ease,
+      color 150ms ease;
+  }
+
+  #app-shell .dashboard-quick-action:hover {
+    border-color: var(--accent-edge);
+    background-color: var(--surface-hover);
+    color: var(--primary-on-surface, var(--primary-color));
+  }
+
+  #app-shell .dashboard-quick-action:focus-visible {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-light);
+  }
+
+  #app-shell .dashboard-quick-action-icon {
+    display: inline-flex;
+    height: 3rem;
+    width: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background-color: var(--accent-tint);
+    color: var(--primary-on-surface, var(--primary-color));
+    transition: background-color 150ms ease, color 150ms ease,
+      transform 150ms ease;
+  }
+
+  #app-shell .dashboard-quick-action:hover .dashboard-quick-action-icon {
+    background-color: var(--accent-edge);
+    color: var(--ink-strong);
+    transform: scale(1.05);
+  }
+
 }
 
 @layer utilities {
