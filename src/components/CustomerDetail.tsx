@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Building2, Briefcase, Check, Download, Edit, FileCheck, FileText, Mail, MapPin, Phone, StickyNote, UserRound } from 'lucide-react';
+import { ArrowLeft, Building2, Briefcase, Check, Download, Edit, FileCheck, FileText, Mail, Phone, StickyNote, UserRound } from 'lucide-react';
 import type { CreditNote, Customer, Invoice, JobEntry, Quote } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
