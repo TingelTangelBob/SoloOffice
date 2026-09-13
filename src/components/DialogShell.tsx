@@ -45,7 +45,7 @@ export function DialogShell({
     ? 'h-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),42rem)]'
     : 'h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2.5rem)] sm:max-h-[calc(100dvh-2.5rem)]';
   const dialogGridClass = fitContent
-    ? 'grid-rows-[auto_auto_auto]'
+    ? 'grid-rows-[auto_minmax(0,1fr)_auto]'
     : 'grid-rows-[auto_minmax(0,1fr)_auto]';
   const content = (
     <>
