@@ -2,7 +2,7 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
-## Unveröffentlicht
+## v0.8.1 – UI-Überarbeitung und Kundenverwaltung
 
 - Die Oberfläche bekommt eine durchgehende Gestaltungsebene: Inter als selbst
   gehostete Schrift ohne externes CDN, neutrale statt blaustichiger Grautöne,
