@@ -28,6 +28,7 @@ interface SearchResult {
   title: string;
   subtitle: string;
   page: string;
+  icon: LucideIcon;
 }
 
 interface NavItem {
@@ -357,19 +358,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     ? [
         ...allNavItems
           .filter((item) => item.label.toLocaleLowerCase('de-DE').includes(normalizedSearchQuery))
-          .map((item) => ({ id: item.id, title: item.label, subtitle: 'Bereich öffnen', page: item.id })),
+          .map((item) => ({ id: item.id, title: item.label, subtitle: 'Bereich öffnen', page: item.id, icon: item.icon })),
         ...customers
           .filter((customer) => [customer.name, customer.customerNumber, customer.email].some((value) => value?.toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((customer) => ({ id: customer.id, title: customer.name, subtitle: `${terminology.entity.singular} ${customer.customerNumber}`, page: 'customers' })),
+          .map((customer) => ({ id: customer.id, title: customer.name, subtitle: `${terminology.entity.singular} ${customer.customerNumber}`, page: 'customers', icon: Users })),
         ...invoices
           .filter((invoice) => [invoice.invoiceNumber, invoice.customerName, invoice.notes].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((invoice) => ({ id: invoice.id, title: invoice.invoiceNumber || 'Rechnung', subtitle: `Rechnung · ${invoice.customerName}`, page: 'invoices' })),
+          .map((invoice) => ({ id: invoice.id, title: invoice.invoiceNumber || 'Rechnung', subtitle: `Rechnung · ${invoice.customerName}`, page: 'invoices', icon: FileText })),
         ...quotes
           .filter((quote) => [quote.quoteNumber, quote.customerName, quote.notes].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((quote) => ({ id: quote.id, title: quote.quoteNumber || 'Angebot', subtitle: `Angebot · ${quote.customerName}`, page: 'quotes' })),
+          .map((quote) => ({ id: quote.id, title: quote.quoteNumber || 'Angebot', subtitle: `Angebot · ${quote.customerName}`, page: 'quotes', icon: FileCheck })),
         ...jobEntries
           .filter((job) => [job.jobNumber, job.title, job.customerName, job.description].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((job) => ({ id: job.id, title: job.title || job.jobNumber || terminology.work.singular, subtitle: `${terminology.work.singular} · ${job.customerName}`, page: 'jobs' })),
+          .map((job) => ({ id: job.id, title: job.title || job.jobNumber || terminology.work.singular, subtitle: `${terminology.work.singular} · ${job.customerName}`, page: 'jobs', icon: Briefcase })),
       ].slice(0, 10)
     : [];
 
@@ -461,10 +462,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   handlePageChange(result.page);
                   setSearchQuery('');
                 }}
-                className="w-full px-3 py-2 text-left hover:bg-gray-50"
+                className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-gray-50"
               >
-                <div className="truncate text-sm font-medium text-gray-900">{result.title}</div>
-                <div className="truncate text-xs text-gray-500">{result.subtitle}</div>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-100 text-primary-custom" aria-hidden="true">
+                  <result.icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-gray-900">{result.title}</span>
+                  <span className="block truncate text-xs text-gray-500">{result.subtitle}</span>
+                </span>
               </button>
             )) : (
               <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>

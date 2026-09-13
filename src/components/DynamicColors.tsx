@@ -417,21 +417,25 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .action-icon-blue:focus-visible {
           background-color: #172554 !important;
           color: #bfdbfe !important;
+          border-color: #1e40af !important;
         }
         #app-shell[data-theme="dark"] .action-icon-green:hover,
         #app-shell[data-theme="dark"] .action-icon-green:focus-visible {
           background-color: #052e16 !important;
           color: #bbf7d0 !important;
+          border-color: #166534 !important;
         }
         #app-shell[data-theme="dark"] .action-icon-red:hover,
         #app-shell[data-theme="dark"] .action-icon-red:focus-visible {
           background-color: #450a0a !important;
           color: #fecaca !important;
+          border-color: #991b1b !important;
         }
         #app-shell[data-theme="dark"] .action-icon-indigo:hover,
         #app-shell[data-theme="dark"] .action-icon-indigo:focus-visible {
           background-color: #1e1b4b !important;
           color: #c7d2fe !important;
+          border-color: #4338ca !important;
         }
         #app-shell[data-theme="dark"] .bg-gray-50 {
           background-color: #0a0a0b !important;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
-import { Save, X, Plus, Trash2, Calculator, Edit, ChevronUp, ChevronDown, GripVertical, Link2 } from 'lucide-react';
+import { Save, X, Plus, Trash2, Calculator, Edit, FileText, ChevronUp, ChevronDown, GripVertical, Link2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -1034,19 +1034,30 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
   } = calculateTotals();
 
   return (
-    <div className="space-y-4 lg:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4">
-        <div className="flex justify-between items-start">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 break-words">
-              {invoice ? 'Rechnung bearbeiten' : 'Neue Rechnung'}
-            </h2>
-          <p className="text-gray-600 mt-1 text-sm sm:text-base break-words">
-            {invoice ? `${invoice.invoiceNumber}` : 'Erstellen Sie eine neue Rechnung'}
-          </p>
+    <>
+      <DialogShell
+        titleId="invoice-editor-dialog-title"
+        icon={FileText}
+        title={invoice ? 'Rechnung bearbeiten' : 'Neue Rechnung'}
+        description={invoice ? `${invoice.invoiceNumber} bearbeiten und speichern.` : 'Erstellen Sie eine Rechnung mit Kunde, Positionen und Zahlungsangaben.'}
+        onClose={requestClose}
+        onSubmit={handleSubmit}
+        size="xl"
+        zIndexClassName="z-[1000]"
+        footer={(
+          <>
+            <button type="button" onClick={() => void requestClose()} disabled={isSaving} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">Abbrechen</button>
+            <button type="submit" disabled={isSaving || Boolean(validationError)} className="btn-primary inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"><Save className="mr-2 h-5 w-5" />{isSaving ? 'Wird gespeichert …' : invoice ? 'Änderungen speichern' : 'Rechnung erstellen'}</button>
+          </>
+        )}
+      >
+        <div className="space-y-4 pb-2 sm:space-y-5">
+          {invoice?.documentSnapshot && (
+            <p className="text-sm text-gray-600">Beim Speichern werden die aktuellen Firmen- und Kundendaten für diesen Entwurf übernommen.</p>
+          )}
+
           {invoice && ((invoice.sourceQuoteNumber || invoice.sourceQuoteId) || (invoice.sourceJobs && invoice.sourceJobs.length > 0)) && (
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
               <span className="inline-flex items-center gap-1.5 font-semibold"><Link2 className="h-3.5 w-3.5" />Quelle</span>
               {invoice.sourceQuoteNumber && <span>Angebot {invoice.sourceQuoteNumber}</span>}
               {invoice.sourceJobs && invoice.sourceJobs.length > 0 && (
@@ -1054,23 +1065,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
               )}
             </div>
           )}
-        </div>
-          <button
-            onClick={() => void requestClose()}
-            disabled={isSaving}
-            className="text-gray-500 hover:text-gray-700 ml-4 flex-shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Rechnung schließen"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-      </div>
 
-      {invoice?.documentSnapshot && (
-        <p className="text-sm text-gray-600">Beim Speichern werden die aktuellen Firmen- und Kundendaten für diesen Entwurf übernommen.</p>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Grundinformationen</h3>
@@ -1504,29 +1499,12 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
           />
         </div>
 
-        {/* Actions */}
-        <div className="form-action-bar">
-          <button
-            type="submit"
-            disabled={isSaving || Boolean(validationError)}
-            className="btn-primary order-2 rounded-lg px-6 py-3 transition-colors sm:py-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSaving ? <span>Wird gespeichert …</span> : <><Save className="h-4 w-4" /><span>{invoice ? 'Aktualisieren' : 'Erstellen'}</span></>}
-          </button>
-          <button
-            type="button"
-            onClick={() => void requestClose()}
-            disabled={isSaving}
-            className="order-1 rounded-lg border border-gray-300 px-6 py-3 text-gray-700 transition-colors hover:bg-gray-50 sm:py-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Abbrechen
-          </button>
-        </div>
-      </form>
+      </div>
+      </DialogShell>
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
           <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
@@ -1849,7 +1827,7 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
 
       {/* Invoice Template Manager Modal */}
       {showInvoiceTemplateManager && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-900">Rechnungsvorlagen verwalten</h3>
@@ -1963,6 +1941,6 @@ export function InvoiceEditor({ invoice, onClose, onCreateCustomer, onNavigateTo
         onNavigateToSettings={() => onNavigateToSettings && onNavigateToSettings()}
         type={showRatesRedirectModal.type}
       />
-    </div>
+    </>
   );
 }

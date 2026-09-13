@@ -301,7 +301,20 @@
 
   /* Einheitliche Textaktionen in Karten und kompakten Listen */
   .action-button {
-    @apply inline-flex min-h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors duration-200 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .action-button:hover:not(:disabled) {
+    border-color: var(--line-strong, #d6d6db);
+    background-color: var(--surface-hover, #ededef);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+    transform: translateY(-1px);
+  }
+
+  .action-button:active:not(:disabled) {
+    box-shadow: none;
+    transform: translateY(0) scale(0.98);
   }
 
   /* Dokumentkarten teilen sich eine responsive Statusanzeige. */
@@ -336,7 +349,25 @@
 
   /* Einheitliche Icon-Aktionen in Listen und Tabellen */
   .action-icon-button {
-    @apply inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md shadow-sm transition-colors duration-200;
+    @apply inline-flex h-8 w-8 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md;
+    border: 1px solid transparent;
+    box-shadow: none;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .action-icon-button:hover:not(:disabled) {
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+    transform: translateY(-1px);
+  }
+
+  .action-icon-button:active:not(:disabled) {
+    box-shadow: none;
+    transform: translateY(0) scale(0.96);
+  }
+
+  .action-icon-button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   /* Kompakte Aktionen in den Positionszeilen. Die globale Touch-Target-Regel
@@ -451,21 +482,25 @@
   .action-icon-blue:hover,
   .action-icon-blue:focus-visible {
     @apply bg-blue-50 text-blue-700;
+    border-color: #bfdbfe;
   }
 
   .action-icon-green:hover,
   .action-icon-green:focus-visible {
     @apply bg-green-50 text-green-700;
+    border-color: #bbf7d0;
   }
 
   .action-icon-red:hover,
   .action-icon-red:focus-visible {
     @apply bg-red-50 text-red-700;
+    border-color: #fecaca;
   }
 
   .action-icon-indigo:hover,
   .action-icon-indigo:focus-visible {
     @apply bg-indigo-50 text-indigo-700;
+    border-color: #c7d2fe;
   }
 
   /* Native scrolling stays available while the visible scrollbar is rendered as an overlay. */
@@ -1192,6 +1227,7 @@
 
 @layer components {
   #app-shell {
+    --container-radius: 0.5rem;
     --surface-page: #f6f6f7;
     --surface-raised: #ffffff;
     --surface-sunken: #f1f1f3;
@@ -1210,6 +1246,14 @@
        für den Fall, dass das Skript noch nicht gelaufen ist. */
     --accent-tint: rgba(37, 99, 235, 0.12);
     --accent-edge: rgba(37, 99, 235, 0.42);
+  }
+
+  /* Auswertungen setzt den Referenzradius für Karten und größere Container:
+     8px statt der bisher gemischten 12px/16px. Kleine Felder und Pills nutzen
+     weiterhin ihre eigenen Klassen wie `rounded-md` und `rounded-full`. */
+  #app-shell .rounded-xl,
+  #app-shell .rounded-2xl {
+    border-radius: var(--container-radius) !important;
   }
 
   #app-shell[data-theme="dark"] {
@@ -1696,7 +1740,7 @@
   .theme-tab-group {
     overflow: hidden;
     border: 1px solid var(--line-strong, #d6d6db);
-    border-radius: 0.75rem;
+    border-radius: var(--container-radius, 0.5rem);
     background-color: var(--surface-raised);
     box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
   }
