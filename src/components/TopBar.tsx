@@ -47,9 +47,17 @@ export function TopBar({
 }: TopBarProps) {
   const noticeCount = notices.length;
 
+  /* Titel und Seitenaktionen teilen sich den Platz neben der Suche zu
+     gleichen Teilen – ab `xl` außer die Aktionen brauchen mehr: Dann ist die
+     rechte Spalte mindestens so breit wie ihr Inhalt, damit „Importieren ·
+     Export · Neuer Kunde“ auf 1440 px nicht angeschnitten wird. Die Suche
+     bleibt mittig, solange der Platz reicht, und rückt sonst nach links statt
+     dass Aktionen im versteckten Scrollbereich verschwinden. Unterhalb von
+     `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
+     auf null drücken oder die Leiste sprengen. */
   return (
-    <header className="topbar-shell sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6">
-      <div className="flex min-w-0 basis-0 flex-1 items-center gap-1">
+    <header className="topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 xl:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)]">
+      <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={onOpenMobileMenu}
@@ -79,7 +87,7 @@ export function TopBar({
           wird auf kleinen Geräten von ihrem Symbol aus aufgeklappt. */}
       <div className="topbar-search-slot shrink-0">{searchSlot}</div>
 
-      <div className="flex min-w-0 basis-0 flex-1 items-center justify-end gap-1 lg:gap-2">
+      <div className="flex min-w-0 items-center justify-end gap-1 lg:gap-2">
         <div id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-[min(55vw,42rem)]" />
 
         {/* Dezente Abtrennung zwischen Seitenaktionen und Hinweisen. */}
