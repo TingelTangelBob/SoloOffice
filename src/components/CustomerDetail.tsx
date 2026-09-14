@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Building2, Briefcase, Check, Download, Edit, FileCheck, FileText, Mail, Phone, StickyNote, UserRound } from 'lucide-react';
+import { Activity, ArrowLeft, Building2, Briefcase, Check, Download, Edit, FileCheck, FileText, Mail, Phone, StickyNote, UserRound } from 'lucide-react';
 import type { CreditNote, Customer, Invoice, JobEntry, Quote } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
@@ -88,7 +88,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
   const { company } = useCompany();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const { notify } = useFeedback();
   const terminology = getTerminology(company.terminologyProfile);
   const canWrite = can('data.write');
@@ -134,6 +134,44 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   );
   const customerQuotes = useMemo(() => quotes.filter(quote => quote.customerId === customerId), [customerId, quotes]);
   const customerJobs = useMemo(() => jobEntries.filter(job => job.customerId === customerId), [customerId, jobEntries]);
+  const customerActivities = useMemo(() => {
+    if (!customer) return [];
+    const actor = user?.displayName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Workspace';
+    const activityItems = [
+      {
+        id: `customer-${customer.id}`,
+        date: customer.createdAt,
+        Icon: UserRound,
+        text: `${actor} hat ${customer.name} als ${typeLabel(customer)} angelegt.`,
+      },
+      ...customerInvoices.map(invoice => ({
+        id: `invoice-${invoice.id}`,
+        date: invoice.createdAt,
+        Icon: FileText,
+        text: `${actor} hat Rechnung ${invoice.invoiceNumber} für Kunde ${customer.name} angelegt.`,
+      })),
+      ...customerCreditNotes.map(note => ({
+        id: `credit-note-${note.id}`,
+        date: note.createdAt,
+        Icon: FileCheck,
+        text: `${actor} hat Gutschrift ${note.invoiceNumber} für Kunde ${customer.name} angelegt.`,
+      })),
+      ...customerQuotes.map(quote => ({
+        id: `quote-${quote.id}`,
+        date: quote.createdAt,
+        Icon: FileCheck,
+        text: `${actor} hat Angebot ${quote.quoteNumber} für Kunde ${customer.name} angelegt.`,
+      })),
+      ...customerJobs.map(job => ({
+        id: `job-${job.id}`,
+        date: job.createdAt,
+        Icon: Briefcase,
+        text: `${actor} hat ${terminology.work.singular} ${job.jobNumber} für Kunde ${customer.name} angelegt.`,
+      })),
+    ];
+
+    return activityItems.sort((left, right) => right.date.getTime() - left.date.getTime());
+  }, [customer, customerCreditNotes, customerInvoices, customerJobs, customerQuotes, terminology.work.singular, user]);
   const money = (value: number) => formatCurrency(value, company.locale, company.numberFormat, company.currency);
 
   if (!customer) {
@@ -298,67 +336,69 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
           {activeTab === 'overview' && (
             <>
               <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-              <div className="rounded-lg border border-gray-200 p-5">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><TypeIcon customer={customer} /></span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Steckbrief</p>
-                    <h2 className="mt-1 truncate text-xl font-semibold text-gray-900">{customer.name}</h2>
-                    <p className="mt-1 text-sm text-gray-500">{typeLabel(customer)}</p>
+                <section className="rounded-lg border border-gray-200 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold text-gray-900">Verlauf</h2>
+                      <p className="mt-1 text-sm text-gray-500">Die neuesten Aktivitäten dieses Kunden.</p>
+                    </div>
+                    <Activity className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
                   </div>
-                </div>
-                <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Adresse</dt><dd className="mt-1 text-sm leading-6 text-gray-900">{[customer.address, customer.addressSupplement, [customer.postalCode, customer.city].filter(Boolean).join(' '), customer.country].filter(Boolean).map((value, index) => <span key={`${value}-${index}`} className="block">{value}</span>)}</dd></div>
-                  <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{terminology.entity.numberLabel}</dt><dd className="mt-1 text-sm text-gray-900 tabular-nums">{customer.customerNumber}</dd></div>
-                  {customer.taxId &&<div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
-                  {customer.leitwegId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Leitweg-ID</dt><dd className="mt-1 break-all text-sm text-gray-900">{customer.leitwegId}</dd></div>}
-                </dl>
-              </div>
+                  {customerActivities.length > 0 ? (
+                    <ol className="mt-5 space-y-5">
+                      {customerActivities.map((activity, index) => {
+                        const Icon = activity.Icon;
+                        return (
+                          <li key={activity.id} className="relative flex gap-3">
+                            {index < customerActivities.length - 1 && <span className="absolute bottom-[-1.25rem] left-4 top-9 w-px bg-gray-200" aria-hidden="true" />}
+                            <span className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-custom/10 text-primary-custom"><Icon className="h-4 w-4" aria-hidden="true" /></span>
+                            <div className="min-w-0 pt-0.5">
+                              <p className="text-sm leading-6 text-gray-800">{activity.text}</p>
+                              <p className="mt-0.5 text-xs text-gray-500">{formatDate(activity.date, company.locale, company.dateFormat)}</p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    <p className="mt-5 rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">Noch keine Aktivitäten für diesen Kunden.</p>
+                  )}
+                </section>
 
-              <div className="space-y-5">
-                <div className="rounded-lg border border-gray-200 p-5">
-                  <h2 className="text-base font-semibold text-gray-900">Kontakt</h2>
-                  <div className="mt-4 space-y-3 text-sm">
-                    <div className="flex min-w-0 items-center gap-3"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate text-gray-900">{customer.email || 'Keine E-Mail hinterlegt'}</span></div>
-                    <div className="flex min-w-0 items-center gap-3"><Phone className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate text-gray-900">{customer.phone || 'Keine Telefonnummer hinterlegt'}</span></div>
-                    {(customer.additionalEmails || []).map(email => <div key={email.id} className="flex min-w-0 items-center gap-3 text-gray-600"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate">{email.email}{email.label ? ` · ${email.label}` : ''}</span></div>)}
-                  </div>
+                <div className="space-y-5">
+                  <section className="rounded-lg border border-gray-200 p-5">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><TypeIcon customer={customer} /></span>
+                      <div className="min-w-0">
+                        <h2 className="truncate text-xl font-semibold text-gray-900">{customer.name}</h2>
+                        <p className="mt-1 text-sm text-gray-500">{typeLabel(customer)}</p>
+                      </div>
+                    </div>
+                    <h3 className="mt-5 text-base font-semibold text-gray-900">Kontakt</h3>
+                    <div className="mt-4 space-y-3 text-sm">
+                      <div className="flex min-w-0 items-center gap-3"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate text-gray-900">{customer.email || 'Keine E-Mail hinterlegt'}</span></div>
+                      <div className="flex min-w-0 items-center gap-3"><Phone className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate text-gray-900">{customer.phone || 'Keine Telefonnummer hinterlegt'}</span></div>
+                      {(customer.additionalEmails || []).map(email => <div key={email.id} className="flex min-w-0 items-center gap-3 text-gray-600"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate">{email.email}{email.label ? ` · ${email.label}` : ''}</span></div>)}
+                    </div>
+                    <div className="mt-5 border-t border-gray-100 pt-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Adresse</p>
+                      <p className="mt-1 text-sm leading-6 text-gray-900">{[customer.address, customer.addressSupplement, [customer.postalCode, customer.city].filter(Boolean).join(' '), customer.country].filter(Boolean).map((value, index) => <span key={`${value}-${index}`} className="block">{value}</span>)}</p>
+                    </div>
+                    {(customer.taxId || customer.leitwegId) && <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {customer.taxId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
+                      {customer.leitwegId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Leitweg-ID</dt><dd className="mt-1 break-all text-sm text-gray-900">{customer.leitwegId}</dd></div>}
+                    </dl>}
+                  </section>
+
+                  <section className="rounded-lg border border-gray-200 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-semibold text-gray-900">Notizen</h2>
+                      <span className="text-xs text-gray-500">{notes.length}/5000</span>
+                    </div>
+                    <textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={!canWrite || isSavingNotes} maxLength={5000} rows={6} className="form-input mt-3 w-full resize-y" placeholder="Notizen zum Kunden" />
+                    {canWrite && <div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveNotes()} disabled={isSavingNotes} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{isSavingNotes ? 'Speichern …' : 'Notizen speichern'}</button></div>}
+                  </section>
                 </div>
-                <div className="rounded-lg border border-gray-200 p-5">
-                  <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-gray-900">Notizen</h2><button type="button" onClick={() => openTab('notes')} className="text-sm font-medium text-primary-custom hover:underline">Bearbeiten</button></div>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-600">{customer.notes || 'Noch keine Notizen hinterlegt.'}</p>
-                </div>
-              </div>
-              </div>
-            <div className="mt-5 grid gap-5 lg:grid-cols-2">
-              <section className="rounded-lg border border-gray-200 p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">Aktuelle Rechnungen</h2>
-                    <p className="mt-1 text-xs text-gray-500">Die zuletzt bearbeiteten Rechnungen dieses Kunden.</p>
-                  </div>
-                  <button type="button" onClick={() => openTab('invoices')} className="text-sm font-medium text-primary-custom hover:underline">Alle anzeigen</button>
-                </div>
-                {renderDocumentTable(
-                  [...customerInvoices].sort((left, right) => new Date(right.issueDate).getTime() - new Date(left.issueDate).getTime()).slice(0, 5),
-                  'invoices',
-                  true,
-                )}
-              </section>
-              <section className="rounded-lg border border-gray-200 p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">Aktuelle Aufträge</h2>
-                    <p className="mt-1 text-xs text-gray-500">Die zuletzt bearbeiteten Aufträge dieses Kunden.</p>
-                  </div>
-                  <button type="button" onClick={() => openTab('jobs')} className="text-sm font-medium text-primary-custom hover:underline">Alle anzeigen</button>
-                </div>
-                {renderDocumentTable(
-                  [...customerJobs].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime()).slice(0, 5),
-                  'jobs',
-                  true,
-                )}
-              </section>
               </div>
             </>
           )}
