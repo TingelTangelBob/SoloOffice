@@ -239,7 +239,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     icon: FileText,
     children: [
       { id: 'recurring-invoices', label: 'Wiederkehrend' },
-      ...(company.remindersEnabled ? [{ id: 'reminders', label: 'Mahnungen' }] : []),
+      { id: 'reminders', label: 'Mahnungen' },
       { id: 'credit-notes', label: 'Gutschriften' },
     ],
   };

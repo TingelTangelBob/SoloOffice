@@ -18,6 +18,8 @@ import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
 type FormDraft = { customerId: string; invoiceId: string; reason: string; issueDate: string; items: ItemDraft[] };
@@ -52,6 +54,7 @@ export function CreditNoteManagement() {
   const [editingNote, setEditingNote] = useState<CreditNote | null>(null);
   const [form, setForm] = useState<FormDraft>(emptyForm());
   const [busy, setBusy] = useState<string | null>(null);
+  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
   const [previewDocument, setPreviewDocument] = useState<PreviewDocument | null>(null);
   const locale = company?.locale || 'de-DE';
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
@@ -61,6 +64,22 @@ export function CreditNoteManagement() {
   useEffect(() => { void load(); }, []);
   const customerName = (id: string) => customers.find(customer => customer.id === id)?.name || `Unbekannter ${terminology.entity.singular}`;
   const total = (note: CreditNote) => Math.abs(Number(note.total || 0));
+  const referenceNumber = (note: CreditNote) => {
+    const referenceId = (note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId;
+    if (!referenceId) return '–';
+    return invoices.find(invoice => invoice.id === referenceId)?.invoiceNumber || referenceId;
+  };
+  const handleSort = (key: string) => setSortState(previous => previous.key === key
+    ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+    : { key, direction: 'asc' });
+  const sortedNotes = sortByTableState(notes, sortState, (note, key) => {
+    if (key === 'customer') return customerName(note.customerId);
+    if (key === 'date') return note.issueDate;
+    if (key === 'amount') return total(note);
+    if (key === 'status') return creditNoteStatusLabel(note.status);
+    if (key === 'reference') return referenceNumber(note);
+    return note.invoiceNumber;
+  });
   const openNew = () => { setEditingNote(null); setForm(emptyForm()); setOpen(true); };
   const openEdit = (note: CreditNote) => {
     setEditingNote(note);
@@ -130,11 +149,6 @@ export function CreditNoteManagement() {
       <p>Noch keine Gutschriften vorhanden.</p>
       <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Plus className="h-4 w-4" />Gutschrift erstellen</button>
     </div> : (() => {
-      const referenceNumber = (note: CreditNote) => {
-        const referenceId = (note as CreditNote & { referenceInvoiceId?: string }).referenceInvoiceId;
-        if (!referenceId) return '–';
-        return invoices.find(invoice => invoice.id === referenceId)?.invoiceNumber || referenceId;
-      };
       const amount = (note: CreditNote) => `−${formatCurrency(total(note), locale, company?.numberFormat, company?.currency)}`;
       const actionItems = (note: CreditNote) => (
         <>
@@ -158,12 +172,12 @@ export function CreditNoteManagement() {
             <table className="w-full table-fixed text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-32 px-4 py-3 text-left font-medium text-gray-500">Nummer</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">{terminology.entity.singular}</th>
-                  <th className="w-24 px-4 py-3 text-left font-medium text-gray-500">Datum</th>
-                  <th className="w-28 px-4 py-3 text-right font-medium text-gray-500">Betrag</th>
-                  <th className="w-28 px-4 py-3 text-left font-medium text-gray-500">Status</th>
-                  <th className="w-44 px-4 py-3 text-left font-medium text-gray-500">Ursprungsrechnung</th>
+                  <SortableTableHeader label="Nummer" sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-4 py-3" />
+                  <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
+                  <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-4 py-3" />
+                  <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-4 py-3" align="right" />
+                  <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-4 py-3" />
+                  <SortableTableHeader label="Ursprungsrechnung" sortKey="reference" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-44 px-4 py-3" />
                   <th
                     style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
                     className={`sticky right-0 z-20 bg-gray-50 py-3 text-left font-medium text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}
@@ -173,7 +187,7 @@ export function CreditNoteManagement() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {notes.map(note => (
+                {sortedNotes.map(note => (
                   <tr key={note.id} className="group hover:bg-gray-50">
                     <td className="w-32 truncate px-4 py-3 font-medium">{note.invoiceNumber || '–'}</td>
                     <td className="max-w-0 px-4 py-3"><span className="block truncate">{customerName(note.customerId)}</span></td>
@@ -210,7 +224,7 @@ export function CreditNoteManagement() {
           </div>
 
           <div className="divide-y divide-gray-100 tablet:hidden">
-            {notes.map(note => (
+            {sortedNotes.map(note => (
               <article key={note.id} className="p-4">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">

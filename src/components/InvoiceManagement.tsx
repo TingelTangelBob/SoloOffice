@@ -35,6 +35,8 @@ import type { CsvColumn } from '../utils/csvExport';
 import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '../utils/invoicePeriod';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -77,6 +79,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const openedInitialNewInvoice = useRef(false);
   const { query: searchTerm } = usePageSearch({ placeholder: 'Rechnungen suchen …', initialQuery: initialSearchTerm });
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
+  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
   const [invoiceStartDate, setInvoiceStartDate] = useState('');
   const [invoiceEndDate, setInvoiceEndDate] = useState('');
   const [isExporting, setIsExporting] = useState<string | null>(null);
@@ -206,24 +209,31 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   }, [invoiceRecords, updateInvoice, canWrite]);
 
-  const filteredInvoices = invoiceRecords.filter(invoice => {
-    const invoiceNumber = invoice.invoiceNumber || '';
-    const customerName = invoice.customerName || '';
-    const searchTermLower = searchTerm.toLowerCase();
-    
-    const matchesSearch = invoiceNumber.toLowerCase().includes(searchTermLower) ||
-                         customerName.toLowerCase().includes(searchTermLower);
-    
-    const matchesStatus = filterStatus === 'all' || (
-      filterStatus === 'not-paid'
-        ? invoice.status !== 'paid'
-        : invoice.status === filterStatus
-    );
+  const handleSort = (key: string) => {
+    setSortState(previous => previous.key === key
+      ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: 'asc' });
+  };
 
-    const matchesDateRange = isDateInInclusiveRange(invoice.issueDate, invoiceStartDate, invoiceEndDate);
-    
-    return matchesSearch && matchesStatus && matchesDateRange;
-  });
+  const filteredInvoices = useMemo(() => {
+    const filtered = invoiceRecords.filter(invoice => {
+      const invoiceNumber = invoice.invoiceNumber || '';
+      const customerName = invoice.customerName || '';
+      const searchTermLower = searchTerm.toLowerCase();
+      const matchesSearch = invoiceNumber.toLowerCase().includes(searchTermLower) || customerName.toLowerCase().includes(searchTermLower);
+      const matchesStatus = filterStatus === 'all' || (filterStatus === 'not-paid' ? invoice.status !== 'paid' : invoice.status === filterStatus);
+      const matchesDateRange = isDateInInclusiveRange(invoice.issueDate, invoiceStartDate, invoiceEndDate);
+      return matchesSearch && matchesStatus && matchesDateRange;
+    });
+    return sortByTableState(filtered, sortState, (invoice, key) => {
+      if (key === 'date') return invoice.issueDate;
+      if (key === 'dueDate') return invoice.dueDate;
+      if (key === 'amount') return invoice.total;
+      if (key === 'customer') return invoice.customerName;
+      if (key === 'status') return invoice.status;
+      return invoice.invoiceNumber;
+    }, locale);
+  }, [filterStatus, invoiceEndDate, invoiceRecords, invoiceStartDate, locale, searchTerm, sortState]);
   const hasInvalidInvoiceDateRange = Boolean(invoiceStartDate && invoiceEndDate && invoiceStartDate > invoiceEndDate);
 
   const handleOpenEditor = useCallback((invoice?: Invoice) => {
@@ -264,6 +274,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const handleCloseEditor = () => {
     setIsEditorOpen(false);
     setEditingInvoice(null);
+    if (initialFilter === 'new' && initialCustomerId) {
+      onNavigate?.('customer', initialCustomerId);
+    }
   };
 
   const canDeleteInvoice = (invoice: Invoice) => (
@@ -1187,26 +1200,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                 <th className="px-3 py-3 text-left w-16">
                   <span className="sr-only">Auswahl</span>
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Datum
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                  Rechnungsnr.
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {terminology.entity.singular}
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Fällig am
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Betrag
-                </th>
-                <th
-                  className={`py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}
-                >
-                  <span className={showStatusLabel ? undefined : 'sr-only'}>Status</span>
-                </th>
+                <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-3 py-3" />
+                <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
+                <SortableTableHeader label="Fällig am" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
                   style={{ width: showInlineActions ? INVOICE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
                   className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}

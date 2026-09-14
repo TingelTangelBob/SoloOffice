@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle, Upload } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -26,6 +26,8 @@ import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout'
 import { useFeedback } from '../context/FeedbackContext';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -58,6 +60,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [quoteLoadError, setQuoteLoadError] = useState<string | null>(null);
   const { query: searchTerm } = usePageSearch({ placeholder: 'Angebote suchen …' });
   const [filterStatus, setFilterStatus] = useState('all');
+  const [sortState, setSortState] = useState<SortState>({ key: 'quoteNumber', direction: 'asc' });
   const [selectedQuoteIds, setSelectedQuoteIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
   const [emailModal, setEmailModal] = useState<{
@@ -156,18 +159,30 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     }
   }, [quotes, canWrite]);
 
-  const filteredQuotes = quotes.filter(quote => {
-    const quoteNumber = quote.quoteNumber || '';
-    const customerName = quote.customerName || '';
-    const searchTermLower = searchTerm.toLowerCase();
-    
-    const matchesSearch = quoteNumber.toLowerCase().includes(searchTermLower) ||
-                         customerName.toLowerCase().includes(searchTermLower);
-    
-    const matchesStatus = filterStatus === 'all' || quote.status === filterStatus;
-    
-    return matchesSearch && matchesStatus;
-  });
+  const handleSort = (key: string) => {
+    setSortState(previous => previous.key === key
+      ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: 'asc' });
+  };
+
+  const filteredQuotes = useMemo(() => {
+    const filtered = quotes.filter(quote => {
+      const quoteNumber = quote.quoteNumber || '';
+      const customerName = quote.customerName || '';
+      const searchTermLower = searchTerm.toLowerCase();
+      const matchesSearch = quoteNumber.toLowerCase().includes(searchTermLower) || customerName.toLowerCase().includes(searchTermLower);
+      const matchesStatus = filterStatus === 'all' || quote.status === filterStatus;
+      return matchesSearch && matchesStatus;
+    });
+    return sortByTableState(filtered, sortState, (quote, key) => {
+      if (key === 'date') return quote.issueDate;
+      if (key === 'validUntil') return quote.validUntil;
+      if (key === 'amount') return quote.total;
+      if (key === 'customer') return quote.customerName;
+      if (key === 'status') return quote.status;
+      return quote.quoteNumber;
+    }, locale);
+  }, [filterStatus, locale, quotes, searchTerm, sortState]);
 
   const handleOpenEditor = (quote?: Quote) => {
     if (!canWrite) {
@@ -827,26 +842,12 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <th className="px-3 py-3 text-left w-16">
                   <span className="sr-only">Auswahl</span>
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Datum
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">
-                  Angebotsnummer
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {terminology.entity.singular}
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Gültig bis
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                  Betrag
-                </th>
-                <th
-                  className={`py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}
-                >
-                  <span className={showStatusLabel ? undefined : 'sr-only'}>Status</span>
-                </th>
+                <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Angebotsnummer" sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-36 px-3 py-3" />
+                <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
+                <SortableTableHeader label="Gültig bis" sortKey="validUntil" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
                   style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
                   className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}

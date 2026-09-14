@@ -261,7 +261,7 @@ function SortableQuoteItem({
     <div 
       ref={setNodeRef} 
       style={style}
-      className={`relative border border-gray-200 rounded-lg p-3 bg-white ${isDiscountDropdownOpen ? 'z-50' : ''} ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''}`}
+      className={`relative border border-gray-200 rounded-lg p-2 bg-white ${isDiscountDropdownOpen ? 'z-50' : ''} ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''}`}
     >
       {/* Desktop Layout - Single Row */}
       <div className="hidden items-center gap-3 lg:grid" style={{ gridTemplateColumns }}>
@@ -1361,7 +1361,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 items={items.map(item => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {items.map((item, index) => (
                     <SortableQuoteItem
                       key={item.id}

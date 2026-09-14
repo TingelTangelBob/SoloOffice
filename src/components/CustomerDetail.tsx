@@ -9,11 +9,13 @@ import { useAuth } from '../context/AuthContext';
 import { useQuotes } from '../context/QuoteContext';
 import { useFeedback } from '../context/FeedbackContext';
 import { apiService } from '../services/api';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 import { PageHeader } from './PageHeader';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 interface CustomerDetailProps {
   customerId?: string;
@@ -96,6 +98,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   const [notes, setNotes] = useState(customer?.notes || '');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [creditNotesLoading, setCreditNotesLoading] = useState(true);
+  const [documentSort, setDocumentSort] = useState<SortState>({ key: 'number', direction: 'asc' });
 
   useEffect(() => {
     setActiveTab(tabFromValue(initialTab));
@@ -149,6 +152,9 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   const startInvoice = () => onNavigate('invoices', 'new', customer.id);
   const startQuote = () => onNavigate('quote-editor', 'new', customer.id);
   const startJob = () => onNavigate('jobs', 'new', customer.id);
+  const handleDocumentSort = (key: string) => setDocumentSort(previous => previous.key === key
+    ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+    : { key, direction: 'asc' });
   const saveNotes = async () => {
     if (!canWrite) return;
     setIsSavingNotes(true);
@@ -162,17 +168,52 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
     }
   };
 
-  const renderDocumentList = (items: Array<Invoice | CreditNote | Quote | JobEntry>, kind: CustomerDetailTab) => {
+  const renderDocumentTable = (items: Array<Invoice | CreditNote | Quote | JobEntry>, kind: CustomerDetailTab, compact = false) => {
     if (items.length === 0) {
       const action = kind === 'invoices' ? startInvoice : kind === 'quotes' ? startQuote : kind === 'jobs' ? startJob : undefined;
       const actionLabel = kind === 'invoices' ? 'Rechnung schreiben' : kind === 'quotes' ? 'Angebot erstellen' : kind === 'jobs' ? terminology.work.newLabel : undefined;
       return <EmptyRelation message={`Noch keine ${tabs.find(tab => tab.id === kind)?.label.toLocaleLowerCase('de-DE') || 'Einträge'} für diesen ${terminology.entity.singular}.`} actionLabel={actionLabel} onAction={action} />;
     }
 
+    const sortedItems = compact ? items : sortByTableState(items, documentSort, (item, key) => {
+      if (key === 'date') return 'jobNumber' in item ? item.date : 'issueDate' in item ? item.issueDate : '';
+      if (key === 'dueDate') return 'dueDate' in item ? item.dueDate : '';
+      if (key === 'validUntil') return 'validUntil' in item ? item.validUntil : '';
+      if (key === 'title') return 'title' in item ? item.title : '';
+      if (key === 'hours') return 'hoursWorked' in item ? item.hoursWorked : 0;
+      if (key === 'amount') return 'total' in item ? item.total : 0;
+      if (key === 'status') return item.status;
+      if ('invoiceNumber' in item) return item.invoiceNumber;
+      if ('quoteNumber' in item) return item.quoteNumber;
+      return 'jobNumber' in item ? item.jobNumber : '';
+    });
+
+    // Die Kurzlisten der Übersicht teilen sich eine Spalte mit dem Nachbarn:
+    // dort zählen Nummer, Datum, Betrag/Stunden und Status – ohne Mindestbreite
+    // und ohne Sortierung, die dort ohnehin nicht greifen würde.
+    const cellPadding = compact ? 'px-2 py-2.5' : 'px-3 py-3';
+    const headerPadding = compact ? 'px-2 py-2' : 'px-3 py-2.5';
+    const renderHeader = (label: string, sortKey: string, align: 'left' | 'right' = 'left') => compact
+      ? <th scope="col" className={`${headerPadding} text-xs font-medium uppercase tracking-wider text-gray-500 ${align === 'right' ? 'text-right' : 'text-left'}`}>{label}</th>
+      : <SortableTableHeader label={label} sortKey={sortKey} activeKey={documentSort.key} direction={documentSort.direction} onSort={handleDocumentSort} align={align} className={headerPadding} />;
+
     return (
       <div className="overflow-hidden rounded-lg border border-gray-200">
-        <div className="divide-y divide-gray-100">
-          {items.map(item => {
+        <div className="overflow-x-auto">
+          <table className={`w-full text-left text-sm ${compact ? '' : 'min-w-[760px]'}`}>
+            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <tr>
+                {renderHeader('Nummer', 'number')}
+                {renderHeader('Datum', 'date')}
+                {!compact && (kind === 'invoices' || kind === 'credit-notes') && renderHeader('Fällig', 'dueDate')}
+                {!compact && kind === 'quotes' && renderHeader('Gültig bis', 'validUntil')}
+                {!compact && kind === 'jobs' && renderHeader('Bezeichnung', 'title')}
+                {kind === 'jobs' ? renderHeader('Stunden', 'hours', 'right') : renderHeader('Betrag', 'amount', 'right')}
+                {renderHeader('Status', 'status')}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+          {sortedItems.map(item => {
             const isInvoice = 'invoiceNumber' in item;
             const isQuote = 'quoteNumber' in item;
             const isJob = 'jobNumber' in item;
@@ -181,29 +222,31 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
             const date = isJob ? item.date : 'issueDate' in item ? item.issueDate : new Date();
             const total = !isJob && 'total' in item ? item.total : undefined;
             return (
-              <button
-                type="button"
+              <tr
                 key={item.id}
                 onClick={() => {
                   if ('invoiceNumber' in item) onNavigate('invoices', 'all', item.invoiceNumber);
-                  else if ('quoteNumber' in item) onNavigate('quotes');
+                  else if ('quoteNumber' in item) onNavigate('quote-editor', item.id);
                   else if ('jobNumber' in item) onNavigate('jobs', undefined, item.jobNumber);
                 }}
-                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+                className="cursor-pointer transition-colors hover:bg-gray-50"
               >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-gray-900">{title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <span>{formatDate(date, company.locale, company.dateFormat)}</span>
-                    {!isJob && <StatusBadge status={item.status} />}
-                    {isJob && <StatusBadge status={item.status} />}
-                  </span>
-                </span>
-                {total !== undefined && <span className="shrink-0 text-sm font-medium text-gray-900 tabular-nums">{money(total)}</span>}
-              </button>
+                <td className={`whitespace-nowrap ${cellPadding} font-medium text-gray-900`}>{number || '–'}</td>
+                <td className={`whitespace-nowrap ${cellPadding} text-gray-600`}>{formatDate(date, company.locale, company.dateFormat)}</td>
+                {!compact && (kind === 'invoices' || kind === 'credit-notes') && <td className={`whitespace-nowrap ${cellPadding} text-gray-600`}>{'dueDate' in item ? formatDate(item.dueDate, company.locale, company.dateFormat) : '–'}</td>}
+                {!compact && kind === 'quotes' && <td className={`whitespace-nowrap ${cellPadding} text-gray-600`}>{'validUntil' in item ? formatDate(item.validUntil, company.locale, company.dateFormat) : '–'}</td>}
+                {!compact && kind === 'jobs' && <td className={`max-w-[280px] truncate ${cellPadding} text-gray-900`} title={title}>{title}</td>}
+                {kind === 'jobs'
+                  ? <td className={`whitespace-nowrap ${cellPadding} text-right tabular-nums text-gray-600`}>{formatNumber(('hoursWorked' in item ? item.hoursWorked : 0) || 0, company.locale, company.numberFormat, 2)} h</td>
+                  : <td className={`whitespace-nowrap ${cellPadding} text-right font-medium tabular-nums text-gray-900`}>{total !== undefined ? money(total) : '–'}</td>}
+                <td className={`whitespace-nowrap ${cellPadding}`}><StatusBadge status={item.status} /></td>
+              </tr>
             );
           })}
+            </tbody>
+          </table>
         </div>
+        <div className="border-t border-gray-200 bg-gray-50 px-3 py-2 text-right text-xs text-gray-500">{items.length} {items.length === 1 ? 'Eintrag' : 'Einträge'}</div>
       </div>
     );
   };
@@ -253,20 +296,21 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
 
         <div className="p-4 sm:p-6">
           {activeTab === 'overview' && (
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <>
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
               <div className="rounded-lg border border-gray-200 p-5">
                 <div className="flex items-start gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><TypeIcon customer={customer} /></span>
                   <div className="min-w-0">
                     <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Steckbrief</p>
                     <h2 className="mt-1 truncate text-xl font-semibold text-gray-900">{customer.name}</h2>
-                    <p className="mt-1 text-sm text-gray-500">{typeLabel(customer)} · {terminology.entity.numberShortLabel} {customer.customerNumber}</p>
+                    <p className="mt-1 text-sm text-gray-500">{typeLabel(customer)}</p>
                   </div>
                 </div>
                 <dl className="mt-6 grid gap-4 sm:grid-cols-2">
                   <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Adresse</dt><dd className="mt-1 text-sm leading-6 text-gray-900">{[customer.address, customer.addressSupplement, [customer.postalCode, customer.city].filter(Boolean).join(' '), customer.country].filter(Boolean).map((value, index) => <span key={`${value}-${index}`} className="block">{value}</span>)}</dd></div>
-                  <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Kundennummer</dt><dd className="mt-1 text-sm text-gray-900 tabular-nums">{customer.customerNumber}</dd></div>
-                  {customer.taxId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
+                  <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{terminology.entity.numberLabel}</dt><dd className="mt-1 text-sm text-gray-900 tabular-nums">{customer.customerNumber}</dd></div>
+                  {customer.taxId &&<div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
                   {customer.leitwegId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Leitweg-ID</dt><dd className="mt-1 break-all text-sm text-gray-900">{customer.leitwegId}</dd></div>}
                 </dl>
               </div>
@@ -285,20 +329,51 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-600">{customer.notes || 'Noch keine Notizen hinterlegt.'}</p>
                 </div>
               </div>
-            </div>
+              </div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <section className="rounded-lg border border-gray-200 p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Aktuelle Rechnungen</h2>
+                    <p className="mt-1 text-xs text-gray-500">Die zuletzt bearbeiteten Rechnungen dieses Kunden.</p>
+                  </div>
+                  <button type="button" onClick={() => openTab('invoices')} className="text-sm font-medium text-primary-custom hover:underline">Alle anzeigen</button>
+                </div>
+                {renderDocumentTable(
+                  [...customerInvoices].sort((left, right) => new Date(right.issueDate).getTime() - new Date(left.issueDate).getTime()).slice(0, 5),
+                  'invoices',
+                  true,
+                )}
+              </section>
+              <section className="rounded-lg border border-gray-200 p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Aktuelle Aufträge</h2>
+                    <p className="mt-1 text-xs text-gray-500">Die zuletzt bearbeiteten Aufträge dieses Kunden.</p>
+                  </div>
+                  <button type="button" onClick={() => openTab('jobs')} className="text-sm font-medium text-primary-custom hover:underline">Alle anzeigen</button>
+                </div>
+                {renderDocumentTable(
+                  [...customerJobs].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime()).slice(0, 5),
+                  'jobs',
+                  true,
+                )}
+              </section>
+              </div>
+            </>
           )}
 
           {activeTab === 'invoices' && (
-            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Rechnungen</h2><p className="mt-1 text-sm text-gray-500">Alle Rechnungen dieses Kunden.</p></div>{canWrite && <button type="button" onClick={startInvoice} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileText className="h-4 w-4" />Rechnung schreiben</button>}</div>{renderDocumentList(customerInvoices, 'invoices')}</div>
+            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Rechnungen</h2><p className="mt-1 text-sm text-gray-500">Alle Rechnungen dieses Kunden.</p></div>{canWrite && <button type="button" onClick={startInvoice} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileText className="h-4 w-4" />Rechnung schreiben</button>}</div>{renderDocumentTable(customerInvoices, 'invoices')}</div>
           )}
           {activeTab === 'credit-notes' && (
-            <div className="space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Gutschriften</h2><p className="mt-1 text-sm text-gray-500">Alle Gutschriften dieses Kunden.</p></div>{creditNotesLoading ? <p className="py-8 text-center text-sm text-gray-500">Gutschriften werden geladen …</p> : renderDocumentList(customerCreditNotes, 'credit-notes')}</div>
+            <div className="space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Gutschriften</h2><p className="mt-1 text-sm text-gray-500">Alle Gutschriften dieses Kunden.</p></div>{creditNotesLoading ? <p className="py-8 text-center text-sm text-gray-500">Gutschriften werden geladen …</p> : renderDocumentTable(customerCreditNotes, 'credit-notes')}</div>
           )}
           {activeTab === 'quotes' && (
-            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Angebote</h2><p className="mt-1 text-sm text-gray-500">Alle Angebote dieses Kunden.</p></div>{canWrite && company.quotesEnabled && <button type="button" onClick={startQuote} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileCheck className="h-4 w-4" />Angebot erstellen</button>}</div>{renderDocumentList(customerQuotes, 'quotes')}</div>
+            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Angebote</h2><p className="mt-1 text-sm text-gray-500">Alle Angebote dieses Kunden.</p></div>{canWrite && company.quotesEnabled && <button type="button" onClick={startQuote} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileCheck className="h-4 w-4" />Angebot erstellen</button>}</div>{renderDocumentTable(customerQuotes, 'quotes')}</div>
           )}
           {activeTab === 'jobs' && (
-            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">{terminology.work.plural}</h2><p className="mt-1 text-sm text-gray-500">Alle {terminology.work.plural.toLocaleLowerCase('de-DE')} dieses Kunden.</p></div>{canWrite && company.jobTrackingEnabled && <button type="button" onClick={startJob} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Briefcase className="h-4 w-4" />{terminology.work.newLabel}</button>}</div>{renderDocumentList(customerJobs, 'jobs')}</div>
+            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">{terminology.work.plural}</h2><p className="mt-1 text-sm text-gray-500">Alle {terminology.work.plural.toLocaleLowerCase('de-DE')} dieses Kunden.</p></div>{canWrite && company.jobTrackingEnabled && <button type="button" onClick={startJob} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Briefcase className="h-4 w-4" />{terminology.work.newLabel}</button>}</div>{renderDocumentTable(customerJobs, 'jobs')}</div>
           )}
           {activeTab === 'notes' && (
             <div className="max-w-3xl space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Notizen</h2><p className="mt-1 text-sm text-gray-500">Interne Hinweise, die nur im Workspace sichtbar sind.</p></div><textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={!canWrite || isSavingNotes} maxLength={5000} rows={8} className="form-input w-full resize-y" placeholder="Notizen zum Kunden" /><div className="flex items-center justify-between gap-3"><span className="text-xs text-gray-500">{notes.length} von 5000 Zeichen</span>{canWrite && <button type="button" onClick={() => void saveNotes()} disabled={isSavingNotes} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{isSavingNotes ? 'Speichern …' : 'Notizen speichern'}</button>}</div></div>

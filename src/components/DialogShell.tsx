@@ -58,19 +58,38 @@ export function DialogShell({
           headerActions ? 'flex-wrap' : 'flex-nowrap'
         }`}
       >
-        <div className={`flex min-w-0 flex-1 items-start gap-3 ${compactHeader ? 'sm:gap-4' : 'sm:gap-5'}`}>
-          {Icon && (
-            <div className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom ${compactHeader ? 'sm:h-14 sm:w-14' : 'sm:h-[60px] sm:w-[60px]'}`}>
-              <Icon className={`h-6 w-6 ${compactHeader ? 'sm:h-7 sm:w-7' : 'sm:h-8 sm:w-8'}`} />
+        {compactHeader ? (
+          /* Schmale Dialoge (max-w-md): Symbol und Titel in einer Zeile, die
+             Beschreibung darunter. Titel und Symbol bleiben eine Stufe kleiner,
+             sonst bricht „Materialvorlage bearbeiten“ neben dem Symbol um. */
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-3">
+              {Icon && (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-12 sm:w-12">
+                  <Icon className="h-6 w-6" />
+                </div>
+              )}
+              <h2 id={titleId} className="min-w-0 text-lg font-semibold leading-tight text-gray-900 sm:text-xl">
+                {title}
+              </h2>
             </div>
-          )}
-          <div className="min-w-0">
-            <h2 id={titleId} className={`text-xl font-semibold leading-tight text-gray-900 ${compactHeader ? 'sm:text-2xl' : 'sm:text-3xl'}`}>
-              {title}
-            </h2>
-            {description && <p className={`mt-1 text-sm text-gray-500 ${compactHeader ? 'leading-5 sm:text-base sm:leading-6' : 'leading-6 sm:text-lg sm:leading-7'}`}>{description}</p>}
+            {description && <p className="mt-2 text-sm leading-5 text-gray-500 sm:text-base sm:leading-6">{description}</p>}
           </div>
-        </div>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-start gap-5">
+            {Icon && (
+              <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-[60px] sm:w-[60px]">
+                <Icon className="h-6 w-6 sm:h-8 sm:w-8" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h2 id={titleId} className="text-xl font-semibold leading-tight text-gray-900 sm:text-3xl">
+                {title}
+              </h2>
+              {description && <p className="mt-1 text-sm leading-6 text-gray-500 sm:text-lg sm:leading-7">{description}</p>}
+            </div>
+          </div>
+        )}
         <div
           className={`flex shrink-0 items-center justify-end gap-2 ${
             headerActions ? 'order-first w-full sm:order-none sm:w-auto' : ''
@@ -80,7 +99,7 @@ export function DialogShell({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            className="inline-flex h-10 w-10 min-h-0 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
             aria-label="Dialog schließen"
           >
             <X className="h-6 w-6 sm:h-7 sm:w-7" />

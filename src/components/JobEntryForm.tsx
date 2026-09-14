@@ -12,7 +12,7 @@ import { RatesAndMaterialsRedirectModal } from './RatesAndMaterialsRedirectModal
 import { ConfirmationModal } from './ConfirmationModal';
 import { createDefaultTimeEntry } from '../utils/jobUtils';
 import { findDuplicateCustomer, buildDuplicateCustomerMessage, formatCustomerNumber } from '../utils/customerUtils';
-import { formatCurrency, formatNumber, getCurrencySymbol } from '../utils/formatters';
+import { formatCurrency, formatDate, formatNumber, getCurrencySymbol } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { LocalizedDateInput } from './LocalizedDateInput';
 import { LocalizedTimeInput } from './LocalizedTimeInput';
@@ -36,6 +36,13 @@ interface JobEntryFormProps {
 }
 
 type RecurrenceIntervalUnit = JobRecurrenceRule['intervalUnit'];
+
+function formatLocalDateInput(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function TaxDisabledHint() {
   return (
@@ -74,9 +81,12 @@ interface SelectWithChevronProps extends React.SelectHTMLAttributes<HTMLSelectEl
   containerClassName?: string;
 }
 
-function SelectWithChevron({ className = '', containerClassName = '', children, ...props }: SelectWithChevronProps) {
+// `w-full` ist nur der Standard: Wird eine eigene Breite übergeben, darf sie
+// nicht von einem zusätzlich gesetzten `w-full` überschrieben werden – sonst
+// wächst das Select auf die volle Labelbreite und überdeckt die Nachbarfelder.
+function SelectWithChevron({ className = '', containerClassName = 'w-full', children, ...props }: SelectWithChevronProps) {
   return (
-    <div className={`group relative isolate block w-full min-w-0 max-w-full ${containerClassName}`}>
+    <div className={`group relative isolate block min-w-0 max-w-full ${containerClassName}`}>
       <select
         {...props}
         className={`select-with-chevron box-border block w-full min-w-0 max-w-full appearance-none !pr-10 ${className}`}
@@ -116,8 +126,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const [entryType, setEntryType] = useState<'job' | 'vacation'>('job');
   const [vacationForm, setVacationForm] = useState({
     title: 'Urlaub',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: formatLocalDateInput(),
+    endDate: formatLocalDateInput(),
     notes: '',
   });
 
@@ -178,7 +188,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const [recurrenceIntervalUnit, setRecurrenceIntervalUnit] = useState<RecurrenceIntervalUnit>('week');
   const [recurrenceDurationCount, setRecurrenceDurationCount] = useState(1);
   const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([getIsoWeekday(new Date())]);
-  const [recurrenceStartDate, setRecurrenceStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState(formatLocalDateInput());
   const [isDirty, setIsDirty] = useState(false);
   const [formError, setFormError] = useState('');
   
@@ -752,6 +762,11 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const recurrencePreviewDescription = recurrenceIntervalUnit === 'week'
     ? `${recurrenceWeekdays.map(getRecurrenceWeekdayLabel).join(' und ')} über ${recurrenceDurationCount} ${recurrenceDurationLabel}`
     : `Alle ${recurrenceInterval} ${recurrenceIntervalLabel} über ${recurrenceDurationCount} ${recurrenceDurationLabel}`;
+  const recurrenceStartWeekday = getIsoWeekday(recurrenceStartDate);
+  const recurrenceStartWeekdayLabel = getRecurrenceWeekdayLabel(recurrenceStartWeekday);
+  const recurrenceStartDateLabel = recurrenceStartDate
+    ? formatDate(new Date(`${recurrenceStartDate}T00:00:00`), company.locale, company.dateFormat)
+    : 'das Startdatum';
 
   const dialogFooter = entryType === 'vacation' ? (
     <>
@@ -1120,7 +1135,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         className="form-input form-input-compact w-[4.75rem] px-2 text-sm"
                       />
                     <SelectWithChevron
-                      containerClassName="w-[7rem] shrink-0"
+                      containerClassName="w-[6.5rem] shrink-0"
                       value={recurrenceIntervalUnit}
                       onChange={(event) => {
                         const nextUnit = event.target.value as RecurrenceIntervalUnit;
@@ -1137,11 +1152,11 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                             : [...previous, startWeekday].sort((a, b) => a - b));
                         }
                       }}
-                      className="form-input form-input-compact w-[7rem] px-2 text-sm"
+                      className="form-input form-input-compact w-full px-2 text-sm"
                     >
-                      <option value="week">Woche(n)</option>
-                      <option value="month">Monat(e)</option>
-                      <option value="year">Jahr(e)</option>
+                      <option value="week">Woche</option>
+                      <option value="month">Monat</option>
+                      <option value="year">Jahr</option>
                     </SelectWithChevron>
                   </label>
                   <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
@@ -1171,16 +1186,16 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                           key={weekday.value}
                           type="button"
                           onClick={() => {
-                            if (selected && weekday.value === getIsoWeekday(recurrenceStartDate)) return;
+                            if (selected && weekday.value === recurrenceStartWeekday) return;
                             setIsDirty(true);
                             setRecurrenceWeekdays((previous) => selected
                               ? previous.filter((value) => value !== weekday.value)
                               : [...previous, weekday.value]);
                           }}
                           aria-pressed={selected}
-                          title={weekday.label}
+                          title={weekday.value === recurrenceStartWeekday ? `${weekday.label} – Startdatum ${recurrenceStartDateLabel}` : weekday.label}
                           className={`theme-switch-option h-[38px] min-h-0 w-full whitespace-nowrap rounded-lg border px-0 py-0 text-xs font-medium transition-colors sm:text-sm ${selected
-                            ? 'theme-switch-active border-primary-custom bg-primary-custom text-white'
+                            ? `theme-switch-active border-primary-custom bg-primary-custom text-white ${weekday.value === recurrenceStartWeekday ? 'ring-2 ring-primary-custom/40 ring-offset-1' : ''}`
                             : 'border-gray-300 bg-white text-gray-700 hover:border-primary-custom hover:bg-gray-50'}`}
                         >
                           {weekday.shortLabel}
@@ -1195,6 +1210,13 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   </div>
                 )}
               </div>
+
+              {recurrenceIntervalUnit === 'week' && (
+                <p className="flex items-start gap-1.5 text-xs leading-4 text-blue-900 sm:text-sm">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>Der {recurrenceStartWeekdayLabel} ({recurrenceStartDateLabel}) bleibt markiert, weil die Kursserie an diesem Datum beginnt.</span>
+                </p>
+              )}
 
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs leading-4 text-blue-900 sm:text-sm">
                   <strong>Vorschau:</strong>{' '}
@@ -1289,24 +1311,30 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
 
             {formData.timeEntries && formData.timeEntries.length > 0 ? (
-              <div className="space-y-3 md:space-y-4">
+              <div className="space-y-2">
+                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
+                  <div className="col-span-2">Beschreibung</div>
+                  <div>Stunden</div>
+                  <div>Stundensatz</div>
+                  <div>MwSt.</div>
+                  <div>Gesamt</div>
+                  <div className="text-center">Aktionen</div>
+                </div>
                 {formData.timeEntries.map((timeEntry, index) => (
-                  <div key={timeEntry.id} className="border border-gray-200 rounded-lg p-2 md:p-4 bg-white">
-                    <div className="flex items-center justify-between mb-2 md:mb-3">
+                  <div key={timeEntry.id} className="border border-gray-200 rounded-lg bg-white p-2 md:p-3">
+                    <div className="mb-2 flex items-center justify-between md:hidden">
                       <h5 className="text-xs md:text-sm font-medium text-gray-800">
                         Zeiteintrag {index + 1}
                       </h5>
-                      {formData.timeEntries!.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeTimeEntry(index)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
-                          title="Zeiteintrag entfernen"
-                          aria-label={`Zeiteintrag ${index + 1} entfernen`}
-                        >
-                          <Trash2 className="h-3 w-3 md:h-4 md:w-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeTimeEntry(index)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
+                        title="Zeiteintrag entfernen"
+                        aria-label={`Zeiteintrag ${index + 1} entfernen`}
+                      >
+                        <Trash2 className="h-3 w-3 md:h-4 md:w-4" />
+                      </button>
                     </div>
                     
                     {/* Mobile Layout - Simplified for space */}
@@ -1361,9 +1389,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
                     {/* Desktop Layout */}
                     <div className="hidden md:block">
-                      <div className="grid grid-cols-6 gap-3">
+                      <div className="grid grid-cols-7 items-end gap-3">
                         <div className="col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
                             Beschreibung
                           </label>
                           <input
@@ -1376,7 +1404,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
                             Stunden *
                           </label>
                           <LocalizedNumberInput
@@ -1397,7 +1425,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
                             Stundensatz ({currencySymbol})
                           </label>
                           <input
@@ -1409,7 +1437,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
                         
                         <div>
-                          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700">
+                          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700 md:sr-only">
                             <span>MwSt. %</span>
                             {company?.isSmallBusiness && <TaxDisabledHint />}
                           </label>
@@ -1428,15 +1456,26 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
                             Gesamt ({currencySymbol})
                           </label>
                           <input
                             type="text"
                             value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
-                            className="form-input form-input-compact text-sm bg-gray-100"
+                            className="form-input form-input-compact bg-gray-100 text-sm"
                           />
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => removeTimeEntry(index)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
+                            title="Zeiteintrag entfernen"
+                            aria-label={`Zeiteintrag ${index + 1} entfernen`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1552,13 +1591,21 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
 
             {formData.materials && formData.materials.length > 0 ? (
-              <div className="space-y-2 md:space-y-3">
+              <div className="space-y-2">
+                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
+                  <div className="col-span-2">Beschreibung</div>
+                  <div>Menge</div>
+                  <div>Preis</div>
+                  <div>MwSt.</div>
+                  <div>Gesamt</div>
+                  <div className="text-center">Aktionen</div>
+                </div>
                 {formData.materials.map((material, index) => (
-                  <div key={material.id} className="border border-gray-200 rounded-lg p-2 md:p-3 bg-white">
+                  <div key={material.id} className="border border-gray-200 rounded-lg bg-white p-2 md:p-3">
                     {/* Simplified layout for both mobile and desktop */}
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 md:gap-3">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-7 md:gap-3">
                       <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
                           Beschreibung
                         </label>
                         <input
@@ -1571,7 +1618,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Menge</label>
+                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Menge</label>
                         <LocalizedNumberInput
                           step="0.01"
                           min="0"
@@ -1589,7 +1636,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Preis {currencySymbol}</label>
+                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Preis {currencySymbol}</label>
                         <LocalizedNumberInput
                           step="0.01"
                           min="0"
@@ -1607,7 +1654,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700">
+                        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700 md:sr-only">
                           <span>MwSt. %</span>
                           {company?.isSmallBusiness && <TaxDisabledHint />}
                         </label>
@@ -1625,23 +1672,23 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </SelectWithChevron>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Gesamt {currencySymbol}</label>
-                          <input
-                            type="text"
-                            value={formatMoney(Number(material.total) || 0)}
-                            readOnly
-                            className="form-input form-input-compact text-sm bg-gray-100"
-                          />
-                        </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMaterial(index)}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
-                            title="Entfernen"
-                            aria-label={`Material ${index + 1} entfernen`}
-                          >
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Gesamt {currencySymbol}</label>
+                        <input
+                          type="text"
+                          value={formatMoney(Number(material.total) || 0)}
+                          readOnly
+                          className="form-input form-input-compact bg-gray-100 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => removeMaterial(index)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-50 hover:text-red-800"
+                          title="Entfernen"
+                          aria-label={`Material ${index + 1} entfernen`}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>

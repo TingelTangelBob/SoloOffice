@@ -84,13 +84,13 @@ function SortableInvoiceItem({
     <div 
       ref={setNodeRef} 
       style={style}
-      className={`border border-gray-200 rounded-lg p-3 ${isDragging ? 'shadow-lg' : ''}`}
+      className={`border border-gray-200 rounded-lg p-2 ${isDragging ? 'shadow-lg' : ''}`}
     >
       {/* Desktop Layout - Single Row */}
       <div className={`hidden lg:grid gap-3 items-end ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
         {/* Beschreibung - 3 columns */}
         <div className="col-span-3">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             Beschreibung *
           </label>
           <input
@@ -104,7 +104,7 @@ function SortableInvoiceItem({
         
         {/* Menge - 1 column */}
         <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             Menge *
           </label>
           <LocalizedNumberInput
@@ -126,7 +126,7 @@ function SortableInvoiceItem({
         
         {/* Einzelpreis - 1.5 columns */}
         <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             Preis *
           </label>
           <LocalizedNumberInput
@@ -148,7 +148,7 @@ function SortableInvoiceItem({
         
         {/* MwSt - 1 column */}
         <div className="col-span-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             MwSt.
           </label>
           <select
@@ -168,7 +168,7 @@ function SortableInvoiceItem({
         {/* Rabatt - 2 columns */}
         {discountsEnabled && (
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
               Rabatt
             </label>
             <div className="flex gap-1">
@@ -204,7 +204,7 @@ function SortableInvoiceItem({
         
         {/* Zwischensumme - 1.5 columns */}
         <div className="col-span-2">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             Summe
           </label>
           <div className="flex min-h-[38px] items-center rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-900">
@@ -1278,6 +1278,16 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
             </div>
           </div>
 
+          <div className={`mb-2 hidden items-center gap-3 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
+            <div className="col-span-3">Beschreibung</div>
+            <div>Menge</div>
+            <div>Preis</div>
+            <div>MwSt.</div>
+            {discountsEnabled && <div className="col-span-2">Rabatt</div>}
+            <div className="col-span-2">Summe</div>
+            <div className="col-span-2">Aktionen</div>
+          </div>
+
           <DndContext 
             sensors={sensors} 
             collisionDetection={closestCenter}
@@ -1287,7 +1297,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
               items={items.map(item => item.id)} 
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {items.map((item, index) => (
                   <SortableInvoiceItem
                     key={item.id}

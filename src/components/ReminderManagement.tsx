@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Send, Clock, AlertCircle, Download, Eye, History, ShieldAlert } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye, History, ShieldAlert, Save, Settings as SettingsIcon } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import { ReminderEligibility, Invoice, Company } from '../types';
 import logger from '../utils/logger';
-import { formatCurrency, formatDate as formatDateValue } from '../utils/formatters';
+import { formatCurrency, formatDate as formatDateValue, getCurrencySymbol } from '../utils/formatters';
 import { generateReminderPDF } from '../utils/pdfGenerator';
 import { ReminderSendModal } from './ReminderSendModal';
 import { blobToBase64 } from '../utils/blobUtils';
@@ -16,12 +16,26 @@ import { PageHeader } from './PageHeader';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
 import { ThemeTabBar } from './ThemeTabBar';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { useFeedback } from '../context/FeedbackContext';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
   const { invoices, refreshInvoices } = useInvoices();
-  const { company } = useCompany();
-  const [activeTab, setActiveTab] = useState<'eligible' | 'history' | 'hardship'>('eligible');
+  const { company, updateCompany } = useCompany();
+  const { notify } = useFeedback();
+  const [activeTab, setActiveTab] = useState<'eligible' | 'history' | 'hardship' | 'settings'>('eligible');
+  const [settingsForm, setSettingsForm] = useState({
+    remindersEnabled: company.remindersEnabled || false,
+    reminderDaysAfterDue: company.reminderDaysAfterDue ?? 7,
+    reminderDaysBetween: company.reminderDaysBetween ?? 7,
+    reminderFeeStage1: company.reminderFeeStage1 ?? 0,
+    reminderFeeStage2: company.reminderFeeStage2 ?? 0,
+    reminderFeeStage3: company.reminderFeeStage3 ?? 0,
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [eligibleReminders, setEligibleReminders] = useState<ReminderEligibility[]>([]);
   const [reminderHistory, setReminderHistory] = useState<Invoice[]>([]);
   const [hardshipCases, setHardshipCases] = useState<Invoice[]>([]);
@@ -47,6 +61,29 @@ export function ReminderManagement() {
     isOpen: false,
     documents: []
   });
+
+  useEffect(() => {
+    setSettingsForm({
+      remindersEnabled: company.remindersEnabled || false,
+      reminderDaysAfterDue: company.reminderDaysAfterDue ?? 7,
+      reminderDaysBetween: company.reminderDaysBetween ?? 7,
+      reminderFeeStage1: company.reminderFeeStage1 ?? 0,
+      reminderFeeStage2: company.reminderFeeStage2 ?? 0,
+      reminderFeeStage3: company.reminderFeeStage3 ?? 0,
+    });
+  }, [company]);
+
+  const saveReminderSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      await updateCompany(settingsForm);
+      notify({ variant: 'success', message: 'Mahnkonfiguration wurde gespeichert.' });
+    } catch (error) {
+      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Mahnkonfiguration konnte nicht gespeichert werden.' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -313,7 +350,7 @@ export function ReminderManagement() {
             <div>
               <h3 className="text-sm font-medium text-yellow-800">Mahnwesen nicht aktiviert</h3>
               <p className="text-sm text-yellow-700 mt-1">
-                Das Mahnwesen ist derzeit nicht aktiviert. Bitte aktivieren Sie es in den Einstellungen.
+                Das Mahnwesen ist derzeit nicht aktiviert. Aktivieren Sie es im Reiter „Einstellungen“ dieser Ansicht.
               </p>
             </div>
           </div>
@@ -331,6 +368,7 @@ export function ReminderManagement() {
             { id: 'eligible' as const, label: 'Zu mahnende Rechnungen', icon: Bell },
             { id: 'history' as const, label: 'Mahnhistorie', icon: History },
             { id: 'hardship' as const, label: 'Härtefälle', icon: ShieldAlert, count: hardshipCases.length || undefined },
+            { id: 'settings' as const, label: 'Einstellungen', icon: SettingsIcon },
           ]}
         />
 
@@ -341,6 +379,16 @@ export function ReminderManagement() {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-custom mx-auto"></div>
               <p className="text-gray-600 mt-4">Lade Daten...</p>
             </div>
+          ) : activeTab === 'settings' ? (
+            <ReminderSettingsTab
+              settings={settingsForm}
+              currencySymbol={getCurrencySymbol(company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
+              locale={company?.locale || 'de-DE'}
+              numberFormat={company?.numberFormat}
+              isSaving={isSavingSettings}
+              onChange={(key, value) => setSettingsForm(previous => ({ ...previous, [key]: value }))}
+              onSave={() => { void saveReminderSettings(); }}
+            />
           ) : activeTab === 'eligible' ? (
             <EligibleRemindersTab
               reminders={eligibleReminders}
@@ -376,6 +424,87 @@ export function ReminderManagement() {
   );
 }
 
+interface ReminderSettingsForm {
+  remindersEnabled: boolean;
+  reminderDaysAfterDue: number;
+  reminderDaysBetween: number;
+  reminderFeeStage1: number;
+  reminderFeeStage2: number;
+  reminderFeeStage3: number;
+}
+
+type ReminderSettingKey = keyof ReminderSettingsForm;
+
+interface ReminderSettingsTabProps {
+  settings: ReminderSettingsForm;
+  currencySymbol: string;
+  locale: string;
+  numberFormat?: Company['numberFormat'];
+  isSaving: boolean;
+  onChange: (key: ReminderSettingKey, value: boolean | number) => void;
+  onSave: () => void;
+}
+
+function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, isSaving, onChange, onSave }: ReminderSettingsTabProps) {
+  return (
+    <div className="max-w-4xl space-y-6">
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Zahlungserinnerungen Konfiguration</h2>
+          <p className="mt-1 text-sm text-gray-500">Fristen und Gebühren des Mahnwesens zentral festlegen.</p>
+        </div>
+        <label className="relative inline-flex shrink-0 cursor-pointer items-center">
+          <input type="checkbox" checked={settings.remindersEnabled} onChange={event => onChange('remindersEnabled', event.target.checked)} className="sr-only peer" />
+          <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 peer-checked:bg-primary-custom peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-['']" />
+        </label>
+      </div>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+        <h3 className="text-sm font-semibold text-gray-900">Fristen</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm font-medium text-gray-700">Tage nach Fälligkeit bis zur 1. Mahnung
+            <input type="number" min="0" value={settings.reminderDaysAfterDue} onChange={event => onChange('reminderDaysAfterDue', Number(event.target.value) || 0)} className="form-input form-input-compact mt-1" />
+            <span className="mt-1 block text-xs font-normal text-gray-500">0 = sofort nach Fälligkeit mahnbar</span>
+          </label>
+          <label className="block text-sm font-medium text-gray-700">Tage zwischen Mahnstufen
+            <input type="number" min="0" value={settings.reminderDaysBetween} onChange={event => onChange('reminderDaysBetween', Number(event.target.value) || 0)} className="form-input form-input-compact mt-1" />
+            <span className="mt-1 block text-xs font-normal text-gray-500">0 = sofort erneut mahnbar</span>
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+        <h3 className="text-sm font-semibold text-gray-900">Mahngebühren</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {([1, 2, 3] as const).map(stage => {
+            const key = `reminderFeeStage${stage}` as ReminderSettingKey;
+            return (
+              <label key={stage} className="block text-sm font-medium text-gray-700">{stage}. Mahnstufe ({currencySymbol})
+                <LocalizedNumberInput
+                  min="0"
+                  step="0.01"
+                  value={settings[key] as number}
+                  locale={locale}
+                  numberFormat={numberFormat}
+                  onValueChange={value => onChange(key, value === '' ? 0 : value)}
+                  className="form-input form-input-compact mt-1"
+                />
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-gray-500">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen.</p>
+      </section>
+
+      <div className="flex justify-end">
+        <button type="button" onClick={onSave} disabled={isSaving} className="btn-primary inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <Save className="h-4 w-4" />{isSaving ? 'Speichert …' : 'Mahnkonfiguration speichern'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Eligible Reminders Tab Component
 interface EligibleRemindersTabProps {
   reminders: ReminderEligibility[];
@@ -399,6 +528,19 @@ function EligibleRemindersTab({
   company
 }: EligibleRemindersTabProps) {
   const terminology = getTerminology(company.terminologyProfile);
+  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
+  const handleSort = (key: string) => setSortState(previous => previous.key === key
+    ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+    : { key, direction: 'asc' });
+  const sortedReminders = sortByTableState(reminders, sortState, (reminder, key) => {
+    if (key === 'dueDate') return reminder.dueDate;
+    if (key === 'customer') return reminder.customerName;
+    if (key === 'daysSinceDue') return reminder.daysSinceDue;
+    if (key === 'amount') return reminder.outstandingAmount ?? reminder.total;
+    if (key === 'status') return reminder.currentStatus;
+    if (key === 'nextStage') return reminder.nextStage;
+    return reminder.invoiceNumber;
+  }, company?.locale || 'de-DE');
   if (reminders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -439,34 +581,20 @@ function EligibleRemindersTab({
               <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span className="sr-only">Auswahl</span>
               </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Fälligkeitsdatum
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Rechnungsnr.
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                {terminology.entity.singular}
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Tage überfällig
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Betrag
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Nächste Mahnung
-              </th>
+              <SortableTableHeader label="Fälligkeitsdatum" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Tage überfällig" sortKey="daysSinceDue" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Nächste Mahnung" sortKey="nextStage" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
               <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span className="sr-only">Aktionen</span>
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {reminders.map((reminder) => (
+            {sortedReminders.map((reminder) => (
               <tr key={reminder.invoiceId} className={!reminder.isEligible ? 'bg-gray-50' : ''}>
                 <td className="px-2 py-2 whitespace-nowrap">
                   {reminder.isEligible && (
@@ -535,7 +663,7 @@ function EligibleRemindersTab({
       </div>
 
       <div className="divide-y divide-gray-200 rounded-xl border border-gray-100 bg-white tablet:hidden">
-        {reminders.map((reminder) => (
+        {sortedReminders.map((reminder) => (
           <div key={reminder.invoiceId} className={`p-4 ${!reminder.isEligible ? 'bg-gray-50' : ''}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">

@@ -51,6 +51,8 @@ import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { generateUUID } from '../utils/uuid';
 import { useFeedback } from '../context/FeedbackContext';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -108,6 +110,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const [statusFilter, setStatusFilter] = useState<string>('not-invoiced');
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [sortState, setSortState] = useState<SortState>({ key: 'jobNumber', direction: 'asc' });
   const [showAllStats, setShowAllStats] = useState(false);
   const [expandedRecurringGroups, setExpandedRecurringGroups] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
@@ -189,8 +192,14 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   }, [initialFilter]);
 
   // Filter and search jobs
+  const handleSort = (key: string) => {
+    setSortState(previous => previous.key === key
+      ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: 'asc' });
+  };
+
   const filteredJobs = useMemo(() => {
-    return jobEntries.filter(job => {
+    const filtered = jobEntries.filter(job => {
       const jobTitle = job.title || '';
       const jobDescription = job.description || '';
       const jobCustomerName = job.customerName || '';
@@ -237,7 +246,15 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       
       return matchesSearch && matchesStatus && matchesCustomer && matchesDate;
     });
-  }, [jobEntries, searchTerm, statusFilter, customerFilter, dateFilter]);
+    return sortByTableState(filtered, sortState, (job, key) => {
+      if (key === 'date') return job.date;
+      if (key === 'title') return job.title;
+      if (key === 'customer') return job.customerName;
+      if (key === 'hours') return calculateTotalHours(job);
+      if (key === 'status') return job.status;
+      return job.jobNumber;
+    }, locale);
+  }, [customerFilter, dateFilter, jobEntries, locale, searchTerm, sortState, statusFilter]);
 
   const recurringGroups = useMemo(() => {
     const groups = new Map<string, RecurringJobGroup>();
@@ -368,6 +385,9 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       }
       setShowForm(false);
       setEditingJob(null);
+      if (!editingJob && initialFilter === 'new' && initialCustomerId) {
+        onNavigate?.('customer', initialCustomerId);
+      }
       return true;
     } catch (error) {
       logger.error('Error saving job:', error);
@@ -761,6 +781,9 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
         onCancel={() => {
           setShowForm(false);
           setEditingJob(null);
+          if (initialFilter === 'new' && initialCustomerId) {
+            onNavigate?.('customer', initialCustomerId);
+          }
         }}
         onCreateCustomer={() => {
           logger.debug('onCreateCustomer called in JobManagement');
@@ -1278,21 +1301,11 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                     <th className="px-2 py-3 text-left w-12">
                       <span className="sr-only">Auswahl</span>
                     </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
-                      Datum
-                    </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                      Nr.
-                    </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {terminology.work.singular}
-                    </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                      {terminology.entity.singular}
-                    </th>
-                    <th className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                      Std.
-                    </th>
+                    <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label="Nr." sortKey="jobNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label={terminology.work.singular} sortKey="title" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label="Std." sortKey="hours" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-20 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
                     <th className="sticky right-0 z-20 bg-gray-50 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-14 2xl:w-44">
                       <span className="sr-only">Aktionen</span>
                     </th>

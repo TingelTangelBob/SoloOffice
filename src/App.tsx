@@ -71,7 +71,6 @@ function isModuleDisabled(page: string, company: ReturnType<typeof useCompany>['
   if (page === 'jobs' || page === 'calendar') return !company.jobTrackingEnabled;
   if (page === 'quotes' || page === 'quote-editor') return !company.quotesEnabled;
   if (page === 'reporting') return !company.reportingEnabled;
-  if (page === 'reminders') return !company.remindersEnabled;
   return false;
 }
 
@@ -149,7 +148,13 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <QuoteEditor
           quote={quoteToEdit}
           initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined}
-          onClose={() => onPageChange('quotes')}
+          onClose={() => {
+            if (currentPageState.filter === 'new' && currentPageState.searchTerm) {
+              onPageChange('customer', currentPageState.searchTerm);
+              return;
+            }
+            onPageChange('quotes');
+          }}
           onNavigateToCustomers={() => onPageChange('customers')}
           onNavigateToSettings={() => onPageChange('settings')}
         />;

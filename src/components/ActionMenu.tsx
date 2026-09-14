@@ -61,7 +61,7 @@ export function ActionMenuItem({
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors ${colors.item} ${className}`}
+      className={`action-menu-item flex min-h-0 w-full items-center gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors ${colors.item} ${className}`}
     >
       <span className={`shrink-0 ${colors.icon}`}>{icon}</span>
       <span className="min-w-0 truncate">{children}</span>

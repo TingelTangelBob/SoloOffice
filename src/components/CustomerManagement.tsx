@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import logger from '../utils/logger';
 import { Plus, Edit, Trash2, Archive, ArchiveRestore, Mail, Phone, MapPin, X, Clock, Package, Users, Upload, Download, Building2, UserRound, FileText, FileCheck, Briefcase, StickyNote } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -19,6 +19,8 @@ import { useElementWidth } from '../hooks/useElementWidth';
 import { useFeedback } from '../context/FeedbackContext';
 import { usePageSearch } from '../context/PageSearchContext';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
+import { SortableTableHeader } from './SortableTableHeader';
+import { sortByTableState, type SortState } from '../utils/tableSort';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -78,6 +80,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
   const [showArchived, setShowArchived] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+  const [sortState, setSortState] = useState<SortState>({ key: 'customerNumber', direction: 'asc' });
   const [newMaterialData, setNewMaterialData] = useState({
     name: '',
     description: '',
@@ -109,19 +112,31 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
     void refreshCustomers(showArchived).catch(error => logger.error('Error loading customer archive:', error));
   }, [refreshCustomers, showArchived]);
 
-  const filteredCustomers = customers.filter(customer => {
-    const customerName = customer.name || '';
-    const customerEmail = customer.email || '';
+  const handleSort = (key: string) => setSortState(previous => previous.key === key
+    ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+    : { key, direction: 'asc' });
+
+  const filteredCustomers = useMemo(() => {
     const searchTermLower = searchTerm.toLocaleLowerCase(company.locale || 'de-DE');
-    
-    return (
-      customerName.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
-      customerEmail.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
-      (customer.customerNumber || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
-      (customer.phone || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
-      (customer.city || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower)
-    );
-  });
+    const filtered = customers.filter(customer => {
+      const customerName = customer.name || '';
+      const customerEmail = customer.email || '';
+      return (
+        customerName.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+        customerEmail.toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+        (customer.customerNumber || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+        (customer.phone || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower) ||
+        (customer.city || '').toLocaleLowerCase(company.locale || 'de-DE').includes(searchTermLower)
+      );
+    });
+    return sortByTableState(filtered, sortState, (customer, key) => {
+      if (key === 'name') return customer.name;
+      if (key === 'email') return customer.email;
+      if (key === 'phone') return customer.phone;
+      if (key === 'address') return formatCustomerAddress(customer);
+      return customer.customerNumber;
+    }, company.locale || 'de-DE');
+  }, [company.locale, customers, searchTerm, sortState]);
 
   const handleOpenModal = useCallback((customer?: Customer) => {
     if (!canWrite) {
@@ -955,11 +970,11 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           <table className={`w-full ${showAddressColumn ? 'min-w-[980px]' : 'min-w-[780px]'}`}>
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-                <th className="w-32 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kunden-Nr.</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">E-Mail</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Telefon</th>
-                {showAddressColumn && <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Adresse</th>}
+                <SortableTableHeader label="Name" sortKey="name" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-5 py-3" />
+                <SortableTableHeader label="Kunden-Nr." sortKey="customerNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-4 py-3" />
+                <SortableTableHeader label="E-Mail" sortKey="email" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
+                <SortableTableHeader label="Telefon" sortKey="phone" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
+                {showAddressColumn && <SortableTableHeader label="Adresse" sortKey="address" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />}
                 <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   <span className="sr-only">Aktionen</span>
                 </th>

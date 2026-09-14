@@ -1,5 +1,5 @@
 import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Palette, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Palette, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCompany } from '../context/CompanyContext';
 import { defaultDocumentTemplates } from '../context/CompanyProvider';
@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { getDocumentTemplateFallback, ResolvedDocumentTemplate } from '../utils/documentTemplateProfiles';
 import {
+  defaultDocumentTextTemplates,
   documentTextTemplateTypes,
   getDocumentTemplateTextMode,
   resolveDocumentTextTemplate,
@@ -25,6 +26,7 @@ import { getTerminology } from '../utils/terminology';
 import { ThemeTabBar } from './ThemeTabBar';
 import { useFeedback } from '../context/FeedbackContext';
 import { TemplatePdfPreview } from './templates/TemplatePdfPreview';
+import { restoreDefaultTemplates } from '../utils/templateDefaults';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 
 type TemplateTab = 'text' | DocumentTemplateType;
@@ -33,6 +35,7 @@ const templateTabs: Array<{ id: TemplateTab; label: string; icon: typeof FileTex
   { id: 'invoice', label: 'Rechnungen', icon: FileText },
   { id: 'quote', label: 'Angebote', icon: FileCheck },
   { id: 'orderConfirmation', label: 'Bestätigungen', icon: FileCheck },
+  { id: 'reminder', label: 'Mahnungen', icon: FileText },
   { id: 'text', label: 'Textvorlagen', icon: Copy },
 ];
 
@@ -457,7 +460,7 @@ function TemplateEditorOverlay({
   };
 
   return (
-    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
       <form noValidate onSubmit={onSave} aria-busy={isSaving} className="template-editor-shell form-consistent-fields flex h-[min(94dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl shadow-2xl">
         <div className="template-editor-header flex shrink-0 items-center gap-3 border-b px-4 py-3">
           <button type="button" onClick={onClose} disabled={isSaving} data-editor-initial-focus className="inline-flex items-center gap-2 rounded-lg p-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">
@@ -716,7 +719,7 @@ function TextTemplateEditorOverlay({
   };
 
   return (
-    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
       <form noValidate onSubmit={onSave} aria-busy={isSaving} className="template-editor-shell form-consistent-fields flex max-h-[calc(100dvh-1rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl shadow-2xl">
         <div className="template-editor-header flex shrink-0 items-start gap-3 border-b px-4 py-4 sm:px-6">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><FileText className="h-5 w-5" /></div>
@@ -841,6 +844,9 @@ export function TemplatesManagement() {
   const [textFormData, setTextFormData] = useState<TextTemplateFormState>(emptyTextForm);
   const [textEditorInitialFormData, setTextEditorInitialFormData] = useState<TextTemplateFormState>(emptyTextForm);
   const [selectedPreview, setSelectedPreview] = useState<DocumentTemplate | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const previewTitleId = useId();
+  const previewDialogRef = useRef<HTMLDivElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -891,8 +897,14 @@ export function TemplatesManagement() {
       if (event.key === 'Escape') setSelectedPreview(null);
     };
     window.addEventListener('keydown', onKeyDown);
+    previewDialogRef.current?.querySelector<HTMLElement>('[data-preview-close]')?.focus();
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedPreview]);
+
+  const closePreview = () => {
+    setSelectedPreview(null);
+    setPreviewExpanded(false);
+  };
 
   const openCreate = (documentType: DocumentTemplateType) => {
     setEditingTextTemplate(null);
@@ -1141,6 +1153,25 @@ export function TemplatesManagement() {
     }
   };
 
+  const handleRestoreDefaults = async () => {
+    const confirmed = await confirm({
+      title: 'Standardvorlagen wiederherstellen',
+      message: 'Die mitgelieferten PDF- und Textvorlagen werden auf ihre Ausgangswerte zurückgesetzt; gelöschte Standardvorlagen kommen zurück. Eigene Vorlagen und die Wahl der Standardvorlage bleiben erhalten.',
+      confirmText: 'Standards wiederherstellen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await updateCompany({
+        documentTemplates: restoreDefaultTemplates(company.documentTemplates || [], defaultDocumentTemplates, true),
+        documentTextTemplates: restoreDefaultTemplates(company.documentTextTemplates || [], defaultDocumentTextTemplates, false),
+      });
+      setError(null);
+    } catch {
+      setError('Die Standardvorlagen konnten nicht wiederhergestellt werden.');
+    }
+  };
+
   return (
     <div className="page-root space-y-8">
       <PageHeader
@@ -1160,6 +1191,8 @@ export function TemplatesManagement() {
           <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('quote')}>Angebot</ActionMenuItem>
           <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('orderConfirmation')}>{terminology.work.confirmationLabel}</ActionMenuItem>
           <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('reminder')}>Mahnung</ActionMenuItem>
+          <div className="my-1 border-t border-gray-200" role="separator" />
+          <ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} onClick={() => { void handleRestoreDefaults(); }}>Standardvorlagen wiederherstellen</ActionMenuItem>
         </ActionMenu>
       </PageHeader>
 
@@ -1175,6 +1208,34 @@ export function TemplatesManagement() {
         <div className="theme-tab-panel space-y-6">
           {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}
 
+          {activeTab !== 'text' && <section className="rounded-xl border border-gray-200 bg-white p-4 lg:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">PDF-Header Layout</h2>
+                <p className="mt-1 max-w-2xl text-sm text-gray-500">Zweizeilige Darstellung der Firmendaten im PDF-Header. Ermöglicht eine strukturiertere Darstellung im PDF-Kopfbereich.</p>
+              </div>
+              <label className="relative inline-flex shrink-0 cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={company.companyHeaderTwoLine || false}
+                  onChange={event => { void updateCompany({ companyHeaderTwoLine: event.target.checked }); }}
+                  className="sr-only peer"
+                />
+                <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 peer-checked:bg-primary-custom peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-['']" />
+              </label>
+            </div>
+            {company.companyHeaderTwoLine && (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label className="block text-xs font-medium text-gray-600">Erste Zeile
+                  <input defaultValue={company.companyHeaderLine1 || ''} onBlur={event => { void updateCompany({ companyHeaderLine1: event.target.value }); }} className="form-input form-input-compact mt-1 text-sm font-normal" placeholder="z. B. Firmenname / Service" />
+                </label>
+                <label className="block text-xs font-medium text-gray-600">Zweite Zeile
+                  <input defaultValue={company.companyHeaderLine2 || ''} onBlur={event => { void updateCompany({ companyHeaderLine2: event.target.value }); }} className="form-input form-input-compact mt-1 text-sm font-normal" placeholder="z. B. Inhaber, Adresse" />
+                </label>
+              </div>
+            )}
+          </section>}
+
           {activeTab === 'text' ? (
             <>
               <div className="flex items-center justify-between gap-3">
@@ -1182,7 +1243,6 @@ export function TemplatesManagement() {
                   <h2 className="text-lg font-semibold text-gray-900">Textvorlagen</h2>
                   <p className="mt-1 text-sm text-gray-500">Betreff, Einleitung, Abschluss und Zahlungshinweise je Dokumentart verwalten.</p>
                 </div>
-                <span className="hidden rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 sm:inline-flex">{textTemplates.length} Vorlagen</span>
               </div>
 
               <TextTemplateTable
@@ -1190,6 +1250,7 @@ export function TemplatesManagement() {
                 terminologyProfile={company.terminologyProfile}
                 onEdit={(item, trigger) => { textEditorTriggerRef.current = trigger; openEditText(item); }}
               />
+              <p className="text-xs text-gray-500">{textTemplates.length} Vorlagen</p>
             </>
           ) : (
             <>
@@ -1200,7 +1261,6 @@ export function TemplatesManagement() {
                     <button type="button" onClick={() => setSelectedPreview(template)} className="template-card-preview-surface group relative block min-h-[520px] w-full overflow-hidden rounded-t-xl p-[2.5%]" aria-label={`${template.name} in großer Vorschau öffnen`}>
                       <div className="mx-auto w-full space-y-2">
                         <TemplateMiniature template={template} company={company} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
-                        <span className="block text-center text-[11px] text-gray-500">Miniatur der PDF-Vorlage</span>
                       </div>
                       <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
                         <Maximize2 className="h-3 w-3" /> Große Vorschau
@@ -1273,20 +1333,34 @@ export function TemplatesManagement() {
       )}
 
       {selectedPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4" onMouseDown={() => setSelectedPreview(null)}>
-          <div role="dialog" aria-modal="true" aria-label={`${selectedPreview.name} Vorschau`} className="flex h-[min(92dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-gray-100 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white p-4 sm:p-5">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">{selectedPreview.name}</h2>
-                <p className="text-sm text-gray-500">Große Vorschau des real erzeugten PDFs mit Beispieldaten.</p>
-              </div>
-              <button type="button" onClick={() => setSelectedPreview(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-gray-600 shadow hover:bg-gray-50 hover:text-gray-900" aria-label="Vorschau schließen">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
-              <TemplatePdfPreview template={selectedPreview} company={company} large />
-            </div>
+        <div
+          className={`dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-gray-950/60 ${previewExpanded ? '' : 'sm:p-4'}`}
+          onMouseDown={event => { if (event.target === event.currentTarget) closePreview(); }}
+        >
+          <div
+            ref={previewDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={previewTitleId}
+            className={`min-h-0 w-full overflow-hidden bg-white shadow-2xl ${previewExpanded
+              ? 'h-[100dvh] max-w-none rounded-none'
+              : 'h-[100dvh] max-w-4xl rounded-none sm:h-[calc(100dvh-2rem)] sm:rounded-2xl'}`}
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <TemplatePdfPreview
+              template={selectedPreview}
+              company={company}
+              dialog={{
+                titleId: previewTitleId,
+                expanded: previewExpanded,
+                onToggleExpanded: () => setPreviewExpanded(value => !value),
+                onClose: closePreview,
+                onEdit: () => {
+                  closePreview();
+                  openEdit(selectedPreview);
+                },
+              }}
+            />
           </div>
         </div>
       )}

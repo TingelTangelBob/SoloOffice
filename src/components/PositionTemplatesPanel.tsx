@@ -333,14 +333,15 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
       onClose={onClose}
       onSubmit={handleSubmit}
       size="md"
+      fitContent
       footer={(
         <>
-          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
+          <button type="button" onClick={onClose} className="min-h-10 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
+          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">Speichern</button>
         </>
       )}
     >
-        <div className="space-y-4 pb-2">
+        <div className="space-y-3 pb-0">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Name *
@@ -364,7 +365,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               className="form-input"
               placeholder="Optionale Beschreibung"
-              rows={3}
+              rows={2}
             />
           </div>
 
@@ -452,14 +453,15 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
       onClose={onClose}
       onSubmit={handleSubmit}
       size="md"
+      fitContent
       footer={(
         <>
-          <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90">Speichern</button>
+          <button type="button" onClick={onClose} className="min-h-10 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
+          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">Speichern</button>
         </>
       )}
     >
-        <div className="space-y-4 pb-2">
+        <div className="space-y-3 pb-0">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Name *
@@ -483,7 +485,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               className="form-input"
               placeholder="Optionale Beschreibung"
-              rows={3}
+              rows={2}
             />
           </div>
 

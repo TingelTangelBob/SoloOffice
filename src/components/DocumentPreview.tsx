@@ -111,6 +111,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
   const canEdit = Boolean(onEdit && currentDocument && currentDocument.type !== 'attachment' && isPdf);
   const canSend = Boolean(onSend && currentDocument?.type === 'invoice-pdf' && currentDocument.invoice?.status === 'draft');
   const canReject = Boolean(onReject && currentDocument?.type === 'quote-pdf' && currentDocument.quote?.status === 'sent');
+  const hasPreviewToolbar = documents.length > 1 || isImage;
 
   const releasePreview = useCallback(() => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -325,7 +326,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden bg-gray-950/70 backdrop-blur-[2px] sm:p-4"
+      className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden bg-gray-950/70 backdrop-blur-[2px] sm:p-4"
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
       <section
@@ -334,28 +335,61 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
         aria-modal="true"
         aria-labelledby={titleId}
         aria-busy={isLoading}
-        className={`grid min-h-0 w-full grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-white shadow-2xl ${
+        className={`grid min-h-0 w-full overflow-hidden bg-white shadow-2xl ${hasPreviewToolbar ? 'grid-rows-[auto_auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'} ${
           isExpanded
             ? 'h-[100dvh] max-w-none rounded-none'
             : 'h-[100dvh] max-w-7xl rounded-none sm:h-[calc(100dvh-2rem)] sm:rounded-2xl'
         }`}
         onMouseDown={event => event.stopPropagation()}
       >
-        <header className="flex min-w-0 items-center gap-3 border-b border-gray-200 bg-white px-3 py-2.5 sm:px-5 sm:py-3">
+        <header className="flex min-w-0 items-center gap-2 border-b border-gray-200 bg-white px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-light-custom text-primary-custom">
             <FileTypeIcon contentType={contentType} />
           </span>
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="truncate text-sm font-semibold text-gray-900 sm:text-base">
-              {currentDocument?.name || 'Dokumentvorschau'}
-            </h2>
+          {/* Reihenfolge wie in der Kopfleiste vereinbart: Dateiname, dann direkt
+              „Neuer Tab“ und „Ansicht auffüllen“; Bearbeiten, Herunterladen und
+              Schließen sitzen rechtsbündig. Auf schmalen Geräten füllt die
+              Vorschau ohnehin den Bildschirm, dort entfällt das Auffüllen. */}
+          <h2 id={titleId} className="min-w-0 truncate text-sm font-semibold text-gray-900 sm:text-base">
+            {currentDocument?.name || 'Dokumentvorschau'}
+          </h2>
+          <div className="flex shrink-0 items-center gap-1">
+            {previewUrl && canPreview && (
+              <button type="button" onClick={openInNewTab} className={TOOL_BUTTON} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
+                <ExternalLink className="h-5 w-5" />
+              </button>
+            )}
+            <button type="button" onClick={() => setIsExpanded(value => !value)} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={isExpanded ? 'Fensteransicht' : 'Ansicht auffüllen'} aria-label={isExpanded ? 'Fensteransicht' : 'Ansicht auffüllen'}>
+              {isExpanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+            </button>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} className={TOOL_BUTTON} title="Vorschau schließen" aria-label="Vorschau schließen">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {canEdit && (
+              <button type="button" onClick={handleEdit} className={TOOL_BUTTON} title="Bearbeiten" aria-label="Bearbeiten">
+                <Edit className="h-5 w-5" />
+              </button>
+            )}
+            {canSend && (
+              <button type="button" onClick={handleSend} className={TOOL_BUTTON} title="Rechnung versenden" aria-label="Rechnung versenden">
+                <Send className="h-5 w-5" />
+              </button>
+            )}
+            {canReject && (
+              <button type="button" onClick={() => void handleReject()} disabled={isActionPending} className={`${TOOL_BUTTON} text-rose-600 hover:text-rose-700`} title="Als abgelehnt markieren" aria-label="Als abgelehnt markieren">
+                <X className="h-5 w-5" />
+              </button>
+            )}
+            <button type="button" onClick={() => void handleDownload()} disabled={isDownloading || !currentDocument} className="btn-primary inline-flex h-10 min-h-0 min-w-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-white" title="Dokument herunterladen" aria-label="Dokument herunterladen">
+              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline">Herunterladen</span>
+            </button>
+            <button ref={closeButtonRef} type="button" onClick={onClose} className={TOOL_BUTTON} title="Vorschau schließen" aria-label="Vorschau schließen">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </header>
 
-        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-2 py-1.5 sm:px-4">
+        {hasPreviewToolbar && <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-2 py-1.5 sm:px-4">
           <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-0.5">
             {documents.length > 1 && (
               <div className="flex shrink-0 items-center gap-1 border-r border-gray-200 pr-2">
@@ -390,42 +424,9 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
               </div>
             )}
 
-            {previewUrl && canPreview && (
-              <button type="button" onClick={openInNewTab} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
-                <ExternalLink className="h-5 w-5" />
-                <span className="hidden whitespace-nowrap sm:inline">Neuer Tab</span>
-              </button>
-            )}
           </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            {canEdit && (
-              <button type="button" onClick={handleEdit} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="Bearbeiten" aria-label="Bearbeiten">
-                <Edit className="h-5 w-5" />
-                <span className="hidden whitespace-nowrap sm:inline">Bearbeiten</span>
-              </button>
-            )}
-            {canSend && (
-              <button type="button" onClick={handleSend} className={`${TOOL_BUTTON} gap-2 px-2.5 sm:w-auto`} title="Rechnung versenden" aria-label="Rechnung versenden">
-                <Send className="h-5 w-5" />
-                <span className="hidden whitespace-nowrap sm:inline">Versenden</span>
-              </button>
-            )}
-            {canReject && (
-              <button type="button" onClick={() => void handleReject()} disabled={isActionPending} className={`${TOOL_BUTTON} gap-2 px-2.5 text-rose-600 hover:text-rose-700 sm:w-auto`} title="Als abgelehnt markieren" aria-label="Als abgelehnt markieren">
-                <X className="h-5 w-5" />
-                <span className="hidden whitespace-nowrap sm:inline">Ablehnen</span>
-              </button>
-            )}
-            <button type="button" onClick={() => setIsExpanded(value => !value)} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'} aria-label={isExpanded ? 'Fensteransicht' : 'Ansicht ausfüllen'}>
-              {isExpanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-            </button>
-            <button type="button" onClick={() => void handleDownload()} disabled={isDownloading || !currentDocument} className="btn-primary inline-flex h-10 min-h-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50" title="Dokument herunterladen">
-              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              <span className="hidden sm:inline">Herunterladen</span>
-            </button>
-          </div>
-        </div>
+          <div className="shrink-0" aria-hidden="true" />
+        </div>}
 
         <div className="relative min-h-0 overflow-hidden bg-gray-200 p-2 sm:p-4">
           {isLoading && (

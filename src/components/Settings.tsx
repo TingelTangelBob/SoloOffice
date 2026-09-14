@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
-import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Clock, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users } from 'lucide-react';
+import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users, Monitor, Sun, Moon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
 import { ColorPicker } from './ColorPicker';
@@ -14,7 +14,6 @@ import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { getCurrencySymbol } from '../utils/formatters';
 import { getTerminology, terminologyProfiles } from '../utils/terminology';
 import type { TerminologyDefinition } from '../utils/terminology';
-import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { ThemeTabBar } from './ThemeTabBar';
 import { InfoTooltip } from './InfoTooltip';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
@@ -282,6 +281,12 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       delete companySettings.invoiceTemplates;
       delete companySettings.documentTemplates;
       delete companySettings.documentTextTemplates;
+      delete companySettings.remindersEnabled;
+      delete companySettings.reminderDaysAfterDue;
+      delete companySettings.reminderDaysBetween;
+      delete companySettings.reminderFeeStage1;
+      delete companySettings.reminderFeeStage2;
+      delete companySettings.reminderFeeStage3;
       delete companySettings.reminderTextStage1;
       delete companySettings.reminderTextStage2;
       delete companySettings.reminderTextStage3;
@@ -494,6 +499,19 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 Vorschau: <span className="font-semibold">{normalizedReceiptLabel || 'Belege'}</span>
               </div>
             </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+              <span>Vorschläge:</span>
+              {['Belege', 'Dokumente', 'Ausgabenbelege', 'Einkauf'].map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setFormData(previous => ({ ...previous, receiptLabel: option }))}
+                  className="min-h-0 rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-primary-custom hover:text-primary-custom"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -586,133 +604,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
             </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Zahlungserinnerungen (Mahnwesen)
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Aktiviert das Mahnwesen mit konfigurierbaren Mahnstufen und Mahngebühren
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.remindersEnabled || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, remindersEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
           </div>
         </div>
 
-        {/* Reminder Settings - Only show if enabled */}
-        {formData.remindersEnabled && (
-          <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
-            <div className="flex items-center mb-4">
-              <Clock className="h-5 w-5 text-primary-custom mr-2" />
-              <h3 className="text-lg font-semibold text-gray-900">Zahlungserinnerungen Konfiguration</h3>
-            </div>
-            
-            <div className="space-y-6">
-              {/* Timing Configuration */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tage nach Fälligkeit bis zur 1. Mahnung
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.reminderDaysAfterDue ?? 7}
-                    onChange={(e) => {
-                      const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                      setFormData(prev => ({ ...prev, reminderDaysAfterDue: isNaN(value) ? 0 : value }));
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">0 = sofort nach Fälligkeit mahnbar</p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tage zwischen Mahnstufen
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.reminderDaysBetween ?? 7}
-                    onChange={(e) => {
-                      const value = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                      setFormData(prev => ({ ...prev, reminderDaysBetween: isNaN(value) ? 0 : value }));
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">0 = sofort nach letzter Mahnung erneut mahnbar</p>
-                </div>
-              </div>
-
-              {/* Fee Configuration */}
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Mahngebühren</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      1. Mahnstufe ({currencySymbol})
-                    </label>
-                    <LocalizedNumberInput
-                      min="0"
-                      step="0.01"
-                      value={formData.reminderFeeStage1 ?? 0}
-                      locale={formData.locale || 'de-DE'}
-                      numberFormat={formData.numberFormat}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage1: value === '' ? 0 : value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      2. Mahnstufe ({currencySymbol})
-                    </label>
-                    <LocalizedNumberInput
-                      min="0"
-                      step="0.01"
-                      value={formData.reminderFeeStage2 ?? 0}
-                      locale={formData.locale || 'de-DE'}
-                      numberFormat={formData.numberFormat}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage2: value === '' ? 0 : value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      3. Mahnstufe ({currencySymbol})
-                    </label>
-                    <LocalizedNumberInput
-                      min="0"
-                      step="0.01"
-                      value={formData.reminderFeeStage3 ?? 0}
-                      locale={formData.locale || 'de-DE'}
-                      numberFormat={formData.numberFormat}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, reminderFeeStage3: value === '' ? 0 : value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-custom focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen</p>
-              </div>
-
-              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                <strong className="font-semibold text-gray-900">Mahntexte</strong>
-                <p className="mt-1">Die Texte für alle drei Mahnstufen bearbeiten Sie zentral unter Verwaltung → Vorlagen → Textvorlagen.</p>
-              </div>
-            </div>
-          </div>
-        )}
         </div>
       )}
 
@@ -752,65 +646,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
               />
-            </div>
-            
-            {/* Company Header Layout Options */}
-            <div className="md:col-span-2">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-gray-900 mb-2">📄 PDF-Header Layout</h4>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-600">
-                      Zweizeilige Darstellung der {terminology.organization.dataLabel} im PDF-Header
-                    </label>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Ermöglicht eine strukturiertere Darstellung im PDF-Kopfbereich
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.companyHeaderTwoLine || false}
-                      onChange={(e) => setFormData(prev => ({ ...prev, companyHeaderTwoLine: e.target.checked }))}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-                  </label>
-                </div>
-                
-                {formData.companyHeaderTwoLine && (
-                  <div className="space-y-3 ml-0 mt-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Erste Zeile (z. B. {terminology.organization.nameLabel}/Service)
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.companyHeaderLine1 || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, companyHeaderLine1: e.target.value }))}
-                        placeholder="z.B. Musterfirma Service & Beratung GmbH"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Zweite Zeile (z.B. Inhaber, Adresse)
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.companyHeaderLine2 || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, companyHeaderLine2: e.target.value }))}
-                        placeholder="z.B. Max Mustermann, Musterstraße 123, 12345 Musterstadt"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Diese Einstellung beeinflusst nur die Darstellung im PDF-Sender-Bereich. 
-                      Lassen Sie die Felder leer, um die automatische Generierung zu verwenden.
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
             
             <div className="md:col-span-2">
@@ -1663,15 +1498,15 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           <div className="mb-4 flex items-center">
             <Palette className="mr-2 h-5 w-5 text-primary-custom" />
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Dunkelmodus</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Darstellung</h3>
               <p className="text-xs text-gray-500">Die Einstellung betrifft nur die App-Oberfläche.</p>
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {([
-              { id: 'system', label: 'System', description: 'Betriebssystem übernehmen' },
-              { id: 'light', label: 'Hell', description: 'Helles Design verwenden' },
-              { id: 'dark', label: 'Dunkel', description: 'Dunkles Design verwenden' },
+              { id: 'system', label: 'System', description: 'Betriebssystem übernehmen', icon: Monitor },
+              { id: 'light', label: 'Hell', description: 'Helles Design verwenden', icon: Sun },
+              { id: 'dark', label: 'Dunkel', description: 'Dunkles Design verwenden', icon: Moon },
             ] as const).map((mode) => (
               <button
                 key={mode.id}
@@ -1681,7 +1516,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   ? 'border-primary-custom bg-primary-custom/10 text-primary-custom'
                   : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-custom'}`}
               >
-                <span className="block text-sm font-medium">{mode.label}</span>
+                <mode.icon className="h-5 w-5" aria-hidden="true" />
+                <span className="mt-2 block text-sm font-medium">{mode.label}</span>
                 <span className="mt-1 block text-xs opacity-80">{mode.description}</span>
               </button>
             ))}
