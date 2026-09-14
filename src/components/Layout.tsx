@@ -487,7 +487,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
         <div className="flex relative min-h-screen">
           {isMobileMenuOpen && (
             <div
-              className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
+              className="dialog-overlay fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
               onClick={() => setIsMobileMenuOpen(false)}
             />
           )}

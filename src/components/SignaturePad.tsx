@@ -240,7 +240,7 @@ export function SignaturePad({ isOpen, onClose, onSave, title = "Unterschrift", 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
+    <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
       <div
         className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
         role="dialog"

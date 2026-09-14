@@ -29,6 +29,7 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { TableSkeleton } from './TableSkeleton';
 
 type ItemDraft = {
   description: string;
@@ -375,9 +376,7 @@ export function RecurringInvoiceManagement() {
       )}
 
       {loading ? (
-        <div className="rounded-lg bg-white p-10 text-center text-gray-500">
-          Wiederkehrende Rechnungen werden geladen …
-        </div>
+        <TableSkeleton rows={4} columns={4} withHeader={false} label="Wiederkehrende Rechnungen werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" />
       ) : ordered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
           <CalendarClock className="mx-auto mb-3 h-10 w-10 text-gray-400" />
@@ -397,7 +396,7 @@ export function RecurringInvoiceManagement() {
                   <h2 className="truncate font-semibold text-gray-900">{entry.name}</h2>
                   <p className="mt-1 truncate text-sm text-gray-600">{customerName(entry.customerId)}</p>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${entry.status === 'active' ? 'bg-green-100 text-green-700' : entry.status === 'paused' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                <span className={`status-badge shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${entry.status === 'active' ? 'bg-green-100 text-green-700' : entry.status === 'paused' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
                   {statusLabels[entry.status] || entry.status}
                 </span>
               </div>

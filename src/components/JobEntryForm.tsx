@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { collapseRow } from '../utils/motion';
+import { useEnteringRows } from '../hooks/useEnteringRows';
 import logger from '../utils/logger';
 import { Plus, Trash2, Save, Clock, Calendar, DollarSign, Edit, Info, LockKeyhole, ChevronDown } from 'lucide-react';
 import { JobEntry, Customer, JobMaterial, JobAttachment, JobTimeEntry, CalendarEvent, JobRecurrenceRule } from '../types';
@@ -124,6 +126,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [entryType, setEntryType] = useState<'job' | 'vacation'>('job');
+  const timeEntryListRef = useRef<HTMLDivElement>(null);
+  const materialListRef = useRef<HTMLDivElement>(null);
+  const { markEntering, settleEntering, isEntering } = useEnteringRows();
   const [vacationForm, setVacationForm] = useState({
     title: 'Urlaub',
     startDate: formatLocalDateInput(),
@@ -340,6 +345,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       defaultRate?.taxRate != null ? defaultRate.taxRate : 19 // Use hourly rate tax rate or default to 19%
     );
     
+    markEntering(newTimeEntry.id);
     setIsDirty(true);
     setFormData((prev) => ({
       ...prev,
@@ -361,6 +367,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     // Set description to template name
     newTimeEntry.description = template.name;
     
+    markEntering(newTimeEntry.id);
     setIsDirty(true);
     setFormData((prev) => ({
       ...prev,
@@ -412,9 +419,10 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   };
 
   const removeTimeEntry = (index: number) => {
+    const entryId = formData.timeEntries?.[index]?.id;
     setIsDirty(true);
-    setFormData((prev) => {
-      const timeEntries = (prev.timeEntries || []).filter((_, i) => i !== index);
+    collapseRow(entryId ? timeEntryListRef.current?.querySelector<HTMLElement>(`[data-position-id="${entryId}"]`) : null, () => setFormData((prev) => {
+      const timeEntries = (prev.timeEntries || []).filter((entry, i) => (entryId ? entry.id !== entryId : i !== index));
       const totalHours = timeEntries.reduce((sum, entry) => sum + (Number(entry.hoursWorked) || 0), 0);
       
       return { 
@@ -422,7 +430,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
         timeEntries,
         hoursWorked: totalHours
       };
-    });
+    }));
   };
 
 
@@ -514,6 +522,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       };
     }
     
+    markEntering(newMaterial.id);
     setFormData(prev => ({
       ...prev,
       materials: [...(prev.materials || []), newMaterial]
@@ -538,11 +547,12 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   };
 
   const removeMaterial = (index: number) => {
+    const materialId = formData.materials?.[index]?.id;
     setIsDirty(true);
-    setFormData(prev => ({
+    collapseRow(materialId ? materialListRef.current?.querySelector<HTMLElement>(`[data-position-id="${materialId}"]`) : null, () => setFormData(prev => ({
       ...prev,
-      materials: prev.materials?.filter((_, i) => i !== index) || []
-    }));
+      materials: prev.materials?.filter((material, i) => (materialId ? material.id !== materialId : i !== index)) || []
+    })));
   };
 
   const handleAttachmentsChange = (attachments: JobAttachment[]) => {
@@ -1311,7 +1321,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
 
             {formData.timeEntries && formData.timeEntries.length > 0 ? (
-              <div className="space-y-2">
+              <div ref={timeEntryListRef} className="space-y-2">
                 <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
                   <div className="col-span-2">Beschreibung</div>
                   <div>Stunden</div>
@@ -1321,7 +1331,12 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <div className="text-center">Aktionen</div>
                 </div>
                 {formData.timeEntries.map((timeEntry, index) => (
-                  <div key={timeEntry.id} className="border border-gray-200 rounded-lg bg-white p-2 md:p-3">
+                  <div
+                    key={timeEntry.id}
+                    data-position-id={timeEntry.id}
+                    className={`border border-gray-200 rounded-lg bg-white p-2 md:p-3 ${isEntering(timeEntry.id) ? 'position-row-enter' : ''}`}
+                    onAnimationEnd={event => { if (event.target === event.currentTarget) settleEntering(timeEntry.id); }}
+                  >
                     <div className="mb-2 flex items-center justify-between md:hidden">
                       <h5 className="text-xs md:text-sm font-medium text-gray-800">
                         Zeiteintrag {index + 1}
@@ -1591,7 +1606,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
 
             {formData.materials && formData.materials.length > 0 ? (
-              <div className="space-y-2">
+              <div ref={materialListRef} className="space-y-2">
                 <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
                   <div className="col-span-2">Beschreibung</div>
                   <div>Menge</div>
@@ -1601,7 +1616,12 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <div className="text-center">Aktionen</div>
                 </div>
                 {formData.materials.map((material, index) => (
-                  <div key={material.id} className="border border-gray-200 rounded-lg bg-white p-2 md:p-3">
+                  <div
+                    key={material.id}
+                    data-position-id={material.id}
+                    className={`border border-gray-200 rounded-lg bg-white p-2 md:p-3 ${isEntering(material.id) ? 'position-row-enter' : ''}`}
+                    onAnimationEnd={event => { if (event.target === event.currentTarget) settleEntering(material.id); }}
+                  >
                     {/* Simplified layout for both mobile and desktop */}
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-7 md:gap-3">
                       <div className="md:col-span-2">
@@ -1735,7 +1755,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55 p-4">
+        <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/55 p-4">
           <div className="bg-white rounded-lg p-4 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
@@ -1917,7 +1937,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       />
 
       {pendingRateNavigation && (
-        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+        <div className="dialog-overlay fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-md rounded-lg bg-white shadow-2xl">
             <div className="border-b border-gray-200 p-4 sm:p-5">
               <h3 className="text-base font-semibold text-gray-900 sm:text-lg">Änderungen speichern?</h3>

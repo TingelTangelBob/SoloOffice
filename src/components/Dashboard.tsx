@@ -33,6 +33,7 @@ import { RevenueAreaChart } from './RevenueAreaChart';
 
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { SkeletonBlock } from './TableSkeleton';
 
 interface DashboardProps {
   onNavigate: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -369,10 +370,32 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-custom mx-auto"></div>
-          <p className="mt-4 text-gray-600">Lade Daten...</p>
+      <div className="page-root space-y-6" role="status" aria-live="polite">
+        <span className="sr-only">Übersicht wird geladen …</span>
+        <div aria-hidden="true" className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="flex h-[4.5rem] items-center justify-center rounded-xl border border-gray-200 bg-white">
+              <SkeletonBlock className="h-3 w-28" />
+            </div>
+          ))}
+        </div>
+        <div aria-hidden="true" className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <SkeletonBlock className="h-6 w-40" />
+            <SkeletonBlock className="mt-3 h-3 w-56" />
+            <SkeletonBlock className="mt-8 h-52 w-full" />
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <SkeletonBlock className="h-4 w-32" />
+            <div className="mt-6 space-y-5">
+              {Array.from({ length: 5 }, (_, index) => (
+                <div key={index} className="flex items-center gap-4">
+                  <SkeletonBlock className="h-3 flex-1" />
+                  <SkeletonBlock className="h-3 w-16" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );

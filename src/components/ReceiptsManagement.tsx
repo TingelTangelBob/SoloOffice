@@ -14,6 +14,7 @@ import { PageHeader } from './PageHeader';
 import { useFeedback } from '../context/FeedbackContext';
 import { ReceiptBillingDialog } from './ReceiptBillingDialog';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
+import { TableSkeleton } from './TableSkeleton';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
@@ -427,7 +428,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           <button type="button" onClick={openUpload} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Beleg hochladen</button>
         </div>
 
-        {loading ? <div className="py-12 text-center text-sm text-gray-500">{receiptLabel} werden geladen …</div> : receipts.length === 0 ? (
+        {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : receipts.length === 0 ? (
           <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
             <Upload className="mx-auto h-8 w-8 text-gray-400" />
             <span className="mt-3 block font-medium text-gray-800">Noch keine {receiptLabel}</span>

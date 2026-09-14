@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { collapseRow } from '../utils/motion';
+import { useEnteringRows } from '../hooks/useEnteringRows';
 import logger from '../utils/logger';
 import { Save, Trash2, Calculator, GripVertical, Percent, Eye, FileText, Plus, Check, ChevronDown } from 'lucide-react';
 import {
@@ -49,6 +51,9 @@ interface SortableQuoteItemProps {
   isSmallBusiness: boolean;
   templateSuggestions: QuoteTemplateSuggestion[];
   onSelectTemplate: (itemId: string, suggestion: QuoteTemplateSuggestion) => void;
+  /** Zeile wurde gerade hinzugefügt und blendet ein; danach meldet sie sich über `onEntered` ab. */
+  entering?: boolean;
+  onEntered?: (id: string) => void;
 }
 
 interface QuoteTemplateSuggestion {
@@ -186,6 +191,8 @@ function SortableQuoteItem({
   isSmallBusiness,
   templateSuggestions,
   onSelectTemplate,
+  entering = false,
+  onEntered,
 }: SortableQuoteItemProps) {
   const { company } = useCompany();
   const discountsEnabled = company.discountsEnabled !== false;
@@ -261,7 +268,9 @@ function SortableQuoteItem({
     <div 
       ref={setNodeRef} 
       style={style}
-      className={`relative border border-gray-200 rounded-lg p-2 bg-white ${isDiscountDropdownOpen ? 'z-50' : ''} ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''}`}
+      data-position-id={item.id}
+      className={`relative border border-gray-200 rounded-lg p-2 bg-white ${isDiscountDropdownOpen ? 'z-50' : ''} ${isDragging ? 'shadow-lg ring-2 ring-blue-300' : ''} ${entering ? 'position-row-enter' : ''}`}
+      onAnimationEnd={event => { if (entering && event.target === event.currentTarget) onEntered?.(item.id); }}
     >
       {/* Desktop Layout - Single Row */}
       <div className="hidden items-center gap-3 lg:grid" style={{ gridTemplateColumns }}>
@@ -570,6 +579,8 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
   const [issueDate, setIssueDate] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [items, setItems] = useState<QuoteItem[]>([]);
+  const itemListRef = useRef<HTMLDivElement>(null);
+  const { markEntering, settleEntering, isEntering } = useEnteringRows();
   const [notes, setNotes] = useState('');
   const [globalDiscountType, setGlobalDiscountType] = useState<'percentage' | 'fixed' | ''>('');
   const [globalDiscountValue, setGlobalDiscountValue] = useState<string>('');
@@ -795,7 +806,11 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
   };
 
   const addItem = () => {
-    setItems(currentItems => [...currentItems, createEmptyItem(currentItems.length + 1)]);
+    setItems(currentItems => {
+      const newItem = createEmptyItem(currentItems.length + 1);
+      markEntering(newItem.id);
+      return [...currentItems, newItem];
+    });
   };
 
   const addItemFromTemplate = (templateType: 'hourly' | 'material', templateId: string) => {
@@ -828,13 +843,17 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
         discountValue: discountsEnabled ? 0 : undefined,
         discountAmount: 0,
       };
+      markEntering(newItem.id);
       return [...currentItems, newItem];
     });
     setShowTemplateDropdown(false);
   };
 
   const removeItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id));
+    collapseRow(
+      itemListRef.current?.querySelector<HTMLElement>(`[data-position-id="${id}"]`),
+      () => setItems(prev => prev.filter(item => item.id !== id)),
+    );
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -1361,7 +1380,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 items={items.map(item => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-2">
+                <div ref={itemListRef} className="space-y-2">
                   {items.map((item, index) => (
                     <SortableQuoteItem
                       key={item.id}
@@ -1372,6 +1391,8 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                       isSmallBusiness={company.isSmallBusiness || false}
                       templateSuggestions={templateSuggestions}
                       onSelectTemplate={selectTemplateForItem}
+                      entering={isEntering(item.id)}
+                      onEntered={settleEntering}
                     />
                   ))}
                 </div>

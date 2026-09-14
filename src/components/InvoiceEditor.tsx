@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { collapseRow } from '../utils/motion';
+import { useEnteringRows } from '../hooks/useEnteringRows';
 import logger from '../utils/logger';
 import { Save, X, Plus, Trash2, Calculator, Edit, FileText, ChevronUp, ChevronDown, GripVertical, Link2 } from 'lucide-react';
 import {
@@ -50,6 +52,9 @@ interface SortableInvoiceItemProps {
   isFirst: boolean;
   isLast: boolean;
   isSmallBusiness: boolean;
+  /** Zeile wurde gerade hinzugefügt und blendet ein; danach meldet sie sich über `onEntered` ab. */
+  entering?: boolean;
+  onEntered?: (id: string) => void;
 }
 
 function SortableInvoiceItem({ 
@@ -60,7 +65,9 @@ function SortableInvoiceItem({
   onMoveDown, 
   isFirst, 
   isLast,
-  isSmallBusiness 
+  isSmallBusiness,
+  entering = false,
+  onEntered,
 }: SortableInvoiceItemProps) {
   const { company } = useCompany();
   const discountsEnabled = company.discountsEnabled !== false;
@@ -84,7 +91,9 @@ function SortableInvoiceItem({
     <div 
       ref={setNodeRef} 
       style={style}
-      className={`border border-gray-200 rounded-lg p-2 ${isDragging ? 'shadow-lg' : ''}`}
+      data-position-id={item.id}
+      className={`border border-gray-200 rounded-lg p-2 ${isDragging ? 'shadow-lg' : ''} ${entering ? 'position-row-enter' : ''}`}
+      onAnimationEnd={event => { if (entering && event.target === event.currentTarget) onEntered?.(item.id); }}
     >
       {/* Desktop Layout - Single Row */}
       <div className={`hidden lg:grid gap-3 items-end ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
@@ -619,6 +628,8 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
     globalDiscountAmount: undefined as number | undefined,
   });
   const [items, setItems] = useState<InvoiceItem[]>([]);
+  const itemListRef = useRef<HTMLDivElement>(null);
+  const { markEntering, settleEntering, isEntering } = useEnteringRows();
   const [attachments, setAttachments] = useState<InvoiceAttachment[]>([]);
   const initialNewInvoiceFormData = useRef(formData);
   const initialDraftSnapshot = useRef<string | null>(null);
@@ -767,6 +778,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
       discountValue: undefined,
       discountAmount: 0,
     };
+    markEntering(newItem.id);
     setItems(prev => [...prev, newItem]);
   };
 
@@ -825,6 +837,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
       };
     }
 
+    markEntering(newItem.id);
     setItems(prev => [...prev, newItem]);
   };
 
@@ -851,7 +864,10 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
   };
 
   const removeItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id));
+    collapseRow(
+      itemListRef.current?.querySelector<HTMLElement>(`[data-position-id="${id}"]`),
+      () => setItems(prev => prev.filter(item => item.id !== id)),
+    );
   };
 
   const moveItemUp = (id: string) => {
@@ -1297,7 +1313,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
               items={items.map(item => item.id)} 
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-2">
+              <div ref={itemListRef} className="space-y-2">
                 {items.map((item, index) => (
                   <SortableInvoiceItem
                     key={item.id}
@@ -1309,6 +1325,8 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     isFirst={index === 0}
                     isLast={index === items.length - 1}
                     isSmallBusiness={company?.isSmallBusiness || false}
+                    entering={isEntering(item.id)}
+                    onEntered={settleEntering}
                   />
                 ))}
               </div>
@@ -1519,7 +1537,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
+        <div className="dialog-overlay fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
@@ -1842,7 +1860,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
 
       {/* Invoice Template Manager Modal */}
       {showInvoiceTemplateManager && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
+        <div className="dialog-overlay fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-900">Rechnungsvorlagen verwalten</h3>

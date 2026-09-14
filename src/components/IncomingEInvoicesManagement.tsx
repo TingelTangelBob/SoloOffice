@@ -7,6 +7,7 @@ import { fileToBase64, formatFileSize } from '../utils/fileUtils';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { DialogShell } from './DialogShell';
 import { PageHeader } from './PageHeader';
+import { TableSkeleton } from './TableSkeleton';
 
 const MAX_XML_SIZE = 10 * 1024 * 1024;
 
@@ -158,7 +159,7 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
           <button type="button" onClick={openUpload} className="action-button inline-flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />XML übernehmen</button>
         </div>
 
-        {loading ? <div className="py-12 text-center text-sm text-gray-500">Eingänge werden geladen …</div> : invoices.length === 0 ? (
+        {loading ? <TableSkeleton rows={5} columns={5} label="Eingänge werden geladen …" className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : invoices.length === 0 ? (
           <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
             <Inbox className="mx-auto h-8 w-8 text-gray-400" />
             <span className="mt-3 block font-medium text-gray-800">Noch keine E-Rechnung eingegangen</span>

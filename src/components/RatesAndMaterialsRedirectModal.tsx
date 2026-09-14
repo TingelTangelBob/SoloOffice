@@ -27,7 +27,7 @@ export function RatesAndMaterialsRedirectModal({
     <Package className="h-7 w-7 shrink-0 text-primary-custom" />;
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+    <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-4">
       <div className="max-h-[calc(100vh-1.5rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-4 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-3 sm:mb-5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">

@@ -20,6 +20,7 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { useFeedback } from '../context/FeedbackContext';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { TableSkeleton } from './TableSkeleton';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
@@ -247,7 +248,7 @@ export function ReminderManagement() {
 
     const config = statusConfig[status] || statusConfig.draft;
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
+      <span className={`status-badge px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
         {config.label}
       </span>
     );
@@ -375,10 +376,7 @@ export function ReminderManagement() {
         {/* Tab Content */}
         <div className="theme-tab-panel">
           {isLoading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-custom mx-auto"></div>
-              <p className="text-gray-600 mt-4">Lade Daten...</p>
-            </div>
+            <TableSkeleton rows={5} columns={7} label="Mahnungen werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" />
           ) : activeTab === 'settings' ? (
             <ReminderSettingsTab
               settings={settingsForm}
@@ -1020,7 +1018,7 @@ function getStatusBadgeForReminder(status: Invoice['status']) {
 
   const config = statusConfig[status] || statusConfig.draft;
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
+    <span className={`status-badge px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
       {config.label}
     </span>
   );

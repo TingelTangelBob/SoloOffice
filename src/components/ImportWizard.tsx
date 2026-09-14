@@ -135,7 +135,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   const usableRows = preview ? preview.summary.valid + preview.summary.updated : 0;
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && close()}>
+    <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && close()}>
       <div className="form-consistent-fields flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="import-wizard-title">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
           <div className="min-w-0">

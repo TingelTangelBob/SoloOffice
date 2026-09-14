@@ -309,7 +309,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+    <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
@@ -859,7 +859,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
         {/* Email Detail Modal */}
         {selectedEmail && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60 p-4">
+          <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">E-Mail-Details</h3>

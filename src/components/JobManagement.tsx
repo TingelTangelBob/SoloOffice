@@ -1191,8 +1191,8 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               className="relative inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center"
                               title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}
                             >
-                              <span className={`h-2.5 w-2.5 rounded-full tablet:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
-                              <span className={`hidden rounded-full px-2.5 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(job.status)}`}>
+                              <span className={`status-badge h-2.5 w-2.5 rounded-full tablet:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                              <span className={`status-badge hidden rounded-full px-2.5 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(job.status)}`}>
                                 {getStatusText(job.status)}
                               </span>
                               {job.recurrence && (
@@ -1384,7 +1384,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                       </td>
                       <td className="hidden">
                         <label className="relative inline-flex items-center gap-2" title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}>
-                          <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                          <span className={`status-badge h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
                           {job.recurrence && (
                             <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />
                           )}
@@ -1416,7 +1416,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                         <div className="flex items-center justify-end gap-2">
                           <div className="flex shrink-0 items-center gap-2" title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}>
                             <label className="relative inline-flex h-8 w-3.5 shrink-0 cursor-pointer items-center justify-center">
-                              <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                              <span className={`status-badge h-2.5 w-2.5 rounded-full ${getStatusDotColor(job.status)}`} aria-hidden="true" />
                               <select
                                 value={job.status}
                                 onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
@@ -1577,7 +1577,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+        <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}
@@ -1729,7 +1729,7 @@ function StatusChangeFeedbackModal({ feedback, terminology, onClose }: StatusCha
     : 0;
 
   return (
-    <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/40 p-4">
+    <div className="dialog-overlay fixed inset-0 z-[1300] flex items-center justify-center bg-black/40 p-4">
       <div
         className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-2xl"
         role="dialog"

@@ -1264,12 +1264,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   </td>
                   <td className={`py-4 whitespace-nowrap ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}>
                     {showStatusLabel ? (
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
+                      <span className={`status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(invoice.status)}`}>
                         {getStatusLabel(invoice.status)}
                       </span>
                     ) : (
                       <span
-                        className={`inline-flex h-2.5 w-2.5 rounded-full ${getStatusDotColor(invoice.status)}`}
+                        className={`status-badge inline-flex h-2.5 w-2.5 rounded-full ${getStatusDotColor(invoice.status)}`}
                         title={getStatusLabel(invoice.status)}
                       >
                         <span className="sr-only">{getStatusLabel(invoice.status)}</span>
@@ -1399,7 +1399,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <DocumentOrigin invoice={invoice} onNavigate={onNavigate} />
                   <p className="mt-1 truncate text-sm text-gray-600">{invoice.customerName}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(invoice.status)}`}>
+                    <span className={`status-badge inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
                     </span>
                     <span>{formatDate(invoice.issueDate, locale, company?.dateFormat)}</span>
@@ -1525,7 +1525,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+        <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-xl p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}

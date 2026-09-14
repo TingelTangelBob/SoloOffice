@@ -20,6 +20,7 @@ import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout'
 import { useFeedback } from '../context/FeedbackContext';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { TableSkeleton } from './TableSkeleton';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
 type FormDraft = { customerId: string; invoiceId: string; reason: string; issueDate: string; items: ItemDraft[] };
@@ -145,7 +146,7 @@ export function CreditNoteManagement() {
 
   return <div className="page-root space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Korrekturen und Rückerstattungen nachvollziehbar verwalten."><button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Gutschrift erstellen" title="Gutschrift erstellen"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neu</span></button></PageHeader>
     {notice && <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}{error && <div className="flex justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><XCircle className="h-4 w-4" /></button></div>}
-    {loading ? <div className="rounded-lg bg-white p-10 text-center text-gray-500">Gutschriften werden geladen …</div> : notes.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
+    {loading ? <TableSkeleton rows={5} columns={6} label="Gutschriften werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" /> : notes.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
       <p>Noch keine Gutschriften vorhanden.</p>
       <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Plus className="h-4 w-4" />Gutschrift erstellen</button>
     </div> : (() => {

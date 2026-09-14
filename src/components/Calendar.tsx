@@ -1447,7 +1447,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             ) : (
                               <div
                                 key={calendarEvent.id}
-                                className="flex items-center justify-between gap-1 rounded border border-purple-200 bg-purple-100 px-1.5 py-1 text-xs text-purple-800"
+                                className="calendar-event-enter flex items-center justify-between gap-1 rounded border border-purple-200 bg-purple-100 px-1.5 py-1 text-xs text-purple-800"
                                 title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
                               >
                                 <div className="flex min-w-0 items-center gap-1">
@@ -1512,7 +1512,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                     if (!compactEntries && density === 'indicator') openDayPreview(date, clickEvent);
                                   }}
                                   className={`
-                                    cursor-move transition-all duration-150
+                                    calendar-event-enter cursor-move transition-all duration-150
                                     ${!compactEntries && density === 'indicator'
                                       ? `h-2 w-2 rounded-full ${getStatusIndicatorColor(job.status)}`
                                       : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
@@ -1689,7 +1689,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         {dayEvents.map((calendarEvent, eventIndex) => (
                           <div
                             key={calendarEvent.id}
-                            className="absolute left-1 right-1 z-10 flex h-7 items-center gap-1 overflow-hidden rounded border border-purple-200 bg-purple-100 px-1.5 text-xs text-purple-800"
+                            className="calendar-event-enter absolute left-1 right-1 z-10 flex h-7 items-center gap-1 overflow-hidden rounded border border-purple-200 bg-purple-100 px-1.5 text-xs text-purple-800"
                             style={{ top: `${4 + eventIndex * 30}px` }}
                             title={`${calendarEvent.title} · ${calendarEvent.startDate} bis ${calendarEvent.endDate}`}
                           >
@@ -1716,7 +1716,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 event.stopPropagation();
                                 handleJobDoubleClick(job);
                               }}
-                              className={`absolute left-1 right-1 z-20 cursor-pointer overflow-hidden rounded border p-1.5 text-xs shadow-sm ${getStatusColor(job.status)}`}
+                              className={`calendar-event-enter absolute left-1 right-1 z-20 cursor-pointer overflow-hidden rounded border p-1.5 text-xs shadow-sm ${getStatusColor(job.status)}`}
                               style={{
                                 top: `${((visibleStart - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
                                 height: `${Math.max(32, ((visibleEnd - visibleStart) / 60) * CALENDAR_HOUR_HEIGHT)}px`,
@@ -1852,7 +1852,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             }}
                             onDrop={(e) => handleJobDrop(e, date, job.id)}
                             className={`
-                              p-3 rounded border cursor-move
+                              calendar-event-enter p-3 rounded border cursor-move
                               ${getStatusColor(job.status)}
                               ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : 'hover:shadow-sm'}
                               ${draggedJob && draggedJob.id !== job.id && 
@@ -2042,7 +2042,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
       {previewingJob && (
         <div
-          className="calendar-job-preview-overlay fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6"
+          className="dialog-overlay calendar-job-preview-overlay fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6"
           onClick={() => setPreviewingJob(null)}
         >
           <div
@@ -2173,7 +2173,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
       {/* Job Form Modal */}
       {showJobForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden">
             <JobEntryForm
               job={editingJob}
@@ -2199,7 +2199,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       {/* Calendar sharing preparation */}
       {showShareDialog && (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+          className="dialog-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setShowShareDialog(false)}
         >
           <div
@@ -2277,7 +2277,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
       {/* Customer Creation Modal */}
       {showCustomerForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+        <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-lg p-4 lg:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {terminology.entity.newLabel}

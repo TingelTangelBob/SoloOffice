@@ -2208,6 +2208,11 @@
   to { stroke-dashoffset: 0; }
 }
 
+@keyframes motion-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
 @layer components {
   .page-root {
     animation: motion-fade var(--motion-base) var(--motion-ease) backwards;
@@ -2266,6 +2271,64 @@
   .sort-direction-desc {
     transform: rotate(180deg);
   }
+
+  /* Tab-Leiste: Ein gemeinsamer Unterstrich gleitet zum aktiven Tab, statt
+     dass jeder Tab seinen eigenen ein- und ausblendet. Vor der ersten Messung
+     bleibt er ohne Übergang, damit er beim Aufbau nicht von links einfährt. */
+  .theme-tab-list {
+    position: relative;
+  }
+
+  .theme-tab-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    border-radius: 9999px;
+    background: var(--primary-color);
+    pointer-events: none;
+  }
+
+  .theme-tab-indicator-animated {
+    transition: transform var(--motion-base) var(--motion-ease), width var(--motion-base) var(--motion-ease);
+  }
+
+  .theme-tab-list:has(.theme-tab-indicator) .theme-tab-active::after {
+    background: transparent;
+  }
+
+  /* Platzhalter beim Laden: eine ruhige Fläche mit einem langsamen Lichtlauf
+     statt eines Kreisels – die spätere Form der Tabelle ist schon erkennbar. */
+  .skeleton {
+    border-radius: 0.375rem;
+    background-color: var(--surface-sunken, #f3f4f6);
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--surface-raised, #ffffff) 70%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: motion-shimmer 1.6s linear infinite;
+  }
+
+  /* Positionszeilen: Neue Zeilen rücken kurz von unten ein; das Entfernen
+     klappt die Zeile per Web-Animations-API zusammen (siehe utils/motion.ts),
+     weil CSS keine Höhe aus `auto` animieren kann. */
+  .position-row-enter {
+    animation: motion-rise var(--motion-base) var(--motion-ease) backwards;
+  }
+
+  /* Statuswechsel färben weich um, statt hart zu springen. */
+  .status-badge {
+    transition: background-color var(--motion-slow) var(--motion-ease), color var(--motion-slow) var(--motion-ease), border-color var(--motion-slow) var(--motion-ease);
+  }
+
+  /* Kalender: Termine erscheinen beim Wochen-/Monatswechsel und nach dem
+     Verschieben am neuen Tag mit einer kurzen Blende. */
+  .calendar-event-enter {
+    animation: motion-fade var(--motion-base) var(--motion-ease) backwards;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2277,7 +2340,10 @@
   .feedback-stack > *,
   .chart-area-reveal,
   .chart-point-reveal,
-  .chart-bar-grow {
+  .chart-bar-grow,
+  .position-row-enter,
+  .calendar-event-enter,
+  .skeleton {
     animation: none !important;
   }
 
@@ -2290,7 +2356,9 @@
   .sort-direction-icon,
   .sidebar-shell,
   .theme-tab-button,
-  .theme-tab-button::after {
+  .theme-tab-button::after,
+  .theme-tab-indicator-animated,
+  .status-badge {
     transition-duration: 0ms !important;
   }
 }

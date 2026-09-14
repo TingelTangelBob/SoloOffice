@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { TableSkeleton } from './TableSkeleton';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -764,7 +765,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       {/* Quote List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {isLoadingQuotes ? (
-          <div className="px-4 py-10 text-center text-gray-500">Angebote werden geladen...</div>
+          <TableSkeleton rows={6} columns={6} label="Angebote werden geladen …" />
         ) : quoteLoadError ? (
           <div className="px-4 py-10 text-center">
             <FileText className="h-12 w-12 text-red-400 mx-auto mb-4" />
@@ -900,7 +901,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   </td>
                   <td className={`py-4 whitespace-nowrap ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}>
                     {showStatusLabel ? (
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
+                      <span className={`status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
                         {getStatusLabel(quote.status)}
                       </span>
                     ) : (
@@ -1039,7 +1040,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   </div>
                   <p className="mt-1 truncate text-sm text-gray-600">{quote.customerName}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(quote.status)}`}>
+                    <span className={`status-badge inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(quote.status)}`}>
                       {getStatusLabel(quote.status)}
                     </span>
                     <span>{formatDate(quote.issueDate, locale, company?.dateFormat)}</span>

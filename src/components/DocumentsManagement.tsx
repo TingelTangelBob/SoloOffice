@@ -11,6 +11,7 @@ import { PageHeader } from './PageHeader';
 import { ReceiptsManagement, type ReceiptsManagementHandle } from './ReceiptsManagement';
 import { ThemeTabBar } from './ThemeTabBar';
 import { usePageSearch } from '../context/PageSearchContext';
+import { TableSkeleton } from './TableSkeleton';
 
 type DocumentsTab = 'all' | 'receipts' | 'incoming';
 type DocumentKind = Exclude<DocumentsTab, 'all'>;
@@ -291,7 +292,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
             </button>
           </div>
 
-          {loading ? <div className="py-12 text-center text-sm text-gray-500">{receiptLabel} werden geladen …</div> : documents.length === 0 ? (
+          {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : documents.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
               <FileScan className="mx-auto h-8 w-8 text-gray-400" />
               <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>

@@ -16,6 +16,7 @@ import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { TableSkeleton } from './TableSkeleton';
 
 interface CustomerDetailProps {
   customerId?: string;
@@ -70,7 +71,7 @@ function StatusBadge({ status }: { status: string }) {
     : status === 'overdue' || status === 'rejected'
       ? 'bg-rose-50 text-rose-700'
       : 'bg-gray-100 text-gray-600';
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{statusLabel(status)}</span>;
+  return <span className={`status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{statusLabel(status)}</span>;
 }
 
 function EmptyRelation({ message, actionLabel, onAction }: { message: string; actionLabel?: string; onAction?: () => void }) {
@@ -407,7 +408,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
             <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Rechnungen</h2><p className="mt-1 text-sm text-gray-500">Alle Rechnungen dieses Kunden.</p></div>{canWrite && <button type="button" onClick={startInvoice} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileText className="h-4 w-4" />Rechnung schreiben</button>}</div>{renderDocumentTable(customerInvoices, 'invoices')}</div>
           )}
           {activeTab === 'credit-notes' && (
-            <div className="space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Gutschriften</h2><p className="mt-1 text-sm text-gray-500">Alle Gutschriften dieses Kunden.</p></div>{creditNotesLoading ? <p className="py-8 text-center text-sm text-gray-500">Gutschriften werden geladen …</p> : renderDocumentTable(customerCreditNotes, 'credit-notes')}</div>
+            <div className="space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Gutschriften</h2><p className="mt-1 text-sm text-gray-500">Alle Gutschriften dieses Kunden.</p></div>{creditNotesLoading ? <TableSkeleton rows={3} columns={5} label="Gutschriften werden geladen …" className="overflow-hidden rounded-lg border border-gray-200" /> : renderDocumentTable(customerCreditNotes, 'credit-notes')}</div>
           )}
           {activeTab === 'quotes' && (
             <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Angebote</h2><p className="mt-1 text-sm text-gray-500">Alle Angebote dieses Kunden.</p></div>{canWrite && company.quotesEnabled && <button type="button" onClick={startQuote} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileCheck className="h-4 w-4" />Angebot erstellen</button>}</div>{renderDocumentTable(customerQuotes, 'quotes')}</div>

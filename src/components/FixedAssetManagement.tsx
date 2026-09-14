@@ -11,6 +11,7 @@ import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayout';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { TableSkeleton } from './TableSkeleton';
 
 type AssetDraft = {
   name: string;
@@ -185,7 +186,7 @@ export function FixedAssetManagement() {
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><div className="flex items-center gap-2"><Boxes className="h-5 w-5 text-primary-custom" /><h2 className="text-lg font-semibold text-gray-900">Erfasste Anlagegüter</h2></div></div>
-      {loading ? <div className="px-5 pb-10 text-center text-sm text-gray-500">Anlagen werden geladen …</div> : assets.length === 0 ? (
+      {loading ? <TableSkeleton rows={4} columns={6} label="Anlagen werden geladen …" className="border-t border-gray-100" /> : assets.length === 0 ? (
         <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
           <p>Noch keine Anlagegüter erfasst.</p>
           <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
