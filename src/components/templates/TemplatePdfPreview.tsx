@@ -121,7 +121,7 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
         </div>
       )}
       {previewUrl && iframeSrc && (
-        <div className={large ? 'flex min-h-0 w-full max-w-[760px] overflow-hidden rounded-lg border border-gray-300 bg-gray-100 shadow-sm' : 'space-y-2'}>
+        <div className={large ? 'flex min-h-0 w-full max-w-[960px] overflow-hidden rounded-lg border border-gray-300 bg-gray-100 shadow-sm' : 'space-y-2'}>
           <iframe
             src={iframeSrc}
             title={`${template.name} als PDF`}

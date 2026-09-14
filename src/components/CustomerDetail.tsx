@@ -43,6 +43,11 @@ function typeLabel(customer: Customer): string {
   return customer.customerType === 'organization' ? 'Organisation' : 'Person';
 }
 
+function activityTimestamp(value: Date | string | undefined): number {
+  const timestamp = value instanceof Date ? value.getTime() : Date.parse(String(value || ''));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function TypeIcon({ customer, className = 'h-5 w-5' }: { customer: Customer; className?: string }) {
   const Icon = customer.customerType === 'organization' ? Building2 : UserRound;
   return <Icon className={className} aria-hidden="true" />;
@@ -171,7 +176,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
       })),
     ];
 
-    return activityItems.sort((left, right) => right.date.getTime() - left.date.getTime());
+    return activityItems.sort((left, right) => activityTimestamp(right.date) - activityTimestamp(left.date));
   }, [customer, customerCreditNotes, customerInvoices, customerJobs, customerQuotes, terminology.work.singular, user]);
   const money = (value: number) => formatCurrency(value, company.locale, company.numberFormat, company.currency);
 
