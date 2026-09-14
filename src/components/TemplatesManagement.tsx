@@ -467,7 +467,7 @@ function TemplateEditorOverlay({
             <ArrowLeft className="h-4 w-4" />
             Zurück
           </button>
-          <h2 id={titleId} className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{editingTemplate ? 'Vorlage bearbeiten' : 'Neue Vorlage'}</h2>
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">{formData.name || (editingTemplate ? 'Vorlage' : 'Neue Vorlage')}</h2>
           <button type="button" onClick={onClose} disabled={isSaving} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50" aria-label="Editor schließen">
             <X className="h-4 w-4" />
           </button>
@@ -613,14 +613,7 @@ function TemplateEditorOverlay({
         </aside>
 
         <main className="template-editor-main relative flex min-h-[480px] min-w-0 flex-1 flex-col overflow-hidden lg:min-h-0">
-          <div className="flex items-center justify-between px-5 py-4 lg:pl-14">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-gray-500">Designvorschau</div>
-              <h3 className="mt-1 text-lg font-semibold text-gray-900">{formData.name || 'Neue Vorlage'}</h3>
-            </div>
-            <div className="template-editor-preview-label rounded-full px-3 py-1 text-xs text-gray-500">Beispieldaten</div>
-          </div>
-          <div className="flex flex-1 items-start justify-center overflow-auto px-4 pb-8 pt-2 sm:px-8">
+          <div className="flex flex-1 items-start justify-center overflow-auto px-4 pb-8 pt-4 sm:px-8">
             <TemplatePdfPreview template={previewTemplate} company={company} large />
           </div>
         </main>

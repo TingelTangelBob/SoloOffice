@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, Edit, ExternalLink, FileText, Loader2, Maximize, Minimize, X } from 'lucide-react';
+import { Edit, FileText, Loader2, Maximize, Minimize, X } from 'lucide-react';
 import type { Company, DocumentTemplate } from '../../types';
 import { generateTemplatePreview } from '../../utils/templatePreview';
 
@@ -30,7 +30,6 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
   const previewUrlRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [fileName, setFileName] = useState('Vorlagenvorschau.pdf');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,7 +55,6 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
           if (generation !== generationRef.current) return;
           const nextUrl = URL.createObjectURL(result.blob);
           previewUrlRef.current = nextUrl;
-          setFileName(result.fileName);
           setPreviewUrl(nextUrl);
         })
         .catch(() => {
@@ -75,39 +73,21 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
 
   if (dialog) {
     return (
-      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
         <header className="flex min-w-0 items-center gap-2 border-b border-gray-200 bg-white px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-light-custom text-primary-custom">
             <FileText className="h-5 w-5" aria-hidden="true" />
           </span>
           <h2 id={dialog.titleId} className="min-w-0 truncate text-sm font-semibold text-gray-900 sm:text-base">{template.name}</h2>
-          <div className="flex shrink-0 items-center gap-1">
-            {previewUrl && (
-              <a href={previewUrl} target="_blank" rel="noreferrer" className={TOOL_BUTTON} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
-                <ExternalLink className="h-5 w-5" />
-              </a>
-            )}
-            <button type="button" onClick={dialog.onToggleExpanded} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={dialog.expanded ? 'Fensteransicht' : 'Ansicht auffüllen'} aria-label={dialog.expanded ? 'Fensteransicht' : 'Ansicht auffüllen'}>
-              {dialog.expanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-            </button>
-          </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             {dialog.onEdit && (
               <button type="button" onClick={dialog.onEdit} className={TOOL_BUTTON} title="Vorlage bearbeiten" aria-label="Vorlage bearbeiten">
                 <Edit className="h-5 w-5" />
               </button>
             )}
-            {previewUrl ? (
-              <a href={previewUrl} download={fileName} className="btn-primary inline-flex h-10 min-h-0 min-w-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-white" title="PDF herunterladen" aria-label="PDF herunterladen">
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Herunterladen</span>
-              </a>
-            ) : (
-              <span className="btn-primary inline-flex h-10 min-h-0 min-w-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-white opacity-50" aria-hidden="true">
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Herunterladen</span>
-              </span>
-            )}
+            <button type="button" onClick={dialog.onToggleExpanded} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title={dialog.expanded ? 'Fensteransicht' : 'Ansicht auffüllen'} aria-label={dialog.expanded ? 'Fensteransicht' : 'Ansicht auffüllen'}>
+              {dialog.expanded ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+            </button>
             <button type="button" onClick={dialog.onClose} className={TOOL_BUTTON} title="Vorschau schließen" aria-label="Vorschau schließen" data-preview-close>
               <X className="h-5 w-5" />
             </button>
@@ -128,10 +108,6 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
           )}
         </div>
 
-        <footer className="flex min-w-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-500 sm:px-5">
-          <span className="min-w-0 truncate">{fileName}</span>
-          <span className="shrink-0">Beispieldaten</span>
-        </footer>
       </div>
     );
   }
@@ -145,19 +121,7 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
         </div>
       )}
       {previewUrl && iframeSrc && (
-        <div className={large ? 'flex min-h-0 w-full max-w-[760px] flex-col overflow-hidden rounded-lg border border-gray-300 bg-gray-100 shadow-sm' : 'space-y-2'}>
-          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-3 py-2">
-            <span className="min-w-0 truncate text-sm font-medium text-gray-700">{fileName}</span>
-            <div className="flex shrink-0 items-center gap-1">
-              <a href={previewUrl} target="_blank" rel="noreferrer" className={TOOL_BUTTON} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
-                <ExternalLink className="h-5 w-5" />
-              </a>
-              <a href={previewUrl} download={fileName} className="btn-primary inline-flex h-10 min-h-0 min-w-10 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-white" title="PDF herunterladen" aria-label="PDF herunterladen">
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Herunterladen</span>
-              </a>
-            </div>
-          </div>
+        <div className={large ? 'flex min-h-0 w-full max-w-[760px] overflow-hidden rounded-lg border border-gray-300 bg-gray-100 shadow-sm' : 'space-y-2'}>
           <iframe
             src={iframeSrc}
             title={`${template.name} als PDF`}

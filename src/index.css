@@ -1947,10 +1947,6 @@
     color: var(--ink-strong);
   }
 
-  #app-shell .template-editor-preview-label {
-    background-color: var(--surface-raised);
-  }
-
   #app-shell .template-card-preview-surface {
     background-color: var(--surface-sunken);
   }
