@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
+import { ArrowUp, ChevronsUpDown } from 'lucide-react';
 import type { SortDirection } from '../utils/tableSort';
 
 interface SortableTableHeaderProps {
@@ -23,7 +23,6 @@ export function SortableTableHeader({
   labelHidden = false,
 }: SortableTableHeaderProps) {
   const active = activeKey === sortKey;
-  const Icon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ChevronsUpDown;
 
   return (
     <th scope="col" aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'} className={className}>
@@ -35,7 +34,11 @@ export function SortableTableHeader({
         title={`${label} sortieren`}
       >
         <span className={labelHidden ? 'sr-only' : undefined}>{label}</span>
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-primary-custom' : 'text-gray-400'}`} aria-hidden="true" />
+        {/* Ein Pfeil, der sich dreht, statt zwei Symbole zu tauschen: So ist
+            der Richtungswechsel als Bewegung nachvollziehbar. */}
+        {active
+          ? <ArrowUp className={`sort-direction-icon h-3.5 w-3.5 shrink-0 text-primary-custom ${direction === 'desc' ? 'sort-direction-desc' : ''}`} aria-hidden="true" />
+          : <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />}
       </button>
     </th>
   );

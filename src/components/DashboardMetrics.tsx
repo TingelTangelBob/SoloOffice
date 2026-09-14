@@ -182,10 +182,13 @@ export function ShareBarItem({
   share,
   label,
   value,
+  index = 0,
 }: {
   share: number;
   label: string;
   value: string;
+  /** Position in der Liste; die Balken wachsen nacheinander, nicht gleichzeitig. */
+  index?: number;
 }) {
   const clamped = Math.min(100, Math.max(0, share));
   // Der Rand markiert das Balkenende. Unter etwa einem Drittel Anteil wäre er
@@ -196,8 +199,9 @@ export function ShareBarItem({
     <li className="relative flex h-12 min-w-0 items-center gap-3 overflow-hidden px-4 lg:px-6">
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-0 border-r-2 border-solid"
+        className="chart-bar-grow pointer-events-none absolute inset-y-0 left-0 border-r-2 border-solid"
         style={{
+          ['--chart-index' as string]: index,
           width: `calc((100% - ${BAR_RESERVE}) * ${clamped / 100})`,
           borderRightColor: `color-mix(in srgb, var(--dashboard-bar-color) ${edgeMix}%, transparent)`,
           backgroundImage:

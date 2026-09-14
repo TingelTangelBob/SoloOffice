@@ -2159,3 +2159,138 @@
   max-height: 2.375rem;
   line-height: 1.25rem;
 }
+
+/*
+ * Bewegung.
+ *
+ * SoloOffice soll ruhig wirken: Animationen erklären nur, was gerade passiert
+ * ist (eine Seite ist da, ein Dialog hat sich geöffnet, ein Diagramm zeigt
+ * neue Werte), sie erzeugen keine Aufmerksamkeit für sich. Deshalb kurze
+ * Dauern, kleine Wege, immer `ease-out`, und alles läuft nur einmal beim
+ * Erscheinen. Wer im Betriebssystem Bewegung reduziert hat, bekommt den
+ * Endzustand sofort.
+ *
+ * Seiten bekommen bewusst nur eine Blende ohne `transform`: Ein Transform am
+ * Seitenwurzel-Element würde die darin gerenderten Fixed-Dialoge relativ zur
+ * Seite positionieren – etwa den Rechnungseditor, der unter `#invoices/new`
+ * sofort beim Aufbau der Seite aufgeht.
+ */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 320ms;
+  --motion-draw: 700ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes motion-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes motion-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes motion-pop {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes motion-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes motion-draw-line {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@layer components {
+  .page-root {
+    animation: motion-fade var(--motion-base) var(--motion-ease) backwards;
+  }
+
+  /* Overlay blendet ein, der Dialog darin kommt minimal näher. `backwards`
+     statt `both`: Nach dem Ende darf kein Transform stehen bleiben, sonst
+     verschiebt es Fixed-Elemente im Dialog (etwa Kalender-Popover). */
+  .dialog-overlay {
+    animation: motion-fade var(--motion-fast) var(--motion-ease) backwards;
+  }
+
+  .dialog-overlay > [role="dialog"],
+  .dialog-overlay > form[role="dialog"] {
+    animation: motion-pop var(--motion-base) var(--motion-ease) backwards;
+  }
+
+  .action-menu {
+    transform-origin: top right;
+    animation: motion-pop var(--motion-fast) var(--motion-ease) backwards;
+  }
+
+  .feedback-stack > * {
+    animation: motion-rise var(--motion-base) var(--motion-ease) backwards;
+  }
+
+  /* Diagramme: Die Linie zeichnet sich von links, Fläche und Punkte folgen,
+     Balken wachsen aus ihrer Grundlinie – jeder etwas später als der vorige,
+     damit das Auge der Reihenfolge folgen kann. */
+  .chart-line-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: motion-draw-line var(--motion-draw) var(--motion-ease) forwards;
+  }
+
+  .chart-area-reveal {
+    animation: motion-fade var(--motion-slow) var(--motion-ease) both;
+    animation-delay: calc(var(--motion-draw) * 0.55);
+  }
+
+  .chart-point-reveal {
+    animation: motion-fade var(--motion-base) var(--motion-ease) both;
+    animation-delay: calc(var(--motion-draw) * 0.75);
+  }
+
+  .chart-bar-grow {
+    transform-origin: left center;
+    animation: motion-grow-x var(--motion-slow) var(--motion-ease) backwards;
+    animation-delay: calc(var(--chart-index, 0) * 28ms);
+  }
+
+  .sort-direction-icon {
+    transition: transform var(--motion-base) var(--motion-ease);
+  }
+
+  .sort-direction-desc {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-root,
+  .dialog-overlay,
+  .dialog-overlay > [role="dialog"],
+  .dialog-overlay > form[role="dialog"],
+  .action-menu,
+  .feedback-stack > *,
+  .chart-area-reveal,
+  .chart-point-reveal,
+  .chart-bar-grow {
+    animation: none !important;
+  }
+
+  .chart-line-draw {
+    animation: none !important;
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+
+  .sort-direction-icon,
+  .sidebar-shell,
+  .theme-tab-button,
+  .theme-tab-button::after {
+    transition-duration: 0ms !important;
+  }
+}

@@ -544,9 +544,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardContent className="flex flex-1 flex-col justify-center py-1">
             {topCustomers.length > 0 ? (
               <ShareBarList aria-label={`Top-${terminology.entity.plural} nach Umsatz`}>
-                {topCustomers.map(({ name, revenue }) => (
+                {topCustomers.map(({ name, revenue }, index) => (
                   <ShareBarItem
                     key={name}
+                    index={index}
                     label={name}
                     value={money(revenue)}
                     share={topCustomerMax > 0 ? (revenue / topCustomerMax) * 100 : 0}

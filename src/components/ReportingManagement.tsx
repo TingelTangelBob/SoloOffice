@@ -732,8 +732,8 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                         </div>
                         <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
                           <div
-                            className="bg-primary-custom h-4 rounded-full transition-all duration-500"
-                            style={{ width: `${percentage}%` }}
+                            className="chart-bar-grow h-4 rounded-full bg-primary-custom transition-all duration-500"
+                            style={{ ['--chart-index' as string]: i, width: `${percentage}%` }}
                           ></div>
                           {monthData && (
                             <span className="absolute right-2 top-0 h-4 flex items-center text-xs text-white font-medium">

@@ -80,9 +80,16 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
   const tooltipAbove = activePointY > TOOLTIP_HEIGHT + TOOLTIP_GAP;
   const tooltipTop = tooltipAbove ? activePointY - TOOLTIP_GAP : activePointY + TOOLTIP_GAP;
 
+  // Neue Werte zeichnen die Kurve erneut; eine Breitenänderung (Seitenleiste,
+  // Fenster) soll das nicht auslösen, deshalb hängt der Schlüssel nur an den
+  // Daten. `pathLength={1}` normiert die Linie, damit das Einzeichnen in CSS
+  // ohne gemessene Pfadlänge auskommt.
+  const dataKey = points.map(point => `${point.key}:${point.value}`).join('|');
+
   return (
     <div ref={ref} className="relative w-full">
       <svg
+        key={dataKey}
         width={width}
         height={CHART_HEIGHT}
         viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
@@ -110,9 +117,11 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
           />
         ))}
 
-        <path d={areaPath} fill={`url(#${gradientId})`} />
+        <path d={areaPath} fill={`url(#${gradientId})`} className="chart-area-reveal" />
         <path
           d={linePath}
+          pathLength={1}
+          className="chart-line-draw"
           fill="none"
           stroke="var(--dashboard-chart-line)"
           strokeWidth={2}
@@ -136,6 +145,7 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
         {points.map((point, index) => (
           <circle
             key={point.key}
+            className="chart-point-reveal"
             cx={pointX(index)}
             cy={pointY(point.value)}
             r={activeIndex === index ? 4 : 2.5}

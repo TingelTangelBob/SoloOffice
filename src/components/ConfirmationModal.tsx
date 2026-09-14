@@ -48,7 +48,7 @@ export function ConfirmationModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4"
+      className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4"
       onMouseDown={event => {
         if (event.target === event.currentTarget) onClose();
       }}
