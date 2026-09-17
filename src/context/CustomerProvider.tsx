@@ -4,6 +4,7 @@ import { Customer } from '../types';
 import { apiService } from '../services/api';
 import logger from '../utils/logger';
 import { CustomerContext, type CustomerContextType } from './CustomerContext';
+import { trackTelemetry } from '../services/telemetry';
 
 // ============================================================================
 // Provider
@@ -25,6 +26,7 @@ export function CustomerProvider({ children, initialCustomers = [] }: CustomerPr
     try {
       const newCustomer = await apiService.createCustomer(customerData);
       setCustomers(prev => [...prev, newCustomer]);
+      trackTelemetry('customer_created');
       return newCustomer;
     } catch (error) {
       logger.error('Error adding customer:', error);

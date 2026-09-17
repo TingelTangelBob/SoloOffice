@@ -51,6 +51,15 @@ services:
       - SHUTDOWN_TIMEOUT_MS=${SHUTDOWN_TIMEOUT_MS:-10000}
       - OCR_CONCURRENCY_LIMIT=${OCR_CONCURRENCY_LIMIT:-2}
       - OCR_TIMEOUT_MS=${OCR_TIMEOUT_MS:-120000}
+      # Optionales Telemetrie-Relay; alle Schalter sind standardmäßig aus.
+      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-false}
+      - TELEMETRY_SOURCE=${TELEMETRY_SOURCE:-selfhost}
+      - TELEMETRY_URL=${TELEMETRY_URL:-}
+      - TELEMETRY_SECRET=${TELEMETRY_SECRET:-}
+      - TELEMETRY_INSTALLATION_ID=${TELEMETRY_INSTALLATION_ID:-}
+      - TELEMETRY_INSTALLED_AT=${TELEMETRY_INSTALLED_AT:-}
+      - TELEMETRY_TIMEOUT_MS=${TELEMETRY_TIMEOUT_MS:-5000}
+      - SOLOOFFICE_VERSION=${SOLOOFFICE_VERSION:-dev}
       - REGISTRATION_MODE=${REGISTRATION_MODE:-closed-after-first}
       - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY muss in der Instanz-Umgebung gesetzt sein}
@@ -97,6 +106,11 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
         VITE_DEMO_MODE: ${VITE_DEMO_MODE:-false}
+        VITE_AGB_URL: ${VITE_AGB_URL:-https://solooffice.de/agb}
+        VITE_AVV_URL: ${VITE_AVV_URL:-https://solooffice.de/avv}
+        VITE_DATENSCHUTZ_URL: ${VITE_DATENSCHUTZ_URL:-https://solooffice.de/datenschutz}
+        VITE_IMPRESSUM_URL: ${VITE_IMPRESSUM_URL:-https://solooffice.de/impressum}
+        VITE_TELEMETRY_ENABLED: ${VITE_TELEMETRY_ENABLED:-false}
         SOLOOFFICE_VERSION: ${SOLOOFFICE_VERSION:-dev}
         SOLOOFFICE_COMMIT_SHA: ${SOLOOFFICE_COMMIT_SHA:-unknown}
     container_name: ${COMPOSE_PROJECT_NAME:-solooffice}-frontend

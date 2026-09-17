@@ -49,6 +49,47 @@ file_mode() {
     stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
 }
 
+# Compose-Aufruf für eine Instanz. Neben docker-compose.yml werden die in
+# `.env.<instanz>` unter COMPOSE_OVERLAY_FILES (durch Leerzeichen getrennt)
+# genannten Overlays geladen, z. B. `COMPOSE_OVERLAY_FILES=docker-compose.saas.yml`
+# für den gehosteten Betrieb hinter einem Reverse-Proxy. Erlaubt sind nur
+# Dateien direkt im Projektordner; ein fehlendes Overlay ist ein Fehler, damit
+# eine Instanz nie versehentlich ohne ihre Härtung startet.
+instance_compose_files() {
+    local instance_name="$1"
+    local env_file=".env.${instance_name}"
+    local overlays
+    local overlay
+    local -a files=(-f docker-compose.yml)
+
+    overlays=$(sed -n 's/^COMPOSE_OVERLAY_FILES=//p' "$env_file" 2>/dev/null | tail -n 1 | tr -d '"'"'"'"')
+    # Erst vollständig prüfen, dann ausgeben: Ein Fehler darf nicht zu einer
+    # halben Dateiliste führen, mit der Compose ohne Overlay weiterliefe.
+    for overlay in $overlays; do
+        if [[ ! "$overlay" =~ ^[A-Za-z0-9._-]+\.ya?ml$ ]] || [ ! -f "$SCRIPT_DIR/$overlay" ]; then
+            printf 'COMPOSE_OVERLAY_FILES verweist auf eine unbekannte Datei: %s\n' "$overlay" >&2
+            return 1
+        fi
+        files+=(-f "$overlay")
+    done
+    printf '%s\n' "${files[@]}"
+}
+
+instance_compose() {
+    local instance_name="$1"
+    shift
+    local file_list
+    local -a files=()
+    local line
+
+    file_list=$(instance_compose_files "$instance_name") || return 1
+    while IFS= read -r line; do
+        [ -n "$line" ] && files+=("$line")
+    done <<< "$file_list"
+    [ "${#files[@]}" -ge 2 ] || return 1
+    docker compose --env-file ".env.${instance_name}" "${files[@]}" "$@"
+}
+
 # Function to list all running instances
 list_instances() {
     local env_file
@@ -67,8 +108,7 @@ list_instances() {
             if [ -f ".env.backend.$instance_name" ]; then
                 found=true
                 frontend_port=$(sed -n 's/^FRONTEND_PORT=//p' "$env_file" | tail -n 1)
-                container_id=$(docker compose --env-file "$env_file" -f docker-compose.yml \
-                    ps -q frontend 2>/dev/null)
+                container_id=$(instance_compose "$instance_name" ps -q frontend 2>/dev/null)
                 if [ -n "$container_id" ]; then
                     container_state=$(docker inspect --format \
                         '{{.State.Status}}{{if .State.Health}}/{{.State.Health.Status}}{{end}}' \
@@ -107,7 +147,7 @@ stop_instance() {
     fi
     
     print_info "Stoppe Instanz: $instance_name"
-    if docker compose --env-file ".env.${instance_name}" -f docker-compose.yml down; then
+    if instance_compose "$instance_name" down; then
         print_success "Instanz '$instance_name' wurde gestoppt"
     else
         print_error "Fehler beim Stoppen der Instanz '$instance_name'"
@@ -161,9 +201,10 @@ EOF
     build_revision=$(solooffice_source_revision "$SCRIPT_DIR")
 
     print_info "Starte Instanz: $instance_name"
-    if env SOLOOFFICE_VERSION="$build_version" SOLOOFFICE_COMMIT_SHA="$build_revision" \
-        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml \
-        up -d --build --wait --wait-timeout 120; then
+    # Zuweisungen vor dem Funktionsaufruf gelten für dessen Kindprozesse; `env`
+    # kann keine Shell-Funktion starten.
+    if SOLOOFFICE_VERSION="$build_version" SOLOOFFICE_COMMIT_SHA="$build_revision" \
+        instance_compose "$instance_name" up -d --build --wait --wait-timeout 120; then
         if ! verify_instance "$instance_name"; then
             print_error "Die Instanz wurde gestartet, hat die Betriebsprüfung aber nicht bestanden."
             return 1
@@ -210,7 +251,7 @@ remove_instance() {
         print_info "Entferne Instanz: $instance_name"
         
         # Stop and remove containers with volumes
-        docker compose --env-file .env.${instance_name} -f docker-compose.yml down -v
+        instance_compose "$instance_name" down -v
         
         # Remove configuration files
         rm -f .env.${instance_name}
@@ -249,9 +290,9 @@ logs_instance() {
     print_info "Zeige Logs für Instanz: $instance_name"
     if [ -n "$service" ]; then
         print_info "Service: $service"
-        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml logs -f "$service"
+        instance_compose "$instance_name" logs -f "$service"
     else
-        docker compose --env-file ".env.${instance_name}" -f docker-compose.yml logs -f
+        instance_compose "$instance_name" logs -f
     fi
 }
 
@@ -292,7 +333,7 @@ backup_instance() {
     local backup_file="${backup_dir}/backup_${instance_name}_${timestamp}.sql"
     local force_rls_file
     force_rls_file=$(mktemp)
-    local compose_command=(docker compose --env-file ".env.${instance_name}" -f docker-compose.yml)
+    local compose_command=(instance_compose "$instance_name")
     local backend_was_running=false
     local rls_relaxed=false
     local cleanup_done=false
@@ -538,7 +579,7 @@ verify_instance() {
         solooffice_require_revision "$expected_revision" || return 1
     fi
 
-    compose_command=(docker compose --env-file "$env_file" -f docker-compose.yml)
+    compose_command=(instance_compose "$instance_name")
     for service in database backend frontend; do
         container_id=$("${compose_command[@]}" ps -q "$service")
         if [ -z "$container_id" ]; then
@@ -686,7 +727,7 @@ update_instance() {
         fi
     fi
     version=$(solooffice_project_version "$SCRIPT_DIR")
-    compose_command=(docker compose --env-file "$env_file" -f docker-compose.yml)
+    compose_command=(instance_compose "$instance_name")
 
     env_hashes=$(mktemp)
     if ! solooffice_write_sha256_manifest "$env_hashes" "$env_file" "$backend_env_file"; then
@@ -699,7 +740,7 @@ update_instance() {
     fi
 
     print_info "Baue SoloOffice $version aus Commit ${revision:0:12}."
-    if ! env SOLOOFFICE_VERSION="$version" SOLOOFFICE_COMMIT_SHA="$revision" \
+    if ! SOLOOFFICE_VERSION="$version" SOLOOFFICE_COMMIT_SHA="$revision" \
         "${compose_command[@]}" build frontend backend; then
         rm -f "$env_hashes"
         print_error "Build fehlgeschlagen; die laufenden Container wurden nicht umgeschaltet."

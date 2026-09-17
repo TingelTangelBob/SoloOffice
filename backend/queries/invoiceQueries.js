@@ -16,6 +16,7 @@ function mapInvoice(row) {
     customerName: row.customer_name,
     issueDate: row.issue_date,
     dueDate: row.due_date,
+    serviceDate: row.service_date || null,
     items: row.items || [],
     attachments: row.attachments || [],
     sourceJobs: row.source_jobs || [],

@@ -118,6 +118,7 @@ export function TopBar({
               <ActionMenuItem
                 key={notice.id}
                 icon={<span className={`block h-2 w-2 rounded-full ${NOTICE_DOT[notice.tone]}`} />}
+                multiline
                 onClick={() => onNavigate(notice.page)}
               >
                 <span className="block truncate font-medium text-gray-900">{notice.label}</span>

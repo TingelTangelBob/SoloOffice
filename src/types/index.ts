@@ -108,6 +108,8 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   customerName: string;
   issueDate: Date;
   dueDate: Date;
+  /** Leistungsdatum (§ 14 Abs. 4 Nr. 6 UStG); leer/null → entspricht Rechnungsdatum. */
+  serviceDate?: Date | null;
   items: InvoiceItem[];
   subtotal: number;
   taxAmount: number;
@@ -198,6 +200,7 @@ export interface CreditNotePayload {
   creditNoteReason: string;
   issueDate: Date | string;
   dueDate?: Date | string;
+  serviceDate?: Date | string | null;
   items: InvoiceItemPayload[];
   notes?: string;
   status?: InvoiceStatus;
@@ -632,6 +635,15 @@ export interface AuthResponse {
   user: AuthUser;
   workspace: WorkspaceSummary;
   workspaces: WorkspaceSummary[];
+}
+
+export interface RegistrationPayload {
+  email: string;
+  password: string;
+  termsAccepted: boolean;
+  firstName?: string;
+  lastName?: string;
+  workspaceName?: string;
 }
 
 export interface RegistrationResponse {

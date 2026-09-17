@@ -90,6 +90,7 @@ async function getAuthResponse(token) {
       name: auth.workspace.name,
       slug: auth.workspace.slug,
       created_at: auth.workspace.createdAt,
+      suspended_at: auth.workspace.suspendedAt,
     }, auth.role),
     permissions: auth.permissions,
   };
@@ -141,6 +142,9 @@ async function sendPasswordResetEmail(req, { workspaceId, email, token }) {
 router.post('/register', async (req, res) => {
   const identity = validateIdentityPayload(req.body || {});
   if (identity.error) return res.status(400).json({ error: identity.error });
+  if (req.body.termsAccepted !== true) {
+    return res.status(400).json({ error: 'Bitte bestätigen Sie, dass Sie Unternehmer sind und AGB sowie AVV akzeptieren.' });
+  }
 
   const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim().slice(0, 100) : '';
   const lastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim().slice(0, 100) : '';

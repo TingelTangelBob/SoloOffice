@@ -481,6 +481,7 @@ interface InvoiceDraftFormData {
   customerId: string;
   issueDate: string;
   dueDate: string;
+  serviceDate: string;
   status: Invoice['status'];
   notes: string;
   globalDiscountType?: 'percentage' | 'fixed';
@@ -520,6 +521,7 @@ function getInvoiceDraftSnapshot(
       customerId: formData.customerId,
       issueDate: formData.issueDate,
       dueDate: formData.dueDate,
+      serviceDate: formData.serviceDate,
       status: formData.status,
       notes: formData.notes,
       globalDiscountType: formData.globalDiscountType,
@@ -621,6 +623,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
     customerId: initialCustomerId || '',
     issueDate: new Date().toISOString().split('T')[0],
     dueDate: calculateDueDate(new Date().toISOString().split('T')[0]),
+    serviceDate: new Date().toISOString().split('T')[0],
     status: 'draft' as Invoice['status'],
     notes: '',
     globalDiscountType: undefined as 'percentage' | 'fixed' | undefined,
@@ -660,6 +663,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
         customerId: invoice.customerId,
         issueDate: new Date(invoice.issueDate).toISOString().split('T')[0],
         dueDate: new Date(invoice.dueDate).toISOString().split('T')[0],
+        serviceDate: new Date(invoice.serviceDate || invoice.issueDate).toISOString().split('T')[0],
         status: invoice.status,
         notes: invoice.notes || '',
         globalDiscountType: invoice.globalDiscountType,
@@ -1000,6 +1004,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
       customerName: customer.name,
       issueDate: new Date(formData.issueDate),
       dueDate: new Date(formData.dueDate),
+      serviceDate: formData.serviceDate ? new Date(formData.serviceDate) : new Date(formData.issueDate),
       items,
       subtotal: calculation.subtotal,
       taxAmount: calculation.taxAmount,
@@ -1178,7 +1183,11 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                         setFormData(prev => ({
                           ...prev,
                           issueDate: newIssueDate,
-                          dueDate: calculateDueDate(newIssueDate)
+                          dueDate: calculateDueDate(newIssueDate),
+                          // Leistungsdatum mitziehen, wenn es noch dem alten Rechnungsdatum entsprach
+                          serviceDate: (!prev.serviceDate || prev.serviceDate === prev.issueDate)
+                            ? newIssueDate
+                            : prev.serviceDate,
                         }));
                       } catch (error) {
                         logger.warn('Error calculating due date', { error: (error as Error).message });
@@ -1205,6 +1214,20 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Wird automatisch auf {company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30} Tage nach Rechnungsdatum gesetzt. {(company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30) === 0 && 'Bei 0 Tagen ist die Rechnung sofort fällig.'}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                    Leistungsdatum
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.serviceDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, serviceDate: e.target.value }))}
+                    className="form-input form-input-compact w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Wenn leer oder gleich dem Rechnungsdatum, erscheint auf der Rechnung „Leistungsdatum entspricht Rechnungsdatum“.
                   </p>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type {
   AuthUser,
+  RegistrationPayload,
   RegistrationResponse,
   WorkspaceInvitation,
   WorkspaceMember,
@@ -15,7 +16,7 @@ export interface AuthContextValue {
   loading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string, workspaceId?: string) => Promise<void>;
-  register: (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => Promise<RegistrationResponse>;
+  register: (payload: RegistrationPayload) => Promise<RegistrationResponse>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => Promise<void>;

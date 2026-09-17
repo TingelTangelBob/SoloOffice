@@ -25,7 +25,10 @@ import fixedAssetsRouter from './routes/fixedAssets.js';
 import importsRouter from './routes/imports.js';
 import authRouter from './routes/auth.js';
 import workspacesRouter from './routes/workspaces.js';
+import controlPlaneWorkspacesRouter from './routes/controlPlaneWorkspaces.js';
+import telemetryRouter from './routes/telemetry.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
+import { workspaceSuspensionGuard } from './middleware/workspaceSuspension.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
 import { requestTracing } from './middleware/requestTracing.js';
 import { metricsMiddleware, getMetricsSnapshot, metricsAccessStatus } from './utils/metrics.js';
@@ -87,6 +90,11 @@ app.get('/health/live', (req, res) => res.json(livenessPayload()));
 app.get('/health/ready', (req, res) => sendReadiness(req, res));
 app.get('/health', (req, res) => sendReadiness(req, res, true));
 
+// Interne Schnittstelle des Control Plane. Sie liegt bewusst außerhalb von
+// `/api`: eigene Authentifizierung über HMAC-Signatur, keine Nutzersitzung und
+// kein öffentlicher Proxy-Pfad (nginx reicht nur `/api/` weiter).
+app.use('/internal/control-plane', controlPlaneWorkspacesRouter);
+
 // API routes
 // Authentication endpoints that must be reachable without an existing session.
 app.use('/api', csrfProtection);
@@ -110,6 +118,9 @@ app.use('/api', express.urlencoded({ limit: '2mb', extended: true }));
 // All business routes share one authentication and authorization seam. The
 // database adapter applies the request's workspace context underneath it.
 app.use('/api', requireAuth);
+// Gesperrte Arbeitsbereiche bleiben lesbar; nur Schreibzugriffe werden
+// abgewiesen (AP-4.4).
+app.use('/api', workspaceSuspensionGuard);
 app.use('/api', authorizeLegacyRequest);
 
 app.use('/api/workspaces', workspacesRouter);
@@ -134,6 +145,7 @@ app.use('/api/backup', backupRouter);
 app.use('/api/reporting', reportingRouter);
 app.use('/api/reminders', remindersRouter);
 app.use('/api/calendar-events', calendarEventsRouter);
+app.use('/api/telemetry', telemetryRouter);
 
 app.get('/metrics', (req, res) => {
   const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));

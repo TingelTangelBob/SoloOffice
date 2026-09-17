@@ -54,10 +54,10 @@ router.put('/:id', async (req, res) => {
   try {
     const existing = await findInvoiceById(req.params.id);
     if (!existing || existing.documentType !== 'credit_note') return res.status(404).json({ error: 'Credit note not found' });
-    const editableFields = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'items', 'notes', 'status'];
+    const editableFields = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'serviceDate', 'items', 'notes', 'status'];
     const hasUnexpectedField = Object.keys(req.body).some(field => !editableFields.includes(field));
     if (hasUnexpectedField) return res.status(400).json({ error: 'Unsupported credit note field' });
-    const isContentUpdate = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'items'].some(field => req.body[field] !== undefined);
+    const isContentUpdate = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'serviceDate', 'items'].some(field => req.body[field] !== undefined);
     if (isContentUpdate && existing.status !== 'draft') return res.status(400).json({ error: 'Only draft credit notes can be edited' });
 
     let referenceInvoiceId = req.body.referenceInvoiceId !== undefined ? req.body.referenceInvoiceId : existing.referenceInvoiceId;
@@ -88,6 +88,7 @@ router.put('/:id', async (req, res) => {
       creditNoteReason: req.body.creditNoteReason !== undefined ? creditNoteReason : undefined,
       issueDate: req.body.issueDate,
       dueDate: req.body.dueDate,
+      serviceDate: req.body.serviceDate,
       items: normalizedItems,
       status: req.body.status,
       notes: req.body.notes,

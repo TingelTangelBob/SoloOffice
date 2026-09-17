@@ -5,6 +5,13 @@ import { apiService } from '../services/api';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 
+const legalLinks = {
+  agb: import.meta.env.VITE_AGB_URL || 'https://solooffice.de/agb',
+  avv: import.meta.env.VITE_AVV_URL || 'https://solooffice.de/avv',
+  datenschutz: import.meta.env.VITE_DATENSCHUTZ_URL || 'https://solooffice.de/datenschutz',
+  impressum: import.meta.env.VITE_IMPRESSUM_URL || 'https://solooffice.de/impressum',
+};
+
 export function AuthPage() {
   const { login, register, acceptInvitation } = useAuth();
   const searchParams = new URLSearchParams(window.location.search);
@@ -18,6 +25,7 @@ export function AuthPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,6 +45,7 @@ export function AuthPage() {
     setNotice('');
     setPassword('');
     setPasswordConfirmation('');
+    setTermsAccepted(false);
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -45,6 +54,10 @@ export function AuthPage() {
     setNotice('');
     if ((mode === 'register' || mode === 'reset') && password !== passwordConfirmation) {
       setError('Die Passwörter stimmen nicht überein.');
+      return;
+    }
+    if (isRegistration && !termsAccepted) {
+      setError('Bitte bestätigen Sie, dass Sie Unternehmer sind und AGB sowie AVV akzeptieren.');
       return;
     }
 
@@ -63,7 +76,7 @@ export function AuthPage() {
       } else if (mode === 'login') {
         await login(email, password);
       } else {
-        const response = await register({ email, password, firstName, lastName, workspaceName: workspaceName || undefined });
+        const response = await register({ email, password, firstName, lastName, workspaceName: workspaceName || undefined, termsAccepted });
         if (response.verificationRequired) {
           setNotice(response.message || 'Bitte bestätigen Sie Ihre E-Mail-Adresse.');
           setMode('login');
@@ -143,6 +156,15 @@ export function AuthPage() {
             <label htmlFor="auth-password-confirmation" className="block text-sm text-gray-700">Passwort wiederholen<input id="auth-password-confirmation" name="password-confirmation" type="password" required minLength={10} value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth new-password" /></label>
           )}
 
+          {isRegistration && (
+            <label htmlFor="auth-terms-accepted" className="flex items-start gap-2 text-sm text-gray-700">
+              <input id="auth-terms-accepted" name="terms-accepted" type="checkbox" required checked={termsAccepted} onChange={event => setTermsAccepted(event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <span>
+                Ich bin Unternehmer und akzeptiere <a href={legalLinks.agb} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">AGB</a> sowie <a href={legalLinks.avv} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">AVV</a>.
+              </span>
+            </label>
+          )}
+
           {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           {notice && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div>}
 
@@ -154,6 +176,12 @@ export function AuthPage() {
 
         {!invitationToken && mode === 'login' && <button type="button" onClick={() => selectMode('forgot')} className="mt-4 w-full text-sm text-blue-700 hover:underline">Passwort vergessen?</button>}
         {!invitationToken && (mode === 'forgot' || mode === 'reset') && <button type="button" onClick={() => selectMode('login')} className="mt-4 w-full text-sm text-gray-600 hover:underline">Zurück zur Anmeldung</button>}
+
+        <footer className="mt-8 border-t border-gray-200 pt-4 text-center text-xs text-gray-500">
+          <a href={legalLinks.impressum} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">Impressum</a>
+          <span className="mx-2" aria-hidden="true">|</span>
+          <a href={legalLinks.datenschutz} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">Datenschutz</a>
+        </footer>
       </section>
     </main>
   );

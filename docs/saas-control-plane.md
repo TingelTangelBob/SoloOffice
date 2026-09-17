@@ -23,7 +23,15 @@ Kulanzstatus, Zahlungshistorie und Admin-Kennzahlen.
 
 Der Stand ist noch kein öffentlicher Verkaufsstart. Die Stripe-Price-IDs,
 Schlüssel, Steuerkonfiguration und Rechtstexte werden ausschließlich über die
-Umgebung gesetzt. Die Anbindung an eine abgesicherte SoloOffice-Admin-API für
-Provisioning und Sperren ist als Vertrag vorbereitet, aber noch nicht in der
-Fachanwendung vorhanden. Bis zu diesem Nachweis bleibt der SaaS-Betrieb ein 🟠
-offener Betriebsbaustein; Self-Hosting ist davon nicht abhängig.
+Umgebung gesetzt.
+
+Die Fachapp-Seite der Bereitstellung und Sperre ist seit AP-4.4 vorhanden:
+`/internal/control-plane` mit HMAC-Signatur, Zeitfenster, Idempotenz und
+Sperrzustand am Workspace. Beschreibung in
+[`control-plane-internal-api.md`](control-plane-internal-api.md). Eine Sperre
+lässt Lesen und Export ausdrücklich zu und verweigert nur Schreibzugriffe.
+
+Offen bleiben der Nachweis gegen einen laufenden Control Plane, der Export-
+und Löschworkflow (AP-5.5) sowie ein sichtbarer Sperrhinweis in der
+Oberfläche. Bis dahin bleibt der SaaS-Betrieb ein 🟠 offener Betriebsbaustein;
+Self-Hosting ist davon nicht abhängig.

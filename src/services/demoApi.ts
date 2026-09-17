@@ -606,7 +606,7 @@ function hasMoneyUpdate(data: DemoRecord): boolean {
     || data.globalDiscountAmount !== undefined;
 }
 
-const invoiceContentFields = ['customerId', 'customerName', 'issueDate', 'dueDate', 'items', 'attachments', 'notes',
+const invoiceContentFields = ['customerId', 'customerName', 'issueDate', 'dueDate', 'serviceDate', 'items', 'attachments', 'notes',
   'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount', 'referenceInvoiceId', 'creditNoteReason',
   'recurringInvoiceId', 'subtotal', 'taxAmount', 'total', 'documentType', 'documentSnapshot', 'invoiceNumber'];
 

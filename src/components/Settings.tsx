@@ -19,6 +19,7 @@ import { InfoTooltip } from './InfoTooltip';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 import { useFeedback } from '../context/FeedbackContext';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
+import { trackTelemetry } from '../services/telemetry';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
@@ -291,6 +292,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
       delete companySettings.reminderTextStage2;
       delete companySettings.reminderTextStage3;
       await updateCompany(companySettings);
+      if (terminologyProfileChanged) trackTelemetry('terminology_used');
       if (isDemoMode && terminologyProfileChanged) {
         window.location.reload();
         return;

@@ -15,6 +15,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { ReceiptBillingDialog } from './ReceiptBillingDialog';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { TableSkeleton } from './TableSkeleton';
+import { trackTelemetry } from '../services/telemetry';
 
 interface ReceiptsManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
@@ -123,6 +124,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     try {
       const result = await uploadReceiptFiles(files);
       if (result.created.length) {
+        trackTelemetry('ocr_used', { count: result.created.length });
         setReceipts(current => [...result.created.slice().reverse(), ...current]);
         setNotice(`${result.created.length === 1 ? 'Beleg' : `${result.created.length} ${receiptLabel}`} hochgeladen und lokal verarbeitet. Bitte die Vorschläge prüfen.`);
       }
@@ -238,6 +240,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     setError('');
     try {
       const updated = await apiService.retryReceiptOcr(receipt.id);
+      trackTelemetry('ocr_used');
       updateReceiptInState(updated);
       if (selectedReceipt?.id === updated.id) {
         setOriginalReviewData({ ...(updated.extractedData || {}) });

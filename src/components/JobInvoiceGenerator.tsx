@@ -382,6 +382,7 @@ export function JobInvoiceGenerator({
       customerName: customer.name,
       issueDate: issueDate,
       dueDate: dueDate,
+      serviceDate: issueDate,
       items,
       subtotal,
       taxAmount,

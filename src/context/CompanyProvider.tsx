@@ -8,6 +8,7 @@ import logger from '../utils/logger';
 import { DEFAULT_TIME_ZONE } from '../utils/timeZones';
 import { CompanyContext, type CompanyContextType } from './CompanyContext';
 import { defaultDocumentTextTemplates } from '../utils/documentTextTemplates';
+import { trackTelemetry } from '../services/telemetry';
 
 // ============================================================================
 // Default Values
@@ -400,6 +401,7 @@ export function CompanyProvider({
     try {
       const newTemplate = await apiService.createMaterialTemplate(templateData);
       setMaterialTemplates(prev => [...prev, newTemplate]);
+      trackTelemetry('template_created');
     } catch (error) {
       logger.error('Error adding material template:', { error: error instanceof Error ? error.message : String(error) });
       throw error;
@@ -444,6 +446,7 @@ export function CompanyProvider({
 
     try {
       await updateCompanyData({ invoiceTemplates: updatedInvoiceTemplates });
+      trackTelemetry('template_created');
     } catch (error) {
       logger.error('Error adding invoice template:', { error: error instanceof Error ? error.message : String(error) });
       throw error;
@@ -503,6 +506,7 @@ export function CompanyProvider({
     ];
 
     await updateCompanyData({ documentTemplates: updatedTemplates });
+    trackTelemetry('template_created');
   }, [company.documentTemplates, updateCompanyData]);
 
   const updateDocumentTemplateData = useCallback(async (id: string, templateData: Partial<DocumentTemplate>): Promise<void> => {

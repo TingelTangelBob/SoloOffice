@@ -19,6 +19,11 @@ services:
       dockerfile: Dockerfile.demo
       args:
         VITE_DEMO_MODE: "true"
+        VITE_AGB_URL: ${VITE_AGB_URL:-https://solooffice.de/agb}
+        VITE_AVV_URL: ${VITE_AVV_URL:-https://solooffice.de/avv}
+        VITE_DATENSCHUTZ_URL: ${VITE_DATENSCHUTZ_URL:-https://solooffice.de/datenschutz}
+        VITE_IMPRESSUM_URL: ${VITE_IMPRESSUM_URL:-https://solooffice.de/impressum}
+        VITE_TELEMETRY_ENABLED: ${VITE_TELEMETRY_ENABLED:-false}
         VITE_COMMIT_SHA: ${VITE_COMMIT_SHA:-unknown}
         VITE_APP_VERSION: ${VITE_APP_VERSION:-dev}
     image: ${DEMO_IMAGE:-solooffice-demo:local}

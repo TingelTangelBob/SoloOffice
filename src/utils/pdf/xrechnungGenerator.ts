@@ -6,9 +6,10 @@ import { escapeXML, formatAmountForXML, countryCode, taxCategoryCode, taxExempti
 import { calculateTaxBreakdown, hasOnlyZeroTaxRate } from './taxCalculations';
 import { getEffectivePaymentInformation } from '../paymentInformation';
 import { assertEInvoiceXML } from './eInvoiceValidation';
+import { resolveServiceDate } from '../serviceDate';
 
 function dateValue(value: string | Date) {
-  return new Date(value).toISOString().split('T')[0];
+  return resolveServiceDate({ issueDate: value, serviceDate: null });
 }
 
 export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Promise<Blob> {
@@ -85,7 +86,7 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
     </cac:PostalAddress>
     <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXML(options.customer.name)}</cbc:RegistrationName></cac:PartyLegalEntity>
   </cac:Party></cac:AccountingCustomerParty>
-  <cac:Delivery><cbc:ActualDeliveryDate>${dateValue(invoice.issueDate)}</cbc:ActualDeliveryDate></cac:Delivery>
+  <cac:Delivery><cbc:ActualDeliveryDate>${dateValue(resolveServiceDate(invoice))}</cbc:ActualDeliveryDate></cac:Delivery>
   ${paymentMeans}
   ${paymentTermsXml}
   <cac:TaxTotal>

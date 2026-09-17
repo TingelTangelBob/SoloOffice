@@ -56,6 +56,8 @@ export function formatNumber(
   numberFormat?: NumberFormat,
   fractionDigits = 2,
 ): string {
+  if (!Number.isFinite(amount)) return '';
+
   return new Intl.NumberFormat(getNumberLocale(locale, numberFormat), {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
@@ -68,6 +70,8 @@ export function formatCurrency(
   numberFormat?: NumberFormat,
   currency?: string,
 ): string {
+  if (!Number.isFinite(amount)) return '';
+
   try {
     return new Intl.NumberFormat(getNumberLocale(locale, numberFormat), {
       style: 'currency',
@@ -112,6 +116,7 @@ export function formatDate(
 ): string {
   if (value === null || value === undefined) return '';
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   if (!dateFormat) return date.toLocaleDateString(locale);
 
   const day = String(date.getDate()).padStart(2, '0');
@@ -134,6 +139,7 @@ export function formatDate(
 export function formatTime(value: Date | string | number, locale = 'de-DE', timeFormat?: TimeFormat): string {
   if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)) {
     const [hours, minutes] = value.split(':').map(Number);
+    if (hours > 23 || minutes > 59) return '';
     if (timeFormat === '12h') {
       const suffix = hours >= 12 ? 'PM' : 'AM';
       const displayHours = hours % 12 || 12;
@@ -141,7 +147,9 @@ export function formatTime(value: Date | string | number, locale = 'de-DE', time
     }
     return value;
   }
-  return new Date(value).toLocaleTimeString(locale, {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: timeFormat === '12h',

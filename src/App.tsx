@@ -8,6 +8,7 @@ import { useAuth } from './context/AuthContext';
 import { AuthProvider } from './context/AuthProvider';
 import { FeedbackProvider } from './context/FeedbackProvider';
 import { AuthPage } from './components/AuthPage';
+import { trackTelemetry } from './services/telemetry';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
 const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
@@ -189,6 +190,14 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
 
 function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps) {
   const { loading, isAuthenticated, workspace } = useAuth();
+
+  useEffect(() => {
+    if (loading || !isAuthenticated || !workspace || typeof sessionStorage === 'undefined') return;
+    const heartbeatKey = `solooffice-telemetry-heartbeat-${new Date().toISOString().slice(0, 10)}`;
+    if (sessionStorage.getItem(heartbeatKey)) return;
+    sessionStorage.setItem(heartbeatKey, '1');
+    trackTelemetry('heartbeat');
+  }, [isAuthenticated, loading, workspace]);
 
   if (loading) return <PageLoading fullScreen />;
   if (!isAuthenticated || !workspace) return <AuthPage />;

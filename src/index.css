@@ -1592,6 +1592,35 @@
     color: var(--ink-strong);
   }
 
+  /* Die Glocke nutzt technisch ebenfalls ein ActionMenu, soll in der
+     Kopfleiste aber neutral aussehen und nicht dauerhaft wie ein Hover-
+     oder Auswahlzustand wirken. Nur während des geöffneten Menüs bleibt die
+     dezente Fläche sichtbar. */
+  #app-shell .topbar-icon-button.action-menu-trigger,
+  #app-shell .topbar-icon-button.action-menu-trigger-primary {
+    background-color: transparent !important;
+    color: var(--ink-muted) !important;
+    filter: none !important;
+  }
+
+  #app-shell .topbar-icon-button.action-menu-trigger:hover,
+  #app-shell .topbar-icon-button.action-menu-trigger-primary:hover,
+  #app-shell .topbar-icon-button.action-menu-trigger[aria-expanded="true"],
+  #app-shell .topbar-icon-button.action-menu-trigger-primary[aria-expanded="true"] {
+    background-color: var(--surface-sunken) !important;
+    color: var(--ink-strong) !important;
+    filter: none !important;
+  }
+
+  .topbar-icon-button:focus {
+    outline: none;
+  }
+
+  .topbar-icon-button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
   /* Der Ring nimmt die Farbe der Leiste an, damit der Punkt im Dunkelmodus
      nicht auf einer weißen Scheibe sitzt. */
   .topbar-badge {
@@ -1852,6 +1881,10 @@
      damit die Zeiger-Variante nicht von `h-8` überstimmt wird. */
   .action-menu-item {
     height: 2rem;
+  }
+
+  .action-menu-item.action-menu-item-multiline {
+    height: auto;
   }
 
   @media (pointer: fine) {

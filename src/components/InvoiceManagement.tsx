@@ -37,6 +37,7 @@ import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { trackTelemetry } from '../services/telemetry';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -676,6 +677,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
             if (!result.success) {
               throw new Error(`Email send failed: ${result.message}`);
             }
+            trackTelemetry('invoice_sent_count', { count: 1 });
             
             // Mark as sent if it was draft
             if (invoice.status === 'draft') {
@@ -801,6 +803,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       if (!result.success) {
         throw new Error(`Fehler beim E-Mail-Versand: ${result.message}`);
       }
+      trackTelemetry('invoice_sent_count', { count: 1 });
       
       const formatLabels = formats.map(f => {
         switch(f) {

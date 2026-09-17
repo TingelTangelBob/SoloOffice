@@ -127,5 +127,9 @@ export function publicWorkspace(row, role) {
     slug: row.slug,
     role,
     createdAt: row.created_at,
+    // Gesperrte Arbeitsbereiche bleiben lesbar. Der Zustand gehört deshalb in
+    // jede Workspace-Antwort, damit die Oberfläche ihn anzeigen kann.
+    suspended: Boolean(row.suspended_at),
+    suspendedAt: row.suspended_at || null,
   };
 }

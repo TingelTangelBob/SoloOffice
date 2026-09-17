@@ -36,6 +36,7 @@ export async function loadSession(token) {
       w.name AS workspace_name,
       w.slug AS workspace_slug,
       w.created_at AS workspace_created_at,
+      w.suspended_at AS workspace_suspended_at,
       wm.role,
       wm.permissions
     FROM sessions s
@@ -69,6 +70,8 @@ export async function loadSession(token) {
       name: row.workspace_name,
       slug: row.workspace_slug,
       createdAt: row.workspace_created_at,
+      suspended: Boolean(row.workspace_suspended_at),
+      suspendedAt: row.workspace_suspended_at || null,
     },
   };
 }

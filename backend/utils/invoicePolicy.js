@@ -2,7 +2,7 @@ import { invoiceDateParts } from './invoiceNumberPattern.js';
 
 const statuses = new Set(['draft', 'sent', 'paid', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x']);
 export const INVOICE_CONTENT_FIELDS = [
-  'customerId', 'customerName', 'issueDate', 'dueDate', 'items', 'attachments', 'notes',
+  'customerId', 'customerName', 'issueDate', 'dueDate', 'serviceDate', 'items', 'attachments', 'notes',
   'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount',
   'referenceInvoiceId', 'creditNoteReason', 'recurringInvoiceId',
   'subtotal', 'taxAmount', 'total', 'documentType', 'documentSnapshot', 'invoiceNumber',
@@ -24,9 +24,10 @@ export function validateInvoiceUpdate(current, data) {
   }
 }
 
-export function validateInvoiceHeader({ status, issueDate, dueDate, customerId, items }) {
+export function validateInvoiceHeader({ status, issueDate, dueDate, serviceDate, customerId, items }) {
   if (!statuses.has(status)) throw invoiceError('Ungültiger Rechnungsstatus.');
   if (!invoiceDateParts(issueDate) || !invoiceDateParts(dueDate)) throw invoiceError('Rechnungs- und Fälligkeitsdatum müssen gültige Datumswerte sein.');
+  if (serviceDate !== undefined && serviceDate !== null && !invoiceDateParts(serviceDate)) throw invoiceError('Das Leistungsdatum muss ein gültiges Datum sein.');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(customerId))) throw invoiceError('Bitte einen gültigen Kunden auswählen.');
   if (status !== 'draft' && items.length === 0) throw invoiceError('Zum Ausstellen muss die Rechnung mindestens eine Position enthalten.');
 }

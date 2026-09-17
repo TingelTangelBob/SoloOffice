@@ -11,7 +11,10 @@
 # WICHTIG – was diese Datei NICHT leistet
 #
 # Sie macht aus dem Stack kein buchbares Produkt. Es fehlen weiterhin:
-#   * Control Plane (Tarife, Abrechnung, Bereitstellung, Sperren)
+#   * Control Plane (Tarife, Abrechnung) – die Fachapp-Seite für
+#     Bereitstellung und Sperren steht seit AP-4.4 unter
+#     `/internal/control-plane` bereit, siehe
+#     docs/control-plane-internal-api.md
 #   * Objektspeicher für Belege – diese liegen weiterhin als Base64 in der
 #     Datenbank (Audit 1 · B5). `STORAGE_DRIVER` existiert im Code NICHT.
 #   * Offsite-Backups – `BACKUP_TARGET` existiert im Code NICHT.
@@ -40,6 +43,14 @@ services:
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite-only}
       - REQUIRE_EMAIL_VERIFICATION=true
       - CORS_ORIGIN=${CORS_ORIGIN:?CORS_ORIGIN muss die echte Adresse sein, z. B. https://app.solooffice.de}
+      # Interne Control-Plane-Schnittstelle (AP-4.4). Ohne Geheimnis
+      # antworten die Endpunkte mit 503; der Pfad `/internal/` wird vom
+      # Reverse-Proxy nicht nach außen durchgereicht.
+      # Siehe docs/control-plane-internal-api.md.
+      - CONTROL_PLANE_INTERNAL_SECRET=${CONTROL_PLANE_INTERNAL_SECRET:-}
+      - CONTROL_PLANE_INTERNAL_TIMESTAMP_TOLERANCE_SECONDS=${CONTROL_PLANE_INTERNAL_TIMESTAMP_TOLERANCE_SECONDS:-300}
+      - CONTROL_PLANE_INTERNAL_RATE_LIMIT_MAX=${CONTROL_PLANE_INTERNAL_RATE_LIMIT_MAX:-60}
+      - APP_BASE_URL=${APP_BASE_URL:-}
     deploy:
       resources:
         limits:
@@ -65,7 +76,11 @@ services:
     # Im gehosteten Betrieb terminiert ein Reverse-Proxy TLS. Der Container
     # darf deshalb NICHT direkt am öffentlichen Interface hängen – nur an
     # Loopback, damit der Proxy ihn erreicht und sonst niemand.
-    ports:
+    # `!override` ersetzt die Portliste der Basisdatei. Ohne den Tag hängt
+    # Compose beide Einträge aneinander (0.0.0.0:PORT und 127.0.0.1:PORT), und
+    # der Start scheitert mit „port is already allocated“ – oder schlimmer, der
+    # Port bleibt öffentlich. Braucht Docker Compose v2.24 oder neuer.
+    ports: !override
       - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
     deploy:
       resources:

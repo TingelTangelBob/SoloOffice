@@ -54,7 +54,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'postalCode', label: 'PLZ', aliases: ['postalCode', 'postal_code', 'postcode', 'zip', 'zipCode', 'plz'] },
       { key: 'city', label: 'Ort', aliases: ['city', 'town', 'ort', 'stadt'] },
       { key: 'country', label: 'Land', aliases: ['country', 'land', 'countryName'] },
-      { key: 'taxId', label: 'Steuer-ID / USt-IdNr.', aliases: ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id', 'ustIdNr', 'steuerId'] },
+      { key: 'taxId', label: 'Steuernummer / USt-IdNr.', aliases: ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id', 'ustIdNr', 'steuerId'] },
       { key: 'leitwegId', label: 'Leitweg-ID', aliases: ['leitwegId', 'leitweg_id', 'leitweg', 'buyerReference', 'buyer_reference'] },
       { key: 'phone', label: 'Telefon', aliases: ['phone', 'telephone', 'tel', 'telefon', 'mobile', 'mobil'] },
       { key: 'notes', label: 'Notizen', aliases: ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'] },

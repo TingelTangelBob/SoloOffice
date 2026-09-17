@@ -125,6 +125,7 @@ export async function createInvoice(data, transactionHook) {
     attachments = [],
     issueDate = new Date().toISOString().split('T')[0],
     dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    serviceDate = null,
     status = 'draft',
     documentType = 'invoice',
     referenceInvoiceId = null,
@@ -141,7 +142,7 @@ export async function createInvoice(data, transactionHook) {
   }
 
   const money = calculateDocumentMoney({ ...data, items }, { documentType });
-  validateInvoiceHeader({ status, issueDate, dueDate, customerId, items: money.items });
+  validateInvoiceHeader({ status, issueDate, dueDate, serviceDate, customerId, items: money.items });
   if (status === 'paid' && documentType === 'invoice') {
     throw invoiceError('Bitte die Rechnung zunächst anlegen und anschließend den Zahlungseingang erfassen.', 409);
   }
@@ -281,10 +282,10 @@ export async function createInvoice(data, transactionHook) {
 
     // Insert invoice
     const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount, document_snapshot)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      INSERT INTO invoices (invoice_number, document_type, reference_invoice_id, credit_note_reason, recurring_invoice_id, source_quote_id, customer_id, customer_name, issue_date, due_date, service_date, subtotal, tax_amount, total, status, notes, global_discount_type, global_discount_value, global_discount_amount, document_snapshot)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *
-    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, documentSnapshot.customer.name, issueDate, dueDate, subtotal, taxAmount, total, 'draft', notes, globalDiscountType, globalDiscountValue, globalDiscAmount, JSON.stringify(documentSnapshot)]);
+    `, [invoiceNumber, documentType, referenceInvoiceId, creditNoteReason, recurringInvoiceId, sourceQuoteId, customerId, documentSnapshot.customer.name, issueDate, dueDate, serviceDate || null, subtotal, taxAmount, total, 'draft', notes, globalDiscountType, globalDiscountValue, globalDiscAmount, JSON.stringify(documentSnapshot)]);
 
     const invoiceId = invoiceResult.rows[0].id;
 
@@ -390,6 +391,7 @@ export async function updateInvoice(id, data) {
     const merged = {
       customerId: value('customerId', 'customer_id'), customerName: current.customer_name,
       issueDate: value('issueDate', 'issue_date'), dueDate: value('dueDate', 'due_date'),
+      serviceDate: value('serviceDate', 'service_date'),
       status: value('status', 'status'), notes: value('notes', 'notes'),
       referenceInvoiceId: value('referenceInvoiceId', 'reference_invoice_id'),
       creditNoteReason: value('creditNoteReason', 'credit_note_reason'),
@@ -446,10 +448,10 @@ export async function updateInvoice(id, data) {
       }
     }
     await client.query(`UPDATE invoices SET customer_id=$1, customer_name=$2, issue_date=$3, due_date=$4,
-      subtotal=$5, tax_amount=$6, total=$7, status=$8, notes=$9, global_discount_type=$10,
-      global_discount_value=$11, global_discount_amount=$12, reference_invoice_id=$13,
-      credit_note_reason=$14, document_snapshot=$15 WHERE id=$16`,
-    [merged.customerId, merged.customerName, merged.issueDate, merged.dueDate, merged.subtotal,
+      service_date=$5, subtotal=$6, tax_amount=$7, total=$8, status=$9, notes=$10, global_discount_type=$11,
+      global_discount_value=$12, global_discount_amount=$13, reference_invoice_id=$14,
+      credit_note_reason=$15, document_snapshot=$16 WHERE id=$17`,
+    [merged.customerId, merged.customerName, merged.issueDate, merged.dueDate, merged.serviceDate || null, merged.subtotal,
       merged.taxAmount, merged.total, merged.status, merged.notes, merged.globalDiscountType,
       merged.globalDiscountValue, merged.globalDiscountAmount, merged.referenceInvoiceId,
       merged.creditNoteReason, merged.documentSnapshot ? JSON.stringify(merged.documentSnapshot) : null, id]);

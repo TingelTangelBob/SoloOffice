@@ -158,6 +158,15 @@ docker compose --env-file .env.<name> -f docker-compose.yml up -d --force-recrea
 ./manage-instances.sh verify <name>
 ```
 
+Hinter einem Reverse-Proxy empfiehlt sich zusätzlich das Overlay
+`docker-compose.saas.yml` (Frontend nur auf Loopback, sichere Cookies, HSTS,
+Speichergrenzen). Es wird über `COMPOSE_OVERLAY_FILES=docker-compose.saas.yml`
+in `.env.<name>` eingetragen; `manage-instances.sh` lädt es dann bei `start`,
+`update`, `verify`, `backup` und `logs` automatisch mit. Die Ports-Direktive
+des Overlays ersetzt die der Basisdatei (`!override`, Docker Compose ≥ 2.24).
+Der obige `docker compose`-Aufruf muss das Overlay dann ebenfalls mit
+`-f docker-compose.saas.yml` angeben.
+
 `CORS_ORIGIN` muss exakt zum Ursprung passen, den der Browser sendet. Ein
 abweichendes Schema, ein anderer Port oder ein zusätzlicher Pfad führt bei
 API-Anfragen zu einer Ablehnung und kann wie ein fehlgeschlagener Login

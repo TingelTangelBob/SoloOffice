@@ -520,7 +520,7 @@ export function addPDFFooter(
   }
   if (company.taxIdentificationNumber) {
     if (taxInfo) taxInfo += ' | ';
-    taxInfo += `Steuer-ID: ${company.taxIdentificationNumber}`;
+    taxInfo += `Steuernummer: ${company.taxIdentificationNumber}`;
   }
   
   const footerContact = `Tel: ${company.phone} | E-Mail: ${company.email}${taxInfo ? ' | ' + taxInfo : ''}`;

@@ -23,6 +23,7 @@ const INVOICE_FIELDS: HistoryField[] = [
   { keys: ['customer_name', 'customerName'], label: 'Empfänger', kind: 'text' },
   { keys: ['issue_date', 'issueDate'], label: 'Rechnungsdatum', kind: 'date' },
   { keys: ['due_date', 'dueDate'], label: 'Fällig am', kind: 'date' },
+  { keys: ['service_date', 'serviceDate'], label: 'Leistungsdatum', kind: 'date' },
   { keys: ['notes'], label: 'Hinweistext', kind: 'text' },
 ];
 

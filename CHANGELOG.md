@@ -2,6 +2,45 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.8.2 – Beta-Freigabe, PDF-Vorschau und Kundenseiten
+
+- Die Kundenseite erhält eine aufgeräumte Übersicht ohne separaten Steckbrief:
+  Firmenname, Organisation, Anschrift und Kontakt stehen zusammen in einem
+  klareren Bereich.
+- Rechnungen, Gutschriften, Angebote und Aufträge bleiben auf der Kundenseite
+  vollständig kundenbezogen sichtbar. Die Übersicht zeigt stattdessen einen
+  allgemeinen Verlauf, der mit dem neuesten Ereignis beginnt.
+- Notizen können direkt in der Kundenseite bearbeitet werden. Beim Erstellen
+  oder Abbrechen eines Dokuments aus dem Kundenkontext bleibt der Rückweg zur
+  Kundenseite erhalten.
+- Die PDF-Vorschau in Vorlagen wurde verbreitert. Doppelte Aktionsleisten
+  entfallen; die PDF-Aktionen bleiben in der nativen PDF-Leiste.
+- Die Demo-Kundenseiten verarbeiten Datumswerte aus dem Backend robust und
+  bleiben dadurch auch bei ISO-Datumszeichenfolgen sichtbar.
+- Die Projekt- und Backend-Version, Lockfiles und Release-Dokumentation werden
+  auf `0.8.2` synchronisiert. Der Beta-Status und die noch offenen manuellen
+  Abnahmeschritte sind im Projektordner dokumentiert.
+- Rechnungen tragen ein optionales Leistungsdatum (§ 14 Abs. 4 Nr. 6 UStG);
+  ohne Angabe gilt das Rechnungsdatum. Es erscheint in PDF, XRechnung und
+  ZUGFeRD. Die Steuernummer wird in PDFs als solche beschriftet.
+- Registrierung nur mit Bestätigung der Unternehmereigenschaft sowie von AGB
+  und AVV; Anmeldeseite verlinkt Impressum und Datenschutz (konfigurierbar
+  über `VITE_AGB_URL`, `VITE_AVV_URL`, `VITE_DATENSCHUTZ_URL`,
+  `VITE_IMPRESSUM_URL`).
+- Interne Control-Plane-Schnittstelle `/internal/control-plane` (AP-4.4):
+  Workspaces anlegen, sperren und entsperren mit HMAC-Signatur, Zeitfenster,
+  Idempotency-Key und Auditspur. Ein gesperrter Workspace bleibt lesbar und
+  exportierbar, Schreibzugriffe antworten mit `403 WORKSPACE_SUSPENDED`.
+  Beschreibung in `docs/control-plane-internal-api.md`.
+- Optionaler Telemetrie-Hook zum Control Plane (standardmäßig aus): Browser →
+  `/api/telemetry` → Backend-Relay mit Allowlist; im gehosteten Betrieb wird
+  die Workspace-UUID mitgegeben. Beschreibung in `docs/telemetry.md`.
+- Betrieb: `manage-instances.sh` lädt Compose-Overlays aus
+  `COMPOSE_OVERLAY_FILES` (z. B. `docker-compose.saas.yml`, dessen
+  Port-Direktive die Basisdatei jetzt per `!override` ersetzt); Produktbuilds
+  zeigen in `index.html` keinen Demo-Titel mehr; Host-nginx-Vorlage der Demo
+  mit HSTS.
+
 ## v0.8.1 – UI-Überarbeitung und Kundenverwaltung
 
 - Die Oberfläche bekommt eine durchgehende Gestaltungsebene: Inter als selbst

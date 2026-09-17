@@ -31,6 +31,7 @@ import {
 } from '../../.test-dist/utils/jobRecurrence.js';
 import { calculateTotalHours } from '../../.test-dist/utils/jobUtils.js';
 import { getEffectivePaymentInformation } from '../../.test-dist/utils/paymentInformation.js';
+import { buildServiceDatePdfField, resolveServiceDate } from '../../.test-dist/utils/serviceDate.js';
 import { DEFAULT_TIME_ZONE, getTimeZoneLabel } from '../../.test-dist/utils/timeZones.js';
 
 test('Rechnungsnummernmuster akzeptieren genau einen Zähler', () => {
@@ -72,6 +73,13 @@ test('Datum und Uhrzeit folgen den expliziten Anzeigeformaten', () => {
   assert.equal(formatDate(date, 'de-DE', 'DD.MM.YYYY'), '28.08.2026');
   assert.equal(formatDate(date, 'de-DE', 'YYYY-MM-DD'), '2026-08-28');
   assert.equal(formatTime('13:05', 'de-DE', '12h'), '1:05 PM');
+});
+
+test('Formatierer verschlucken keine sichtbaren NaN- oder Invalid-Date-Werte', () => {
+  assert.equal(formatDate('kein Datum', 'de-DE', 'DD.MM.YYYY'), '');
+  assert.equal(formatTime('kein Zeitpunkt'), '');
+  assert.equal(formatTime('25:61'), '');
+  assert.equal(formatCurrency(Number.NaN), '');
 });
 
 test('CSV schützt Text vor Formeleinschleusung, Zahlen bleiben berechenbar', () => {
@@ -141,6 +149,21 @@ test('Zahlungsinformationen unterscheiden Firmen- und abweichenden Kontoinhaber'
   });
   assert.deepEqual(getEffectivePaymentInformation({ ...base, paymentInformationMode: 'custom' }), {
     accountHolder: 'Privat', bankAccount: 'DE-PRIVAT', bic: 'PRIVAT-BIC',
+  });
+});
+
+test('Leistungsdatum fällt sichtbar auf das Rechnungsdatum zurück', () => {
+  const invoice = { issueDate: '2026-08-28', serviceDate: null };
+  assert.equal(resolveServiceDate(invoice), '2026-08-28');
+  assert.deepEqual(buildServiceDatePdfField(invoice, 'de-DE', 'DD.MM.YYYY'), {
+    label: 'Leistungsdatum:',
+    value: 'entspricht Rechnungsdatum',
+  });
+  const explicit = { issueDate: '2026-08-28', serviceDate: '2026-09-03' };
+  assert.equal(resolveServiceDate(explicit), '2026-09-03');
+  assert.deepEqual(buildServiceDatePdfField(explicit, 'de-DE', 'DD.MM.YYYY'), {
+    label: 'Leistungsdatum:',
+    value: '03.09.2026',
   });
 });
 

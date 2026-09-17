@@ -22,6 +22,7 @@
     "src/utils/jobRecurrence.ts",
     "src/utils/jobUtils.ts",
     "src/utils/paymentInformation.ts",
+    "src/utils/serviceDate.ts",
     "src/utils/templateDefaults.ts",
     "src/utils/timeZones.ts"
   ]

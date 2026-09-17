@@ -32,6 +32,7 @@ import { formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { apiService } from '../services/api';
 import { downloadCalendarIcs } from '../utils/icsExport';
 import { usePageSearch } from '../context/PageSearchContext';
+import { trackTelemetry } from '../services/telemetry';
 
 interface CalendarProps {
   onNavigate?: (page: string) => void;
@@ -673,6 +674,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     try {
       const createdEvent = await apiService.createCalendarEvent(event);
       setCalendarEvents((previous) => [...previous, createdEvent]);
+      trackTelemetry('appointment_used');
     } catch (error) {
       logger.error('Error creating vacation event:', error);
       throw error;
@@ -755,6 +757,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       { jobs: exportableJobs, events: calendarEvents, calendarName: `${company.name || 'SoloOffice'} – Kalender` },
       `${fileBase}-kalender.ics`,
     );
+    trackTelemetry('calendar_exported');
     setShowShareDialog(false);
     notify({ variant: 'success', message: 'Die Kalenderdatei wurde gespeichert.' });
   };

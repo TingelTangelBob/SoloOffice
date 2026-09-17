@@ -30,6 +30,7 @@ export type ActionMenuTone = 'blue' | 'green' | 'indigo' | 'orange' | 'red' | 'g
 interface ActionMenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   icon: ReactNode;
+  multiline?: boolean;
   tone?: ActionMenuTone;
 }
 
@@ -51,6 +52,7 @@ export function ActionMenuItem({
   children,
   className = '',
   icon,
+  multiline = false,
   tone = 'gray',
   type = 'button',
   ...buttonProps
@@ -61,10 +63,10 @@ export function ActionMenuItem({
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex min-h-0 w-full items-center gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors ${colors.item} ${className}`}
+      className={`action-menu-item flex min-h-0 w-full ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors ${colors.item} ${className}`}
     >
       <span className={`shrink-0 ${colors.icon}`}>{icon}</span>
-      <span className="min-w-0 truncate">{children}</span>
+      <span className={`min-w-0 flex-1 ${multiline ? '' : 'truncate'}`}>{children}</span>
     </button>
   );
 }

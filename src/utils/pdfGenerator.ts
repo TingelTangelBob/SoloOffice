@@ -29,6 +29,7 @@ import { generateXRechnungXML } from './pdf/xrechnungGenerator';
 import { embedZUGFeRDXMLIntoPDF } from './pdf/zugferdGenerator';
 import { resolveDocumentTemplate, getReminderTemplateText } from './documentTemplateProfiles';
 import { getEffectivePaymentInformation } from './paymentInformation';
+import { buildServiceDatePdfField } from './serviceDate';
 import { getTerminology } from './terminology';
 
 const DOCUMENT_PRIMARY_COLOR = '#2563eb';
@@ -141,6 +142,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
       fields: [
         { label: documentNumberLabel, value: invoice.invoiceNumber },
         { label: 'Datum:', value: formatDate(invoice.issueDate, locale, options.company.dateFormat) },
+        buildServiceDatePdfField(invoice, locale, options.company.dateFormat),
         { label: 'Fällig am:', value: dueDateDisplay }
       ]
     };
@@ -1275,7 +1277,7 @@ export async function generateQuotePDF(quote: Quote, options: QuotePDFOptions): 
     }
     if (options.company.taxIdentificationNumber) {
       if (taxInfo) taxInfo += ' | ';
-      taxInfo += `Steuer-ID: ${options.company.taxIdentificationNumber}`;
+      taxInfo += `Steuernummer: ${options.company.taxIdentificationNumber}`;
     }
     
     const footerContact = `Tel: ${options.company.phone} | E-Mail: ${options.company.email}${taxInfo ? ' | ' + taxInfo : ''}`;
@@ -1525,7 +1527,7 @@ export async function generateReminderPDF(
     }
     if (options.company.taxIdentificationNumber) {
       if (taxInfo) taxInfo += ' | ';
-      taxInfo += `Steuer-ID: ${options.company.taxIdentificationNumber}`;
+      taxInfo += `Steuernummer: ${options.company.taxIdentificationNumber}`;
     }
     
     const footerContact = `Tel: ${options.company.phone} | E-Mail: ${options.company.email}${taxInfo ? ' | ' + taxInfo : ''}`;

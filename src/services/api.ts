@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -126,7 +126,7 @@ class ApiService {
     return this.request<AuthResponse>('/auth/me', { skipErrorLogging: true });
   }
 
-  async registerAccount(payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }): Promise<RegistrationResponse> {
+  async registerAccount(payload: RegistrationPayload): Promise<RegistrationResponse> {
     return this.request<RegistrationResponse>('/auth/register', { method: 'POST', body: JSON.stringify(payload) });
   }
 
@@ -180,6 +180,14 @@ class ApiService {
 
   async createWorkspace(name: string): Promise<WorkspaceSummary> {
     return this.request<WorkspaceSummary>('/workspaces', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+
+  async sendTelemetry(events: Array<{ name: string; occurredAt: string; props?: { count?: number } }>): Promise<void> {
+    await this.request('/telemetry', {
+      method: 'POST',
+      body: JSON.stringify({ events }),
+      skipErrorLogging: true,
+    });
   }
 
   async updateWorkspace(workspaceId: string, name: string): Promise<WorkspaceSummary> {

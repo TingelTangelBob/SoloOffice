@@ -3,8 +3,9 @@ import type { ReactNode } from 'react';
 import { apiService } from '../services/api';
 import { DEMO_DEFAULT_WORKSPACE_ID, getDemoActiveWorkspaceId, isDemoMode, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
-import type { AuthResponse, AuthUser, WorkspaceRole, WorkspaceSummary } from '../types';
+import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceRole, WorkspaceSummary } from '../types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
+import { trackTelemetry } from '../services/telemetry';
 
 const demoUser: AuthUser = {
   id: 'demo-user',
@@ -119,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applyResponse(await apiService.loginAccount({ email, password, workspaceId }));
   }, [applyResponse]);
 
-  const register = useCallback(async (payload: { email: string; password: string; firstName?: string; lastName?: string; workspaceName?: string }) => {
+  const register = useCallback(async (payload: RegistrationPayload) => {
     if (isDemoMode) return {};
     const response = await apiService.registerAccount(payload);
     if (response.user && response.workspace && response.workspaces) {
@@ -189,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const created = await apiService.createWorkspace(name);
     setWorkspaces(previous => [...previous, created]);
+    trackTelemetry('workspace_created');
     return created;
   }, []);
 
