@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -19,15 +19,18 @@ function getBrowserTimeZone(): string {
   }
 }
 
-class ApiResponseError extends Error {
-  constructor(message: string, public readonly status: number, public readonly requestId?: string) {
+export class ApiResponseError extends Error {
+  constructor(message: string, public readonly status: number, public readonly requestId?: string, public readonly code?: string) {
     super(message);
     this.name = 'ApiResponseError';
   }
 }
 
+/** Wird ausgelöst, sobald das Backend einen Schreibzugriff wegen Sperre abweist. */
+export const WORKSPACE_SUSPENDED_EVENT = 'solooffice-workspace-suspended';
+
 async function responseError(response: Response, fallback: string): Promise<ApiResponseError> {
-  const payload = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown; requestId?: unknown };
+  const payload = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown; requestId?: unknown; code?: unknown };
   const baseMessage = typeof payload.error === 'string'
     ? payload.error
     : typeof payload.message === 'string'
@@ -38,7 +41,14 @@ async function responseError(response: Response, fallback: string): Promise<ApiR
   const message = response.status >= 500 && requestId
     ? `${baseMessage} (Referenz: ${requestId})`
     : baseMessage;
-  return new ApiResponseError(message, response.status, requestId || undefined);
+  const code = typeof payload.code === 'string' ? payload.code : undefined;
+  // Die Sperre kommt aus dem Control Plane und ist beim Laden der Sitzung
+  // vielleicht noch nicht bekannt gewesen: Oberfläche sofort informieren,
+  // statt bis zum nächsten Neuladen nur die Fehlermeldung zu zeigen.
+  if (code === 'WORKSPACE_SUSPENDED' && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(WORKSPACE_SUSPENDED_EVENT));
+  }
+  return new ApiResponseError(message, response.status, requestId || undefined, code);
 }
 
 // ============================================================================
@@ -176,6 +186,47 @@ class ApiService {
 
   async getWorkspaces(): Promise<WorkspaceSummary[]> {
     return this.request<WorkspaceSummary[]>('/workspaces');
+  }
+
+  // --------------------------------------------------------------------------
+  // Support-Tickets (über das Control Plane) und E-Mail-Benachrichtigungen
+  // --------------------------------------------------------------------------
+
+  async getSupportStatus(): Promise<SupportStatus> {
+    return this.request<SupportStatus>('/support/status', { skipErrorLogging: true });
+  }
+
+  async getSupportTickets(): Promise<SupportTicket[]> {
+    const response = await this.request<{ tickets: SupportTicket[] }>('/support/tickets');
+    return response.tickets;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicketDetail> {
+    return this.request<SupportTicketDetail>(`/support/tickets/${encodeURIComponent(id)}`);
+  }
+
+  async createSupportTicket(payload: { subject: string; body: string; category: SupportTicketCategory; page?: string }): Promise<SupportTicketDetail> {
+    return this.request<SupportTicketDetail>('/support/tickets', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async replySupportTicket(id: string, body: string): Promise<SupportTicketDetail> {
+    return this.request<SupportTicketDetail>(`/support/tickets/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ body }) });
+  }
+
+  async getNotificationSettings(): Promise<{ settings: NotificationSettings; email: string }> {
+    return this.request<{ settings: NotificationSettings; email: string }>('/notification-settings');
+  }
+
+  async updateNotificationSettings(payload: NotificationSettingsPayload): Promise<{ settings: NotificationSettings; email: string }> {
+    return this.request<{ settings: NotificationSettings; email: string }>('/notification-settings', { method: 'PUT', body: JSON.stringify(payload) });
+  }
+
+  async getNotificationPreview(): Promise<NotificationPreview> {
+    return this.request<NotificationPreview>('/notification-settings/preview');
+  }
+
+  async sendNotificationDigestNow(): Promise<{ sent: boolean; message: string }> {
+    return this.request<{ sent: boolean; message: string }>('/notification-settings/send-now', { method: 'POST' });
   }
 
   async createWorkspace(name: string): Promise<WorkspaceSummary> {

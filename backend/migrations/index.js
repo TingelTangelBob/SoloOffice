@@ -46,6 +46,7 @@ import * as migration037 from './037_customer_type_and_notes.js';
 import * as migration038 from './038_document_text_templates.js';
 import * as migration039 from './039_invoice_service_date.js';
 import * as migration040 from './040_control_plane_workspace_admin.js';
+import * as migration041 from './041_user_notification_settings.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -89,6 +90,7 @@ const migrations = [
   migration038,
   migration039,
   migration040,
+  migration041,
 ];
 
 /**

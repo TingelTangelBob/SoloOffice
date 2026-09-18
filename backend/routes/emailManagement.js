@@ -5,6 +5,7 @@ import { lookup } from 'node:dns/promises';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { testEmailConnection } from '../services/emailService.js';
+import { renderSystemEmail } from '../services/emailTemplates.js';
 import { decryptSecret, encryptSecret } from '../utils/secretBox.js';
 
 const router = express.Router();
@@ -795,30 +796,26 @@ router.post('/send-test-email', async (req, res) => {
       socketTimeout: 30000, // 30 seconds
     });
 
-    // Prepare email content
+    // Prepare email content – same layout as every other system mail. The
+    // custom message is escaped by the template; the HTML never trusts input.
     const subject = custom_subject || 'Test-E-Mail von SoloOffice';
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Test-E-Mail erfolgreich!</h2>
-        <p>Diese Test-E-Mail wurde von Ihrem SoloOffice-System gesendet.</p>
-        ${custom_message ? `
-          <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #2563eb;">
-            <p style="margin: 0; white-space: pre-line;">${custom_message}</p>
-          </div>
-        ` : ''}
-        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <h3 style="margin-top: 0;">Systemdetails:</h3>
-          <p><strong>Gesendet am:</strong> ${new Date().toLocaleString('de-DE')}</p>
-          <p><strong>SMTP-Server:</strong> ${dbSettings.smtp_host}:${dbSettings.smtp_port}</p>
-          <p><strong>Verschlüsselung:</strong> ${dbSettings.smtp_secure ? 'SSL/TLS' : 'STARTTLS'}</p>
-        </div>
-        <p>Wenn Sie diese E-Mail erhalten haben, funktioniert Ihre E-Mail-Konfiguration korrekt!</p>
-        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
-        <p style="font-size: 12px; color: #666;">
-          Diese E-Mail wurde automatisch von SoloOffice generiert.
-        </p>
-      </div>
-    `;
+    const testMail = renderSystemEmail({
+      title: 'Test-E-Mail erfolgreich',
+      preheader: 'Die E-Mail-Konfiguration von SoloOffice funktioniert.',
+      greeting: 'Guten Tag,',
+      paragraphs: [
+        'diese Test-E-Mail wurde von Ihrem SoloOffice-System gesendet. Wenn Sie sie lesen, funktioniert Ihre E-Mail-Konfiguration.',
+        ...(custom_message ? [String(custom_message)] : []),
+      ],
+      details: [
+        { label: 'Gesendet am', value: new Date().toLocaleString('de-DE') },
+        { label: 'SMTP-Server', value: `${dbSettings.smtp_host}:${dbSettings.smtp_port}` },
+        { label: 'Verschlüsselung', value: dbSettings.smtp_secure ? 'SSL/TLS' : 'STARTTLS' },
+      ],
+      reason: 'Sie erhalten diese E-Mail, weil in SoloOffice eine Test-E-Mail ausgelöst wurde.',
+      recipient: recipient_email,
+    });
+    const htmlContent = testMail.html;
 
     // Send the email
     const mailOptions = {
@@ -828,6 +825,7 @@ router.post('/send-test-email', async (req, res) => {
       },
       to: recipient_email,
       subject: subject,
+      text: testMail.text,
       html: htmlContent
     };
 

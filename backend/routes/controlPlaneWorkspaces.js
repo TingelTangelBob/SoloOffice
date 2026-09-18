@@ -2,6 +2,7 @@ import express from 'express';
 
 import { persistentRateLimit } from '../middleware/rateLimit.js';
 import { sendSystemEmail } from '../services/emailService.js';
+import { systemMails } from '../services/emailTemplates.js';
 import {
   ControlPlaneOperationError,
   isUuid,
@@ -119,7 +120,7 @@ function handleOperationError(res, req, error, operation) {
   return fail(res, 500, 'CONTROL_PLANE_OPERATION_FAILED', 'Der Vorgang konnte nicht ausgeführt werden.');
 }
 
-async function sendOwnerInvitation({ workspaceId, email, token }) {
+async function sendOwnerInvitation({ workspaceId, email, token, workspaceName }) {
   const baseUrl = appBaseUrl();
   if (!baseUrl) {
     logger.warn('Eigentümer-Einladung ohne öffentliche Adresse: APP_BASE_URL oder CORS_ORIGIN fehlt', { workspaceId });
@@ -131,9 +132,7 @@ async function sendOwnerInvitation({ workspaceId, email, token }) {
     await sendSystemEmail({
       workspaceId,
       to: email,
-      subject: 'SoloOffice: Ihr Arbeitsbereich steht bereit',
-      text: `Ihr SoloOffice-Arbeitsbereich wurde eingerichtet. Zugang einrichten: ${link}`,
-      html: `<p>Ihr SoloOffice-Arbeitsbereich wurde eingerichtet.</p><p><a href="${link}">Zugang einrichten</a></p>`,
+      ...systemMails.workspaceReady({ email, link, workspaceName: workspaceName || 'SoloOffice' }),
     });
     return { sent: true, link };
   } catch (error) {
@@ -168,6 +167,7 @@ router.post('/workspaces', async (req, res) => {
       workspaceId: result.body.workspaceId,
       email: ownerEmail,
       token: result.ownerInvitationToken,
+      workspaceName: name,
     });
     return res.status(result.status).json({
       ...result.body,

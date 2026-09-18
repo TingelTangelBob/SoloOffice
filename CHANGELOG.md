@@ -2,6 +2,27 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.0 – Support, System-E-Mails und Wiedervorlage
+
+- Support-Bereich (`#support`, Kontomenü „Hilfe & Support“) im gehosteten
+  Betrieb: Anfragen mit Kategorie stellen, eigene Tickets mit Verlauf sehen
+  und antworten. Die Fachapp speichert keine Tickets, sondern leitet sie
+  signiert an das Control Plane weiter (`backend/routes/support.js`,
+  `backend/services/controlPlaneClient.js`, Env `CONTROL_PLANE_URL` mit
+  Rückfall auf den Ursprung von `TELEMETRY_URL`). Ohne Control Plane bleibt
+  der Bereich ausgeblendet; gesperrte Workspaces dürfen den Support erreichen.
+- Systemmails (Bestätigung, Passwort-Reset, Workspace-Einladung, „Arbeitsbereich
+  steht bereit“, Test-E-Mail) nutzen eine gemeinsame gestaltete Vorlage mit
+  Text-Alternative (`backend/services/emailTemplates.js`).
+- E-Mail-Benachrichtigungen je Benutzer und Workspace (Benutzerdaten →
+  E-Mail-Benachrichtigungen, Migration 041): tägliche Zusammenfassung zu
+  abgeschlossenen Aufträgen ohne Rechnung, nicht versendeten
+  Rechnungsentwürfen (Wartezeit einstellbar) und überfälligen Rechnungen, mit
+  Uhrzeit in der Zeitzone des Unternehmens, Vorschau und Sofortversand.
+  Hintergrundlauf alle 15 Minuten mit Advisory-Lock
+  (`backend/services/notificationDigest.js`). Im Demo-Modus vollständig
+  simuliert, ohne Mailversand.
+
 ## v0.8.2 – Beta-Freigabe, PDF-Vorschau und Kundenseiten
 
 - Die Kundenseite erhält eine aufgeräumte Übersicht ohne separaten Steckbrief:

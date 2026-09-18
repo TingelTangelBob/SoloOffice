@@ -629,6 +629,9 @@ export interface WorkspaceSummary {
   role: WorkspaceRole;
   permissions?: Record<string, boolean>;
   createdAt?: string;
+  /** Vom Control Plane gesperrt (AP-4.4): Lesen und Export bleiben, Schreiben wird abgewiesen. */
+  suspended?: boolean;
+  suspendedAt?: string | null;
 }
 
 export interface AuthResponse {
@@ -978,6 +981,81 @@ export interface ReminderEligibility {
   daysSinceLastReminder?: number;
   isEligible: boolean;
   nextEligibleDate?: Date;
+}
+
+// ============================================================================
+// Support-Tickets (Control Plane) und E-Mail-Benachrichtigungen
+// ============================================================================
+
+export type SupportTicketStatus = 'open' | 'pending' | 'resolved' | 'closed';
+export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type SupportTicketCategory = 'question' | 'bug' | 'billing' | 'feature' | 'other';
+
+export interface SupportTicket {
+  id: UUID;
+  ticketNumber: number;
+  reference: string;
+  subject: string;
+  status: SupportTicketStatus;
+  priority: SupportTicketPriority;
+  category: SupportTicketCategory;
+  source: 'customer_area' | 'fachapp' | 'admin';
+  workspaceId: string | null;
+  workspaceName: string | null;
+  requesterEmail: string | null;
+  requesterName: string | null;
+  messageCount?: number;
+  lastMessagePreview: string | null;
+  lastCustomerMessageAt: string | null;
+  lastAdminMessageAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportMessage {
+  id: UUID;
+  ticketId: UUID;
+  authorType: 'customer' | 'admin';
+  authorName: string | null;
+  authorEmail: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface SupportTicketDetail {
+  ticket: SupportTicket;
+  messages: SupportMessage[];
+  mail?: { sent: boolean; skipped?: boolean; error?: string | null } | null;
+}
+
+export interface SupportStatus {
+  available: boolean;
+  reason?: string;
+}
+
+export interface NotificationSettings {
+  jobsCompleted: boolean;
+  invoiceDrafts: boolean;
+  invoiceDraftDays: number;
+  invoicesOverdue: boolean;
+  digestHour: number;
+  lastDigestAt: string | null;
+  lastDigestError: string | null;
+}
+
+export interface NotificationSettingsPayload {
+  jobsCompleted: boolean;
+  invoiceDrafts: boolean;
+  invoiceDraftDays: number;
+  invoicesOverdue: boolean;
+  digestHour: number;
+}
+
+export interface NotificationPreview {
+  total: number;
+  sections: Array<{ key: string; title: string; count: number; items: Array<{ title: string; subtitle?: string; meta?: string }> }>;
 }
 
 // ============================================================================

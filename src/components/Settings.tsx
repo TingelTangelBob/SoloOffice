@@ -1557,6 +1557,21 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               {isDemoMode && <p className="text-xs text-green-800 mt-2">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>}
             </div>
             
+            <div className="guidance-panel p-4">
+              <h4 className="font-medium text-gray-900 mb-2">E-Mail-Benachrichtigungen</h4>
+              <p className="text-sm text-gray-600 mb-3">
+                Eine tägliche Zusammenfassung – abgeschlossene {terminology.work.plural} ohne Rechnung, nicht versendete Rechnungsentwürfe, überfällige Rechnungen – stellt jeder Benutzer für sich ein.
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigate?.('profile')}
+                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Benachrichtigungen unter Benutzerdaten einstellen
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </button>
+            </div>
+
             <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
               <h4 className="font-medium text-yellow-900 mb-2">Features</h4>
               <ul className="text-sm text-yellow-800 space-y-1">

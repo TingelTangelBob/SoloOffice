@@ -300,8 +300,28 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new customer
+// Pflichtfelder entsprechen den NOT-NULL-Spalten. Ohne diese Prüfung endete ein
+// unvollständiger Aufruf als 500 (Datenbankfehler) statt als verständliche 400.
+const REQUIRED_CUSTOMER_FIELDS = [
+  ['name', 'Name'],
+  ['address', 'Adresse'],
+  ['postalCode', 'Postleitzahl'],
+  ['city', 'Ort'],
+  ['country', 'Land'],
+];
+
+function missingCustomerFields(body) {
+  return REQUIRED_CUSTOMER_FIELDS
+    .filter(([key]) => typeof body?.[key] !== 'string' || !body[key].trim())
+    .map(([, label]) => label);
+}
+
 router.post('/', async (req, res) => {
   try {
+    const missing = missingCustomerFields(req.body);
+    if (missing.length) {
+      return res.status(400).json({ error: `Pflichtfelder fehlen: ${missing.join(', ')}.`, code: 'CUSTOMER_FIELDS_REQUIRED', fields: missing });
+    }
     const {
       name,
       customerType,

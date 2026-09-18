@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
+import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, LifeBuoy, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DynamicColors } from './DynamicColors';
 import { useCompany } from '../context/CompanyContext';
@@ -10,17 +10,19 @@ import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
 import { useAuth } from '../context/AuthContext';
 import { DemoNotice } from './DemoNotice';
+import { WorkspaceSuspendedNotice } from './WorkspaceSuspendedNotice';
 import { TopBar } from './TopBar';
 import type { TopBarNotice } from './TopBar';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { isDemoMode } from '../services/demoApi';
 import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
+import { useSupportAvailability } from '../hooks/useSupportAvailability';
 
 interface LayoutProps {
   children: ReactNode;
   currentPage: string;
-  onPageChange: (page: string) => void;
+  onPageChange: (page: string, filter?: string) => void;
 }
 
 interface SearchResult {
@@ -85,6 +87,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
   const { user, workspace, logout } = useAuth();
+  // Ticket-Support nur im gehosteten Betrieb; Self-Hoster sehen den Punkt nicht.
+  const supportAvailable = useSupportAvailability();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
@@ -219,7 +223,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   /* Zwei bewusst sichtbare Seitenraster: datenreiche Ansichten nutzen die
      gesamte verfügbare Breite, Verwaltungs- und Accountseiten bleiben auf
      großen Monitoren mit 1140px lesbar begrenzt. */
-  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace'];
+  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace', 'support'];
   const contentWidthClass = compactWidthPages.includes(currentPage) ? 'max-w-[1140px]' : 'max-w-none';
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);
@@ -674,6 +678,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     <div className="pt-1">
                       <ActionMenuItem icon={<UserRound className="h-4 w-4" />} onClick={() => handlePageChange('profile')}>Benutzerdaten</ActionMenuItem>
                       <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => openLandingPage('/preise')}>Tarif</ActionMenuItem>
+                      {supportAvailable && (
+                        <ActionMenuItem icon={<LifeBuoy className="h-4 w-4" />} onClick={() => handlePageChange('support')}>Hilfe &amp; Support</ActionMenuItem>
+                      )}
                     </div>
                     <div className="sidebar-account-menu-section">
                       <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/datenschutz')}>Datenschutzerklärung</ActionMenuItem>
@@ -720,6 +727,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
             >
               <PageSearchContext.Provider value={pageSearchValue}>
               <div className={`mx-auto w-full ${contentWidthClass}`}>
+              {/* Gesperrter Arbeitsbereich: auf jeder Seite sichtbar, sonst null. */}
+              <WorkspaceSuspendedNotice onNavigate={onPageChange} />
               {children}
               </div>
               </PageSearchContext.Provider>

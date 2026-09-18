@@ -4,6 +4,7 @@ import { pool, query } from '../database.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
 import { requireAuth, loadSession, clearAuthCookies } from '../middleware/auth.js';
 import { sendSystemEmail } from '../services/emailService.js';
+import { systemMails } from '../services/emailTemplates.js';
 import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
 import { lockRegistrationBootstrap } from '../services/registrationBootstrap.js';
 import { persistentRateLimit } from '../middleware/rateLimit.js';
@@ -117,26 +118,16 @@ function verificationRequired() {
   return process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
 }
 
-async function sendVerificationEmail(req, { workspaceId, email, token }) {
+async function sendVerificationEmail(req, { workspaceId, email, token, name }) {
   const link = `${publicAppUrl(req)}?verifyEmail=${encodeURIComponent(token)}`;
-  await sendSystemEmail({
-    workspaceId,
-    to: email,
-    subject: 'SoloOffice: E-Mail-Adresse bestätigen',
-    text: `Bitte bestätigen Sie Ihre E-Mail-Adresse: ${link}`,
-    html: `<p>Bitte bestätigen Sie Ihre E-Mail-Adresse für SoloOffice.</p><p><a href="${link}">E-Mail-Adresse bestätigen</a></p>`,
-  });
+  const mail = systemMails.verification({ email, link, name });
+  await sendSystemEmail({ workspaceId, to: email, ...mail });
 }
 
-async function sendPasswordResetEmail(req, { workspaceId, email, token }) {
+async function sendPasswordResetEmail(req, { workspaceId, email, token, name }) {
   const link = `${publicAppUrl(req)}?resetPassword=${encodeURIComponent(token)}`;
-  await sendSystemEmail({
-    workspaceId,
-    to: email,
-    subject: 'SoloOffice: Passwort zurücksetzen',
-    text: `Sie können Ihr Passwort hier zurücksetzen: ${link}`,
-    html: `<p>Sie haben das Zurücksetzen Ihres SoloOffice-Passworts angefordert.</p><p><a href="${link}">Passwort zurücksetzen</a></p>`,
-  });
+  const mail = systemMails.passwordReset({ email, link, name, ttlHours: 1 });
+  await sendSystemEmail({ workspaceId, to: email, ...mail });
 }
 
 router.post('/register', async (req, res) => {
@@ -228,7 +219,7 @@ router.post('/register', async (req, res) => {
 
     if (verificationRequired()) {
       try {
-        await sendVerificationEmail(req, { workspaceId, email: identity.email, token: emailVerificationToken });
+        await sendVerificationEmail(req, { workspaceId, email: identity.email, token: emailVerificationToken, name: [firstName, lastName].filter(Boolean).join(' ') });
       } catch (emailError) {
         // Account creation is complete; the operator can configure SMTP and
         // resend through a future admin flow without exposing a token here.
@@ -327,7 +318,7 @@ router.post('/forgot-password', async (req, res) => {
         WHERE id = $2
       `, [hashOpaqueToken(token), user.id]);
       try {
-        await sendPasswordResetEmail(req, { workspaceId: workspaceResult.rows[0]?.workspace_id, email: user.email, token });
+        await sendPasswordResetEmail(req, { workspaceId: workspaceResult.rows[0]?.workspace_id, email: user.email, token, name: [user.first_name, user.last_name].filter(Boolean).join(' ') });
       } catch (emailError) {
         logger.warn('Passwort-Reset-E-Mail konnte nicht versendet werden', { error: emailError.message });
       }

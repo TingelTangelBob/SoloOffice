@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { apiService } from '../services/api';
+import { apiService, WORKSPACE_SUSPENDED_EVENT } from '../services/api';
 import { DEMO_DEFAULT_WORKSPACE_ID, getDemoActiveWorkspaceId, isDemoMode, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
 import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceRole, WorkspaceSummary } from '../types';
@@ -80,6 +80,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWorkspaces([]);
     };
     window.addEventListener('solooffice-auth-expired', handleAuthExpired);
+    // Sperre vom Control Plane, die erst nach dem Laden der Sitzung wirksam
+    // wurde: das Backend hat gerade einen Schreibzugriff mit WORKSPACE_SUSPENDED
+    // abgewiesen – Zustand übernehmen, damit der Dauerhinweis sofort erscheint.
+    const handleWorkspaceSuspended = () => {
+      setWorkspace(current => (current && !current.suspended
+        ? { ...current, suspended: true, suspendedAt: current.suspendedAt ?? new Date().toISOString() }
+        : current));
+    };
+    window.addEventListener(WORKSPACE_SUSPENDED_EVENT, handleWorkspaceSuspended);
     if (isDemoMode) {
       const demoWorkspaces = readDemoWorkspaces();
       const activeWorkspace = demoWorkspaces.find(item => item.id === getDemoActiveWorkspaceId()) || demoWorkspaces[0];
@@ -91,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => {
         active = false;
         window.removeEventListener('solooffice-auth-expired', handleAuthExpired);
+        window.removeEventListener(WORKSPACE_SUSPENDED_EVENT, handleWorkspaceSuspended);
       };
     }
 
@@ -112,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
       window.removeEventListener('solooffice-auth-expired', handleAuthExpired);
+      window.removeEventListener(WORKSPACE_SUSPENDED_EVENT, handleWorkspaceSuspended);
     };
   }, [applyResponse]);
 

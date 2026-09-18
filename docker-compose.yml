@@ -59,6 +59,9 @@ services:
       - TELEMETRY_INSTALLATION_ID=${TELEMETRY_INSTALLATION_ID:-}
       - TELEMETRY_INSTALLED_AT=${TELEMETRY_INSTALLED_AT:-}
       - TELEMETRY_TIMEOUT_MS=${TELEMETRY_TIMEOUT_MS:-5000}
+      # Rückkanal für Support-Tickets zum Control Plane (gehosteter Betrieb).
+      # Leer: im gehosteten Betrieb Ursprung von TELEMETRY_URL, sonst aus.
+      - CONTROL_PLANE_URL=${CONTROL_PLANE_URL:-}
       - SOLOOFFICE_VERSION=${SOLOOFFICE_VERSION:-dev}
       - REGISTRATION_MODE=${REGISTRATION_MODE:-closed-after-first}
       - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}

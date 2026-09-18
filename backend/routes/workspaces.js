@@ -12,6 +12,7 @@ import {
   publicWorkspace,
 } from '../utils/auth.js';
 import { sendSystemEmail } from '../services/emailService.js';
+import { systemMails } from '../services/emailTemplates.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -155,9 +156,14 @@ router.post('/:workspaceId/invitations', requireWorkspaceFromParam('workspaceId'
     await sendSystemEmail({
       workspaceId: req.params.workspaceId,
       to: email,
-      subject: 'SoloOffice: Einladung zum Workspace',
-      text: `Sie wurden zu einem SoloOffice-Workspace eingeladen. Einladung annehmen: ${inviteLink}`,
-      html: `<p>Sie wurden zu einem SoloOffice-Workspace eingeladen.</p><p><a href="${inviteLink}">Einladung annehmen</a></p>`,
+      ...systemMails.workspaceInvitation({
+        email,
+        link: inviteLink,
+        workspaceName: req.auth.workspace?.name || 'SoloOffice',
+        invitedBy: req.auth.user?.displayName || req.auth.user?.email || '',
+        role,
+        expiresInDays: 7,
+      }),
     });
   } catch (emailError) {
     logger.warn('Workspace-Einladung konnte nicht per E-Mail versendet werden', { error: emailError.message });

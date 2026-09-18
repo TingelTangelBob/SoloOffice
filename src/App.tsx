@@ -31,6 +31,7 @@ const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagemen
 const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
 const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
 const WorkspaceManagement = lazy(() => import('./components/WorkspaceManagement').then(({ WorkspaceManagement: page }) => ({ default: page })));
+const SupportManagement = lazy(() => import('./components/SupportManagement').then(({ SupportManagement: page }) => ({ default: page })));
 
 interface PageState {
   page: string;
@@ -165,11 +166,13 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reminders':
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : undefined} onNavigate={onPageChange} />;
+        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : undefined} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
       case 'workspace':
         return <WorkspaceManagement />;
+      case 'support':
+        return <SupportManagement initialTicketId={currentPageState.filter} onNavigate={onPageChange} />;
       case 'templates':
         return <TemplatesManagement />;
       case 'positions':

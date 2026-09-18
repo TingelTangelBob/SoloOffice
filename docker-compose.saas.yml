@@ -51,6 +51,10 @@ services:
       - CONTROL_PLANE_INTERNAL_TIMESTAMP_TOLERANCE_SECONDS=${CONTROL_PLANE_INTERNAL_TIMESTAMP_TOLERANCE_SECONDS:-300}
       - CONTROL_PLANE_INTERNAL_RATE_LIMIT_MAX=${CONTROL_PLANE_INTERNAL_RATE_LIMIT_MAX:-60}
       - APP_BASE_URL=${APP_BASE_URL:-}
+      # Rückkanal für Support-Tickets (signiert mit demselben Geheimnis).
+      # Leer: Ursprung von TELEMETRY_URL im gehosteten Betrieb, sonst aus.
+      - CONTROL_PLANE_URL=${CONTROL_PLANE_URL:-}
+      - CONTROL_PLANE_TIMEOUT_MS=${CONTROL_PLANE_TIMEOUT_MS:-8000}
     deploy:
       resources:
         limits:

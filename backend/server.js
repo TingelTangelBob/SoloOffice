@@ -27,12 +27,15 @@ import authRouter from './routes/auth.js';
 import workspacesRouter from './routes/workspaces.js';
 import controlPlaneWorkspacesRouter from './routes/controlPlaneWorkspaces.js';
 import telemetryRouter from './routes/telemetry.js';
+import supportRouter from './routes/support.js';
+import notificationSettingsRouter from './routes/notificationSettings.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 import { workspaceSuspensionGuard } from './middleware/workspaceSuspension.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
 import { requestTracing } from './middleware/requestTracing.js';
 import { metricsMiddleware, getMetricsSnapshot, metricsAccessStatus } from './utils/metrics.js';
 import { pruneSessions } from './services/sessionMaintenance.js';
+import { DIGEST_INTERVAL_MS, runNotificationDigest } from './services/notificationDigest.js';
 import eInvoicesRouter from './routes/eInvoices.js';
 import { livenessPayload, readinessResult } from './utils/health.js';
 import { createGracefulShutdown } from './utils/gracefulShutdown.js';
@@ -146,6 +149,8 @@ app.use('/api/reporting', reportingRouter);
 app.use('/api/reminders', remindersRouter);
 app.use('/api/calendar-events', calendarEventsRouter);
 app.use('/api/telemetry', telemetryRouter);
+app.use('/api/support', supportRouter);
+app.use('/api/notification-settings', notificationSettingsRouter);
 
 app.get('/metrics', (req, res) => {
   const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));
@@ -217,6 +222,13 @@ async function startServer() {
       pruneSessions().catch(error => logger.warn('Session-Bereinigung fehlgeschlagen', { error: error.message }));
     }, 60 * 60 * 1000);
     app.locals.maintenanceInterval = maintenanceInterval;
+    // Tägliche Wiedervorlage per E-Mail: alle 15 Minuten prüfen, ob für einen
+    // Benutzer die eingestellte Uhrzeit erreicht ist (Advisory-Lock im Lauf).
+    const digestInterval = setInterval(() => {
+      runNotificationDigest().catch(error => logger.warn('Wiedervorlage-Lauf fehlgeschlagen', { error: error.message }));
+    }, DIGEST_INTERVAL_MS);
+    digestInterval.unref?.();
+    app.locals.digestInterval = digestInterval;
     
     const httpServer = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Server started`, { port: PORT, environment: process.env.NODE_ENV || 'development' });
@@ -226,6 +238,7 @@ async function startServer() {
       closeDatabase: () => pool.end(),
       clearMaintenance: () => {
         if (app.locals.maintenanceInterval) clearInterval(app.locals.maintenanceInterval);
+        if (app.locals.digestInterval) clearInterval(app.locals.digestInterval);
       },
       logger,
       timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS || 10_000),

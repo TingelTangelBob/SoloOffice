@@ -1104,6 +1104,177 @@ function nextDemoInvoiceNumber(state: DemoState, issueDate: unknown, documentTyp
   return candidate;
 }
 
+
+// ---------------------------------------------------------------------------
+// Demo: Support-Tickets und E-Mail-Benachrichtigungen
+//
+// Im produktiven Betrieb liegen Tickets im Control Plane und die Einstellungen
+// je Benutzer in der Datenbank. Die Demo hält beides im Browser, damit sich
+// die Oberfläche vollständig ausprobieren lässt; E-Mails gehen keine raus.
+// ---------------------------------------------------------------------------
+
+const DEMO_SUPPORT_STORAGE_KEY = 'solooffice-demo-support-v1';
+const DEMO_NOTIFICATIONS_STORAGE_KEY = 'solooffice-demo-notifications-v1';
+
+interface DemoSupportState {
+  nextNumber: number;
+  tickets: DemoRecord[];
+  messages: DemoRecord[];
+}
+
+function readDemoSupport(): DemoSupportState {
+  try {
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_SUPPORT_STORAGE_KEY) : null;
+    if (stored) {
+      const parsed = JSON.parse(stored) as DemoSupportState;
+      if (Array.isArray(parsed.tickets) && Array.isArray(parsed.messages)) return parsed;
+    }
+  } catch {
+    // Beschädigte Ablage: mit leerem Zustand weiterarbeiten.
+  }
+  return { nextNumber: 1001, tickets: [], messages: [] };
+}
+
+function saveDemoSupport(state: DemoSupportState): void {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(DEMO_SUPPORT_STORAGE_KEY, JSON.stringify(state));
+}
+
+function demoTicketDetail(state: DemoSupportState, ticketId: string): DemoRecord {
+  const ticket = state.tickets.find(item => item.id === ticketId);
+  if (!ticket) throw new Error('Ticket nicht gefunden.');
+  const messages = state.messages
+    .filter(message => message.ticketId === ticketId)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  return { ...ticket, messages, ticket, mail: { sent: false, skipped: true } } as DemoRecord;
+}
+
+function demoSupportRequest<T>(parts: string[], method: string, data: DemoRecord): T {
+  const state = readDemoSupport();
+  if (parts[1] === 'status') return { available: true } as unknown as T;
+  if (parts[1] === 'tickets' && !parts[2]) {
+    if (method === 'POST') {
+      const subject = String(data.subject || '').trim();
+      const body = String(data.body || '').trim();
+      if (!subject) throw new Error('Bitte einen Betreff angeben.');
+      if (!body) throw new Error('Bitte eine Nachricht eingeben.');
+      const now = isoDate();
+      const ticket: DemoRecord = {
+        id: generateUUID(),
+        ticketNumber: state.nextNumber,
+        reference: `T-${state.nextNumber}`,
+        subject,
+        status: 'open',
+        priority: 'normal',
+        category: ['question', 'bug', 'billing', 'feature', 'other'].includes(String(data.category)) ? data.category : 'question',
+        source: 'fachapp',
+        workspaceId: getDemoActiveWorkspaceId(),
+        workspaceName: 'Demo Workspace',
+        requesterEmail: 'demo@solooffice.local',
+        requesterName: 'Demo Benutzer',
+        messageCount: 1,
+        lastMessagePreview: body.slice(0, 160),
+        lastCustomerMessageAt: now,
+        lastAdminMessageAt: null,
+        resolvedAt: null,
+        closedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.nextNumber += 1;
+      state.tickets.unshift(ticket);
+      state.messages.push({ id: generateUUID(), ticketId: ticket.id, authorType: 'customer', authorName: 'Demo Benutzer', authorEmail: 'demo@solooffice.local', body, createdAt: now });
+      // Die Demo antwortet sofort, damit der Verlauf nicht leer wirkt.
+      const replyAt = new Date(Date.now() + 1000).toISOString();
+      state.messages.push({ id: generateUUID(), ticketId: ticket.id, authorType: 'admin', authorName: 'Demo-Support', authorEmail: null, body: `Vielen Dank für Ihre Anfrage „${subject}“. Im Demo-Modus wird kein Ticket an den Betreiber übermittelt – in der gehosteten Version erscheint es sofort in der Adminkonsole und Sie erhalten eine Bestätigung per E-Mail.`, createdAt: replyAt });
+      ticket.status = 'pending';
+      ticket.messageCount = 2;
+      ticket.lastAdminMessageAt = replyAt;
+      ticket.updatedAt = replyAt;
+      saveDemoSupport(state);
+      const detail = demoTicketDetail(state, ticket.id);
+      return { ticket: detail.ticket, messages: detail.messages, mail: { sent: false, skipped: true } } as unknown as T;
+    }
+    return { tickets: state.tickets.slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))) } as unknown as T;
+  }
+  if (parts[1] === 'tickets' && parts[2]) {
+    const ticketId = parts[2];
+    if (parts[3] === 'messages' && method === 'POST') {
+      const body = String(data.body || '').trim();
+      if (!body) throw new Error('Bitte eine Nachricht eingeben.');
+      const ticket = state.tickets.find(item => item.id === ticketId);
+      if (!ticket) throw new Error('Ticket nicht gefunden.');
+      if (ticket.status === 'closed') throw new Error('Dieses Ticket ist geschlossen. Bitte eine neue Anfrage stellen.');
+      const now = isoDate();
+      state.messages.push({ id: generateUUID(), ticketId, authorType: 'customer', authorName: 'Demo Benutzer', authorEmail: 'demo@solooffice.local', body, createdAt: now });
+      ticket.status = 'open';
+      ticket.resolvedAt = null;
+      ticket.lastCustomerMessageAt = now;
+      ticket.lastMessagePreview = body.slice(0, 160);
+      ticket.messageCount = Number(ticket.messageCount || 0) + 1;
+      ticket.updatedAt = now;
+      saveDemoSupport(state);
+    }
+    const detail = demoTicketDetail(state, ticketId);
+    return { ticket: detail.ticket, messages: detail.messages } as unknown as T;
+  }
+  throw new Error('Unbekannter Support-Endpunkt.');
+}
+
+function readDemoNotificationSettings(): DemoRecord {
+  const defaults: DemoRecord = { id: 'demo', jobsCompleted: false, invoiceDrafts: false, invoiceDraftDays: 3, invoicesOverdue: false, digestHour: 8, lastDigestAt: null, lastDigestError: null };
+  try {
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(DEMO_NOTIFICATIONS_STORAGE_KEY) : null;
+    return stored ? { ...defaults, ...(JSON.parse(stored) as DemoRecord) } : defaults;
+  } catch {
+    return defaults;
+  }
+}
+
+function demoNotificationPreview(state: DemoState): DemoRecord {
+  const settings = readDemoNotificationSettings();
+  const sections: DemoRecord[] = [];
+  const draftDays = Number(settings.invoiceDraftDays || 3);
+  const cutoff = Date.now() - draftDays * 86400000;
+  const completedJobs = state.jobs.filter(job => job.status === 'completed');
+  if (completedJobs.length) {
+    sections.push({ id: 'jobs_completed', key: 'jobs_completed', title: 'Abgeschlossene Aufträge ohne Rechnung', count: completedJobs.length, items: completedJobs.slice(0, 15).map(job => ({ title: [job.jobNumber, job.title].filter(Boolean).join(' · '), subtitle: String(job.customerName || ''), meta: Number(job.hoursWorked) > 0 ? `${Number(job.hoursWorked)} Std.` : undefined })) });
+  }
+  const drafts = state.invoices.filter(invoice => invoice.documentType !== 'credit_note' && invoice.status === 'draft' && new Date(String(invoice.createdAt)).getTime() <= cutoff);
+  if (drafts.length) {
+    sections.push({ id: 'invoice_drafts', key: 'invoice_drafts', title: 'Rechnungsentwürfe, die noch nicht versendet wurden', count: drafts.length, items: drafts.slice(0, 15).map(invoice => ({ title: String(invoice.invoiceNumber || 'Entwurf'), subtitle: String(invoice.customerName || ''), meta: `${Number(invoice.total || 0).toFixed(2)} €` })) });
+  }
+  const today = dateOnly(isoDate());
+  const overdue = state.invoices.filter(invoice => invoice.documentType !== 'credit_note' && ['sent', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x'].includes(String(invoice.status)) && dateOnly(invoice.dueDate) < today);
+  if (overdue.length) {
+    sections.push({ id: 'invoices_overdue', key: 'invoices_overdue', title: 'Überfällige Rechnungen', count: overdue.length, items: overdue.slice(0, 15).map(invoice => ({ title: String(invoice.invoiceNumber || 'Rechnung'), subtitle: `${invoice.customerName || ''} · fällig seit ${dateOnly(invoice.dueDate)}`, meta: `${Number(invoice.total || 0).toFixed(2)} €` })) });
+  }
+  const filtered = sections.filter(section => (section.key === 'jobs_completed' && settings.jobsCompleted) || (section.key === 'invoice_drafts' && settings.invoiceDrafts) || (section.key === 'invoices_overdue' && settings.invoicesOverdue));
+  const active = settings.jobsCompleted || settings.invoiceDrafts || settings.invoicesOverdue;
+  const shown = active ? filtered : sections;
+  return { id: 'preview', total: shown.reduce((sum, section) => sum + Number(section.count), 0), sections: shown };
+}
+
+function demoNotificationRequest<T>(state: DemoState, parts: string[], method: string, data: DemoRecord): T {
+  if (parts[1] === 'preview') return demoNotificationPreview(state) as unknown as T;
+  if (parts[1] === 'send-now') {
+    const settings = readDemoNotificationSettings();
+    if (!(settings.jobsCompleted || settings.invoiceDrafts || settings.invoicesOverdue)) throw new Error('Bitte zuerst mindestens einen Hinweis aktivieren und speichern.');
+    const preview = demoNotificationPreview(state);
+    if (!Number(preview.total)) return { sent: false, message: 'Aktuell gibt es keine offenen Punkte – es wurde keine E-Mail gesendet.' } as unknown as T;
+    return { sent: false, message: `Im Demo-Modus werden keine E-Mails versendet. Die Zusammenfassung hätte ${preview.total} ${Number(preview.total) === 1 ? 'Punkt' : 'Punkte'} enthalten.` } as unknown as T;
+  }
+  if (method === 'PUT') {
+    const draftDays = Number(data.invoiceDraftDays);
+    const digestHour = Number(data.digestHour);
+    if (!Number.isInteger(draftDays) || draftDays < 1 || draftDays > 60) throw new Error('Die Wartezeit für Entwürfe muss zwischen 1 und 60 Tagen liegen.');
+    if (!Number.isInteger(digestHour) || digestHour < 0 || digestHour > 23) throw new Error('Die Uhrzeit muss zwischen 0 und 23 Uhr liegen.');
+    const next: DemoRecord = { id: 'demo', jobsCompleted: data.jobsCompleted === true, invoiceDrafts: data.invoiceDrafts === true, invoiceDraftDays: draftDays, invoicesOverdue: data.invoicesOverdue === true, digestHour, lastDigestAt: null, lastDigestError: null };
+    if (typeof localStorage !== 'undefined') localStorage.setItem(DEMO_NOTIFICATIONS_STORAGE_KEY, JSON.stringify(next));
+    return { settings: next, email: 'demo@solooffice.local' } as unknown as T;
+  }
+  return { settings: readDemoNotificationSettings(), email: 'demo@solooffice.local' } as unknown as T;
+}
+
 export async function demoRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const state = readState();
   const method = options.method || 'GET';
@@ -1423,6 +1594,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       },
     } as T;
   }
+
+  if (resource === 'support') return demoSupportRequest<T>(parts, method, data);
+  if (resource === 'notification-settings') return demoNotificationRequest<T>(state, parts, method, data);
 
   if (resource === 'company') {
     if (method === 'PUT') {

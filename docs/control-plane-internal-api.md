@@ -252,3 +252,22 @@ curl -sS -X POST http://127.0.0.1:3001/internal/control-plane/workspaces \
   ruhiger Dauerhinweis im Kopfbereich fehlt noch.
 - Der Control Plane meldet Löschung und Export eines Arbeitsbereichs noch nicht
   über diese Schnittstelle (AP-5.5).
+
+## Rückkanal: Support-Tickets Fachapp → Control Plane
+
+Die Fachapp ruft für Support-Anfragen die signierten Endpunkte des Control
+Plane unter `/internal/fachapp/tickets…` auf (`backend/services/controlPlaneClient.js`,
+`backend/routes/support.js`). Signatur wie oben (HMAC-SHA256 über
+`timestamp.method.path.body`, Kopfzeilen `X-Control-Plane-Timestamp` und
+`X-Control-Plane-Signature`), Geheimnis `CONTROL_PLANE_INTERNAL_SECRET`.
+
+| Variable | Bedeutung |
+|---|---|
+| `CONTROL_PLANE_URL` | Basisadresse des Control Plane, z. B. `http://control-plane:4100`. Fehlt sie, gilt im gehosteten Betrieb (`TELEMETRY_SOURCE=hosted`) der Ursprung von `TELEMETRY_URL`. |
+| `CONTROL_PLANE_TIMEOUT_MS` | Zeitlimit je Aufruf (1000–30000, Standard 8000). |
+
+Ohne Adresse oder Geheimnis meldet `GET /api/support/status`
+`available: false`; die Oberfläche blendet den Bereich dann aus. Das Control
+Plane löst die mitgeschickte Workspace-UUID über `workspace_bindings` zum
+Kundenkonto auf; Eigentümer und Administratoren des Workspace sehen alle
+Tickets des Kontos, andere Mitglieder nur die eigenen.
