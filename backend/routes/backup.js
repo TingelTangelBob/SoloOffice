@@ -571,8 +571,9 @@ router.post('/restore', async (req, res) => {
     // Fix invoice_items without proper order values (from old backups)
     try {
       const missingOrderResult = await client.query(`
-        SELECT COUNT(*) as count FROM invoice_items WHERE item_order IS NULL OR item_order = 0
-      `);
+        SELECT COUNT(*) as count FROM invoice_items
+        WHERE workspace_id = $1 AND (item_order IS NULL OR item_order = 0)
+      `, [req.auth.workspaceId]);
       
       const missingOrderCount = parseInt(missingOrderResult.rows[0].count);
       if (missingOrderCount > 0) {
@@ -581,14 +582,20 @@ router.post('/restore', async (req, res) => {
         // Update items to have sequential order values per invoice
         await client.query(`
           UPDATE invoice_items 
-          SET item_order = subq.row_number
+          SET item_order = order_base.max_order + missing.row_number
           FROM (
-            SELECT id, ROW_NUMBER() OVER (PARTITION BY invoice_id ORDER BY id) as row_number
+            SELECT id, invoice_id, ROW_NUMBER() OVER (PARTITION BY invoice_id ORDER BY id) as row_number
             FROM invoice_items
-            WHERE item_order IS NULL OR item_order = 0
-          ) subq
-          WHERE invoice_items.id = subq.id
-        `);
+            WHERE workspace_id = $1 AND (item_order IS NULL OR item_order = 0)
+          ) missing
+          JOIN (
+            SELECT invoice_id, COALESCE(MAX(NULLIF(item_order, 0)), 0) AS max_order
+            FROM invoice_items
+            WHERE workspace_id = $1
+            GROUP BY invoice_id
+          ) order_base ON order_base.invoice_id = missing.invoice_id
+          WHERE invoice_items.id = missing.id AND invoice_items.workspace_id = $1
+        `, [req.auth.workspaceId]);
         
         logger.info(`Fixed order values for ${missingOrderCount} invoice items`);
       }
@@ -599,8 +606,9 @@ router.post('/restore', async (req, res) => {
     // Fix missing discount fields in invoice_items (from old backups without discount support)
     try {
       const missingDiscountResult = await client.query(`
-        SELECT COUNT(*) as count FROM invoice_items WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-      `);
+        SELECT COUNT(*) as count FROM invoice_items
+        WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+      `, [req.auth.workspaceId]);
       
       const missingDiscountCount = parseInt(missingDiscountResult.rows[0].count);
       if (missingDiscountCount > 0) {
@@ -610,8 +618,8 @@ router.post('/restore', async (req, res) => {
         await client.query(`
           UPDATE invoice_items 
           SET discount_type = NULL, discount_value = NULL, discount_amount = 0
-          WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-        `);
+          WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         logger.info(`Fixed discount values for ${missingDiscountCount} invoice items`);
       }
@@ -622,8 +630,9 @@ router.post('/restore', async (req, res) => {
     // Fix missing global discount fields in invoices (from old backups without discount support)
     try {
       const missingGlobalDiscountResult = await client.query(`
-        SELECT COUNT(*) as count FROM invoices WHERE global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
-      `);
+        SELECT COUNT(*) as count FROM invoices
+        WHERE workspace_id = $1 AND global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
+      `, [req.auth.workspaceId]);
       
       const missingGlobalDiscountCount = parseInt(missingGlobalDiscountResult.rows[0].count);
       if (missingGlobalDiscountCount > 0) {
@@ -633,8 +642,8 @@ router.post('/restore', async (req, res) => {
         await client.query(`
           UPDATE invoices 
           SET global_discount_type = NULL, global_discount_value = NULL, global_discount_amount = 0
-          WHERE global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
-        `);
+          WHERE workspace_id = $1 AND global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         logger.info(`Fixed global discount values for ${missingGlobalDiscountCount} invoices`);
       }
@@ -645,8 +654,9 @@ router.post('/restore', async (req, res) => {
     // Fix missing discount fields in job_time_entries (from old backups without discount support)
     try {
       const missingJobDiscountResult = await client.query(`
-        SELECT COUNT(*) as count FROM job_time_entries WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-      `);
+        SELECT COUNT(*) as count FROM job_time_entries
+        WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+      `, [req.auth.workspaceId]);
       
       const missingJobDiscountCount = parseInt(missingJobDiscountResult.rows[0].count);
       if (missingJobDiscountCount > 0) {
@@ -656,8 +666,8 @@ router.post('/restore', async (req, res) => {
         await client.query(`
           UPDATE job_time_entries 
           SET discount_type = NULL, discount_value = NULL, discount_amount = 0
-          WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-        `);
+          WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         logger.info(`Fixed discount values for ${missingJobDiscountCount} job time entries`);
       }
@@ -668,11 +678,12 @@ router.post('/restore', async (req, res) => {
     // Fix missing reminder texts in company (from old backups before reminder system)
     try {
       const missingReminderTextsResult = await client.query(`
-        SELECT COUNT(*) as count FROM company 
-        WHERE (reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
+        SELECT COUNT(*) as count FROM company
+        WHERE workspace_id = $1
+        AND ((reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
         OR (reminder_text_stage_2 IS NULL OR reminder_text_stage_2 = '')
-        OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = '')
-      `);
+        OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = ''))
+      `, [req.auth.workspaceId]);
       
       const missingReminderTextsCount = parseInt(missingReminderTextsResult.rows[0].count);
       if (missingReminderTextsCount > 0) {
@@ -680,7 +691,7 @@ router.post('/restore', async (req, res) => {
         
         // Set default German reminder texts
         await client.query(`
-          UPDATE company 
+          UPDATE company
           SET 
             reminder_text_stage_1 = CASE 
               WHEN reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '' THEN 
@@ -709,10 +720,11 @@ trotz mehrfacher Zahlungserinnerungen ist der ausstehende Betrag noch immer nich
 Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens jedoch innerhalb von 3 Tagen, zu begleichen. Andernfalls werden wir ohne weitere Ankündigung rechtliche Schritte einleiten.'
               ELSE reminder_text_stage_3 
             END
-          WHERE (reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
+          WHERE workspace_id = $1
+            AND ((reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
              OR (reminder_text_stage_2 IS NULL OR reminder_text_stage_2 = '')
-             OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = '')
-        `);
+             OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = ''))
+        `, [req.auth.workspaceId]);
         
         logger.info(`Fixed reminder texts for ${missingReminderTextsCount} company records`);
       }
@@ -1060,8 +1072,9 @@ router.post('/restore-zip', async (req, res) => {
       // Fix invoice_items without proper order values (from old backups)
       try {
         const missingOrderResult = await client.query(`
-          SELECT COUNT(*) as count FROM invoice_items WHERE item_order IS NULL OR item_order = 0
-        `);
+          SELECT COUNT(*) as count FROM invoice_items
+          WHERE workspace_id = $1 AND (item_order IS NULL OR item_order = 0)
+        `, [req.auth.workspaceId]);
         
         const missingOrderCount = parseInt(missingOrderResult.rows[0].count);
         if (missingOrderCount > 0) {
@@ -1070,14 +1083,20 @@ router.post('/restore-zip', async (req, res) => {
           // Update items to have sequential order values per invoice
           await client.query(`
             UPDATE invoice_items 
-            SET item_order = subq.row_number
+            SET item_order = order_base.max_order + missing.row_number
             FROM (
-              SELECT id, ROW_NUMBER() OVER (PARTITION BY invoice_id ORDER BY id) as row_number
+              SELECT id, invoice_id, ROW_NUMBER() OVER (PARTITION BY invoice_id ORDER BY id) as row_number
               FROM invoice_items
-              WHERE item_order IS NULL OR item_order = 0
-            ) subq
-            WHERE invoice_items.id = subq.id
-          `);
+              WHERE workspace_id = $1 AND (item_order IS NULL OR item_order = 0)
+            ) missing
+            JOIN (
+              SELECT invoice_id, COALESCE(MAX(NULLIF(item_order, 0)), 0) AS max_order
+              FROM invoice_items
+              WHERE workspace_id = $1
+              GROUP BY invoice_id
+            ) order_base ON order_base.invoice_id = missing.invoice_id
+            WHERE invoice_items.id = missing.id AND invoice_items.workspace_id = $1
+          `, [req.auth.workspaceId]);
           
           logger.info(`Fixed order values for ${missingOrderCount} invoice items`);
         }
@@ -1088,8 +1107,9 @@ router.post('/restore-zip', async (req, res) => {
       // Fix missing discount fields in invoice_items (from old backups without discount support)
       try {
         const missingDiscountResult = await client.query(`
-          SELECT COUNT(*) as count FROM invoice_items WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-        `);
+          SELECT COUNT(*) as count FROM invoice_items
+          WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         const missingDiscountCount = parseInt(missingDiscountResult.rows[0].count);
         if (missingDiscountCount > 0) {
@@ -1099,8 +1119,8 @@ router.post('/restore-zip', async (req, res) => {
           await client.query(`
             UPDATE invoice_items 
             SET discount_type = NULL, discount_value = NULL, discount_amount = 0
-            WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-          `);
+            WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+          `, [req.auth.workspaceId]);
           
           logger.info(`Fixed discount values for ${missingDiscountCount} invoice items`);
         }
@@ -1111,8 +1131,9 @@ router.post('/restore-zip', async (req, res) => {
       // Fix missing global discount fields in invoices (from old backups without discount support)
       try {
         const missingGlobalDiscountResult = await client.query(`
-          SELECT COUNT(*) as count FROM invoices WHERE global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
-        `);
+          SELECT COUNT(*) as count FROM invoices
+          WHERE workspace_id = $1 AND global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         const missingGlobalDiscountCount = parseInt(missingGlobalDiscountResult.rows[0].count);
         if (missingGlobalDiscountCount > 0) {
@@ -1122,8 +1143,8 @@ router.post('/restore-zip', async (req, res) => {
           await client.query(`
             UPDATE invoices 
             SET global_discount_type = NULL, global_discount_value = NULL, global_discount_amount = 0
-            WHERE global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
-          `);
+            WHERE workspace_id = $1 AND global_discount_type IS NULL AND global_discount_value IS NULL AND global_discount_amount IS NULL
+          `, [req.auth.workspaceId]);
           
           logger.info(`Fixed global discount values for ${missingGlobalDiscountCount} invoices`);
         }
@@ -1134,8 +1155,9 @@ router.post('/restore-zip', async (req, res) => {
       // Fix missing discount fields in job_time_entries (from old backups without discount support)
       try {
         const missingJobDiscountResult = await client.query(`
-          SELECT COUNT(*) as count FROM job_time_entries WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-        `);
+          SELECT COUNT(*) as count FROM job_time_entries
+          WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+        `, [req.auth.workspaceId]);
         
         const missingJobDiscountCount = parseInt(missingJobDiscountResult.rows[0].count);
         if (missingJobDiscountCount > 0) {
@@ -1145,8 +1167,8 @@ router.post('/restore-zip', async (req, res) => {
           await client.query(`
             UPDATE job_time_entries 
             SET discount_type = NULL, discount_value = NULL, discount_amount = 0
-            WHERE discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
-          `);
+            WHERE workspace_id = $1 AND discount_type IS NULL AND discount_value IS NULL AND discount_amount IS NULL
+          `, [req.auth.workspaceId]);
           
           logger.info(`Fixed discount values for ${missingJobDiscountCount} job time entries`);
         }
@@ -1157,11 +1179,12 @@ router.post('/restore-zip', async (req, res) => {
       // Fix missing reminder texts in company (from old backups before reminder system)
       try {
         const missingReminderTextsResult = await client.query(`
-          SELECT COUNT(*) as count FROM company 
-          WHERE (reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
+          SELECT COUNT(*) as count FROM company
+          WHERE workspace_id = $1
+          AND ((reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
           OR (reminder_text_stage_2 IS NULL OR reminder_text_stage_2 = '')
-          OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = '')
-        `);
+          OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = ''))
+        `, [req.auth.workspaceId]);
         
         const missingReminderTextsCount = parseInt(missingReminderTextsResult.rows[0].count);
         if (missingReminderTextsCount > 0) {
@@ -1169,7 +1192,7 @@ router.post('/restore-zip', async (req, res) => {
           
           // Set default German reminder texts
           await client.query(`
-            UPDATE company 
+          UPDATE company
             SET 
               reminder_text_stage_1 = CASE 
                 WHEN reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '' THEN 
@@ -1198,10 +1221,11 @@ trotz mehrfacher Zahlungserinnerungen ist der ausstehende Betrag noch immer nich
 Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens jedoch innerhalb von 3 Tagen, zu begleichen. Andernfalls werden wir ohne weitere Ankündigung rechtliche Schritte einleiten.'
                 ELSE reminder_text_stage_3 
               END
-            WHERE (reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
-               OR (reminder_text_stage_2 IS NULL OR reminder_text_stage_2 = '')
-               OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = '')
-          `);
+          WHERE workspace_id = $1
+            AND ((reminder_text_stage_1 IS NULL OR reminder_text_stage_1 = '')
+             OR (reminder_text_stage_2 IS NULL OR reminder_text_stage_2 = '')
+             OR (reminder_text_stage_3 IS NULL OR reminder_text_stage_3 = ''))
+          `, [req.auth.workspaceId]);
           
           logger.info(`Fixed reminder texts for ${missingReminderTextsCount} company records`);
         }

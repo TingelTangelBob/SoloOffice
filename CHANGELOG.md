@@ -2,6 +2,17 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.1 – Importe und Backup-Wiederherstellung
+
+- Der Importassistent zeigt für Kunden, Aufträge, Angebote, Positionsvorlagen,
+  Stundensätze, Materialien und Ausgaben die gesuchten Quellspalten an. Eine
+  fachbezogene automatische Zuordnung erkennt deutsche und englische
+  Bezeichnungen, weist auf Mehrdeutigkeiten hin und lässt jede Zuordnung vor
+  der Vorschau manuell korrigieren.
+- JSON- und ZIP-Restores begrenzen auch ihre Kompatibilitätskorrekturen
+  ausdrücklich auf den aktiven Workspace. Fehlende Rechnungspositionsnummern
+  werden ohne doppelte Reihenfolge ergänzt.
+
 ## v0.9.0 – Support, System-E-Mails und Wiedervorlage
 
 - Die Backup-Verwaltung erhält eine einheitliche responsive Oberfläche,

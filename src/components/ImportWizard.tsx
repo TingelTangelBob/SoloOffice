@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileUp, Loader2, Refr
 import { apiService } from '../services/api';
 import type { ImportDuplicateMode, ImportResource, ImportResponse } from '../types';
 import {
-  autoMapHeaders,
+  analyseHeaderMapping,
   getImportDefinition,
   mapImportRows,
   parseImportFile,
@@ -55,6 +55,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     () => parsedFile ? mapImportRows(parsedFile, mapping) : [],
     [mapping, parsedFile]
   );
+  const mappingAnalysis = useMemo(
+    () => parsedFile ? analyseHeaderMapping(parsedFile.headers, definition) : null,
+    [definition, parsedFile]
+  );
 
   if (!isOpen) return null;
 
@@ -81,7 +85,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     try {
       const parsed = await parseImportFile(file);
       setParsedFile(parsed);
-      setMapping(autoMapHeaders(parsed.headers, definition));
+      setMapping(analyseHeaderMapping(parsed.headers, definition).mapping);
       setStep('mapping');
     } catch (parseError) {
       setError(parseError instanceof Error ? parseError.message : 'Die Datei konnte nicht gelesen werden.');
@@ -98,8 +102,11 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     const missingRequired = definition.fields
       .filter(field => field.required && !mapping[field.key])
       .map(field => field.label);
-    if (missingRequired.length > 0) {
-      setError(`Bitte ordnen Sie noch zu: ${missingRequired.join(', ')}.`);
+    const missingGroups = (definition.requiredGroups || [])
+      .filter(group => group.fields.every(fieldKey => !mapping[fieldKey]))
+      .map(group => `mindestens eine Spalte für ${group.label}`);
+    if (missingRequired.length > 0 || missingGroups.length > 0) {
+      setError(`Bitte ordnen Sie noch zu: ${[...missingRequired, ...missingGroups].join(', ')}.`);
       return;
     }
     setIsBusy(true);
@@ -133,6 +140,11 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
 
   const stepIndex = { file: 1, mapping: 2, preview: 3, result: 4 }[step];
   const usableRows = preview ? preview.summary.valid + preview.summary.updated : 0;
+  const mappedFieldCount = definition.fields.filter(field => mapping[field.key]).length;
+  const ambiguousFieldCount = definition.fields.filter(field => mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous').length;
+  const missingRequiredFields = definition.fields.filter(field => field.required && !mapping[field.key]);
+  const missingRequiredGroups = (definition.requiredGroups || []).filter(group => group.fields.every(fieldKey => !mapping[fieldKey]));
+  const requiredMappingIssueCount = missingRequiredFields.length + missingRequiredGroups.length;
 
   return (
     <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && close()}>
@@ -193,7 +205,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <h3 className="font-semibold text-gray-900">Spalten zuordnen</h3>
-                    <p className="text-sm text-gray-500">Die Vorschläge basieren auf deutschen und englischen Feldnamen und können angepasst werden.</p>
+                    <p className="text-sm text-gray-500">Die Zuordnung ist auf diesen Importbereich zugeschnitten und kann vor der Prüfung angepasst werden.</p>
                   </div>
                   <label className="text-sm text-gray-700">
                     <span className="mr-2 font-medium">Duplikate</span>
@@ -203,14 +215,31 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     </select>
                   </label>
                 </div>
+                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+                  <p className="font-semibold">Automatische Spaltenzuordnung</p>
+                  <p className="mt-1 leading-5">Die passenden deutschen und englischen Spaltennamen werden automatisch gesucht. Jede Zielspalte zeigt darunter die tatsächlich gesuchten Bezeichnungen.</p>
+                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-blue-800">
+                    <span>{mappedFieldCount} von {definition.fields.length} Zielspalten zugeordnet</span>
+                    {ambiguousFieldCount > 0 && <span className="text-amber-800">{ambiguousFieldCount} bitte manuell prüfen</span>}
+                    {requiredMappingIssueCount > 0 && <span className="text-red-800">{requiredMappingIssueCount} Pflichtangaben fehlen</span>}
+                    {definition.requiredGroups && definition.requiredGroups.length > 0 && <span>* Pflichtfeld · † eine Spalte je Bereich genügt</span>}
+                  </div>
+                </div>
+                {mappingAnalysis && mappingAnalysis.warnings.length > 0 && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    {mappingAnalysis.warnings.map(warning => <p key={warning}>{warning}</p>)}
+                  </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {definition.fields.map(field => (
                     <label key={field.key} className="rounded-lg border border-gray-200 bg-white p-3">
-                      <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500">{field.label}{field.required ? ' *' : ''}</span>
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
                       <select value={mapping[field.key] || ''} onChange={event => setMapping(previous => ({ ...previous, [field.key]: event.target.value }))} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
                         <option value="">Nicht importieren</option>
                         {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
                       </select>
+                      <p className="mt-2 text-[11px] leading-4 text-gray-500"><span className="font-semibold text-gray-600">Gesuchte Quellspalten:</span> {field.aliases.join(' · ')}</p>
+                      {mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous' && <p className="mt-1 text-[11px] font-medium leading-4 text-amber-700">Ähnliche Spalten gefunden – bitte Zuordnung prüfen.</p>}
                     </label>
                   ))}
                 </div>

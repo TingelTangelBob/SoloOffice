@@ -12,6 +12,7 @@ export interface ImportDefinition {
   label: string;
   description: string;
   fields: ImportFieldDefinition[];
+  requiredGroups?: Array<{ label: string; fields: string[] }>;
 }
 
 export interface ParsedImportFile {
@@ -22,11 +23,26 @@ export interface ParsedImportFile {
   warnings: string[];
 }
 
+export type ImportMappingConfidence = 'exact' | 'likely' | 'weak' | 'ambiguous' | 'unmatched';
+
+export interface ImportFieldMappingAnalysis {
+  sourceHeader?: string;
+  score: number;
+  confidence: ImportMappingConfidence;
+  alternatives: string[];
+}
+
+export interface ImportMappingAnalysis {
+  mapping: Record<string, string>;
+  fields: Record<string, ImportFieldMappingAnalysis>;
+  warnings: string[];
+}
+
 const commonCustomerFields: ImportFieldDefinition[] = [
   { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id'] },
   { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer'] },
   { key: 'customerName', label: 'Kundenname', aliases: ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name'] },
-  { key: 'customerEmail', label: 'Kunden-E-Mail', aliases: ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail'] },
+  { key: 'customerEmail', label: 'Kunden-E-Mail', aliases: ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail'] },
 ];
 
 const quoteItemFields: ImportFieldDefinition[] = [
@@ -67,14 +83,16 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     resource: 'jobs',
     label: 'Aufträge',
     description: 'Aufträge importieren und Kunden über ID, Kundennummer, E-Mail oder Namen zuordnen.',
+    requiredGroups: [{ label: 'Kundenbezug', fields: ['customerId', 'customerNumber', 'customerName', 'customerEmail'] }],
     fields: [
       { key: 'jobNumber', label: 'Auftragsnummer', aliases: ['jobNumber', 'job_number', 'orderNumber', 'order_number', 'auftragsnummer', 'auftragsnr'] },
       { key: 'externalJobNumber', label: 'Externe Auftragsnummer', aliases: ['externalJobNumber', 'external_job_number', 'externalNumber', 'extern', 'externeAuftragsnummer'] },
       ...commonCustomerFields,
       { key: 'customerAddress', label: 'Kundenadresse', aliases: ['customerAddress', 'customer_address', 'kundenadresse'] },
+      { key: 'location', label: 'Ausführungsort', aliases: ['location', 'ausführungsort', 'ausfuehrungsort', 'executionLocation', 'einsatzort'] },
       { key: 'title', label: 'Titel', aliases: ['title', 'jobTitle', 'job_title', 'auftrag', 'auftragtitel', 'bezeichnung'], required: true },
       { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibung', 'leistungstext'] },
-      { key: 'date', label: 'Datum', aliases: ['date', 'jobDate', 'job_date', 'datum', 'auftragsdatum'] },
+      { key: 'date', label: 'Datum', aliases: ['date', 'jobDate', 'job_date', 'datum', 'auftragsdatum'], required: true },
       { key: 'startTime', label: 'Startzeit', aliases: ['startTime', 'start_time', 'beginn', 'start', 'von'] },
       { key: 'endTime', label: 'Endzeit', aliases: ['endTime', 'end_time', 'ende', 'bis'] },
       { key: 'hoursWorked', label: 'Arbeitszeit (Stunden)', aliases: ['hoursWorked', 'hours_worked', 'hours', 'stunden', 'arbeitszeit'] },
@@ -91,6 +109,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     resource: 'quotes',
     label: 'Angebote',
     description: 'Angebote importieren. Mehrere Zeilen mit derselben Angebotsnummer werden zu einem Angebot mit mehreren Positionen gruppiert.',
+    requiredGroups: [{ label: 'Kundenbezug', fields: ['customerId', 'customerNumber', 'customerName', 'customerEmail'] }],
     fields: [
       { key: 'quoteNumber', label: 'Angebotsnummer', aliases: ['quoteNumber', 'quote_number', 'offerNumber', 'offer_number', 'angebotsnummer', 'angebotsnr'] },
       ...commonCustomerFields,
@@ -113,7 +132,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     description: 'Wiederverwendbare Rechnungspositionen mit Beschreibung, Einheit, Preis und Steuersatz importieren.',
     fields: [
       { key: 'name', label: 'Name', aliases: ['name', 'title', 'bezeichnung', 'position', 'beschreibung'], required: true },
-      { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibungstext', 'leistungstext'] },
+      { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibung', 'beschreibungstext', 'leistungstext'] },
       { key: 'unitPrice', label: 'Preis', aliases: ['unitPrice', 'unit_price', 'price', 'preis', 'einzelpreis', 'betrag'], required: true },
       { key: 'unit', label: 'Einheit', aliases: ['unit', 'einheit', 'unitName'] },
       { key: 'taxRate', label: 'MwSt.-Satz', aliases: ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'] },
@@ -284,33 +303,127 @@ function parseJson(text: string): { headers: string[]; rows: Array<Record<string
   };
 }
 
+interface HeaderCandidate {
+  fieldKey: string;
+  header: string;
+  score: number;
+  exact: boolean;
+}
+
 function scoreHeader(header: string, field: ImportFieldDefinition): number {
   const normalizedHeader = normaliseHeader(header);
   if (!normalizedHeader) return 0;
-  const aliases = [field.key, ...field.aliases].map(normaliseHeader).filter(Boolean);
+  const aliases = Array.from(new Set([field.key, ...field.aliases].map(normaliseHeader).filter(Boolean)));
   const exact = aliases.find(alias => alias === normalizedHeader);
   if (exact) return 100 + exact.length;
-  const partial = aliases.find(alias => normalizedHeader.includes(alias) || alias.includes(normalizedHeader));
-  return partial ? 50 + Math.min(partial.length, 30) : 0;
+
+  // Very short partial matches such as "id" or "art" are too unspecific for
+  // an automatic mapping. They remain selectable manually in the wizard.
+  if (normalizedHeader.length < 3) return 0;
+  const partial = aliases
+    .filter(alias => alias.length >= 3 && (normalizedHeader.includes(alias) || alias.includes(normalizedHeader)))
+    .sort((left, right) => right.length - left.length)[0];
+  return partial ? 60 + Math.min(partial.length, 30) : 0;
+}
+
+function buildHeaderCandidates(headers: string[], definition: ImportDefinition): HeaderCandidate[] {
+  return definition.fields.flatMap(field => headers
+    .map(header => {
+      const normalizedHeader = normaliseHeader(header);
+      const aliases = Array.from(new Set([field.key, ...field.aliases].map(normaliseHeader).filter(Boolean)));
+      return {
+        fieldKey: field.key,
+        header,
+        score: scoreHeader(header, field),
+        exact: aliases.includes(normalizedHeader),
+      };
+    })
+    .filter(candidate => candidate.score > 0));
 }
 
 export function getImportDefinition(resource: ImportResource): ImportDefinition {
   return importDefinitions[resource];
 }
 
-export function autoMapHeaders(headers: string[], definition: ImportDefinition): Record<string, string> {
-  const candidates = definition.fields
-    .flatMap(field => headers.map(header => ({ field, header, score: scoreHeader(header, field) })))
-    .filter(candidate => candidate.score > 0)
-    .sort((left, right) => right.score - left.score);
+export function analyseHeaderMapping(headers: string[], definition: ImportDefinition): ImportMappingAnalysis {
+  const candidates = buildHeaderCandidates(headers, definition);
+  const candidatesByHeader = new Map<string, HeaderCandidate[]>();
+  candidates.forEach(candidate => {
+    const entries = candidatesByHeader.get(candidate.header) || [];
+    entries.push(candidate);
+    candidatesByHeader.set(candidate.header, entries);
+  });
+
+  // If one source column is an equally good match for multiple target fields,
+  // leave it for manual selection instead of silently assigning it twice.
+  const ambiguousHeaders = new Set<string>();
+  const ambiguousFields = new Set<string>();
+  candidatesByHeader.forEach(headerCandidates => {
+    const highestScore = Math.max(...headerCandidates.map(candidate => candidate.score));
+    const topCandidates = headerCandidates.filter(candidate => candidate.score === highestScore);
+    if (topCandidates.length > 1) {
+      ambiguousHeaders.add(topCandidates[0].header);
+      topCandidates.forEach(candidate => ambiguousFields.add(candidate.fieldKey));
+    }
+  });
+
   const mapping: Record<string, string> = {};
   const usedHeaders = new Set<string>();
-  candidates.forEach(candidate => {
-    if (mapping[candidate.field.key] || usedHeaders.has(candidate.header)) return;
-    mapping[candidate.field.key] = candidate.header;
-    usedHeaders.add(candidate.header);
-  });
-  return mapping;
+  candidates
+    .sort((left, right) => right.score - left.score || Number(right.exact) - Number(left.exact))
+    .forEach(candidate => {
+      if (ambiguousHeaders.has(candidate.header) || mapping[candidate.fieldKey] || usedHeaders.has(candidate.header)) return;
+      mapping[candidate.fieldKey] = candidate.header;
+      usedHeaders.add(candidate.header);
+    });
+
+  const fields: Record<string, ImportFieldMappingAnalysis> = Object.fromEntries(definition.fields.map(field => {
+    const fieldCandidates = candidates
+      .filter(candidate => candidate.fieldKey === field.key)
+      .sort((left, right) => right.score - left.score);
+    const selectedHeader = mapping[field.key];
+    const selectedCandidate = fieldCandidates.find(candidate => candidate.header === selectedHeader);
+    const bestCandidate = fieldCandidates[0];
+    const bestHeaderUsedElsewhere = Boolean(bestCandidate && !selectedCandidate && usedHeaders.has(bestCandidate.header));
+    const confidence: ImportMappingConfidence = selectedCandidate
+      ? selectedCandidate.exact ? 'exact' : selectedCandidate.score >= 75 ? 'likely' : 'weak'
+      : (ambiguousFields.has(field.key) || bestHeaderUsedElsewhere) ? 'ambiguous' : 'unmatched';
+
+    return [field.key, {
+      sourceHeader: selectedHeader,
+      score: selectedCandidate?.score || bestCandidate?.score || 0,
+      confidence,
+      alternatives: fieldCandidates
+        .map(candidate => candidate.header)
+        .filter(header => header !== selectedHeader)
+        .slice(0, 3),
+    } satisfies ImportFieldMappingAnalysis];
+  }));
+
+  const ambiguousLabels = definition.fields
+    .filter(field => fields[field.key].confidence === 'ambiguous')
+    .map(field => field.label);
+  const missingRequiredLabels = definition.fields
+    .filter(field => field.required && !mapping[field.key])
+    .map(field => field.label);
+  const missingRequiredGroups = (definition.requiredGroups || [])
+    .filter(group => group.fields.every(fieldKey => !mapping[fieldKey]));
+  const warnings: string[] = [];
+  if (ambiguousLabels.length > 0) {
+    warnings.push(`Bitte prüfen Sie die Zuordnung für: ${ambiguousLabels.join(', ')}.`);
+  }
+  if (missingRequiredLabels.length > 0) {
+    warnings.push(`Pflichtspalten ohne eindeutige Zuordnung: ${missingRequiredLabels.join(', ')}.`);
+  }
+  if (missingRequiredGroups.length > 0) {
+    warnings.push(`Mindestens eine Spalte aus dem Bereich ${missingRequiredGroups.map(group => group.label).join(', ')} muss zugeordnet werden.`);
+  }
+
+  return { mapping, fields, warnings };
+}
+
+export function autoMapHeaders(headers: string[], definition: ImportDefinition): Record<string, string> {
+  return analyseHeaderMapping(headers, definition).mapping;
 }
 
 export function mapImportRows(parsedFile: ParsedImportFile, mapping: Record<string, string>): Array<Record<string, unknown>> {

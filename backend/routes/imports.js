@@ -218,9 +218,9 @@ async function loadCustomers(client) {
 
 function findCustomer(customers, row) {
   const customerId = text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id']));
-  const customerNumber = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr']));
-  const customerEmail = normaliseKey(pick(row, ['customerEmail', 'customer_email', 'kundenEmail', 'email', 'eMail']));
-  const customerName = normaliseKey(pick(row, ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'name']));
+  const customerNumber = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer']));
+  const customerEmail = normaliseKey(pick(row, ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail']));
+  const customerName = normaliseKey(pick(row, ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name']));
   if (customerId) return customers.find(customer => customer.id === customerId) || null;
   if (customerNumber) return customers.find(customer => normaliseKey(customer.customer_number) === normaliseKey(customerNumber)) || null;
   if (customerEmail) return customers.find(customer => normaliseKey(customer.email) === customerEmail) || null;
@@ -229,9 +229,9 @@ function findCustomer(customers, row) {
 }
 
 function customerIdentity(row) {
-  const number = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr']));
-  const email = text(pick(row, ['email', 'eMail', 'mail']));
-  const name = text(pick(row, ['name', 'customerName', 'customer_name', 'kundenname', 'kunde']));
+  const number = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer']));
+  const email = text(pick(row, ['email', 'eMail', 'mail', 'emailAddress']));
+  const name = text(pick(row, ['name', 'customerName', 'customer_name', 'kundenname', 'kunde', 'customer']));
   if (number) return `number:${normaliseKey(number)}`;
   if (email) return `email:${normaliseKey(email)}`;
   return `name:${normaliseKey(name)}`;
@@ -243,9 +243,9 @@ async function planCustomers(client, rows, duplicateMode) {
   const entries = [];
   rows.forEach((row, index) => {
     const customerId = text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id']));
-    const number = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr']));
-    const name = text(pick(row, ['name', 'customerName', 'customer_name', 'kundenname', 'kunde']));
-    const email = text(pick(row, ['email', 'eMail', 'mail', 'emailAddress']));
+    const number = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer']));
+    const name = text(pick(row, ['name', 'customerName', 'customer_name', 'kundenname', 'kunde', 'customer']));
+    const email = text(pick(row, ['email', 'eMail', 'mail', 'emailAddress', 'email_address']));
     const additionalEmails = pick(row, ['additionalEmails', 'additional_emails', 'weitereEmails', 'weitere_eMails', 'secondaryEmail']);
     const customerType = pick(row, ['customerType', 'customer_type', 'customerKind', 'customer_kind', 'kundenart', 'kundentyp', 'type', 'typ']);
     const hourlyRates = pick(row, ['hourlyRates', 'hourly_rates', 'stundensaetze', 'stundensätze']);
@@ -276,13 +276,13 @@ async function planCustomers(client, rows, duplicateMode) {
       email: email || '',
       ...(additionalEmails !== undefined ? { additionalEmails } : {}),
       address: text(pick(row, ['address', 'adresse', 'street', 'strasse', 'straße'])),
-      addressSupplement: text(pick(row, ['addressSupplement', 'address_supplement', 'adresszusatz'])),
-      city: text(pick(row, ['city', 'ort', 'town'])),
-      postalCode: text(pick(row, ['postalCode', 'postal_code', 'postcode', 'zip', 'plz'])),
-      country: text(pick(row, ['country', 'land'])) || 'Deutschland',
-      taxId: text(pick(row, ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id'])),
+      addressSupplement: text(pick(row, ['addressSupplement', 'address_supplement', 'adresszusatz', 'zusatz'])),
+      city: text(pick(row, ['city', 'ort', 'town', 'stadt'])),
+      postalCode: text(pick(row, ['postalCode', 'postal_code', 'postcode', 'zip', 'zipCode', 'plz'])),
+      country: text(pick(row, ['country', 'land', 'countryName'])) || 'Deutschland',
+      taxId: text(pick(row, ['taxId', 'tax_id', 'vatId', 'vat_id', 'ustId', 'ust_id', 'ustIdNr', 'steuerId'])),
       leitwegId: text(leitwegId),
-      phone: text(pick(row, ['phone', 'telephone', 'tel', 'telefon', 'mobile'])),
+      phone: text(pick(row, ['phone', 'telephone', 'tel', 'telefon', 'mobile', 'mobil'])),
       ...(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung']) !== undefined
         ? { notes: text(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'])) }
         : {}),
@@ -342,7 +342,7 @@ async function planSimpleMaster(client, resource, rows, duplicateMode) {
       name,
       description: text(pick(row, ['description', 'details', 'beschreibung'])),
       [config.priceKey]: price,
-      unit: config.defaultUnit ? (text(pick(row, ['unit', 'einheit'])) || config.defaultUnit) : undefined,
+      unit: config.defaultUnit ? (text(pick(row, ['unit', 'einheit', 'unitName'])) || config.defaultUnit) : undefined,
       taxRate: parseNumber(pick(row, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'])) ?? 19,
       isDefault: parseBoolean(pick(row, ['isDefault', 'is_default', 'default', 'standard'])),
     };
@@ -368,7 +368,7 @@ function normaliseTimeEntries(value) {
       endTime: parseTime(pick(item, ['endTime', 'end_time', 'end', 'bis'])),
       hoursWorked: hours,
       hourlyRate: rate,
-      hourlyRateId: text(pick(item, ['hourlyRateId', 'hourly_rate_id'])) || null,
+      hourlyRateId: text(pick(item, ['hourlyRateId', 'hourly_rate_id', 'stundensatzId'])) || null,
       taxRate: parseNumber(pick(item, ['taxRate', 'tax_rate', 'mwst', 'ust'])) ?? 19,
       total: parseNumber(pick(item, ['total', 'amount', 'betrag'])) ?? hours * rate,
     };
@@ -398,7 +398,7 @@ async function planJobs(client, rows, duplicateMode) {
   const entries = [];
   rows.forEach((row, index) => {
     const currentRow = rowNumber(row, index);
-    const title = text(pick(row, ['title', 'jobTitle', 'job_title', 'auftrag', 'bezeichnung']));
+    const title = text(pick(row, ['title', 'jobTitle', 'job_title', 'auftrag', 'auftragtitel', 'bezeichnung']));
     const customer = findCustomer(customers, row);
     const date = parseDate(pick(row, ['date', 'jobDate', 'job_date', 'datum', 'auftragsdatum']));
     if (!title) {
@@ -414,7 +414,7 @@ async function planJobs(client, rows, duplicateMode) {
       return;
     }
     const jobNumber = text(pick(row, ['jobNumber', 'job_number', 'orderNumber', 'order_number', 'auftragsnummer', 'auftragsnr']));
-    const externalJobNumber = text(pick(row, ['externalJobNumber', 'external_job_number', 'externalNumber', 'extern']));
+    const externalJobNumber = text(pick(row, ['externalJobNumber', 'external_job_number', 'externalNumber', 'extern', 'externeAuftragsnummer']));
     const duplicate = existing.find(job =>
       (jobNumber && normaliseKey(job.job_number) === normaliseKey(jobNumber))
       || (externalJobNumber && normaliseKey(job.external_job_number) === normaliseKey(externalJobNumber))
@@ -434,15 +434,15 @@ async function planJobs(client, rows, duplicateMode) {
       externalJobNumber: externalJobNumber || undefined,
       customerId: customer.id,
       customerAddress: text(pick(row, ['customerAddress', 'customer_address', 'kundenadresse'])) || customer.address || '',
-      location: text(pick(row, ['location', 'ausführungsort', 'ausfuehrungsort', 'executionLocation'])) || undefined,
+      location: text(pick(row, ['location', 'ausführungsort', 'ausfuehrungsort', 'executionLocation', 'einsatzort'])) || undefined,
       title,
       description: rawDescription || title,
       date,
-      startTime: parseTime(pick(row, ['startTime', 'start_time', 'start', 'von'])),
-      endTime: parseTime(pick(row, ['endTime', 'end_time', 'end', 'bis'])),
+      startTime: parseTime(pick(row, ['startTime', 'start_time', 'start', 'beginn', 'von'])),
+      endTime: parseTime(pick(row, ['endTime', 'end_time', 'end', 'ende', 'bis'])),
       hoursWorked,
       hourlyRate,
-      hourlyRateId: text(pick(row, ['hourlyRateId', 'hourly_rate_id'])) || null,
+      hourlyRateId: text(pick(row, ['hourlyRateId', 'hourly_rate_id', 'stundensatzId'])) || null,
       timeEntries: normaliseTimeEntries(pick(row, ['timeEntries', 'time_entries', 'zeiten', 'zeitpositionen'])),
       materials: normaliseMaterials(pick(row, ['materials', 'materialien', 'materialItems', 'material_items'])),
       status: normaliseStatus(pick(row, ['status', 'auftragsstatus']), ['draft', 'in-progress', 'completed', 'invoiced'], 'draft'),
@@ -608,7 +608,7 @@ async function planPositions(client, rows, duplicateMode) {
     const match = existing.find(template => normaliseKey(template.name) === identity);
     const data = {
       name,
-      description: text(pick(row, ['description', 'details', 'beschreibungstext', 'leistungstext'])),
+      description: text(pick(row, ['description', 'details', 'beschreibung', 'beschreibungstext', 'leistungstext'])),
       unitPrice,
       unit: text(pick(row, ['unit', 'einheit', 'unitName'])) || 'Stunde',
       taxRate: parseNumber(pick(row, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'])) ?? 19,
