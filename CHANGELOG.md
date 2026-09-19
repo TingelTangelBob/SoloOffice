@@ -4,6 +4,11 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## v0.9.0 – Support, System-E-Mails und Wiedervorlage
 
+- Die Backup-Verwaltung erhält eine einheitliche responsive Oberfläche,
+  lesbare eindeutige Backup-Bezeichnungen sowie Download- und Löschaktionen
+  für JSON- und ZIP-Backups mit Bestätigungsabfrage. Die E-Mail-Verwaltung ist
+  direkt in den Einstellungsbereich integriert und bietet dort weiterhin
+  Historie, Statistiken, SMTP-Konfiguration und Test-E-Mail als Untertabs.
 - Support-Bereich (`#support`, Kontomenü „Hilfe & Support“) im gehosteten
   Betrieb: Anfragen mit Kategorie stellen, eigene Tickets mit Verlauf sehen
   und antworten. Die Fachapp speichert keine Tickets, sondern leitet sie

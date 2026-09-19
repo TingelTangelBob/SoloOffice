@@ -85,16 +85,19 @@ interface SmtpSettings {
 
 interface EmailManagementProps {
   onClose?: () => void;
+  embedded?: boolean;
 }
 
-export function EmailManagement({ onClose }: EmailManagementProps) {
+export function EmailManagement({ onClose, embedded = false }: EmailManagementProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   useEffect(() => {
+    if (embedded) return undefined;
+
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, []);
+  }, [embedded]);
 
   const [activeTab, setActiveTab] = useState<'history' | 'settings' | 'test' | 'statistics'>('history');
   
@@ -309,16 +312,24 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
   };
 
   return (
-    <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+    <div className={embedded ? 'w-full' : 'dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4'}>
+      <div
+        role={embedded ? 'region' : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-labelledby="email-management-title"
+        className={embedded
+          ? 'flex w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white'
+          : 'flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg bg-white shadow-xl'}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center">
             <Mail className="h-6 w-6 text-primary-custom mr-3" />
-            <h2 className="text-xl font-semibold text-gray-900">E-Mail-Verwaltung</h2>
+            <h2 id="email-management-title" className="text-xl font-semibold text-gray-900">E-Mail-Verwaltung</h2>
           </div>
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
@@ -341,6 +352,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
             )}
             <span>{message.text}</span>
             <button
+              type="button"
               onClick={() => setMessage(null)}
               className="ml-auto text-current opacity-70 hover:opacity-100"
             >
@@ -395,6 +407,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                     </select>
                   </div>
                   <button
+                    type="button"
                     onClick={() => loadEmails(1)}
                     disabled={isLoading}
                     className="px-4 py-2 bg-primary-custom text-white rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
@@ -485,6 +498,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                   </div>
                   <div className="flex space-x-2">
                     <button
+                      type="button"
                       onClick={() => loadEmails(currentPage - 1)}
                       disabled={currentPage <= 1 || isLoading}
                       className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
@@ -492,6 +506,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       Zurück
                     </button>
                     <button
+                      type="button"
                       onClick={() => loadEmails(currentPage + 1)}
                       disabled={currentPage >= totalPages || isLoading}
                       className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
@@ -740,6 +755,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
                   <div className="flex items-center space-x-3 pt-4">
                     <button
+                      type="button"
                       onClick={saveSmtpSettings}
                       disabled={isSavingSettings}
                       className="btn-primary text-white px-6 py-2 rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
@@ -752,6 +768,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
                       <span>{isSavingSettings ? 'Speichert...' : 'Speichern'}</span>
                     </button>
                     <button
+                      type="button"
                       onClick={testSmtpConnection}
                       disabled={isTestingConnection}
                       className="btn-secondary text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center space-x-2"
@@ -828,6 +845,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
 
                   <div className="flex items-center space-x-3 pt-4">
                     <button
+                      type="button"
                       onClick={sendTestEmail}
                       disabled={isSendingTest || !testEmailRecipient}
                       className="btn-primary text-white px-6 py-2 rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
@@ -864,6 +882,7 @@ export function EmailManagement({ onClose }: EmailManagementProps) {
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">E-Mail-Details</h3>
                 <button
+                  type="button"
                   onClick={() => setSelectedEmail(null)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
                 >

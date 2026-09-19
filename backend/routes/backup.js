@@ -809,6 +809,48 @@ router.delete('/delete/:filename', async (req, res) => {
   }
 });
 
+// Delete ZIP backup
+router.delete('/delete-zip/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    if (!isOwnedBackup(filename, req, 'vollbackup', '.zip')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ungültiger Dateiname'
+      });
+    }
+
+    const backupDir = path.join(__dirname, '../../backups');
+    const filepath = path.join(backupDir, filename);
+
+    try {
+      await fs.unlink(filepath);
+      logger.info(`Deleted ZIP backup: ${filename}`);
+
+      res.json({
+        success: true,
+        message: 'Backup erfolgreich gelöscht'
+      });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.status(404).json({
+          success: false,
+          message: 'Backup-Datei nicht gefunden'
+        });
+      }
+      throw error;
+    }
+  } catch (error) {
+    logger.error('Error deleting ZIP backup:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Fehler beim Löschen des Backups',
+      error: error.message
+    });
+  }
+});
+
 // Create full ZIP backup (database + files)
 router.post('/create-zip', async (req, res) => {
   const client = await pool.connect();

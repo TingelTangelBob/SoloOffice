@@ -935,6 +935,10 @@ class ApiService {
     await this.downloadFile(`${this.baseUrl}/backup/download-zip/${filename}`, filename);
   }
 
+  async deleteZipBackup(filename: string): Promise<{ success: boolean; message: string }> {
+    return this.request(`/backup/delete-zip/${filename}`, { method: 'DELETE' });
+  }
+
   async restoreZipBackup(file: File): Promise<{
     success: boolean;
     message: string;

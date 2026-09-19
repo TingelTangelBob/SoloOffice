@@ -7,7 +7,6 @@ import {
   Trash2, 
   AlertTriangle, 
   CheckCircle, 
-  Clock,
   Database,
   FileText,
   RefreshCw,
@@ -148,17 +147,20 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
     }
   };
 
-  const deleteBackup = async (filename: string) => {
+  const deleteBackup = async (filename: string, type: 'json' | 'zip', displayName?: string) => {
+    const backupTypeLabel = type === 'zip' ? 'Vollbackup (ZIP)' : 'Datenbank-Backup (JSON)';
     const confirmed = await confirm({
       title: 'Backup löschen',
-      message: `Soll das Backup „${filename}“ wirklich gelöscht werden? Es kann danach nicht mehr eingespielt werden.`,
+      message: `Soll das ${backupTypeLabel} „${displayName || filename}“ wirklich gelöscht werden? Es kann danach nicht mehr eingespielt werden.`,
       confirmText: 'Löschen',
       isDestructive: true,
     });
     if (!confirmed) return;
 
     try {
-      const response = await apiService.deleteBackup(filename);
+      const response = type === 'zip'
+        ? await apiService.deleteZipBackup(filename)
+        : await apiService.deleteBackup(filename);
       if (response.success) {
         setMessage({ type: 'success', text: 'Backup erfolgreich gelöscht' });
         await loadBackups();
@@ -264,18 +266,81 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
     });
   };
 
+  const formatBackupDate = (backup: BackupInfo): string => {
+    const date = new Date(backup.timestamp || backup.created);
+    return Number.isNaN(date.getTime())
+      ? 'Unbekanntes Datum'
+      : date.toLocaleString('de-DE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+      });
+  };
+
+  const getBackupName = (backup: BackupInfo): string => (
+    `${backup.type === 'zip' ? 'Vollbackup' : 'Datenbank-Backup'} · ${formatBackupDate(backup)}`
+  );
+
+  const renderBackupRow = (backup: BackupInfo, type: 'json' | 'zip') => (
+    <div key={backup.filename} className="rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <h5 className="break-words font-medium text-gray-900" title={backup.filename}>
+            {getBackupName({ ...backup, type })}
+          </h5>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500">
+            <span>{type === 'zip' ? 'ZIP' : 'JSON'} · {formatFileSize(backup.size)}</span>
+            <span className="inline-flex items-center gap-1">
+              <Database className="h-4 w-4" />
+              {backup.tableCount} Tabellen
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <FileText className="h-4 w-4" />
+              {backup.totalRecords.toLocaleString('de-DE')} Datensätze
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
+          <button
+            type="button"
+            onClick={() => downloadBackup(backup.filename, type)}
+            className="btn-secondary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+            title="Backup herunterladen"
+          >
+            <Download className="h-4 w-4" />
+            <span>Herunterladen</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => deleteBackup(backup.filename, type, getBackupName({ ...backup, type }))}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-300"
+            title="Backup löschen"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Löschen</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+    <div className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="backup-management-title" className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center">
-            <Database className="h-6 w-6 text-primary-custom mr-3" />
-            <h2 className="text-xl font-semibold text-gray-900">Daten-Backup und Wiederherstellung</h2>
+            <Database className="mr-3 h-6 w-6 shrink-0 text-primary-custom" />
+            <h2 id="backup-management-title" className="text-xl font-semibold text-gray-900">Daten-Backup und Wiederherstellung</h2>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Backup-Verwaltung schließen"
             >
               <X className="h-6 w-6" />
             </button>
@@ -283,7 +348,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
         </div>
 
         {message && (
-          <div className={`mx-6 mt-4 p-4 rounded-lg flex items-center ${
+          <div className={`mx-5 mt-4 flex items-center rounded-lg border p-4 sm:mx-6 ${
             message.type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' :
             message.type === 'error' ? 'bg-red-50 border border-red-200 text-red-800' :
             'bg-yellow-50 border border-yellow-200 text-yellow-800'
@@ -303,23 +368,24 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
           </div>
         )}
 
-        <div className="p-6 space-y-6">
+        <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
+          <div className="space-y-6">
           {/* Create Backup Section */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-blue-900 mb-4">Backup erstellen</h3>
+          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6">
+            <h3 className="mb-4 text-lg font-semibold text-blue-900">Backup erstellen</h3>
             
             {/* JSON Backup */}
-            <div className="flex items-center justify-between mb-4 p-4 bg-white rounded-lg">
-              <div>
-                <h4 className="font-medium text-gray-900 mb-1">Datenbank-Backup (JSON)</h4>
-                <p className="text-gray-600 text-sm">
+            <div className="mb-3 flex flex-col gap-4 rounded-lg bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h4 className="mb-1 font-medium text-gray-900">Datenbank-Backup (JSON)</h4>
+                <p className="text-sm text-gray-600">
                   Sichert nur die Datenbank-Inhalte als JSON-Datei.
                 </p>
               </div>
               <button
                 onClick={createBackup}
                 disabled={isCreatingBackup || isCreatingZipBackup}
-                className="btn-secondary text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                className="btn-secondary inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isCreatingBackup ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -331,17 +397,17 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
             </div>
 
             {/* ZIP Backup */}
-            <div className="flex items-center justify-between p-4 bg-white rounded-lg">
-              <div>
-                <h4 className="font-medium text-gray-900 mb-1">Vollständiges Backup (ZIP)</h4>
-                <p className="text-gray-600 text-sm">
+            <div className="flex flex-col gap-4 rounded-lg bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h4 className="mb-1 font-medium text-gray-900">Vollständiges Backup (ZIP)</h4>
+                <p className="text-sm text-gray-600">
                   Sichert alle Daten inklusive Logos und Anhänge als ZIP-Archiv.
                 </p>
               </div>
               <button
                 onClick={createZipBackup}
                 disabled={isCreatingBackup || isCreatingZipBackup}
-                className="btn-primary text-white px-4 py-2 rounded-lg hover:brightness-90 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                className="btn-primary inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isCreatingZipBackup ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -351,46 +417,51 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                 <span>{isCreatingZipBackup ? 'Erstelle...' : 'Vollbackup (ZIP)'}</span>
               </button>
             </div>
-          </div>
+          </section>
 
           {/* Restore Backup Section */}
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
+          <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 sm:p-6">
             <div className="mb-4">
-              <h3 className="text-lg font-semibold text-orange-900 mb-2">Backup wiederherstellen</h3>
-              <p className="text-orange-700 text-sm mb-4">
-                <AlertTriangle className="h-4 w-4 inline mr-1" />
+              <h3 className="mb-2 text-lg font-semibold text-orange-900">Backup wiederherstellen</h3>
+              <p className="text-sm text-orange-700">
+                <AlertTriangle className="mr-1 inline h-4 w-4" />
                 <strong>Warnung:</strong> Dies überschreibt alle vorhandenen Daten!
               </p>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="flex-1">
+
+            <div className="flex flex-col gap-4 rounded-lg bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h4 className="mb-1 font-medium text-gray-900">Backup-Datei auswählen</h4>
+                <p className="text-sm text-gray-600">JSON (Datenbank) oder ZIP (Vollbackup)</p>
+                {selectedFile && (
+                  <p className="mt-2 truncate text-sm text-gray-500" title={selectedFile.name}>
+                    Ausgewählt: {selectedFile.name} ({formatFileSize(selectedFile.size)})
+                  </p>
+                )}
+              </div>
+              <label htmlFor="backup-file-input" className="btn-secondary inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                <Upload className="h-4 w-4" />
+                <span>{selectedFile ? 'Andere Datei wählen' : 'Datei auswählen'}</span>
                 <input
+                  id="backup-file-input"
                   type="file"
                   accept=".json,.zip"
                   onChange={handleFileSelect}
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                  className="sr-only"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Unterstützte Dateiformate: JSON (Datenbank) oder ZIP (Vollbackup)
-                </p>
-              </div>
-              {selectedFile && (
-                <span className="text-sm text-gray-600">
-                  {selectedFile.name} ({formatFileSize(selectedFile.size)})
-                </span>
-              )}
+              </label>
             </div>
-          </div>
+          </section>
 
           {/* Available Backups */}
-          <div className="bg-white border border-gray-200 rounded-lg">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-lg font-semibold text-gray-900">Verfügbare Backups</h3>
               <button
+                type="button"
                 onClick={loadBackups}
                 disabled={isLoading}
-                className="text-primary-custom hover:text-primary-custom/80 transition-colors flex items-center space-x-1"
+                className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-lg border border-primary-custom px-4 py-2 text-sm font-medium text-primary-custom transition-colors hover:bg-primary-light-custom disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
               >
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                 <span>Aktualisieren</span>
@@ -398,123 +469,43 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
             </div>
 
             {isLoading ? (
-              <div className="p-8 text-center">
-                <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-2" />
+              <div className="py-10 text-center">
+                <RefreshCw className="mx-auto mb-2 h-8 w-8 animate-spin text-gray-400" />
                 <p className="text-gray-500">Lade Backups...</p>
               </div>
             ) : backups.length === 0 && zipBackups.length === 0 ? (
-              <div className="p-8 text-center">
-                <FileText className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <div className="py-10 text-center">
+                <FileText className="mx-auto mb-2 h-8 w-8 text-gray-400" />
                 <p className="text-gray-500">Keine Backups verfügbar</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
-                {/* ZIP Backups */}
+              <div className="mt-4 space-y-5">
                 {zipBackups.length > 0 && (
-                  <>
-                    <div className="p-3 bg-green-50">
-                      <h4 className="text-sm font-medium text-green-800 flex items-center">
-                        <Save className="h-4 w-4 mr-2" />
-                        Vollständige Backups (ZIP)
-                      </h4>
+                  <div>
+                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+                      <Save className="h-4 w-4" />
+                      <span>Vollständige Backups (ZIP)</span>
                     </div>
-                    {zipBackups.map((backup) => (
-                      <div key={backup.filename} className="p-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <h5 className="font-medium text-gray-900">{backup.filename}</h5>
-                              <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
-                                ZIP - {formatFileSize(backup.size)}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
-                              <div className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
-                                {formatDate(backup.created)}
-                              </div>
-                              <div className="flex items-center">
-                                <Database className="h-4 w-4 mr-1" />
-                                {backup.tableCount} Tabellen
-                              </div>
-                              <div className="flex items-center">
-                                <FileText className="h-4 w-4 mr-1" />
-                                {backup.totalRecords.toLocaleString('de-DE')} Datensätze
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2 ml-4">
-                            <button
-                              onClick={() => downloadBackup(backup.filename, 'zip')}
-                              className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
-                              title="Herunterladen"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </>
+                    <div className="space-y-3">
+                      {zipBackups.map(backup => renderBackupRow(backup, 'zip'))}
+                    </div>
+                  </div>
                 )}
-                
-                {/* JSON Backups */}
+
                 {backups.length > 0 && (
-                  <>
-                    <div className="p-3 bg-blue-50">
-                      <h4 className="text-sm font-medium text-blue-800 flex items-center">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Datenbank-Backups (JSON)
-                      </h4>
+                  <div>
+                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">
+                      <FileText className="h-4 w-4" />
+                      <span>Datenbank-Backups (JSON)</span>
                     </div>
-                    {backups.map((backup) => (
-                      <div key={backup.filename} className="p-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <h5 className="font-medium text-gray-900">{backup.filename}</h5>
-                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                                JSON - {formatFileSize(backup.size)}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
-                              <div className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
-                                {formatDate(backup.created)}
-                              </div>
-                              <div className="flex items-center">
-                                <Database className="h-4 w-4 mr-1" />
-                                {backup.tableCount} Tabellen
-                              </div>
-                              <div className="flex items-center">
-                                <FileText className="h-4 w-4 mr-1" />
-                                {backup.totalRecords.toLocaleString('de-DE')} Datensätze
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2 ml-4">
-                            <button
-                              onClick={() => downloadBackup(backup.filename, 'json')}
-                              className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
-                              title="Herunterladen"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => deleteBackup(backup.filename)}
-                              className="text-red-600 hover:text-red-800 transition-colors p-2 rounded-lg hover:bg-red-50"
-                              title="Löschen"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </>
+                    <div className="space-y-3">
+                      {backups.map(backup => renderBackupRow(backup, 'json'))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
+          </section>
           </div>
         </div>
 

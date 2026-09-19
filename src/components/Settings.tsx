@@ -102,7 +102,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const [newYear, setNewYear] = useState<number>(new Date().getFullYear());
   const [newStartNumber, setNewStartNumber] = useState<number>(1);
   const [showBackupManagement, setShowBackupManagement] = useState(false);
-  const [showEmailManagement, setShowEmailManagement] = useState(false);
   
   
   const [activeTab, setActiveTab] = useState<SettingsTab>('app');
@@ -1531,32 +1530,19 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
         {activeTab === 'system' && (
           <div className="space-y-8">
-        {/* E-Mail-Verwaltung */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
-          <div className="flex items-center mb-4">
-            <Mail className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">E-Mail-Verwaltung</h3>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="guidance-panel border-l-4 border-l-green-500 p-4">
-              <h4 className="font-medium text-green-900 mb-2">E-Mail-Historie und SMTP-Konfiguration</h4>
-              <p className="text-sm text-green-800 mb-4">
-                Verwalten Sie alle gesendeten E-Mails, konfigurieren Sie SMTP-Einstellungen und 
-                senden Sie Test-E-Mails. Die E-Mail-Historie wird automatisch für Audit-Zwecke gespeichert.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowEmailManagement(true)}
-                disabled={isDemoMode}
-                className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Mail className="h-4 w-4 mr-2" />
-                E-Mail-Verwaltung öffnen
-              </button>
-              {isDemoMode && <p className="text-xs text-green-800 mt-2">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>}
+        {isDemoMode ? (
+          <div className="guidance-panel border-l-4 border-l-green-500 p-4">
+            <div className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-green-700" />
+              <h3 className="font-medium text-green-900">E-Mail-Verwaltung</h3>
             </div>
-            
+            <p className="mt-2 text-sm text-green-800">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>
+          </div>
+        ) : (
+          <EmailManagement embedded />
+        )}
+
+        <div className="space-y-4">
             <div className="guidance-panel p-4">
               <h4 className="font-medium text-gray-900 mb-2">E-Mail-Benachrichtigungen</h4>
               <p className="text-sm text-gray-600 mb-3">
@@ -1583,7 +1569,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </ul>
             </div>
           </div>
-        </div>
 
         {/* Backup und Wiederherstellung */}
         <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
@@ -1651,11 +1636,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
       </form>
       </div>
-
-      {/* Email Management Modal */}
-      {showEmailManagement && (
-        <EmailManagement onClose={() => setShowEmailManagement(false)} />
-      )}
 
       {/* Backup Management Modal */}
       {showBackupManagement && (
