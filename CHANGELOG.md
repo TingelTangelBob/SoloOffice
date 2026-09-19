@@ -4,6 +4,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## v0.9.1 – Importe und Backup-Wiederherstellung
 
+- Das Workspace-Feld bei der Registrierung ist gegen fehlerhaftes Browser-Autofill
+  abgesichert, damit gespeicherte E-Mail-Adressen nicht als Workspace-Name
+  eingesetzt werden.
 - Der Importassistent zeigt für Kunden, Aufträge, Angebote, Positionsvorlagen,
   Stundensätze, Materialien und Ausgaben die gesuchten Quellspalten an. Eine
   fachbezogene automatische Zuordnung erkennt deutsche und englische

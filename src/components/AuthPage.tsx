@@ -130,7 +130,22 @@ export function AuthPage() {
           )}
 
           {isRegistration && (
-            <label htmlFor="auth-organization" className="block text-sm text-gray-700">Workspace-Name<input id="auth-organization" name="organization" value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} placeholder="z. B. Meine Firma" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth organization" /></label>
+            <label htmlFor="auth-workspace-name" className="block text-sm text-gray-700">
+              Workspace-Name
+              <input
+                id="auth-workspace-name"
+                name="workspace-name"
+                value={workspaceName}
+                onChange={event => setWorkspaceName(event.target.value)}
+                placeholder="z. B. Meine Firma"
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                autoComplete="off"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+              />
+            </label>
           )}
 
           <label htmlFor="auth-email" className="block text-sm text-gray-700">
