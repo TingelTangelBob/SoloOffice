@@ -44,6 +44,19 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
     }
   }, []);
 
+  const updateJobStatuses = useCallback(async (ids: string[], status: JobEntry['status']): Promise<void> => {
+    try {
+      const response = await apiService.updateJobStatuses(ids, status);
+      const updatedIds = new Set(response.updatedIds);
+      setJobEntries(prev => prev.map(job => updatedIds.has(job.id)
+        ? { ...job, status, updatedAt: response.updatedAt ? new Date(response.updatedAt) : job.updatedAt }
+        : job));
+    } catch (error) {
+      logger.error('Error updating job statuses:', error);
+      throw error;
+    }
+  }, []);
+
   const deleteJobEntry = useCallback(async (id: string): Promise<void> => {
     try {
       await apiService.deleteJobEntry(id);
@@ -81,6 +94,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
     setJobEntries,
     addJobEntry,
     updateJobEntry,
+    updateJobStatuses,
     deleteJobEntry,
     refreshJobEntries,
     addJobSignature,

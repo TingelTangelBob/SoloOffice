@@ -95,7 +95,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const { notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
-  const { jobEntries, addJobEntry, updateJobEntry, deleteJobEntry, refreshJobEntries } = useJobs();
+  const { jobEntries, addJobEntry, updateJobEntry, updateJobStatuses, deleteJobEntry, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
@@ -551,13 +551,11 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
     });
 
     try {
-      for (const [index, jobId] of jobIds.entries()) {
-        await updateJobEntry(jobId, { status: newStatus });
-        setStatusChangeFeedback(prev => prev ? {
-          ...prev,
-          completed: index + 1,
-        } : prev);
-      }
+      await updateJobStatuses(jobIds, newStatus);
+      setStatusChangeFeedback(prev => prev ? {
+        ...prev,
+        completed: jobIds.length,
+      } : prev);
 
       if (clearSelection) {
         setSelectedJobIds([]);
@@ -573,9 +571,11 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       setStatusChangeFeedback(prev => prev ? {
         ...prev,
         phase: 'error',
-        errorMessage: jobIds.length === 1
-          ? 'Der Status konnte nicht geändert werden.'
-          : 'Die Statusänderung konnte nicht vollständig abgeschlossen werden.',
+        errorMessage: error instanceof Error
+          ? error.message
+          : jobIds.length === 1
+            ? 'Der Status konnte nicht geändert werden.'
+            : 'Die Statusänderung konnte nicht abgeschlossen werden.',
       } : prev);
     } finally {
       setIsBulkOperation(false);

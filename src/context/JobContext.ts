@@ -11,6 +11,7 @@ export interface JobContextType {
   setJobEntries: Dispatch<SetStateAction<JobEntry[]>>;
   addJobEntry: (jobEntry: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<JobEntry>;
   updateJobEntry: (id: string, jobEntry: Partial<JobEntry>) => Promise<void>;
+  updateJobStatuses: (ids: string[], status: JobEntry['status']) => Promise<void>;
   deleteJobEntry: (id: string) => Promise<void>;
   refreshJobEntries: () => Promise<void>;
   addJobSignature: (id: string, signatureData: string, customerName: string) => Promise<void>;

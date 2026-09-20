@@ -4,6 +4,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## v0.9.1 – Importe und Backup-Wiederherstellung
 
+- Massenänderungen von Unterrichts-/Kursstatus werden als atomare Batch-Änderung
+  verarbeitet und lösen dadurch bei großen Auswahlen keine Rate-Limit-Abmeldung
+  mehr aus.
 - Die Unterrichts-/Kursübersicht paginiert große Ergebnismengen mit 50 Zeilen
   pro Seite, damit auch umfangreiche Kursimporte flüssig dargestellt werden.
 - Das Workspace-Feld bei der Registrierung ist gegen fehlerhaftes Browser-Autofill

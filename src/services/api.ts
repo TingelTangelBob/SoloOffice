@@ -676,6 +676,13 @@ class ApiService {
     });
   }
 
+  async updateJobStatuses(ids: string[], status: JobEntry['status']): Promise<{ updatedIds: string[]; updatedAt: string | null }> {
+    return this.request<{ updatedIds: string[]; updatedAt: string | null }>('/jobs/bulk-status', {
+      method: 'PATCH',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
+
   async deleteJobEntry(id: string): Promise<void> {
     await this.request(`/jobs/${id}`, { method: 'DELETE' });
   }

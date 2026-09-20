@@ -6,6 +6,8 @@ import { findAllJobs, findJobById } from '../queries/jobQueries.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 
 const router = express.Router();
+const JOB_STATUSES = new Set(['draft', 'in-progress', 'completed', 'invoiced']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Helper function to safely parse materials
 const parseMaterials = (materialsData) => {
@@ -987,6 +989,89 @@ router.delete('/:id', async (req, res) => {
     await client.query('ROLLBACK');
     logger.error('Error deleting job:', error);
     res.status(500).json({ error: 'Failed to delete job' });
+  } finally {
+    client.release();
+  }
+});
+
+// Update multiple job statuses in one authenticated request. Besides avoiding
+// hundreds of rate-limit hits, this keeps a bulk change atomic: either every
+// selected job passes the same integrity checks or none of them is changed.
+router.patch('/bulk-status', async (req, res) => {
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = [...new Set(rawIds.filter((id) => typeof id === 'string').map((id) => id.trim()))];
+  const status = typeof req.body?.status === 'string' ? req.body.status : '';
+
+  if (ids.length === 0 || ids.length > 1000 || ids.some((id) => !UUID_PATTERN.test(id))) {
+    return res.status(400).json({ error: 'Ungültige Kursauswahl.' });
+  }
+  if (!JOB_STATUSES.has(status)) {
+    return res.status(400).json({ error: 'Ungültiger Status.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const currentJobsResult = await client.query(
+      `SELECT id, status, customer_id, title, description
+       FROM job_entries
+       WHERE id = ANY($1::uuid[])
+       FOR UPDATE`,
+      [ids],
+    );
+    const currentJobs = currentJobsResult.rows;
+    const currentIds = new Set(currentJobs.map((job) => job.id));
+    const missingIds = ids.filter((id) => !currentIds.has(id));
+    if (missingIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Mindestens ein Kurs wurde nicht gefunden.', missingIds });
+    }
+
+    const invoicedJobIds = currentJobs
+      .filter((job) => job.status === 'invoiced')
+      .map((job) => job.id);
+    if (invoicedJobIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'Abgerechnete Kurse können nicht geändert werden.',
+        message: 'Einige ausgewählte Kurse wurden bereits abgerechnet und bleiben unverändert.',
+        invoicedJobIds,
+      });
+    }
+
+    if (status !== 'draft') {
+      const incompleteJobIds = currentJobs
+        .filter((job) => !job.customer_id || !String(job.title || '').trim() || !String(job.description || '').trim())
+        .map((job) => job.id);
+      if (incompleteJobIds.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Pflichtfelder fehlen.',
+          message: 'Kunde, Titel und Beschreibung müssen vor dem Weiterführen ausgefüllt sein.',
+          incompleteJobIds,
+        });
+      }
+    }
+
+    const result = await client.query(
+      `UPDATE job_entries
+       SET status = $1, updated_at = NOW()
+       WHERE id = ANY($2::uuid[])
+       RETURNING id, updated_at`,
+      [status, ids],
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      message: `${result.rows.length} Kurse erfolgreich aktualisiert.`,
+      updatedIds: result.rows.map((row) => row.id),
+      updatedAt: result.rows[0]?.updated_at || null,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Error updating job statuses in bulk:', error);
+    res.status(500).json({ error: 'Die Statusänderung konnte nicht abgeschlossen werden.' });
   } finally {
     client.release();
   }
