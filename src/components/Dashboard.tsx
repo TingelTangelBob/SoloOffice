@@ -473,6 +473,20 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
+  const jobActivityTimestamp = (job: JobEntry): number => {
+    const value = job.createdAt || job.updatedAt || job.date;
+    const timestamp = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  };
+
+  const recentJobs = [...jobEntries]
+    .sort((a, b) => {
+      const activityDifference = jobActivityTimestamp(b) - jobActivityTimestamp(a);
+      if (activityDifference !== 0) return activityDifference;
+      return parseLocalJobDate(b.date).getTime() - parseLocalJobDate(a.date).getTime();
+    })
+    .slice(0, 5);
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'paid': return 'Bezahlt';
@@ -663,6 +677,56 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           ) : (
             <MetricEmptyState>In dieser Kalenderwoche sind keine Termine geplant.</MetricEmptyState>
           )}
+        </MetricCard>
+
+        {/* Aktuelle Aufträge: unabhängig von der Kalenderwoche, damit auch
+            importierte Aufträge direkt auf der Übersicht auffindbar sind. */}
+        <MetricCard className="md:col-span-2 lg:col-span-4">
+          <MetricCardHeader bordered>
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
+                <Briefcase className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <MetricCardTitle>Aktuelle {terminology.work.plural}</MetricCardTitle>
+                <MetricCardDescription className="mt-1">
+                  Die fünf zuletzt angelegten oder importierten {terminology.work.plural}
+                </MetricCardDescription>
+              </div>
+            </div>
+            <MetricBadge tone="neutral">{jobEntries.length}</MetricBadge>
+          </MetricCardHeader>
+
+          {recentJobs.length > 0 ? (
+            <MetricCardContent className="divide-y divide-gray-100">
+              {recentJobs.map((job) => (
+                <button
+                  key={job.id}
+                  type="button"
+                  onClick={() => onNavigate('jobs', undefined, job.jobNumber || job.title)}
+                  className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 lg:px-6"
+                  aria-label={`${job.title} öffnen`}
+                >
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getJobStatusDotColor(job.status)}`} aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-gray-900">{job.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-gray-500">
+                      {[job.jobNumber, job.customerName].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                    <span className="hidden tabular-nums sm:inline">{formatDate(job.date, locale, company?.dateFormat)}</span>
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </button>
+              ))}
+            </MetricCardContent>
+          ) : (
+            <MetricEmptyState>Noch keine {terminology.work.plural} vorhanden.</MetricEmptyState>
+          )}
+          <MetricCardFooterAction onClick={() => onNavigate('jobs')}>
+            Alle {terminology.work.plural}
+          </MetricCardFooterAction>
         </MetricCard>
 
         {/* Aktuelle Rechnungen */}

@@ -13,6 +13,7 @@ export interface JobContextType {
   updateJobEntry: (id: string, jobEntry: Partial<JobEntry>) => Promise<void>;
   updateJobStatuses: (ids: string[], status: JobEntry['status']) => Promise<void>;
   deleteJobEntry: (id: string) => Promise<void>;
+  deleteJobEntries: (ids: string[]) => Promise<string[]>;
   refreshJobEntries: () => Promise<void>;
   addJobSignature: (id: string, signatureData: string, customerName: string) => Promise<void>;
   getJobEntryById: (id: string) => JobEntry | undefined;

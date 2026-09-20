@@ -67,6 +67,19 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
     }
   }, []);
 
+  const deleteJobEntries = useCallback(async (ids: string[]): Promise<string[]> => {
+    try {
+      const response = await apiService.deleteJobEntries(ids);
+      const deletedIds = response.deletedIds || [];
+      const deletedIdSet = new Set(deletedIds);
+      setJobEntries(prev => prev.filter(job => !deletedIdSet.has(job.id)));
+      return deletedIds;
+    } catch (error) {
+      logger.error('Error deleting job entries in bulk:', error);
+      throw error;
+    }
+  }, []);
+
   const refreshJobEntries = useCallback(async (): Promise<void> => {
     try {
       const jobEntriesData = await apiService.getJobEntries();
@@ -96,6 +109,7 @@ export function JobProvider({ children, initialJobEntries = [] }: JobProviderPro
     updateJobEntry,
     updateJobStatuses,
     deleteJobEntry,
+    deleteJobEntries,
     refreshJobEntries,
     addJobSignature,
     getJobEntryById,

@@ -1077,43 +1077,110 @@ router.patch('/bulk-status', async (req, res) => {
   }
 });
 
-// Delete multiple job entries
+// Delete multiple job entries in one atomic request. The frontend can select
+// all rows across pagination without creating hundreds of rate-limit hits.
 router.delete('/', async (req, res) => {
-  try {
-    const { ids } = req.body;
-    
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'Invalid job IDs' });
-    }
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = [...new Set(
+    rawIds
+      .filter((id) => typeof id === 'string')
+      .map((id) => id.trim().toLowerCase())
+      .filter(Boolean),
+  )];
 
-    // Check if any jobs are invoiced
-    const placeholders = ids.map((_, index) => `$${index + 1}`).join(',');
-    const invoicedJobsResult = await pool.query(
-      `SELECT id FROM job_entries WHERE id IN (${placeholders}) AND status = 'invoiced'`,
-      ids
+  if (ids.length === 0 || ids.length > 1000 || ids.some((id) => !UUID_PATTERN.test(id))) {
+    return res.status(400).json({ error: 'Ungültige Auftragsauswahl.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const currentJobsResult = await client.query(
+      `SELECT id, status, recurrence_id
+       FROM job_entries
+       WHERE id = ANY($1::uuid[])
+       FOR UPDATE`,
+      [ids],
     );
-    
-    if (invoicedJobsResult.rows.length > 0) {
-      const invoicedJobIds = invoicedJobsResult.rows.map(row => row.id);
-      return res.status(403).json({ 
-        error: 'Cannot delete invoiced jobs', 
-        message: 'Some jobs have been invoiced and cannot be deleted to maintain invoice integrity.',
-        invoicedJobIds 
+    const currentJobs = currentJobsResult.rows;
+    const currentIds = new Set(currentJobs.map((job) => job.id));
+    const missingIds = ids.filter((id) => !currentIds.has(id));
+    if (missingIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'Mindestens ein Auftrag wurde nicht gefunden.',
+        missingIds,
       });
     }
 
-    const result = await pool.query(
-      `DELETE FROM job_entries WHERE id IN (${placeholders}) RETURNING id`,
-      ids
+    const invoicedJobIds = currentJobs
+      .filter((job) => job.status === 'invoiced')
+      .map((job) => job.id);
+    if (invoicedJobIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        error: 'Abgerechnete Aufträge können nicht gelöscht werden.',
+        message: 'Einige ausgewählte Aufträge wurden bereits abgerechnet und bleiben unverändert.',
+        invoicedJobIds,
+      });
+    }
+
+    // invoice_job_sources uses RESTRICT intentionally. Check it explicitly so
+    // the user receives a useful response instead of a database constraint
+    // error halfway through the delete operation.
+    const linkedInvoiceJobsResult = await client.query(
+      `SELECT DISTINCT job_id
+       FROM invoice_job_sources
+       WHERE job_id = ANY($1::uuid[])`,
+      [ids],
     );
-    
-    res.json({ 
-      message: `${result.rows.length} jobs deleted successfully`,
-      deletedIds: result.rows.map(row => row.id)
+    const linkedInvoiceJobIds = linkedInvoiceJobsResult.rows.map((row) => row.job_id);
+    if (linkedInvoiceJobIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Verknüpfte Aufträge können nicht gelöscht werden.',
+        message: 'Einige ausgewählte Aufträge sind mit Rechnungen verknüpft und bleiben unverändert.',
+        linkedInvoiceJobIds,
+      });
+    }
+
+    await client.query('DELETE FROM job_attachments WHERE job_id = ANY($1::uuid[])', [ids]);
+    const result = await client.query(
+      `DELETE FROM job_entries
+       WHERE id = ANY($1::uuid[])
+       RETURNING id, recurrence_id`,
+      [ids],
+    );
+
+    const recurrenceIds = [...new Set(
+      result.rows
+        .map((row) => row.recurrence_id)
+        .filter(Boolean),
+    )];
+    if (recurrenceIds.length > 0) {
+      await client.query(
+        `DELETE FROM job_recurrences AS jr
+         WHERE jr.id = ANY($1::uuid[])
+           AND NOT EXISTS (
+             SELECT 1 FROM job_entries
+             WHERE recurrence_id = jr.id
+           )`,
+        [recurrenceIds],
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: `${result.rows.length} Aufträge erfolgreich gelöscht.`,
+      deletedIds: result.rows.map((row) => row.id),
     });
   } catch (error) {
-    logger.error('Error deleting jobs:', error);
-    res.status(500).json({ error: 'Failed to delete jobs' });
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Error deleting jobs in bulk:', error);
+    res.status(500).json({ error: 'Die Aufträge konnten nicht gelöscht werden.' });
+  } finally {
+    client.release();
   }
 });
 

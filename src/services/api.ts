@@ -687,8 +687,8 @@ class ApiService {
     await this.request(`/jobs/${id}`, { method: 'DELETE' });
   }
 
-  async deleteJobEntries(ids: string[]): Promise<void> {
-    await this.request('/jobs', {
+  async deleteJobEntries(ids: string[]): Promise<{ deletedIds: string[] }> {
+    return this.request<{ deletedIds: string[] }>('/jobs', {
       method: 'DELETE',
       body: JSON.stringify({ ids }),
     });

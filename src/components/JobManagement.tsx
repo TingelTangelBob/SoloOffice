@@ -95,7 +95,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const { notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
-  const { jobEntries, addJobEntry, updateJobEntry, updateJobStatuses, deleteJobEntry, refreshJobEntries } = useJobs();
+  const { jobEntries, addJobEntry, updateJobEntry, updateJobStatuses, deleteJobEntry, deleteJobEntries, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
@@ -694,22 +694,27 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
 
   const handleBulkDelete = async () => {
     if (selectedJobIds.length === 0) return;
+
+    const idsToDelete = [...selectedJobIds];
     
     setConfirmModal({
       isOpen: true,
       title: `${terminology.work.plural} löschen`,
-      message: `Sind Sie sicher, dass Sie ${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      message: `Sind Sie sicher, dass Sie ${idsToDelete.length} ${terminology.work.singular}/${terminology.work.plural} löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.`,
       onConfirm: async () => {
         setIsBulkOperation(true);
         try {
-          for (const jobId of selectedJobIds) {
-            await deleteJobEntry(jobId);
-          }
+          const deletedIds = await deleteJobEntries(idsToDelete);
           setSelectedJobIds([]);
-          notify({ variant: 'success', message: `${selectedJobIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich gelöscht.` });
+          notify({ variant: 'success', message: `${deletedIds.length} ${terminology.work.singular}/${terminology.work.plural} erfolgreich gelöscht.` });
         } catch (error) {
           logger.error('Error deleting jobs:', error);
-          notify({ variant: 'error', message: `Fehler beim Löschen der ${terminology.work.plural}.` });
+          notify({
+            variant: 'error',
+            message: error instanceof Error && error.message
+              ? error.message
+              : `Fehler beim Löschen der ${terminology.work.plural}.`,
+          });
         } finally {
           setIsBulkOperation(false);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));

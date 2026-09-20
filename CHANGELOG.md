@@ -2,6 +2,17 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.2 – Auftragsimport und Massenlöschung
+
+- Importierte Aufträge erscheinen nach dem Import direkt in einer eigenen
+  Dashboard-Übersicht. Die Anzeige ist unabhängig von der aktuellen
+  Kalenderwoche und von einer hinterlegten Kursserie.
+- Die Massenlöschung verarbeitet bis zu 1.000 ausgewählte Aufträge in einer
+  atomaren Datenbanktransaktion. Abgerechnete oder mit Rechnungen verknüpfte
+  Aufträge bleiben geschützt; verwaiste Wiederholungsserien werden bereinigt.
+- Die Oberfläche nutzt für die Massenlöschung nur noch eine Batch-Anfrage und
+  zeigt die konkrete Fehlermeldung des Servers an.
+
 ## v0.9.1 – Importe und Backup-Wiederherstellung
 
 - Massenänderungen von Unterrichts-/Kursstatus werden als atomare Batch-Änderung

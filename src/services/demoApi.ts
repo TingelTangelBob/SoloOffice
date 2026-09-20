@@ -2475,8 +2475,13 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   }
   if (resource === 'jobs' && method === 'DELETE') {
     const ids = Array.isArray(data.ids) ? data.ids as string[] : [];
+    const deletedIds = state.jobs.filter(job => ids.includes(job.id)).map(job => job.id);
     state.jobs = state.jobs.filter(job => !ids.includes(job.id));
     saveState(state);
+    return {
+      message: `${deletedIds.length} Aufträge erfolgreich gelöscht.`,
+      deletedIds,
+    } as unknown as T;
   }
   return {} as T;
 }
