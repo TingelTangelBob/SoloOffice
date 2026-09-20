@@ -1542,34 +1542,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           <EmailManagement embedded />
         )}
 
-        <div className="space-y-4">
-            <div className="guidance-panel p-4">
-              <h4 className="font-medium text-gray-900 mb-2">E-Mail-Benachrichtigungen</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Eine tägliche Zusammenfassung – abgeschlossene {terminology.work.plural} ohne Rechnung, nicht versendete Rechnungsentwürfe, überfällige Rechnungen – stellt jeder Benutzer für sich ein.
-              </p>
-              <button
-                type="button"
-                onClick={() => onNavigate?.('profile')}
-                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Benachrichtigungen unter Benutzerdaten einstellen
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
-              <h4 className="font-medium text-yellow-900 mb-2">Features</h4>
-              <ul className="text-sm text-yellow-800 space-y-1">
-                <li>• Alle gesendeten E-Mails werden automatisch archiviert</li>
-                <li>• SMTP-Konfiguration überschreibt Backend-Einstellungen</li>
-                <li>• Test-E-Mail-Funktion zur Konfigurationsprüfung</li>
-                <li>• E-Mail-Historie ist nicht löschbar (Audit-Logs)</li>
-                <li>• Detaillierte Statistiken und Fehlerprotokollierung</li>
-              </ul>
-            </div>
-          </div>
-
         {/* Backup und Wiederherstellung */}
         <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
           <div className="flex items-center mb-4">

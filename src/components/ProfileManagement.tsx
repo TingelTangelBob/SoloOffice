@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Check, LogOut, Shield, UserRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from './PageHeader';
-import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 import { useFeedback } from '../context/FeedbackContext';
 
 export function ProfileManagement() {
@@ -72,7 +71,7 @@ export function ProfileManagement() {
 
   return (
     <div className="page-root space-y-6">
-      <PageHeader icon={UserRound} title="Benutzerdaten" subtitle="Persönliche Daten, Sitzungen und E-Mail-Benachrichtigungen." />
+      <PageHeader icon={UserRound} title="Benutzerdaten" subtitle="Persönliche Daten und Sitzungen." />
 
       {message && <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"><Check className="h-4 w-4" />{message}</div>}
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
@@ -98,8 +97,6 @@ export function ProfileManagement() {
           </form>
         </section>
       </div>
-
-      <NotificationSettingsPanel />
 
       <button type="button" onClick={() => run(logout, 'Abgemeldet.')} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><LogOut className="h-4 w-4" />Abmelden</button>
 

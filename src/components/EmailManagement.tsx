@@ -17,6 +17,7 @@ import {
   Eye,
   X,
   TrendingUp,
+  BellRing,
   Database,
   Lock
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import { formatDate as formatDateValue, formatTime } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { ThemeTabBar } from './ThemeTabBar';
+import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 
 interface EmailAttachment {
   filename: string;
@@ -88,6 +90,8 @@ interface EmailManagementProps {
   embedded?: boolean;
 }
 
+type EmailManagementTab = 'notifications' | 'activity' | 'settings' | 'test';
+
 export function EmailManagement({ onClose, embedded = false }: EmailManagementProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -99,7 +103,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     return () => { document.body.style.overflow = prev; };
   }, [embedded]);
 
-  const [activeTab, setActiveTab] = useState<'history' | 'settings' | 'test' | 'statistics'>('history');
+  const [activeTab, setActiveTab] = useState<EmailManagementTab>('notifications');
   
   // Email History State
   const [emails, setEmails] = useState<EmailHistoryItem[]>([]);
@@ -196,14 +200,17 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'history') {
+    if (activeTab === 'activity') {
       void loadEmails();
+      void loadStatistics();
     } else if (activeTab === 'settings') {
       void loadSmtpSettings();
-    } else if (activeTab === 'statistics') {
-      void loadStatistics();
     }
   }, [activeTab, loadEmails, loadSmtpSettings, loadStatistics]);
+
+  const refreshActivity = async () => {
+    await Promise.all([loadEmails(1), loadStatistics()]);
+  };
 
   const saveSmtpSettings = async () => {
     setIsSavingSettings(true);
@@ -270,7 +277,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
         setTestEmailSubject('');
         setTestEmailMessage('');
         // Reload email history to show the test email
-        if (activeTab === 'history') {
+        if (activeTab === 'activity') {
           loadEmails();
         }
       } else {
@@ -368,8 +375,8 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
             activeTab={activeTab}
             onChange={setActiveTab}
             tabs={[
-              { id: 'history' as const, label: 'E-Mail-Historie', icon: Mail },
-              { id: 'statistics' as const, label: 'Statistiken', icon: TrendingUp },
+              { id: 'notifications' as const, label: 'E-Mail-Benachrichtigungen', icon: BellRing },
+              { id: 'activity' as const, label: 'Statistiken & Historie', icon: TrendingUp },
               { id: 'settings' as const, label: 'SMTP-Konfiguration', icon: Settings },
               { id: 'test' as const, label: 'Test-E-Mail', icon: TestTube },
             ]}
@@ -377,8 +384,112 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
 
         {/* Content */}
         <div className="theme-tab-panel min-h-0 flex-1 overflow-y-auto p-0">
+          {/* Notification Settings Tab */}
+          {activeTab === 'notifications' && (
+            <div className="p-6">
+              <div className="mx-auto max-w-3xl">
+                <NotificationSettingsPanel />
+              </div>
+            </div>
+          )}
+
+          {/* Activity Tab: statistics first, followed by the email history */}
+          {activeTab === 'activity' && (
+            <>
+              <div className="border-b border-gray-200 p-6">
+                <div className="mb-5">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Statistiken</h3>
+                    <p className="mt-1 text-sm text-gray-500">Versandstatus und häufigste Empfänger auf einen Blick.</p>
+                  </div>
+                </div>
+
+                {isLoadingStats ? (
+                  <div className="flex h-32 items-center justify-center">
+                    <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+                    <span className="ml-2 text-gray-600">Lade Statistiken...</span>
+                  </div>
+                ) : statistics ? (
+                  <div className="space-y-6">
+                    {/* Overview Stats */}
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-6">
+                        <div className="flex items-center">
+                          <Database className="mr-3 h-8 w-8 text-blue-500" />
+                          <div>
+                            <p className="text-sm text-blue-600">Gesamt</p>
+                            <p className="text-2xl font-bold text-blue-900">{statistics.total.toLocaleString('de-DE')}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-green-200 bg-green-50 p-6">
+                        <div className="flex items-center">
+                          <CheckCircle className="mr-3 h-8 w-8 text-green-500" />
+                          <div>
+                            <p className="text-sm text-green-600">Gesendet</p>
+                            <p className="text-2xl font-bold text-green-900">{statistics.sent.toLocaleString('de-DE')}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+                        <div className="flex items-center">
+                          <XCircle className="mr-3 h-8 w-8 text-red-500" />
+                          <div>
+                            <p className="text-sm text-red-600">Fehlgeschlagen</p>
+                            <p className="text-2xl font-bold text-red-900">{statistics.failed.toLocaleString('de-DE')}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-purple-200 bg-purple-50 p-6">
+                        <div className="flex items-center">
+                          <Calendar className="mr-3 h-8 w-8 text-purple-500" />
+                          <div>
+                            <p className="text-sm text-purple-600">Letzte 30 Tage</p>
+                            <p className="text-2xl font-bold text-purple-900">{statistics.last30Days.toLocaleString('de-DE')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top Recipients */}
+                    {statistics.topRecipients.length > 0 && (
+                      <div className="rounded-lg border border-gray-200 bg-white p-6">
+                        <h3 className="mb-4 text-lg font-semibold text-gray-900">Häufigste Empfänger</h3>
+                        <div className="space-y-3">
+                          {statistics.topRecipients.slice(0, 10).map((recipient, index) => (
+                            <div key={recipient.recipient_email} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary-custom text-xs font-bold text-white">
+                                  {index + 1}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{recipient.recipient_email}</p>
+                                  {recipient.customer_name && (
+                                    <p className="text-sm text-gray-500">{recipient.customer_name}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-sm font-medium text-gray-600">
+                                {recipient.email_count} E-Mails
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex h-32 flex-col items-center justify-center">
+                    <TrendingUp className="mb-3 h-10 w-10 text-gray-400" />
+                    <p className="text-gray-500">Keine Statistiken verfügbar</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {/* Email History Tab */}
-          {activeTab === 'history' && (
+          {activeTab === 'activity' && (
             <div className="h-full flex flex-col">
               {/* Search and Filters */}
               <div className="p-6 border-b border-gray-200 flex-shrink-0">
@@ -408,11 +519,11 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                   </div>
                   <button
                     type="button"
-                    onClick={() => loadEmails(1)}
-                    disabled={isLoading}
+                    onClick={() => { void refreshActivity(); }}
+                    disabled={isLoading || isLoadingStats}
                     className="px-4 py-2 bg-primary-custom text-white rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
                   >
-                    <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-4 w-4 ${isLoading || isLoadingStats ? 'animate-spin' : ''}`} />
                     <span>Aktualisieren</span>
                   </button>
                 </div>
@@ -514,92 +625,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       Weiter
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Statistics Tab */}
-          {activeTab === 'statistics' && (
-            <div className="p-6">
-              {isLoadingStats ? (
-                <div className="flex items-center justify-center h-64">
-                  <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-                  <span className="ml-2 text-gray-600">Lade Statistiken...</span>
-                </div>
-              ) : statistics ? (
-                <div className="space-y-6">
-                  {/* Overview Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                      <div className="flex items-center">
-                        <Database className="h-8 w-8 text-blue-500 mr-3" />
-                        <div>
-                          <p className="text-sm text-blue-600">Gesamt</p>
-                          <p className="text-2xl font-bold text-blue-900">{statistics.total.toLocaleString('de-DE')}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                      <div className="flex items-center">
-                        <CheckCircle className="h-8 w-8 text-green-500 mr-3" />
-                        <div>
-                          <p className="text-sm text-green-600">Gesendet</p>
-                          <p className="text-2xl font-bold text-green-900">{statistics.sent.toLocaleString('de-DE')}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-                      <div className="flex items-center">
-                        <XCircle className="h-8 w-8 text-red-500 mr-3" />
-                        <div>
-                          <p className="text-sm text-red-600">Fehlgeschlagen</p>
-                          <p className="text-2xl font-bold text-red-900">{statistics.failed.toLocaleString('de-DE')}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
-                      <div className="flex items-center">
-                        <Calendar className="h-8 w-8 text-purple-500 mr-3" />
-                        <div>
-                          <p className="text-sm text-purple-600">Letzte 30 Tage</p>
-                          <p className="text-2xl font-bold text-purple-900">{statistics.last30Days.toLocaleString('de-DE')}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Top Recipients */}
-                  {statistics.topRecipients.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Häufigste Empfänger</h3>
-                      <div className="space-y-3">
-                        {statistics.topRecipients.slice(0, 10).map((recipient, index) => (
-                          <div key={recipient.recipient_email} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0 w-6 h-6 bg-primary-custom text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                {index + 1}
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900">{recipient.recipient_email}</p>
-                                {recipient.customer_name && (
-                                  <p className="text-sm text-gray-500">{recipient.customer_name}</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-sm font-medium text-gray-600">
-                              {recipient.email_count} E-Mails
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-64">
-                  <TrendingUp className="h-12 w-12 text-gray-400 mb-4" />
-                  <p className="text-gray-500">Keine Statistiken verfügbar</p>
                 </div>
               )}
             </div>

@@ -2,6 +2,14 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.2b – E-Mail-Verwaltung zusammengeführt
+
+- E-Mail-Benachrichtigungen sind jetzt als eigener Tab direkt in der
+  E-Mail-Verwaltung erreichbar.
+- Statistiken und E-Mail-Historie wurden in einem gemeinsamen Tab zusammengelegt;
+  die Statistiken stehen dort über der Historie.
+- Überflüssige Hinweisboxen in den Einstellungen wurden entfernt.
+
 ## v0.9.2 – Auftragsimport und Massenlöschung
 
 - Importierte Aufträge erscheinen nach dem Import direkt in einer eigenen
