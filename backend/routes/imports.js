@@ -12,6 +12,14 @@ const MAX_IMPORT_ROWS = 5000;
 const MAX_DETAIL_ROWS = 250;
 const MAX_IMPORT_CELL_LENGTH = 100000;
 
+const terminologyEntityLabels = {
+  customers: 'Kunde',
+  mandants: 'Mandant',
+  patients: 'Patient',
+  students: 'Schüler / Träger',
+  clients: 'Klient',
+};
+
 const today = () => new Date().toISOString().split('T')[0];
 
 function text(value) {
@@ -216,16 +224,52 @@ async function loadCustomers(client) {
   return result.rows;
 }
 
+async function loadImportEntityLabel(client) {
+  const result = await client.query("SELECT terminology_profile FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
+  return terminologyEntityLabels[result.rows[0]?.terminology_profile] || terminologyEntityLabels.customers;
+}
+
 function findCustomer(customers, row) {
-  const customerId = text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id']));
-  const customerNumber = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer']));
-  const customerEmail = normaliseKey(pick(row, ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail']));
-  const customerName = normaliseKey(pick(row, ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name']));
-  if (customerId) return customers.find(customer => customer.id === customerId) || null;
-  if (customerNumber) return customers.find(customer => normaliseKey(customer.customer_number) === normaliseKey(customerNumber)) || null;
-  if (customerEmail) return customers.find(customer => normaliseKey(customer.email) === customerEmail) || null;
-  if (customerName) return customers.find(customer => normaliseKey(customer.name) === customerName) || null;
+  const customerId = text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId']));
+  const customerNumber = text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer']));
+  const customerEmail = normaliseKey(pick(row, ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address']));
+  const customerName = normaliseKey(pick(row, ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'schülername', 'schuelername', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername', 'teilnehmer_name']));
+  if (customerId) {
+    const match = customers.find(customer => customer.id === customerId);
+    if (match) return match;
+  }
+  if (customerNumber) {
+    const match = customers.find(customer => normaliseKey(customer.customer_number) === normaliseKey(customerNumber));
+    if (match) return match;
+  }
+  if (customerEmail) {
+    const match = customers.find(customer => normaliseKey(customer.email) === customerEmail);
+    if (match) return match;
+  }
+  if (customerName) {
+    const exactMatch = customers.find(customer => normaliseKey(customer.name) === customerName);
+    if (exactMatch) return exactMatch;
+    if (customerName.length < 3) return null;
+    // A unique partial match helps when an export contains only the first
+    // name while the workspace stores the full name. Ambiguous names remain
+    // unresolved instead of silently assigning the wrong record.
+    const partialMatches = customers.filter(customer => {
+      const storedName = normaliseKey(customer.name);
+      if (!storedName) return false;
+      return storedName.includes(customerName) || customerName.includes(storedName);
+    });
+    if (partialMatches.length === 1) return partialMatches[0];
+  }
   return null;
+}
+
+function importReference(row) {
+  return text(pick(row, [
+    'customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername',
+    'customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer',
+    'customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address',
+    'customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId',
+  ]));
 }
 
 function customerIdentity(row) {
@@ -237,7 +281,7 @@ function customerIdentity(row) {
   return `name:${normaliseKey(name)}`;
 }
 
-async function planCustomers(client, rows, duplicateMode) {
+async function planCustomers(client, rows, duplicateMode, entityLabel) {
   const existing = await loadCustomers(client);
   const seen = new Set();
   const entries = [];
@@ -295,14 +339,14 @@ async function planCustomers(client, rows, duplicateMode) {
     if (!data.address || !data.city || !data.postalCode) warnings.push('Adresse ist nicht vollständig');
     if (match) {
       if (duplicateMode === 'update') {
-        entries.push(resultEntry([currentRow], 'update', `Bestehender Kunde wird aktualisiert${warnings.length ? ` (${warnings.join(', ')})` : ''}.`, data, match.id));
+        entries.push(resultEntry([currentRow], 'update', `Bestehender ${entityLabel} wird aktualisiert${warnings.length ? ` (${warnings.join(', ')})` : ''}.`, data, match.id));
       } else {
-        entries.push(resultEntry([currentRow], 'duplicate', `Kunde bereits vorhanden (${match.name}).`));
+        entries.push(resultEntry([currentRow], 'duplicate', `${entityLabel} bereits vorhanden (${match.name}).`));
       }
       return;
     }
     existing.push({ id: `new-${currentRow}`, customer_number: number || `new-${currentRow}`, name, email });
-    entries.push(resultEntry([currentRow], warnings.length ? 'warning' : 'valid', warnings.length ? `${warnings.join(', ')}.` : 'Kunde kann angelegt werden.', data));
+    entries.push(resultEntry([currentRow], warnings.length ? 'warning' : 'valid', warnings.length ? `${warnings.join(', ')}.` : `${entityLabel} kann angelegt werden.`, data));
   });
   return { entries };
 }
@@ -391,7 +435,7 @@ function normaliseMaterials(value) {
   }).filter(item => item.description);
 }
 
-async function planJobs(client, rows, duplicateMode) {
+async function planJobs(client, rows, duplicateMode, entityLabel) {
   const customers = await loadCustomers(client);
   const existingResult = await client.query('SELECT id, job_number, external_job_number, title, date FROM job_entries ORDER BY created_at ASC');
   const existing = existingResult.rows;
@@ -406,7 +450,12 @@ async function planJobs(client, rows, duplicateMode) {
       return;
     }
     if (!customer) {
-      entries.push(resultEntry([currentRow], 'error', 'Kunde konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.'));
+      const reference = importReference(row);
+      entries.push(resultEntry(
+        [currentRow],
+        'error',
+        `${entityLabel}${reference ? ` „${reference}“` : ''} konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.`,
+      ));
       return;
     }
     if (!date) {
@@ -508,7 +557,7 @@ function calculateQuoteTotals(items, row) {
   }, { documentType: 'quote' });
 }
 
-async function planQuotes(client, rows, duplicateMode) {
+async function planQuotes(client, rows, duplicateMode, entityLabel) {
   const customers = await loadCustomers(client);
   const existingResult = await client.query('SELECT id, quote_number FROM quotes ORDER BY created_at ASC');
   const existing = existingResult.rows;
@@ -526,7 +575,8 @@ async function planQuotes(client, rows, duplicateMode) {
     const rowNumbers = group.rows.map(item => item.currentRow);
     const customer = findCustomer(customers, firstRow);
     if (!customer) {
-      entries.push(resultEntry(rowNumbers, 'error', 'Kunde konnte für das Angebot nicht gefunden werden.'));
+      const reference = importReference(firstRow);
+      entries.push(resultEntry(rowNumbers, 'error', `${entityLabel}${reference ? ` „${reference}“` : ''} konnte für das Angebot nicht gefunden werden.`));
       continue;
     }
     if (group.quoteNumber) {
@@ -737,11 +787,11 @@ async function planEuerEntries(client, rows) {
   return { entries };
 }
 
-async function createPlan(client, resource, rows, duplicateMode) {
+async function createPlan(client, resource, rows, duplicateMode, entityLabel) {
   switch (resource) {
-    case 'customers': return planCustomers(client, rows, duplicateMode);
-    case 'jobs': return planJobs(client, rows, duplicateMode);
-    case 'quotes': return planQuotes(client, rows, duplicateMode);
+    case 'customers': return planCustomers(client, rows, duplicateMode, entityLabel);
+    case 'jobs': return planJobs(client, rows, duplicateMode, entityLabel);
+    case 'quotes': return planQuotes(client, rows, duplicateMode, entityLabel);
     case 'positions': return planPositions(client, rows, duplicateMode);
     case 'euerEntries': return planEuerEntries(client, rows);
     case 'hourlyRates':
@@ -832,7 +882,7 @@ async function replaceCustomerPricing(client, customerId, data) {
   }
 }
 
-async function applyCustomer(client, entry) {
+async function applyCustomer(client, entry, entityLabel) {
   const data = entry.data;
   if (entry.status === 'update') {
     const result = await client.query(`
@@ -843,7 +893,7 @@ async function applyCustomer(client, entry) {
       WHERE id = $14
       RETURNING id
     `, [data.name, data.customerType ? normaliseCustomerType(data.customerType) : null, data.email || null, data.address, data.addressSupplement || null, data.city, data.postalCode, data.country, data.taxId || null, data.leitwegId || null, data.phone || null, data.notes || null, data.isActive ?? null, entry.existingId]);
-    if (result.rows.length === 0) throw new Error('Bestehender Kunde wurde nicht gefunden.');
+    if (result.rows.length === 0) throw new Error(`Bestehender ${entityLabel} wurde nicht gefunden.`);
     if (Object.prototype.hasOwnProperty.call(data, 'additionalEmails')) {
       await client.query('DELETE FROM customer_emails WHERE customer_id = $1', [entry.existingId]);
       await insertAdditionalEmails(client, entry.existingId, data.additionalEmails);
@@ -928,7 +978,7 @@ function quoteInsertItems(items) {
   }));
 }
 
-async function applyQuote(client, entry) {
+async function applyQuote(client, entry, entityLabel) {
   const data = entry.data;
   const issueDate = data.issueDate || today();
   const quoteNumber = data.quoteNumber || await nextNumber(client, 'quotes', 'quote_number', 'AN', new Date(`${issueDate}T00:00:00Z`).getUTCFullYear());
@@ -939,7 +989,7 @@ async function applyQuote(client, entry) {
     FROM customers c WHERE c.id = $2
     RETURNING id
   `, [quoteNumber, data.customerId, issueDate, data.validUntil, data.subtotal, data.taxAmount, data.total, data.status, data.notes || null, data.globalDiscountType, data.globalDiscountValue, data.globalDiscountAmount]);
-  if (result.rows.length === 0) throw new Error('Kunde für das Angebot wurde nicht gefunden.');
+  if (result.rows.length === 0) throw new Error(`${entityLabel} für das Angebot wurde nicht gefunden.`);
   const quoteId = result.rows[0].id;
   for (const item of items) {
     await client.query(`
@@ -972,7 +1022,7 @@ async function applyPositions(client, entries, existingTemplates) {
   return entries.filter(entry => ['valid', 'warning', 'update'].includes(entry.status)).map(entry => entry.status === 'update' ? 'updated' : 'created');
 }
 
-async function applyPlan(client, resource, plan) {
+async function applyPlan(client, resource, plan, entityLabel) {
   const applicable = plan.entries.filter(entry => ['valid', 'warning', 'update'].includes(entry.status));
   if (resource === 'positions') {
     return applyPositions(client, applicable, plan.positionTemplates || []);
@@ -980,9 +1030,9 @@ async function applyPlan(client, resource, plan) {
   await lockImportDocumentNumbers(client, resource, applicable);
   const results = [];
   for (const entry of applicable) {
-    if (resource === 'customers') results.push(await applyCustomer(client, entry));
+    if (resource === 'customers') results.push(await applyCustomer(client, entry, entityLabel));
     else if (resource === 'jobs') results.push(await applyJob(client, entry));
-    else if (resource === 'quotes') results.push(await applyQuote(client, entry));
+    else if (resource === 'quotes') results.push(await applyQuote(client, entry, entityLabel));
     else if (resource === 'euerEntries') results.push(await applyEuerEntry(client, entry));
     else results.push(await applyMaster(client, resource, entry));
   }
@@ -1006,11 +1056,12 @@ router.post('/:resource', async (req, res) => {
   const client = await pool.connect();
   try {
     if (!dryRun) await client.query('BEGIN');
-    const plan = await createPlan(client, resource, rows, duplicateMode);
+    const entityLabel = await loadImportEntityLabel(client);
+    const plan = await createPlan(client, resource, rows, duplicateMode, entityLabel);
     const summary = buildSummary(plan.entries, rows.length);
     let importedEntryIds = new Set();
     if (!dryRun) {
-      const applied = await applyPlan(client, resource, plan);
+      const applied = await applyPlan(client, resource, plan, entityLabel);
       summary.imported = applied.length;
       summary.skipped = summary.duplicates + summary.errors;
       plan.entries.forEach((entry, index) => {

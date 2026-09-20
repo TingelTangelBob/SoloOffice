@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileUp, Loader2, RefreshCw, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileUp, Link2, Loader2, RefreshCw, Upload, X } from 'lucide-react';
+import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { ImportDuplicateMode, ImportResource, ImportResponse } from '../types';
 import {
@@ -9,6 +10,7 @@ import {
   parseImportFile,
   type ParsedImportFile,
 } from '../utils/importParser';
+import { getTerminology, type TerminologyDefinition } from '../utils/terminology';
 
 interface ImportWizardProps {
   resource: ImportResource;
@@ -39,8 +41,54 @@ const statusClasses: Record<string, string> = {
   imported: 'bg-emerald-100 text-emerald-800',
 };
 
+function localizeImportDefinition(definition: ReturnType<typeof getImportDefinition>, terminology: TerminologyDefinition) {
+  const entityNameLabel = `${terminology.entity.genitive}name`;
+  const entityEmailLabel = `${terminology.entity.genitive}-E-Mail`;
+  const entityLabels: Record<string, string> = {
+    customerId: `${terminology.entity.genitive}-ID`,
+    customerNumber: terminology.entity.numberLabel,
+    customerName: entityNameLabel,
+    customerEmail: entityEmailLabel,
+    customerAddress: terminology.entity.addressLabel,
+    customerType: `${terminology.entity.genitive}art`,
+    name: entityNameLabel,
+    email: entityEmailLabel,
+    address: terminology.entity.addressLabel,
+  };
+  const resourceLabel = definition.resource === 'customers'
+    ? terminology.entity.plural
+    : definition.resource === 'jobs'
+      ? terminology.work.plural
+      : definition.label;
+  const description = definition.resource === 'jobs'
+    ? `${terminology.work.plural} importieren und ${terminology.entity.singular} über ID, Nummer, E-Mail oder Name zuordnen.`
+    : definition.resource === 'customers'
+      ? `${terminology.entity.plural} aus CSV, TSV oder JSON übernehmen und bestehende ${terminology.entity.plural.toLocaleLowerCase('de-DE')} automatisch erkennen.`
+      : definition.description.replace(/Kunden/gi, terminology.entity.plural).replace(/Kunde/gi, terminology.entity.singular);
+
+  return {
+    ...definition,
+    label: resourceLabel,
+    description,
+    requiredGroups: definition.requiredGroups?.map(group => ({
+      ...group,
+      label: group.label === 'Kundenbezug' ? `${terminology.entity.singular}-Bezug` : group.label,
+    })),
+    fields: definition.fields.map(field => ({
+      ...field,
+      label: entityLabels[field.key] || field.label,
+    })),
+  };
+}
+
 export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWizardProps) {
-  const definition = getImportDefinition(resource);
+  const { company } = useCompany();
+  const baseDefinition = getImportDefinition(resource);
+  const terminology = getTerminology(company.terminologyProfile);
+  const definition = useMemo(
+    () => localizeImportDefinition(baseDefinition, terminology),
+    [baseDefinition, terminology],
+  );
   const canUpdate = updateResources.includes(resource);
   const [step, setStep] = useState<ImportStep>('file');
   const [parsedFile, setParsedFile] = useState<ParsedImportFile | null>(null);
@@ -94,6 +142,19 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     }
   };
 
+  const setTargetMapping = (targetField: string, sourceHeader: string) => {
+    setMapping(previous => {
+      const next = { ...previous };
+      if (sourceHeader) next[targetField] = sourceHeader;
+      else delete next[targetField];
+      return next;
+    });
+    setPreview(null);
+    setError(null);
+  };
+
+  const mappedTargetsForHeader = (sourceHeader: string) => definition.fields.filter(field => mapping[field.key] === sourceHeader);
+
   const runPreview = async () => {
     if (!parsedFile || mappedRows.length === 0) {
       setError('Es wurden keine Datenzeilen gefunden.');
@@ -145,6 +206,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   const missingRequiredFields = definition.fields.filter(field => field.required && !mapping[field.key]);
   const missingRequiredGroups = (definition.requiredGroups || []).filter(group => group.fields.every(fieldKey => !mapping[fieldKey]));
   const requiredMappingIssueCount = missingRequiredFields.length + missingRequiredGroups.length;
+  const unmappedFields = definition.fields.filter(field => !mapping[field.key]);
 
   return (
     <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && close()}>
@@ -177,7 +239,17 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <span className="font-semibold text-gray-900">Datei auswählen</span>
                 <span className="mt-1 text-sm text-gray-500">CSV, TSV oder JSON · maximal 10 MB</span>
                 <span className="mt-3 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white">Durchsuchen</span>
-                <input type="file" accept=".csv,.tsv,.txt,.json,text/csv,application/json" className="hidden" onChange={event => handleFile(event.target.files?.[0])} disabled={isBusy} />
+                <input
+                  type="file"
+                  accept=".csv,.tsv,.txt,.json,text/csv,application/json"
+                  className="hidden"
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    void handleFile(file);
+                  }}
+                  disabled={isBusy}
+                />
               </label>
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
                 <p className="font-semibold">Erkannte Formate</p>
@@ -196,7 +268,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     <p className="text-sm text-gray-500">{parsedFile.format.toUpperCase()} · {parsedFile.rows.length} Datenzeilen · {parsedFile.headers.length} Spalten</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setParsedFile(null); setMapping({}); setStep('file'); }} className="text-sm font-medium text-primary-custom hover:underline">Andere Datei wählen</button>
+                <button type="button" onClick={() => { setParsedFile(null); setMapping({}); setPreview(null); setError(null); setStep('file'); }} className="text-sm font-medium text-primary-custom hover:underline">Andere Datei wählen</button>
               </div>
 
               {parsedFile.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{parsedFile.warnings.join(' ')}</div>}
@@ -217,9 +289,9 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 </div>
                 <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
                   <p className="font-semibold">Automatische Spaltenzuordnung</p>
-                  <p className="mt-1 leading-5">Die passenden deutschen und englischen Spaltennamen werden automatisch gesucht. Jede Zielspalte zeigt darunter die tatsächlich gesuchten Bezeichnungen.</p>
+                  <p className="mt-1 leading-5">Die erkannten Spalten Ihrer Datei stehen oben. Ordnen Sie ihnen ein oder mehrere Zielfelder zu. Eine Spalte darf mehrfach verwendet werden, zum Beispiel als Name und als Titel.</p>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-blue-800">
-                    <span>{mappedFieldCount} von {definition.fields.length} Zielspalten zugeordnet</span>
+                    <span>{mappedFieldCount} von {definition.fields.length} Zielfeldern zugeordnet</span>
                     {ambiguousFieldCount > 0 && <span className="text-amber-800">{ambiguousFieldCount} bitte manuell prüfen</span>}
                     {requiredMappingIssueCount > 0 && <span className="text-red-800">{requiredMappingIssueCount} Pflichtangaben fehlen</span>}
                     {definition.requiredGroups && definition.requiredGroups.length > 0 && <span>* Pflichtfeld · † eine Spalte je Bereich genügt</span>}
@@ -230,18 +302,88 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     {mappingAnalysis.warnings.map(warning => <p key={warning}>{warning}</p>)}
                   </div>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {definition.fields.map(field => (
-                    <label key={field.key} className="rounded-lg border border-gray-200 bg-white p-3">
-                      <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
-                      <select value={mapping[field.key] || ''} onChange={event => setMapping(previous => ({ ...previous, [field.key]: event.target.value }))} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
-                        <option value="">Nicht importieren</option>
-                        {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
-                      </select>
-                      <p className="mt-2 text-[11px] leading-4 text-gray-500"><span className="font-semibold text-gray-600">Gesuchte Quellspalten:</span> {field.aliases.join(' · ')}</p>
-                      {mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous' && <p className="mt-1 text-[11px] font-medium leading-4 text-amber-700">Ähnliche Spalten gefunden – bitte Zuordnung prüfen.</p>}
-                    </label>
-                  ))}
+                <div className="space-y-3">
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Spalten aus Ihrer Datei</h4>
+                      <p className="mt-1 text-sm text-gray-500">Beispielwerte helfen Ihnen beim Zuordnen. Mehrfachzuordnungen sind möglich.</p>
+                    </div>
+                    <span className="hidden text-xs text-gray-400 sm:inline">{parsedFile.headers.length} Spalten</span>
+                  </div>
+                  <div className="space-y-2">
+                    {parsedFile.headers.map(header => {
+                      const mappedTargets = mappedTargetsForHeader(header);
+                      const samples = parsedFile.rows
+                        .slice(0, 2)
+                        .map(row => String(row[header] ?? '').trim())
+                        .filter(Boolean);
+                      return (
+                        <div key={header} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 lg:w-2/5">
+                              <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-primary-custom" />
+                                <p className="truncate font-semibold text-gray-900" title={header}>{header}</p>
+                              </div>
+                              <p className="mt-1 truncate pl-4 text-xs text-gray-500" title={samples.join(' · ') || 'Keine Beispielwerte'}>
+                                {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
+                              </p>
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-2">
+                              {mappedTargets.length > 0 ? mappedTargets.map(field => (
+                                <div key={field.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
+                                  <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
+                                  <span className="min-w-0 flex-1 text-sm font-medium text-blue-950">
+                                    {field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}
+                                  </span>
+                                  <button type="button" onClick={() => setTargetMapping(field.key, '')} className="rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">Entfernen</button>
+                                </div>
+                              )) : <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500">Noch kein Zielfeld zugeordnet.</p>}
+                              {definition.fields.some(field => !mapping[field.key]) ? (
+                                <label className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                  <span className="text-xs font-medium text-gray-500">Zielfeld hinzufügen</span>
+                                  <select
+                                    value=""
+                                    onChange={event => setTargetMapping(event.target.value, header)}
+                                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
+                                  >
+                                    <option value="">Auswählen …</option>
+                                    {definition.fields.filter(field => !mapping[field.key]).map(field => <option key={field.key} value={field.key}>{field.label}{field.required ? ' *' : ''}</option>)}
+                                  </select>
+                                </label>
+                              ) : <p className="text-xs text-gray-400">Alle Zielfelder sind bereits zugeordnet.</p>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="my-6 border-t border-dashed border-gray-300" />
+
+                <div>
+                  <div className="mb-3 flex items-end justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Noch nicht zugeordnete Zielfelder</h4>
+                      <p className="mt-1 text-sm text-gray-500">Nur Felder, die noch keine Spalte haben. Optionale Felder können Sie auslassen.</p>
+                    </div>
+                    {unmappedFields.length === 0 && <span className="text-sm font-medium text-green-700">Alles zugeordnet</span>}
+                  </div>
+                  {unmappedFields.length > 0 && (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {unmappedFields.map(field => (
+                        <label key={field.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                          <span className="block text-sm font-semibold text-gray-800">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
+                          <select value={mapping[field.key] || ''} onChange={event => setTargetMapping(field.key, event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
+                            <option value="">Nicht importieren</option>
+                            {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
+                          </select>
+                          {mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous' && <p className="mt-2 text-xs font-medium text-amber-700">Mehrere passende Spalten erkannt – bitte auswählen.</p>}
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -267,8 +409,19 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
               </div>
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
                 <p className="font-semibold">Vor dem Speichern geprüft</p>
-                <p>Kundenbezüge, Pflichtfelder, Datums- und Zahlenwerte sowie vorhandene Namen/Nummern wurden serverseitig geprüft. Fehlerhafte und doppelte Zeilen werden nicht übernommen.</p>
+                <p>{terminology.entity.plural}, Pflichtfelder, Datums- und Zahlenwerte sowie vorhandene Namen/Nummern wurden serverseitig geprüft. Fehlerhafte und doppelte Zeilen werden nicht übernommen.</p>
               </div>
+              {preview.summary.errors > 0 && (
+                <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">Einige Zeilen benötigen eine Korrektur.</p>
+                    <p className="mt-1">Ändern Sie die Zuordnung und prüfen Sie die Datei erneut. Übernommen werden nur fehlerfreie Zeilen.</p>
+                  </div>
+                  <button type="button" onClick={() => { setPreview(null); setStep('mapping'); }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-amber-900 hover:bg-amber-100">
+                    <ArrowLeft className="h-4 w-4" /> Zuordnung ändern
+                  </button>
+                </div>
+              )}
               <ImportResultTable rows={preview.rows} />
             </div>
           )}
@@ -292,9 +445,9 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:px-6">
-          <button type="button" onClick={step === 'file' || step === 'result' ? close : () => setStep(step === 'mapping' ? 'file' : 'mapping')} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">
+          <button type="button" onClick={step === 'file' || step === 'result' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">
             {step === 'file' || step === 'result' ? <X className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
-            {step === 'file' || step === 'result' ? 'Schließen' : 'Zurück'}
+            {step === 'file' || step === 'result' ? 'Schließen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
           </button>
           {step === 'mapping' && <button type="button" onClick={runPreview} disabled={isBusy || mappedRows.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Vorschau prüfen</button>}
           {step === 'preview' && <div className="flex items-center gap-2"><button type="button" onClick={runPreview} disabled={isBusy} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />Neu prüfen</button><button type="button" onClick={commitImport} disabled={isBusy || usableRows === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {usableRows} übernehmen</button></div>}

@@ -2,6 +2,7 @@ import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
+import { getTerminology } from '../utils/terminology';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 
@@ -676,6 +677,14 @@ function demoImportText(value: unknown): string {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function demoImportNormaliseKey(value: unknown): string {
+  return demoImportText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('de-DE')
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function demoImportBoolean(value: unknown): boolean | undefined {
   const normalized = demoImportText(value).toLocaleLowerCase('de-DE');
   if (!normalized) return undefined;
@@ -754,17 +763,49 @@ function demoImportEuerCategory(value: unknown): string | null {
   return aliases[source] || (['materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle', 'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense'].includes(source) ? source : null);
 }
 
+function demoImportEntityLabel(state: DemoState): string {
+  const profile = typeof state.company.terminologyProfile === 'string' ? state.company.terminologyProfile : undefined;
+  return getTerminology(profile).entity.singular;
+}
+
+function demoImportReference(row: DemoRecord): string {
+  const fields = [
+    'customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername',
+    'customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer',
+    'customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address',
+    'customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId',
+  ];
+  return fields.map(field => demoImportText(row[field])).find(Boolean) || '';
+}
+
 function demoImportCustomer(state: DemoState, row: DemoRecord): DemoRecord | undefined {
   const customerId = demoImportText(row.customerId);
   const customerNumber = demoImportText(row.customerNumber);
-  const customerEmail = demoImportText(row.customerEmail || row.email).toLocaleLowerCase();
-  const customerName = demoImportText(row.customerName || row.name).toLocaleLowerCase();
-  return state.customers.find(customer =>
-    (customerId && customer.id === customerId)
-    || (customerNumber && String(customer.customerNumber).toLocaleLowerCase() === customerNumber.toLocaleLowerCase())
-    || (customerEmail && String(customer.email || '').toLocaleLowerCase() === customerEmail)
-    || (!customerNumber && !customerEmail && customerName && String(customer.name).toLocaleLowerCase() === customerName)
-  );
+  const customerEmail = demoImportNormaliseKey(row.customerEmail || row.email);
+  const customerName = demoImportNormaliseKey(row.customerName || row.name);
+  if (customerId) {
+    const match = state.customers.find(customer => customer.id === customerId);
+    if (match) return match;
+  }
+  if (customerNumber) {
+    const match = state.customers.find(customer => demoImportNormaliseKey(customer.customerNumber) === demoImportNormaliseKey(customerNumber));
+    if (match) return match;
+  }
+  if (customerEmail) {
+    const match = state.customers.find(customer => demoImportNormaliseKey(customer.email) === customerEmail);
+    if (match) return match;
+  }
+  if (customerName) {
+    const exactMatch = state.customers.find(customer => demoImportNormaliseKey(customer.name) === customerName);
+    if (exactMatch) return exactMatch;
+    if (customerName.length < 3) return undefined;
+    const partialMatches = state.customers.filter(customer => {
+      const storedName = demoImportNormaliseKey(customer.name);
+      return Boolean(storedName) && (storedName.includes(customerName) || customerName.includes(storedName));
+    });
+    if (partialMatches.length === 1) return partialMatches[0];
+  }
+  return undefined;
 }
 
 function demoImportItems(row: DemoRecord): DemoRecord[] {
@@ -797,6 +838,7 @@ function demoImportItems(row: DemoRecord): DemoRecord[] {
 
 function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string, state: DemoState, commit: boolean) {
   const entries: Array<{ rowNumbers: number[]; status: string; message: string; data?: DemoRecord; existingId?: string }> = [];
+  const entityLabel = demoImportEntityLabel(state);
   const isUpdateable = ['customers', 'positions', 'hourlyRates', 'materials'].includes(resource);
   const collection = resource === 'customers'
     ? state.customers
@@ -917,16 +959,17 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
         hourlyRates: demoImportStructuredArray(row.hourlyRates || row.hourly_rates || row.stundensaetze),
         materials: demoImportStructuredArray(row.materials || row.materialien),
       } as unknown as DemoRecord;
-      if (existing && duplicateMode === 'update') entries.push({ rowNumbers: [rowNumber], status: 'update', message: 'Bestehender Kunde wird aktualisiert.', data: customerData, existingId: existing.id });
-      else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Kunde bereits vorhanden.' });
-      else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Kunde kann angelegt werden.', data: customerData });
+      if (existing && duplicateMode === 'update') entries.push({ rowNumbers: [rowNumber], status: 'update', message: `Bestehender ${entityLabel} wird aktualisiert.`, data: customerData, existingId: existing.id });
+      else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `${entityLabel} bereits vorhanden.` });
+      else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: `${entityLabel} kann angelegt werden.`, data: customerData });
       return;
     }
 
     if (resource === 'jobs') {
       const customer = demoImportCustomer(state, row);
       if (!customer || !demoImportText(row.title)) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? 'Kunde konnte nicht gefunden werden.' : 'Auftragstitel fehlt.' });
+        const reference = demoImportReference(row);
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? `${entityLabel}${reference ? ` „${reference}“` : ''} konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.` : 'Auftragstitel fehlt.' });
         return;
       }
       const date = dateOnly(row.date || isoDate());
@@ -943,7 +986,8 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
       const customer = demoImportCustomer(state, row);
       const items = demoImportItems(row);
       if (!customer || items.length === 0) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? 'Kunde konnte nicht gefunden werden.' : 'Keine gültige Position gefunden.' });
+        const reference = demoImportReference(row);
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? `${entityLabel}${reference ? ` „${reference}“` : ''} konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.` : 'Keine gültige Position gefunden.' });
         return;
       }
       const existing = collection.find(item => row.quoteNumber && item.quoteNumber === row.quoteNumber);

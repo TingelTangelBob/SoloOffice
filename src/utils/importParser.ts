@@ -39,10 +39,10 @@ export interface ImportMappingAnalysis {
 }
 
 const commonCustomerFields: ImportFieldDefinition[] = [
-  { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id'] },
-  { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer'] },
-  { key: 'customerName', label: 'Kundenname', aliases: ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name'] },
-  { key: 'customerEmail', label: 'Kunden-E-Mail', aliases: ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail'] },
+  { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId'] },
+  { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer'] },
+  { key: 'customerName', label: 'Kundenname', aliases: ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'schülername', 'schuelername', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername', 'teilnehmer_name'] },
+  { key: 'customerEmail', label: 'Kunden-E-Mail', aliases: ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'schülerEmail', 'schuelerEmail', 'studentEmail', 'student_email', 'teilnehmerEmail'] },
 ];
 
 const quoteItemFields: ImportFieldDefinition[] = [
@@ -59,11 +59,11 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     label: 'Kunden',
     description: 'Kundenlisten aus CSV, TSV oder JSON übernehmen und bestehende Kunden automatisch erkennen.',
     fields: [
-      { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id'] },
+      { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId'] },
       { key: 'customerType', label: 'Kundenart', aliases: ['customerType', 'customer_type', 'customerKind', 'customer_kind', 'kundenart', 'kundentyp', 'type', 'typ'] },
-      { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer'] },
-      { key: 'name', label: 'Name', aliases: ['name', 'customerName', 'customer_name', 'kundenname', 'kunde', 'customer'], required: true },
-      { key: 'email', label: 'E-Mail', aliases: ['email', 'eMail', 'mail', 'emailAddress', 'email_address'] },
+      { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer'] },
+      { key: 'name', label: 'Name', aliases: ['name', 'customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'schüler', 'schueler', 'schülername', 'schuelername', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername', 'teilnehmer_name'], required: true },
+      { key: 'email', label: 'E-Mail', aliases: ['email', 'eMail', 'mail', 'emailAddress', 'email_address', 'schülerEmail', 'schuelerEmail', 'studentEmail', 'student_email', 'teilnehmerEmail'] },
       { key: 'additionalEmails', label: 'Weitere E-Mails', aliases: ['additionalEmails', 'additional_emails', 'weitereEmails', 'weitere_eMails', 'secondaryEmail'] },
       { key: 'address', label: 'Adresse', aliases: ['address', 'adresse', 'street', 'strasse', 'straße'] },
       { key: 'addressSupplement', label: 'Adresszusatz', aliases: ['addressSupplement', 'address_supplement', 'adresszusatz', 'zusatz'] },
@@ -88,7 +88,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'jobNumber', label: 'Auftragsnummer', aliases: ['jobNumber', 'job_number', 'orderNumber', 'order_number', 'auftragsnummer', 'auftragsnr'] },
       { key: 'externalJobNumber', label: 'Externe Auftragsnummer', aliases: ['externalJobNumber', 'external_job_number', 'externalNumber', 'extern', 'externeAuftragsnummer'] },
       ...commonCustomerFields,
-      { key: 'customerAddress', label: 'Kundenadresse', aliases: ['customerAddress', 'customer_address', 'kundenadresse'] },
+      { key: 'customerAddress', label: 'Kundenadresse', aliases: ['customerAddress', 'customer_address', 'kundenadresse', 'schüleradresse', 'schueleradresse', 'studentAddress', 'student_address', 'teilnehmeradresse'] },
       { key: 'location', label: 'Ausführungsort', aliases: ['location', 'ausführungsort', 'ausfuehrungsort', 'executionLocation', 'einsatzort'] },
       { key: 'title', label: 'Titel', aliases: ['title', 'jobTitle', 'job_title', 'auftrag', 'auftragtitel', 'bezeichnung'], required: true },
       { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibung', 'leistungstext'] },

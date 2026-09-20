@@ -69,3 +69,32 @@ test('Gematchte Quellspalten werden unter den erwarteten Zielfeldern an den Serv
   const result = mapImportRows(parsedFile, { name: 'Kundenname', email: 'E-Mail' });
   assert.deepEqual(result, [{ _rowNumber: 2, name: 'Muster GmbH', email: 'mail@example.test' }]);
 });
+
+test('Eine Quellspalte kann für Name und Titel zugleich verwendet werden', () => {
+  const parsedFile = {
+    fileName: 'unterricht.csv',
+    format: 'csv',
+    headers: ['Schüler', 'Datum', 'Arbeitszeit (Stunden)'],
+    rows: [{ 'Schüler': 'Galina', Datum: '28.07.21', 'Arbeitszeit (Stunden)': '2' }],
+    warnings: [],
+  };
+
+  const result = mapImportRows(parsedFile, {
+    customerName: 'Schüler',
+    title: 'Schüler',
+    date: 'Datum',
+    hoursWorked: 'Arbeitszeit (Stunden)',
+  });
+  assert.deepEqual(result, [{
+    _rowNumber: 2,
+    customerName: 'Galina',
+    title: 'Galina',
+    date: '28.07.21',
+    hoursWorked: '2',
+  }]);
+});
+
+test('Schüler-Spalten werden beim Auftragsimport als Bezug erkannt', () => {
+  const result = analyseHeaderMapping(['Schüler'], getImportDefinition('jobs'));
+  assert.equal(result.mapping.customerName, 'Schüler');
+});
