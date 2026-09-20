@@ -4,6 +4,8 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## v0.9.1 – Importe und Backup-Wiederherstellung
 
+- Die Unterrichts-/Kursübersicht paginiert große Ergebnismengen mit 50 Zeilen
+  pro Seite, damit auch umfangreiche Kursimporte flüssig dargestellt werden.
 - Das Workspace-Feld bei der Registrierung ist gegen fehlerhaftes Browser-Autofill
   abgesichert, damit gespeicherte E-Mail-Adressen nicht als Workspace-Name
   eingesetzt werden.

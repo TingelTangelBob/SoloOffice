@@ -22,6 +22,8 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   PenLine,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -87,6 +89,7 @@ type DisplayedJob = {
  */
 const JOB_STATUS_INDICATOR_WIDTH = 22;
 const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
+const JOBS_PER_PAGE = 50;
 
 export function JobManagement({ onNavigate, initialFilter, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
@@ -111,6 +114,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [sortState, setSortState] = useState<SortState>({ key: 'jobNumber', direction: 'asc' });
+  const [jobPage, setJobPage] = useState(1);
   const [showAllStats, setShowAllStats] = useState(false);
   const [expandedRecurringGroups, setExpandedRecurringGroups] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
@@ -301,6 +305,24 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
 
     return rows;
   }, [filteredJobs, recurringGroups, expandedRecurringGroups]);
+
+  useEffect(() => {
+    setJobPage(1);
+  }, [customerFilter, dateFilter, searchTerm, sortState, statusFilter]);
+
+  const totalJobPages = Math.max(1, Math.ceil(displayedJobs.length / JOBS_PER_PAGE));
+
+  useEffect(() => {
+    setJobPage(previous => Math.min(previous, totalJobPages));
+  }, [totalJobPages]);
+
+  const paginatedDisplayedJobs = useMemo(() => {
+    const start = (jobPage - 1) * JOBS_PER_PAGE;
+    return displayedJobs.slice(start, start + JOBS_PER_PAGE);
+  }, [displayedJobs, jobPage]);
+
+  const firstDisplayedJob = displayedJobs.length === 0 ? 0 : (jobPage - 1) * JOBS_PER_PAGE + 1;
+  const lastDisplayedJob = Math.min(jobPage * JOBS_PER_PAGE, displayedJobs.length);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -1151,7 +1173,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             {/* Mobile View */}
             <div className="block tablet:hidden">
               <div className="divide-y divide-gray-200">
-                {displayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
+                {paginatedDisplayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
                   <div
                     key={job.id}
                     data-recurring-group={recurrenceGroup && isGroupHeader ? recurrenceGroup.key : undefined}
@@ -1312,7 +1334,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                    {displayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
+                    {paginatedDisplayedJobs.map(({ job, recurrenceGroup, isGroupHeader }) => (
                       <tr
                         key={job.id}
                         data-recurring-group={recurrenceGroup && isGroupHeader ? recurrenceGroup.key : undefined}
@@ -1535,8 +1557,35 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                 </tbody>
               </table>
             </div>
-            <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-right text-xs text-gray-500">
-              {filteredJobs.length} {filteredJobs.length === 1 ? terminology.work.singular : terminology.work.plural}
+            <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {firstDisplayedJob}–{lastDisplayedJob} von {displayedJobs.length} {displayedJobs.length === 1 ? terminology.work.singular : terminology.work.plural}
+              </span>
+              {totalJobPages > 1 && (
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJobPage(previous => Math.max(1, previous - 1))}
+                    disabled={jobPage === 1}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Vorherige Seite"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Zurück</span>
+                  </button>
+                  <span className="min-w-[5rem] text-center font-medium text-gray-700">Seite {jobPage} von {totalJobPages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setJobPage(previous => Math.min(totalJobPages, previous + 1))}
+                    disabled={jobPage === totalJobPages}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Nächste Seite"
+                  >
+                    <span className="hidden sm:inline">Weiter</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}

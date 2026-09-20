@@ -124,15 +124,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   // Icon-Leiste ist eine Desktop-Variante und darf nicht in den Drawer
   // hineinlaufen, wenn sie zuvor als Desktop-Präferenz gespeichert wurde.
   const isSidebarCompact = !isMobileMenuOpen && (sidebarSettings.collapsed || sidebarSettings.width <= SIDEBAR_COMPACT_BREAKPOINT);
-  const companySetupComplete = [
-    company.name,
-    company.address,
-    company.postalCode,
-    company.city,
-    company.email,
-    company.taxId,
-    company.bankAccount,
-  ].every(value => Boolean(value?.trim()));
+  const missingCompanyFields = [
+    [company.name, 'Firmenname'],
+    [company.address, 'Straße und Hausnummer'],
+    [company.postalCode, 'PLZ'],
+    [company.city, 'Ort'],
+    [company.email, 'E-Mail-Adresse'],
+    [company.taxId, 'USt-IdNr.'],
+    [company.bankAccount, 'IBAN'],
+  ]
+    .filter(([value]) => !String(value || '').trim())
+    .map(([, label]) => label);
+  const companySetupComplete = missingCompanyFields.length === 0;
+  const missingCompanyFieldsLabel = missingCompanyFields.join(', ');
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -377,7 +381,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       ].slice(0, 10)
     : [];
 
-  const handlePageChange = (page: string) => {
+  const handlePageChange = (page: string, filter?: string) => {
     if (page === 'invoices' || invoiceSubPageIds.includes(page)) {
       setIsInvoiceMenuOpen(true);
       setIsTaxMenuOpen(false);
@@ -388,7 +392,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       setIsInvoiceMenuOpen(false);
       setIsTaxMenuOpen(false);
     }
-    onPageChange(page);
+    onPageChange(page, filter);
     setIsMobileMenuOpen(false);
   };
 
@@ -610,14 +614,14 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               {!companySetupComplete && (
                 <button
                   type="button"
-                  onClick={() => handlePageChange('settings')}
+                  onClick={() => handlePageChange('settings', 'general')}
                   className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
                   aria-label="Firmendaten vervollständigen"
-                  title={isSidebarCompact ? 'Firmendaten vervollständigen' : undefined}
+                  title={isSidebarCompact ? `Fehlende Angaben: ${missingCompanyFieldsLabel}` : undefined}
                 >
                   <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
                     <strong>Firmendaten vervollständigen:</strong>
-                    <span>Pflichtangaben fehlen</span>
+                    <span>{missingCompanyFields.length === 1 ? 'Fehlt: ' : 'Fehlen: '}{missingCompanyFieldsLabel}</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                 </button>
