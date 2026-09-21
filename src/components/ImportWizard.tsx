@@ -153,8 +153,6 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     setError(null);
   };
 
-  const mappedTargetsForHeader = (sourceHeader: string) => definition.fields.filter(field => mapping[field.key] === sourceHeader);
-
   const runPreview = async () => {
     if (!parsedFile || mappedRows.length === 0) {
       setError('Es wurden keine Datenzeilen gefunden.');
@@ -206,7 +204,21 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   const missingRequiredFields = definition.fields.filter(field => field.required && !mapping[field.key]);
   const missingRequiredGroups = (definition.requiredGroups || []).filter(group => group.fields.every(fieldKey => !mapping[fieldKey]));
   const requiredMappingIssueCount = missingRequiredFields.length + missingRequiredGroups.length;
-  const unmappedFields = definition.fields.filter(field => !mapping[field.key]);
+  const orderedMappingFields = [...definition.fields].sort((left, right) => {
+    const leftRequired = left.required || definition.requiredGroups?.some(group => group.fields.includes(left.key)) || false;
+    const rightRequired = right.required || definition.requiredGroups?.some(group => group.fields.includes(right.key)) || false;
+    if (leftRequired !== rightRequired) return leftRequired ? -1 : 1;
+
+    const leftMapped = Boolean(mapping[left.key]);
+    const rightMapped = Boolean(mapping[right.key]);
+    if (leftMapped !== rightMapped) return leftMapped ? -1 : 1;
+
+    return definition.fields.indexOf(left) - definition.fields.indexOf(right);
+  });
+  const mappedSourceHeaders = new Set(Object.values(mapping).filter(Boolean));
+  const unmappedSourceHeaders = parsedFile
+    ? parsedFile.headers.filter(header => !mappedSourceHeaders.has(header))
+    : [];
 
   return (
     <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && close()}>
@@ -305,57 +317,57 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div className="space-y-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Quellspalten aus Ihrer Datei</h4>
-                      <p className="mt-1 text-sm text-gray-500">Links sehen Sie die Spalte aus Ihrer Datei, rechts die Zielfelder im Workspace.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Zielfelder für diesen Import</h4>
+                      <p className="mt-1 text-sm text-gray-500">Links stehen die benötigten Felder im Workspace, rechts die passende Spalte aus Ihrer Datei.</p>
                     </div>
-                    <span className="hidden text-xs text-gray-400 sm:inline">{parsedFile.headers.length} Quellspalten</span>
+                    <span className="hidden text-xs text-gray-400 sm:inline">{definition.fields.length} Zielfelder</span>
                   </div>
                   <div className="space-y-2">
-                    {parsedFile.headers.map(header => {
-                      const mappedTargets = mappedTargetsForHeader(header);
-                      const samples = parsedFile.rows
-                        .slice(0, 2)
-                        .map(row => String(row[header] ?? '').trim())
-                        .filter(Boolean);
+                    {orderedMappingFields.map(field => {
+                      const sourceHeader = mapping[field.key];
+                      const isRequired = field.required || definition.requiredGroups?.some(group => group.fields.includes(field.key));
+                      const confidence = mappingAnalysis?.fields[field.key]?.confidence;
+                      const samples = sourceHeader
+                        ? parsedFile.rows.slice(0, 2).map(row => String(row[sourceHeader] ?? '').trim()).filter(Boolean)
+                        : [];
                       return (
-                        <div key={header} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0 lg:w-2/5">
-                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Quellspalte aus Datei</span>
+                        <div key={field.key} className={`rounded-xl border p-3 sm:p-4 ${sourceHeader ? 'border-blue-100 bg-white' : isRequired ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-gray-50'}`}>
+                          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] sm:items-center sm:gap-5">
+                            <div className="min-w-0">
+                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfeld im Workspace</span>
                               <div className="flex items-center gap-2">
-                                <span className="h-2 w-2 shrink-0 rounded-full bg-primary-custom" />
-                                <p className="truncate font-semibold text-gray-900" title={header}>{header}</p>
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${isRequired ? 'bg-amber-500' : 'bg-gray-300'}`} />
+                                <p className="truncate font-semibold text-gray-900" title={field.label}>{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</p>
                               </div>
-                              <p className="mt-1 truncate pl-4 text-xs text-gray-500" title={samples.join(' · ') || 'Keine Beispielwerte'}>
-                                {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
+                              <p className={`mt-1 pl-4 text-xs ${isRequired ? 'text-amber-800' : 'text-gray-500'}`}>
+                                {field.required ? 'Pflichtfeld' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? 'Pflichtbereich: mindestens eine Spalte genügt' : 'Optional'}
                               </p>
                             </div>
-                            <div className="min-w-0 flex-1 space-y-2">
-                              <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfelder im Workspace</span>
-                              {mappedTargets.length > 0 ? mappedTargets.map(field => (
-                                <div key={field.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
-                                  <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
-                                  <span className="min-w-0 flex-1 text-sm font-medium text-blue-950">
-                                    {field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}
-                                  </span>
-                                  <button type="button" onClick={() => setTargetMapping(field.key, '')} className="rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">Entfernen</button>
+                            <div className="min-w-0">
+                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Spalte aus Ihrer Datei</span>
+                              {sourceHeader ? (
+                                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
+                                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-blue-950" title={sourceHeader}>{sourceHeader}</span>
+                                    <button type="button" onClick={() => setTargetMapping(field.key, '')} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">Entfernen</button>
+                                  </div>
+                                  <p className="mt-1 truncate pl-6 text-xs text-blue-800" title={samples.join(' · ') || 'Keine Beispielwerte'}>
+                                    {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
+                                  </p>
                                 </div>
-                              )) : <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500">Noch kein Zielfeld im Workspace zugeordnet.</p>}
-                              {mappedTargets.length === 0 && definition.fields.some(field => !mapping[field.key]) ? (
-                                <label className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                                  <span className="text-xs font-medium text-gray-500">Zielfeld im Workspace wählen</span>
-                                  <select
-                                    value=""
-                                    onChange={event => setTargetMapping(event.target.value, header)}
-                                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20"
-                                  >
-                                    <option value="">Auswählen …</option>
-                                    {definition.fields.filter(field => !mapping[field.key]).map(field => <option key={field.key} value={field.key}>{field.label}{field.required ? ' *' : ''}</option>)}
+                              ) : (
+                                <>
+                                  <select aria-label={`Spalte aus Datei für ${field.label}`} value="" onChange={event => setTargetMapping(field.key, event.target.value)} className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
+                                    <option value="">Keine passende Spalte gefunden</option>
+                                    {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
                                   </select>
-                                </label>
-                              ) : mappedTargets.length > 0 ? (
-                                <p className="text-xs text-gray-400">Zuordnung zuerst entfernen, um ein anderes Zielfeld zu wählen.</p>
-                              ) : <p className="text-xs text-gray-400">Alle Zielfelder sind bereits zugeordnet.</p>}
+                                  <p className={`mt-1 text-xs ${isRequired ? 'font-medium text-amber-800' : 'text-gray-500'}`}>
+                                    {field.required ? 'Bitte manuell zuordnen.' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? 'Mindestens eine Spalte aus diesem Bereich muss zugeordnet sein.' : 'Kann bei Bedarf manuell zugeordnet werden.'}
+                                  </p>
+                                </>
+                              )}
+                              {confidence === 'ambiguous' && <p className="mt-1 text-xs font-medium text-amber-700">Mehrere passende Spalten erkannt – bitte prüfen.</p>}
                             </div>
                           </div>
                         </div>
@@ -367,28 +379,29 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div className="my-6 border-t border-dashed border-gray-300" />
 
                 <div>
-                  <div className="mb-3 flex items-end justify-between gap-3">
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Weitere Zielfelder im Workspace</h4>
-                      <p className="mt-1 text-sm text-gray-500">Wählen Sie für jedes noch freie Zielfeld eine Quellspalte aus Ihrer Datei. Optionale Felder können Sie auslassen.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Weitere Spalten aus Ihrer Datei</h4>
+                      <p className="mt-1 text-sm text-gray-500">Für diese Spalten wurde kein Zielfeld automatisch gefunden. Sie werden nur importiert, wenn Sie sie oben manuell zuordnen.</p>
                     </div>
-                    {unmappedFields.length === 0 && <span className="text-sm font-medium text-green-700">Alles zugeordnet</span>}
+                    <span className="text-xs text-gray-400">{unmappedSourceHeaders.length} nicht zugeordnet</span>
                   </div>
-                  {unmappedFields.length > 0 && (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {unmappedFields.map(field => (
-                        <label key={field.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfeld im Workspace</span>
-                          <span className="mt-1 block text-sm font-semibold text-gray-800">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
-                          <span className="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Quellspalte aus Ihrer Datei</span>
-                          <select aria-label={`Quellspalte für ${field.label}`} value={mapping[field.key] || ''} onChange={event => setTargetMapping(field.key, event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
-                            <option value="">Nicht importieren</option>
-                            {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
-                          </select>
-                          {mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous' && <p className="mt-2 text-xs font-medium text-amber-700">Mehrere passende Spalten erkannt – bitte auswählen.</p>}
-                        </label>
-                      ))}
+                  {unmappedSourceHeaders.length > 0 ? (
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {unmappedSourceHeaders.map(header => {
+                        const samples = parsedFile.rows.slice(0, 2).map(row => String(row[header] ?? '').trim()).filter(Boolean);
+                        return (
+                          <div key={header} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <p className="truncate text-sm font-medium text-gray-800" title={header}>{header}</p>
+                            <p className="mt-1 truncate text-xs text-gray-500" title={samples.join(' · ') || 'Keine Beispielwerte'}>
+                              {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">Alle Spalten Ihrer Datei sind bereits einem Zielfeld zugeordnet.</p>
                   )}
                 </div>
               </div>
