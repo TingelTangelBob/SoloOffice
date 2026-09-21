@@ -17,11 +17,17 @@ LAN_USER="${SOLOOFFICE_LAN_USER:-root}"
 LAN_KEY="${SOLOOFFICE_LAN_KEY:-${HOME:-}/.ssh/id_kabot_test}"
 LAN_DEPLOY_DIR="${SOLOOFFICE_LAN_DEPLOY_DIR:-/opt/solooffice-tor-s}"
 LAN_INSTANCE="${SOLOOFFICE_LAN_INSTANCE:-tor-s}"
+STAGING_HOST="${SOLOOFFICE_STAGING_HOST:-46.224.132.27}"
+STAGING_USER="${SOLOOFFICE_STAGING_USER:-root}"
+STAGING_KEY="${SOLOOFFICE_STAGING_KEY:-${HOME:-}/.ssh/id_kabot_test}"
+STAGING_DEPLOY_DIR="${SOLOOFFICE_STAGING_DEPLOY_DIR:-/opt/solooffice-staging/app}"
+STAGING_INSTANCE="${SOLOOFFICE_STAGING_INSTANCE:-staging}"
 GITHUB_WAIT_SECONDS="${SOLOOFFICE_GITHUB_WAIT_SECONDS:-1800}"
 GITHUB_POLL_SECONDS="${SOLOOFFICE_GITHUB_POLL_SECONDS:-30}"
 
 COMMIT_MESSAGE=""
 DEPLOY_LAN=false
+DEPLOY_STAGING=false
 ASSUME_YES=false
 
 print_info() {
@@ -56,6 +62,8 @@ Optionen:
   --message TEXT       Commit-Nachricht. Ohne Angabe wird sie abgefragt.
   --lan                Nach erfolgreicher GitHub-Prüfung den LAN-Testserver
                        192.168.178.127:8090 aktualisieren.
+  --staging            Nach dem Push die Staging-Instanz aktualisieren und
+                       mit dem exakten Commit prüfen.
   --yes                Sicherheitsabfragen überspringen.
   --help               Diese Hilfe anzeigen.
 
@@ -65,6 +73,8 @@ Server-Timer automatisch.
 
 Umgebungsvariablen für Sonderfälle:
   SOLOOFFICE_SSH_KEY       SSH-Schlüssel für den LAN-Testserver
+  SOLOOFFICE_STAGING_HOST, SOLOOFFICE_STAGING_USER, SOLOOFFICE_STAGING_KEY
+  SOLOOFFICE_STAGING_DEPLOY_DIR, SOLOOFFICE_STAGING_INSTANCE
   SOLOOFFICE_GITHUB_WAIT_SECONDS
   SOLOOFFICE_GITHUB_POLL_SECONDS
 EOF
@@ -100,6 +110,10 @@ parse_arguments() {
         ;;
       --lan)
         DEPLOY_LAN=true
+        shift
+        ;;
+      --staging)
+        DEPLOY_STAGING=true
         shift
         ;;
       --yes)
@@ -256,6 +270,28 @@ deploy_lan() {
   print_success "LAN-Testserver aktualisiert: http://$LAN_HOST:8090"
 }
 
+deploy_staging() {
+  require_command ssh
+  require_command tar
+
+  [ -f "$STAGING_KEY" ] || fail "SSH-Schlüssel nicht gefunden: $STAGING_KEY"
+
+  print_info "Prüfe Erreichbarkeit der Staging-Instanz …"
+  ssh -o BatchMode=yes -o ConnectTimeout=8 -i "$STAGING_KEY" \
+    "$STAGING_USER@$STAGING_HOST" 'true' || fail "SSH-Verbindung zur Staging-Instanz fehlgeschlagen."
+
+  print_info "Übertrage Commit $COMMIT_SHA nach $STAGING_HOST:$STAGING_DEPLOY_DIR …"
+  git -C "$REPO_ROOT" archive --format=tar "$COMMIT_SHA" | \
+    ssh -i "$STAGING_KEY" "$STAGING_USER@$STAGING_HOST" \
+    "tar -xf - -C '$STAGING_DEPLOY_DIR'"
+
+  print_info "Baue und prüfe die Staging-Instanz …"
+  ssh -i "$STAGING_KEY" "$STAGING_USER@$STAGING_HOST" \
+    "cd '$STAGING_DEPLOY_DIR' && ./manage-instances.sh update '$STAGING_INSTANCE' '$COMMIT_SHA'"
+
+  print_success "Staging aktualisiert: https://app.staging.solooffice.de"
+}
+
 main() {
   parse_arguments "$@"
   check_repository
@@ -264,9 +300,11 @@ main() {
   if [ "$DEPLOY_LAN" = true ]; then
     wait_for_github
     deploy_lan
+  elif [ "$DEPLOY_STAGING" = true ]; then
+    deploy_staging
   else
     print_info "Die Demo aktualisiert sich nach erfolgreicher GitHub-Aktion automatisch."
-    print_info "Für den LAN-Testserver erneut mit --lan starten oder den Server separat aktualisieren."
+    print_info "Für Staging mit --staging starten; für den LAN-Testserver mit --lan."
   fi
 }
 

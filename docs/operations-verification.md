@@ -3,6 +3,33 @@
 **Stand:** 2026-08-30
 **Status:** in `manage-instances.sh` integriert
 
+## Schneller Commit-, Push- und Staging-Ablauf
+
+Für einen normalen Änderungsstand bündelt das vorhandene Skript Commit, Push
+und optional das Staging-Update:
+
+```bash
+bash deploy/solooffice-update-all.sh --message "Beschreibung" --staging
+```
+
+Das Skript verwendet keine Zugangsdaten aus dem Repository. Host, SSH-Nutzer,
+Schlüssel, Zielverzeichnis und Instanz können über
+`SOLOOFFICE_STAGING_HOST`, `SOLOOFFICE_STAGING_USER`, `SOLOOFFICE_STAGING_KEY`,
+`SOLOOFFICE_STAGING_DEPLOY_DIR` und `SOLOOFFICE_STAGING_INSTANCE` gesetzt
+werden. Standardmäßig wird der bekannte Staging-Server verwendet.
+
+Der Ablauf ist absichtlich zweistufig: GitHub wird zuerst gepusht, danach wird
+derselbe Commit als Archiv übertragen und serverseitig mit
+`manage-instances.sh update` gebaut, gesichert und geprüft. So bleibt die
+Staging-Instanz exakt auf dem Commit, der auch in GitHub liegt.
+
+In einer eingeschränkten Agentenumgebung kann der erste `git push` wegen DNS-
+oder Netzwerkbeschränkungen fehlschlagen. Dann wird derselbe Push mit einer
+Netzwerkfreigabe wiederholt; ein zweiter Commit oder ein erneutes Staging-
+Archiv ist dafür nicht nötig. Der direkte Archivtransfer zu Staging benötigt
+ebenfalls eine explizite Netzwerkfreigabe, weil dabei Quellcode an den Server
+übertragen wird.
+
 SoloOffice kann eine laufende Self-Hosting-Instanz technisch prüfen, ohne sich
 anzumelden oder Fachdaten zu verändern:
 

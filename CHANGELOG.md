@@ -4,6 +4,9 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+- Der Gesamtupdate-Ablauf unterstützt jetzt `--staging` und überträgt nach dem
+  Push automatisch denselben Commit zur Staging-Instanz, inklusive Backup,
+  Docker-Build und technischer Prüfung.
 - Der Bulk-Download von Rechnungen nutzt jetzt eine kompakte, eindeutige
   Dialogstruktur ohne doppelte Detail- und Hinweisboxen.
 - Die Auswahl des Zahlungsdatums bei Sammelzahlungen ist sichtbar markiert und
