@@ -2,6 +2,19 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## Unreleased
+
+- Große Rechnungsläufe takten die einzelnen Entwürfe und aktualisieren die
+  Ansichten erst nach dem vollständigen Lauf, damit unnötige API-Anfragen kein
+  Rate-Limit auslösen.
+- Bereits abgerechnete Einheiten werden aus einer veralteten Auswahl entfernt,
+  bevor der Rechnungsdialog geöffnet wird.
+- Die Rechnungsart ist kompakt aufklappbar; die aktive Auswahl bleibt sichtbar.
+- Bestätigungsdialoge sind im Dunkelmodus lesbar und zeigen die
+  Bestätigungsaktion zuverlässig an.
+- Firmendaten verwenden eindeutige Browser-Autofill-Zuordnungen.
+- Die Importzuordnung nutzt eine zurückhaltende, workspace-farbige Darstellung.
+
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 
 - E-Mail-Benachrichtigungen sind jetzt als eigener Tab direkt in der

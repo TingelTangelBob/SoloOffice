@@ -414,7 +414,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           ]}
         />
 
-      <form onSubmit={handleSubmit} className={`${embedded ? '' : 'theme-tab-panel'} form-consistent-fields space-y-8`}>
+      <form onSubmit={handleSubmit} autoComplete="on" className={`${embedded ? '' : 'theme-tab-panel'} form-consistent-fields space-y-8`}>
         {activeTab === 'app' && (
           <div className="space-y-8">
         {/* Terminology Settings */}
@@ -643,6 +643,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="organization"
+                autoComplete="section-company organization"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -656,6 +658,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="street-address"
+                autoComplete="section-company street-address"
                 value={formData.address}
                 onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -669,6 +673,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="postal-code"
+                autoComplete="section-company postal-code"
                 value={formData.postalCode}
                 onChange={(e) => setFormData(prev => ({ ...prev, postalCode: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -682,6 +688,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="address-level2"
+                autoComplete="section-company address-level2"
                 value={formData.city}
                 onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -695,6 +703,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="country-name"
+                autoComplete="section-company country-name"
                 value={formData.country}
                 onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -708,6 +718,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="text"
                 required
+                name="tax-id"
+                autoComplete="off"
                 value={formData.taxId}
                 onChange={(e) => setFormData(prev => ({ ...prev, taxId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -721,6 +733,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
+                name="tax-identification-number"
+                autoComplete="off"
                 value={formData.taxIdentificationNumber || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, taxIdentificationNumber: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -794,6 +808,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="email"
                 required
+                name="email"
+                autoComplete="section-company email"
                 value={formData.email}
                 onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -807,6 +823,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               <input
                 type="tel"
                 required
+                name="tel"
+                autoComplete="section-company tel"
                 value={formData.phone}
                 onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -818,7 +836,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 Website
               </label>
               <input
-                type="text"
+                type="url"
+                name="url"
+                autoComplete="section-company url"
                 value={formData.website || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
@@ -867,6 +887,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
+                name="account-holder"
+                autoComplete="section-company name"
                 value={formData.paymentInformationMode === 'company'
                   ? formData.name
                   : (formData.paymentInformation?.accountHolder || formData.name)}
@@ -894,6 +916,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
+                name="iban"
+                autoComplete="off"
                 value={formData.paymentInformation?.bankAccount || formData.bankAccount || ''}
                 onChange={(e) => setFormData(prev => ({ 
                   ...prev, 
@@ -913,6 +937,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
+                name="bic"
+                autoComplete="off"
                 value={formData.paymentInformation?.bic || formData.bic || ''}
                 onChange={(e) => setFormData(prev => ({ 
                   ...prev, 
@@ -932,6 +958,8 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
+                name="bank-name"
+                autoComplete="off"
                 value={formData.paymentInformation?.bankName || ''}
                 onChange={(e) => setFormData(prev => ({ 
                   ...prev, 

@@ -53,45 +53,45 @@ export function ConfirmationModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg bg-white shadow-lg">
-        <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="confirmation-dialog w-full max-w-md rounded-lg shadow-lg">
+        <div className="confirmation-dialog-header flex items-center justify-between gap-3 border-b p-6">
           <div className="flex min-w-0 items-center space-x-3">
-            <div className={`p-2 rounded-full ${isGoBDWarning ? 'bg-amber-100' : isDestructive ? 'bg-red-100' : 'bg-primary-custom/10'}`}>
-              <AlertTriangle className={`h-6 w-6 ${isGoBDWarning ? 'text-amber-600' : isDestructive ? 'text-red-600' : 'text-primary-custom'}`} />
+            <div className={`confirmation-dialog-icon rounded-full p-2 ${isGoBDWarning ? 'confirmation-dialog-icon--warning' : isDestructive ? 'confirmation-dialog-icon--destructive' : ''}`}>
+              <AlertTriangle className="h-6 w-6" />
             </div>
-            <h3 id={titleId} className="min-w-0 text-lg font-semibold text-gray-900">{title}</h3>
+            <h3 id={titleId} className="confirmation-dialog-title min-w-0 text-lg font-semibold">{title}</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 text-gray-500 hover:text-gray-700"
+            className="confirmation-dialog-close shrink-0"
             aria-label="Dialog schließen"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="confirmation-dialog-content p-6">
           {isGoBDWarning && (
-            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <h4 className="text-sm font-semibold text-amber-800 mb-2">
+            <div className="confirmation-dialog-warning mb-4 rounded-lg border p-4">
+              <h4 className="mb-2 text-sm font-semibold">
                 GoBD-Konformitätshinweis
               </h4>
-              <p className="text-sm text-amber-700">
+              <p className="text-sm">
                 Nach den Grundsätzen zur ordnungsmäßigen Führung und Aufbewahrung von Büchern (GoBD)
                 sind Änderungen an bereits versendeten Rechnungen kritisch zu bewerten.
               </p>
             </div>
           )}
 
-          <p className="whitespace-pre-line leading-relaxed text-gray-600">{message}</p>
+          <p className="confirmation-dialog-message whitespace-pre-line leading-relaxed">{message}</p>
         </div>
 
-        <div className="form-action-bar border-t border-gray-200 p-6">
+        <div className="confirmation-dialog-actions form-action-bar border-t p-6">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
+            className="confirmation-dialog-cancel rounded-lg border px-4 py-2 transition-colors"
           >
             {cancelText}
           </button>
@@ -99,12 +99,12 @@ export function ConfirmationModal({
             ref={confirmButtonRef}
             type="button"
             onClick={handleConfirm}
-            className={`rounded-lg px-4 py-2 text-white transition-colors ${
+            className={`confirmation-dialog-confirm rounded-lg px-4 py-2 transition-colors ${
               isDestructive
-                ? 'bg-red-600 hover:bg-red-700'
+                ? 'confirmation-dialog-confirm--destructive'
                 : isGoBDWarning
-                ? 'bg-amber-600 hover:bg-amber-700'
-                : 'btn-primary'
+                ? 'confirmation-dialog-confirm--warning'
+                : ''
             }`}
           >
             {confirmText}

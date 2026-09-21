@@ -665,6 +665,154 @@
     @apply inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap sm:flex-none;
   }
 
+  /* Bestätigungsdialoge werden vom FeedbackProvider außerhalb des App-Shells
+     gerendert. Deshalb dürfen sie für Oberfläche und Primäraktion nicht von
+     den innerhalb des Shells gesetzten Theme-Klassen abhängen. */
+  .confirmation-dialog {
+    border: 1px solid #e7e7ea;
+    background: #ffffff;
+    color: #101012;
+  }
+
+  .confirmation-dialog-header,
+  .confirmation-dialog-actions {
+    border-color: #e7e7ea;
+  }
+
+  .confirmation-dialog-icon {
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
+  }
+
+  .confirmation-dialog-icon--warning {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  .confirmation-dialog-icon--destructive {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+
+  .confirmation-dialog-close {
+    color: #6b6b73;
+  }
+
+  .confirmation-dialog-close:hover {
+    color: #101012;
+  }
+
+  .confirmation-dialog-message {
+    color: #4b5563;
+  }
+
+  .confirmation-dialog-warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+  }
+
+  .confirmation-dialog-cancel {
+    border-color: #d1d5db;
+    color: #374151;
+    background: transparent;
+  }
+
+  .confirmation-dialog-cancel:hover {
+    background: #f9fafb;
+  }
+
+  .confirmation-dialog-confirm {
+    border: 1px solid #18181b;
+    background: #18181b;
+    color: #ffffff;
+  }
+
+  .confirmation-dialog-confirm:hover {
+    background: #303036;
+  }
+
+  .confirmation-dialog-confirm--warning {
+    border-color: #b45309;
+    background: #b45309;
+  }
+
+  .confirmation-dialog-confirm--warning:hover {
+    background: #92400e;
+  }
+
+  .confirmation-dialog-confirm--destructive {
+    border-color: #dc2626;
+    background: #dc2626;
+  }
+
+  .confirmation-dialog-confirm--destructive:hover {
+    background: #b91c1c;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog {
+    border-color: #2f2f34;
+    background: #141416;
+    color: #fafafa;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-header,
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-actions {
+    border-color: #2f2f34;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-icon {
+    background: rgba(255, 255, 255, 0.08);
+    color: #d4d4d8;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-icon--warning {
+    background: rgba(180, 83, 9, 0.18);
+    color: #fbbf24;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-icon--destructive {
+    background: rgba(220, 38, 38, 0.18);
+    color: #f87171;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-close {
+    color: #9a9aa2;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-close:hover {
+    color: #fafafa;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-message {
+    color: #d4d4d8;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-warning {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(120, 53, 15, 0.22);
+    color: #fcd34d;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-cancel {
+    border-color: #3f3f46;
+    color: #e4e4e7;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-cancel:hover {
+    background: #232326;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-confirm {
+    border-color: #29292e;
+    background: #29292e;
+    color: #f4f4f5;
+  }
+
+  html:has(#app-shell[data-theme="dark"]) .confirmation-dialog-confirm:hover {
+    background: #3f3f46;
+  }
+
   /* Kalender-Terminvorschau: bewusst als eigene Oberfläche statt als
      generischen weißen Dialog gestalten. Die Detailansicht folgt einem
      zweispaltigen Summary-Raster mit festen Zeilen und einer klaren
@@ -1089,6 +1237,79 @@
   /* Permanent explanations are intentionally not dismissible. */
   .guidance-panel {
     @apply rounded-xl border border-gray-200 bg-white text-gray-700;
+  }
+
+  /* Importzuordnung: ruhige, theme-feste Flächen statt fester Blau-/Amberflächen. */
+  .import-mapping-card {
+    border: 1px solid var(--line-soft);
+    border-radius: var(--container-radius);
+    background: var(--surface-raised);
+    padding: 0.75rem;
+  }
+
+  .import-mapping-card--mapped {
+    border-color: color-mix(in srgb, var(--primary-color) 34%, var(--line-soft));
+  }
+
+  .import-mapping-card--required {
+    border-color: var(--line-strong);
+    background: var(--surface-sunken);
+  }
+
+  .import-mapping-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: var(--line-strong);
+  }
+
+  .import-mapping-dot--required {
+    background: var(--primary-color);
+  }
+
+  .import-mapping-source {
+    border: 1px solid color-mix(in srgb, var(--primary-color) 36%, var(--line-soft));
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--primary-color) 9%, var(--surface-raised));
+    padding: 0.5rem 0.75rem;
+  }
+
+  .import-mapping-source-title,
+  .import-mapping-remove {
+    color: var(--primary-on-surface, var(--primary-color));
+  }
+
+  .import-mapping-remove:hover {
+    background: var(--surface-hover);
+  }
+
+  .import-mapping-sample {
+    color: var(--ink-muted);
+  }
+
+  .import-mapping-select {
+    border: 1px solid var(--line-strong);
+    background: var(--surface-raised);
+    color: var(--ink-strong);
+  }
+
+  .import-mapping-select:focus {
+    border-color: var(--primary-color);
+  }
+
+  .import-mapping-warning {
+    color: #9a732f;
+  }
+
+  #app-shell[data-theme="dark"] .import-mapping-warning {
+    color: #cdb06b;
+  }
+
+  .import-guidance-panel {
+    border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--line-soft));
+    background: color-mix(in srgb, var(--primary-color) 6%, var(--surface-raised));
+    color: var(--ink-strong);
   }
 
   /* Theme-aware surfaces keep their background and foreground colors together. */

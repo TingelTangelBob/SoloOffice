@@ -137,6 +137,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     .map(([, label]) => label);
   const companySetupComplete = missingCompanyFields.length === 0;
   const missingCompanyFieldsLabel = missingCompanyFields.join(', ');
+  const companySetupHint = `Firmendaten vervollständigen: ${missingCompanyFieldsLabel}`;
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -525,18 +526,34 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 >
                   <X className="h-6 w-6" />
                 </button>
-                <button
-                  onClick={() => handlePageChange('dashboard')}
-                  className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0 py-0.5' : 'min-w-0 flex-1 py-2 lg:pl-2'}`}
-                  aria-label="Übersicht öffnen"
-                >
-                  {company.icon ? (
-                    <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
-                  ) : (
-                    <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
-                  )}
-                  <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
-                </button>
+                {companySetupComplete ? (
+                  <button
+                    onClick={() => handlePageChange('dashboard')}
+                    className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCompact ? 'justify-center px-0 py-0.5' : 'min-w-0 flex-1 py-2 lg:pl-2'}`}
+                    aria-label="Übersicht öffnen"
+                  >
+                    {company.icon ? (
+                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    ) : (
+                      <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    )}
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
+                  </button>
+                ) : (
+                  <div
+                    className={`flex cursor-not-allowed items-center opacity-70 ${isSidebarCompact ? 'justify-center px-0 py-0.5' : 'min-w-0 flex-1 py-2 lg:pl-2'}`}
+                    aria-label={companySetupHint}
+                    aria-disabled="true"
+                    title={companySetupHint}
+                  >
+                    {company.icon ? (
+                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    ) : (
+                      <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
+                    )}
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
+                  </div>
+                )}
               </div>
 
               <div className="theme-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">

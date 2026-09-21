@@ -633,7 +633,14 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
     }
 
     setInvoiceCreationNotice(false);
-    const selectedJobs = jobEntries.filter((job) => selectedJobIds.includes(job.id));
+    // Die Auswahl bleibt nach einer Rechnungsserie sonst auf den inzwischen
+    // abgerechneten Einheiten liegen. Für den Rechnungsdialog dürfen nur noch
+    // tatsächlich abrechenbare, abgeschlossene Einheiten weitergereicht
+    // werden.
+    if (completedSelectedJobs.length !== selectedJobIds.length) {
+      setSelectedJobIds(completedSelectedJobs);
+    }
+    const selectedJobs = jobEntries.filter((job) => completedSelectedJobs.includes(job.id));
     const recurringCourseId = selectedJobs[0]?.recurrence?.id;
     const isOneCompleteCourse = Boolean(recurringCourseId)
       && selectedJobs.length > 1

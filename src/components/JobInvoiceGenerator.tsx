@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { X, FileText, Calendar, Users, Check, AlertTriangle } from 'lucide-react';
+import { X, FileText, Calendar, Users, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import { Invoice, JobEntry, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
@@ -16,6 +16,15 @@ import { apiService } from '../services/api';
 import { useFeedback } from '../context/FeedbackContext';
 
 export type JobInvoiceGenerationType = 'single' | 'course' | 'daily' | 'weekly' | 'monthly';
+
+// Das Backend schützt die API mit einem gemeinsamen Minutenlimit. Bei großen
+// Sammelrechnungen liegen die einzelnen Entwürfe bewusst etwas auseinander,
+// damit der Browser nicht mehrere hundert Requests in ein Zeitfenster drückt.
+const INVOICE_REQUEST_INTERVAL_MS = 300;
+
+const wait = (milliseconds: number) => new Promise<void>(resolve => {
+  window.setTimeout(resolve, milliseconds);
+});
 
 interface JobInvoiceGeneratorProps {
   selectedJobIds: string[];
@@ -41,6 +50,7 @@ export function JobInvoiceGenerator({
   const [nonCompletedNoticeDismissed, setNonCompletedNoticeDismissed] = useState(false);
   const [includedJobIds, setIncludedJobIds] = useState<string[]>([]);
   const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
+  const [isGenerationTypeMenuOpen, setIsGenerationTypeMenuOpen] = useState(false);
 
   const selectedJobs = jobs.filter((job: JobEntry) => selectedJobIds.includes(job.id));
   
@@ -57,6 +67,35 @@ export function JobInvoiceGenerator({
     [company.taxId, 'USt-IdNr.'],
     [company.bankAccount, 'IBAN'],
   ].filter(([value]) => !String(value || '').trim()).map(([, label]) => label);
+
+  const generationTypeOptions: Array<{ value: JobInvoiceGenerationType; label: string; description: string }> = [
+    {
+      value: 'single',
+      label: `Einzelrechnungen pro ${terminology.work.singular}`,
+      description: `Eine separate Rechnung für jeden ausgewählten ${terminology.work.singular}`,
+    },
+    {
+      value: 'course',
+      label: 'Gesamter Kurs in einer Rechnung',
+      description: 'Alle ausgewählten Einheiten dieses Kurses als einzelne Rechnungspositionen',
+    },
+    {
+      value: 'daily',
+      label: 'Tagesrechnungen',
+      description: `Alle ${terminology.work.plural} eines Tages in einer Rechnung`,
+    },
+    {
+      value: 'weekly',
+      label: 'Wochenrechnungen',
+      description: `Alle ${terminology.work.plural} einer Kalenderwoche in einer Rechnung`,
+    },
+    {
+      value: 'monthly',
+      label: 'Monatsrechnungen',
+      description: `Alle ${terminology.work.plural} eines Monats in einer Rechnung`,
+    },
+  ];
+  const selectedGenerationType = generationTypeOptions.find(option => option.value === generationType) || generationTypeOptions[0];
 
   useEffect(() => {
     setIncludedJobIds(jobs
@@ -109,6 +148,10 @@ export function JobInvoiceGenerator({
     setIsGenerating(true);
     try {
       const createdInvoices = await generateInvoices();
+      // Erst nach dem gesamten Batch aktualisieren. Eine Aktualisierung pro
+      // Rechnung würde bei mehreren hundert Einheiten zusätzlich hunderte
+      // GET-Anfragen auslösen und das API-Limit unnötig belasten.
+      await Promise.all([refreshInvoices(), refreshJobEntries()]);
       onInvoiceGenerated(createdInvoices);
       onClose();
     } catch (error) {
@@ -128,6 +171,7 @@ export function JobInvoiceGenerator({
     const createAndCollect = async (jobsToInvoice: JobEntry[]) => {
       const invoice = await createInvoiceForJobs(jobsToInvoice);
       if (invoice) createdInvoices.push(invoice);
+      await wait(INVOICE_REQUEST_INTERVAL_MS);
     };
 
     switch (generationType) {
@@ -394,10 +438,6 @@ export function JobInvoiceGenerator({
     };
 
     const createdInvoice = await apiService.createInvoiceFromJobs(invoice, jobsToInvoice.map(job => job.id));
-    
-    // Refresh invoices in other components
-    await refreshInvoices();
-    await refreshJobEntries();
     return createdInvoice;
   };
 
@@ -519,92 +559,46 @@ export function JobInvoiceGenerator({
 
           {/* Generation Type Selection */}
           <div>
-            <h4 className="text-sm font-medium text-gray-900 mb-3">Rechnungsart auswählen</h4>
-            <div className="space-y-3">
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="generationType"
-                  value="single"
-                  checked={generationType === 'single'}
-                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
-                  className="custom-radio"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Einzelrechnungen pro {terminology.work.singular}</div>
-                  <div className="text-xs text-gray-500">
-                    Erstellt eine separate Rechnung für jeden ausgewählten {terminology.work.singular}
-                  </div>
-                </div>
-              </label>
+            <h4 className="mb-3 text-sm font-medium text-gray-900">Rechnungsart</h4>
+            <div className="rounded-xl border border-gray-200 bg-white">
+              <button
+                type="button"
+                aria-expanded={isGenerationTypeMenuOpen}
+                aria-controls="invoice-generation-type-options"
+                onClick={() => setIsGenerationTypeMenuOpen(open => !open)}
+                className="flex w-full items-center justify-between gap-4 rounded-xl px-4 py-3 text-left transition-colors hover:bg-gray-50"
+              >
+                <span className="min-w-0">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Aktive Auswahl</span>
+                  <span className="block truncate text-sm font-medium text-gray-900">{selectedGenerationType.label}</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">{selectedGenerationType.description}</span>
+                </span>
+                <ChevronDown className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${isGenerationTypeMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
 
-              <label className="flex cursor-pointer items-start space-x-3">
-                <input
-                  type="radio"
-                  name="generationType"
-                  value="course"
-                  checked={generationType === 'course'}
-                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
-                  className="custom-radio"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Gesamter Kurs in einer Rechnung</div>
-                  <div className="text-xs text-gray-500">
-                    Übernimmt alle ausgewählten Einheiten dieses Kurses mit ihren Einzelpositionen in eine Rechnung
-                  </div>
+              {isGenerationTypeMenuOpen && (
+                <div id="invoice-generation-type-options" className="space-y-1 border-t border-gray-200 p-2" role="listbox" aria-label="Rechnungsart auswählen">
+                  {generationTypeOptions.filter(option => option.value !== generationType).map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      onClick={() => {
+                        setGenerationType(option.value);
+                        setIsGenerationTypeMenuOpen(false);
+                      }}
+                      className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
+                    >
+                      <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-gray-900">{option.label}</span>
+                        <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              </label>
-
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="generationType"
-                  value="daily"
-                  checked={generationType === 'daily'}
-                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
-                  className="custom-radio"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Tagesrechnungen</div>
-                  <div className="text-xs text-gray-500">
-                    Fasst alle {terminology.work.plural} eines Tages in einer Rechnung zusammen
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="generationType"
-                  value="weekly"
-                  checked={generationType === 'weekly'}
-                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
-                  className="custom-radio"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Wochenrechnungen</div>
-                  <div className="text-xs text-gray-500">
-                    Fasst alle {terminology.work.plural} einer Kalenderwoche in einer Rechnung zusammen
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="generationType"
-                  value="monthly"
-                  checked={generationType === 'monthly'}
-                  onChange={(e) => setGenerationType(e.target.value as typeof generationType)}
-                  className="custom-radio"
-                />
-                <div>
-                  <div className="text-sm font-medium text-gray-900">Monatsrechnungen</div>
-                  <div className="text-xs text-gray-500">
-                    Fasst alle {terminology.work.plural} eines Monats in einer Rechnung zusammen
-                  </div>
-                </div>
-              </label>
+              )}
             </div>
           </div>
 

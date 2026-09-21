@@ -63,7 +63,7 @@ function localizeImportDefinition(definition: ReturnType<typeof getImportDefinit
   const description = definition.resource === 'jobs'
     ? `${terminology.work.plural} importieren und ${terminology.entity.singular} über ID, Nummer, E-Mail oder Name zuordnen.`
     : definition.resource === 'customers'
-      ? `${terminology.entity.plural} aus CSV, TSV oder JSON übernehmen und bestehende ${terminology.entity.plural.toLocaleLowerCase('de-DE')} automatisch erkennen.`
+      ? `${terminology.entity.plural} aus CSV, TSV oder JSON übernehmen und bestehende ${terminology.entity.plural} automatisch erkennen.`
       : definition.description.replace(/Kunden/gi, terminology.entity.plural).replace(/Kunde/gi, terminology.entity.singular);
 
   return {
@@ -246,7 +246,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
 
           {step === 'file' && (
             <div className="space-y-5">
-              <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center transition hover:border-primary-custom hover:bg-blue-50">
+              <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center transition hover:border-primary-custom hover:bg-gray-50">
                 {isBusy ? <Loader2 className="mb-3 h-10 w-10 animate-spin text-primary-custom" /> : <FileUp className="mb-3 h-10 w-10 text-primary-custom" />}
                 <span className="font-semibold text-gray-900">Datei auswählen</span>
                 <span className="mt-1 text-sm text-gray-500">CSV, TSV oder JSON · maximal 10 MB</span>
@@ -263,7 +263,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                   disabled={isBusy}
                 />
               </label>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+              <div className="import-guidance-panel rounded-xl p-4 text-sm leading-6">
                 <p className="font-semibold">Erkannte Formate</p>
                 <p>Trennzeichen, UTF-8-BOM, deutsche/englische Spaltennamen, Dezimal-Komma und JSON-Listen werden automatisch erkannt. Excel-Dateien bitte als CSV UTF-8 exportieren.</p>
               </div>
@@ -272,7 +272,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
 
           {step === 'mapping' && parsedFile && (
             <div className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <FileUp className="h-5 w-5 shrink-0 text-primary-custom" />
                   <div className="min-w-0">
@@ -280,7 +280,16 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     <p className="text-sm text-gray-500">{parsedFile.format.toUpperCase()} · {parsedFile.rows.length} Datenzeilen · {parsedFile.headers.length} Spalten</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setParsedFile(null); setMapping({}); setPreview(null); setError(null); setStep('file'); }} className="text-sm font-medium text-primary-custom hover:underline">Andere Datei wählen</button>
+                <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <span className="font-medium">Duplikate</span>
+                    <select value={duplicateMode} onChange={event => setDuplicateMode(event.target.value as ImportDuplicateMode)} disabled={!canUpdate} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
+                      <option value="skip">überspringen</option>
+                      {canUpdate && <option value="update">Stammdaten aktualisieren</option>}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => { setParsedFile(null); setMapping({}); setPreview(null); setError(null); setStep('file'); }} className="text-sm font-medium text-primary-custom hover:underline">Andere Datei wählen</button>
+                </div>
               </div>
 
               {parsedFile.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{parsedFile.warnings.join(' ')}</div>}
@@ -290,18 +299,11 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                   <div>
                     <h3 className="font-semibold text-gray-900">Spalten zuordnen</h3>
                   </div>
-                  <label className="text-sm text-gray-700">
-                    <span className="mr-2 font-medium">Duplikate</span>
-                    <select value={duplicateMode} onChange={event => setDuplicateMode(event.target.value as ImportDuplicateMode)} disabled={!canUpdate} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100">
-                      <option value="skip">überspringen</option>
-                      {canUpdate && <option value="update">Stammdaten aktualisieren</option>}
-                    </select>
-                  </label>
                 </div>
                 <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-200 pb-3 text-sm">
                   <span className="font-medium text-gray-700">{mappedFieldCount}/{definition.fields.length} zugeordnet</span>
-                  {ambiguousFieldCount > 0 && <span className="text-amber-700">{ambiguousFieldCount} prüfen</span>}
-                  {requiredMappingIssueCount > 0 && <span className="text-red-700">{requiredMappingIssueCount} Pflichtzuordnung{requiredMappingIssueCount === 1 ? ' fehlt' : 'en fehlen'}</span>}
+                  {ambiguousFieldCount > 0 && <span className="import-mapping-warning">{ambiguousFieldCount} prüfen</span>}
+                  {requiredMappingIssueCount > 0 && <span className="import-mapping-warning">{requiredMappingIssueCount} Pflichtzuordnung{requiredMappingIssueCount === 1 ? ' fehlt' : 'en fehlen'}</span>}
                   {definition.requiredGroups && definition.requiredGroups.length > 0 && <span className="text-xs text-gray-500">* Pflichtfeld · † Pflichtbereich</span>}
                 </div>
                 <div className="space-y-3">
@@ -323,35 +325,35 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                         ? parsedFile.rows.slice(0, 2).map(row => String(row[sourceHeader] ?? '').trim()).filter(Boolean)
                         : [];
                       return (
-                        <div key={field.key} className={`rounded-xl border p-3 sm:p-4 ${sourceHeader ? 'border-blue-100 bg-white' : isRequired ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-gray-50'}`}>
+                        <div key={field.key} className={`import-mapping-card ${sourceHeader ? 'import-mapping-card--mapped' : isRequired ? 'import-mapping-card--required' : ''}`}>
                           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] sm:items-center sm:gap-5">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className={`h-2 w-2 shrink-0 rounded-full ${isRequired ? 'bg-amber-500' : 'bg-gray-300'}`} />
+                                <span className={`import-mapping-dot ${isRequired ? 'import-mapping-dot--required' : ''}`} />
                                 <p className="truncate font-semibold text-gray-900" title={field.label}>{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</p>
                               </div>
                             </div>
                             <div className="min-w-0">
                               {sourceHeader ? (
-                                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                                <div className="import-mapping-source">
                                   <div className="flex items-center gap-2">
                                     <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
-                                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-blue-950" title={sourceHeader}>{sourceHeader}</span>
-                                    <button type="button" onClick={() => setTargetMapping(field.key, '')} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">Entfernen</button>
+                                    <span className="import-mapping-source-title min-w-0 flex-1 truncate text-sm font-semibold" title={sourceHeader}>{sourceHeader}</span>
+                                    <button type="button" onClick={() => setTargetMapping(field.key, '')} className="import-mapping-remove shrink-0 rounded-md px-2 py-1 text-xs font-medium">Entfernen</button>
                                   </div>
-                                  <p className="mt-1 truncate pl-6 text-xs text-blue-800" title={samples.join(' · ') || 'Keine Beispielwerte'}>
+                                  <p className="import-mapping-sample mt-1 truncate pl-6 text-xs" title={samples.join(' · ') || 'Keine Beispielwerte'}>
                                     {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
                                   </p>
                                 </div>
                               ) : (
                                 <>
-                                  <select aria-label={`Spalte aus Datei für ${field.label}`} value="" onChange={event => setTargetMapping(field.key, event.target.value)} className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
+                                  <select aria-label={`Spalte aus Datei für ${field.label}`} value="" onChange={event => setTargetMapping(field.key, event.target.value)} className="import-mapping-select w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
                                     <option value="">Keine passende Spalte gefunden</option>
                                     {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
                                   </select>
                                 </>
                               )}
-                              {confidence === 'ambiguous' && <p className="mt-1 text-xs font-medium text-amber-700">Mehrere passende Spalten erkannt – bitte prüfen.</p>}
+                              {confidence === 'ambiguous' && <p className="import-mapping-warning mt-1 text-xs">Mehrere passende Spalten erkannt – bitte prüfen.</p>}
                             </div>
                           </div>
                         </div>
@@ -401,7 +403,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <SummaryCard label="Warnungen" value={preview.summary.warnings} tone="amber" />
                 <SummaryCard label="Fehler" value={preview.summary.errors} tone="red" />
               </div>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+              <div className="import-guidance-panel rounded-xl p-4 text-sm leading-6">
                 <p className="font-semibold">Vor dem Speichern geprüft</p>
                 <p>{terminology.entity.plural}, Pflichtfelder, Datums- und Zahlenwerte sowie vorhandene Namen/Nummern wurden serverseitig geprüft. Fehlerhafte und doppelte Zeilen werden nicht übernommen.</p>
               </div>
