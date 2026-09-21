@@ -847,6 +847,19 @@ export interface InvoicePaymentResult {
   invoice: Invoice;
 }
 
+export interface InvoiceBulkPayment {
+  invoiceId: UUID;
+  amount: number;
+  entryDate: Date | string;
+  notes?: string;
+}
+
+export interface InvoiceBulkPaymentResult {
+  processed: number;
+  totalAmount: number;
+  invoiceIds: UUID[];
+}
+
 // ============================================================================
 // Fixed asset register types
 // ============================================================================

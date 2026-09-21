@@ -4,6 +4,14 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+- Zahlungseingänge können für eine Mehrfachauswahl in einer gebündelten,
+  atomaren Serveraktion erfasst werden. Dabei lässt sich ein gemeinsames
+  Zahlungsdatum oder das Erstelldatum der jeweiligen Rechnung verwenden;
+  Entwürfe und bereits bezahlte Rechnungen werden übersprungen.
+- Der Zahlungsdialog ist auf breiten und schmalen Ansichten responsiv und
+  verhindert überlaufende Datumsfelder und Kalender.
+- Die Rechnungsübersicht zeigt höchstens 50 Rechnungen pro Seite und bietet
+  dadurch auch bei großen Rechnungsmengen eine deutlich ruhigere Darstellung.
 - Große Rechnungsläufe takten die einzelnen Entwürfe und aktualisieren die
   Ansichten erst nach dem vollständigen Lauf, damit unnötige API-Anfragen kein
   Rate-Limit auslösen.

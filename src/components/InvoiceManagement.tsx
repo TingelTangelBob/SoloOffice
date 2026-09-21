@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -24,6 +24,7 @@ import { usePageSearch } from '../context/PageSearchContext';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { InvoiceHistoryDialog } from './InvoiceHistoryDialog';
 import { InvoicePaymentDialog } from './InvoicePaymentDialog';
+import { InvoiceBulkPaymentDialog } from './InvoiceBulkPaymentDialog';
 import { DocumentOrigin } from './DocumentOrigin';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
 import { getTerminology } from '../utils/terminology';
@@ -62,13 +63,14 @@ const INVOICE_TABLE_LAYOUT = listTableLayout({
 });
 
 const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
+const INVOICES_PER_PAGE = 50;
 
 export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, initialCustomerId, onNavigate }: InvoiceManagementProps = {}) {
   const { notify } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
   const { customers, addCustomer } = useCustomers();
-  const { invoices, setInvoices, deleteInvoice, updateInvoice } = useInvoices();
+  const { invoices, setInvoices, deleteInvoice, updateInvoice, refreshInvoices } = useInvoices();
   const { refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -90,6 +92,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [isBulkPaymentOpen, setIsBulkPaymentOpen] = useState(false);
   
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -238,6 +242,24 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }, locale);
   }, [filterStatus, invoiceEndDate, invoiceRecords, invoiceStartDate, locale, searchTerm, sortState]);
   const hasInvalidInvoiceDateRange = Boolean(invoiceStartDate && invoiceEndDate && invoiceStartDate > invoiceEndDate);
+
+  useEffect(() => {
+    setInvoicePage(1);
+  }, [filterStatus, invoiceEndDate, invoiceStartDate, searchTerm, sortState]);
+
+  const totalInvoicePages = Math.max(1, Math.ceil(filteredInvoices.length / INVOICES_PER_PAGE));
+
+  useEffect(() => {
+    setInvoicePage(previous => Math.min(previous, totalInvoicePages));
+  }, [totalInvoicePages]);
+
+  const paginatedInvoices = useMemo(() => {
+    const start = (invoicePage - 1) * INVOICES_PER_PAGE;
+    return filteredInvoices.slice(start, start + INVOICES_PER_PAGE);
+  }, [filteredInvoices, invoicePage]);
+
+  const firstDisplayedInvoice = filteredInvoices.length === 0 ? 0 : (invoicePage - 1) * INVOICES_PER_PAGE + 1;
+  const lastDisplayedInvoice = Math.min(invoicePage * INVOICES_PER_PAGE, filteredInvoices.length);
 
   const handleOpenEditor = useCallback((invoice?: Invoice) => {
     if (!canWrite) {
@@ -1040,6 +1062,36 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     });
   };
 
+  const handleBulkPayment = () => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    if (selectedInvoiceIds.length === 0) return;
+    setIsBulkPaymentOpen(true);
+    setPaymentInvoice(null);
+  };
+
+  const selectedInvoicesForPayment = useMemo(
+    () => invoiceRecords.filter(invoice => selectedInvoiceIds.includes(invoice.id)),
+    [invoiceRecords, selectedInvoiceIds],
+  );
+
+  const handleBulkPaymentSaved = async (processed: number, totalAmount: number) => {
+    setIsBulkPaymentOpen(false);
+    setSelectedInvoiceIds([]);
+    try {
+      await refreshInvoices();
+      notify({
+        variant: 'success',
+        message: `${processed} Zahlung${processed === 1 ? '' : 'en'} über ${formatCurrency(totalAmount, locale, company?.numberFormat, company?.currency)} erfasst.`,
+      });
+    } catch (error) {
+      logger.error('Error refreshing invoices after bulk payment:', error);
+      notify({ variant: 'warning', message: 'Zahlungen wurden erfasst. Die Rechnungsliste konnte noch nicht aktualisiert werden.' });
+    }
+  };
+
   if (isEditorOpen) {
     return (
       <InvoiceEditor
@@ -1213,6 +1265,16 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           >
             <Download className="h-4 w-4" />
           </button>
+          <button
+            type="button"
+            onClick={handleBulkPayment}
+            disabled={isBulkOperation}
+            className="action-icon-button bulk-action-icon-button action-icon-green disabled:cursor-not-allowed disabled:opacity-50"
+            title="Zahlungseingänge erfassen"
+            aria-label="Zahlungseingänge erfassen"
+          >
+            <Banknote className="h-4 w-4" />
+          </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
@@ -1237,7 +1299,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredInvoices.map((invoice) => (
+              {paginatedInvoices.map((invoice) => (
                 <tr
                   key={invoice.id}
                   onClick={event => {
@@ -1383,7 +1445,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
 
         {/* Mobile Card View */}
         <div className="tablet:hidden">
-          {filteredInvoices.map((invoice) => (
+          {paginatedInvoices.map((invoice) => (
             <div
               key={invoice.id}
               onClick={event => {
@@ -1456,8 +1518,19 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         </div>
 
         {filteredInvoices.length > 0 && (
-          <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-right text-xs text-gray-500">
-            {filteredInvoices.length} {filteredInvoices.length === 1 ? 'Rechnung' : 'Rechnungen'}
+          <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>{firstDisplayedInvoice}–{lastDisplayedInvoice} von {filteredInvoices.length} {filteredInvoices.length === 1 ? 'Rechnung' : 'Rechnungen'}</span>
+            {totalInvoicePages > 1 && (
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" onClick={() => setInvoicePage(previous => Math.max(1, previous - 1))} disabled={invoicePage === 1} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Vorherige Seite">
+                  <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Zurück</span>
+                </button>
+                <span className="min-w-[5rem] text-center font-medium text-gray-700">Seite {invoicePage} von {totalInvoicePages}</span>
+                <button type="button" onClick={() => setInvoicePage(previous => Math.min(totalInvoicePages, previous + 1))} disabled={invoicePage === totalInvoicePages} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Nächste Seite">
+                  <span className="hidden sm:inline">Weiter</span><ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1486,6 +1559,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           notify({ variant: 'success', message: updatedInvoice.status === 'paid' ? 'Zahlung gebucht. Die Rechnung ist vollständig bezahlt.' : 'Teilzahlung gebucht. Der Restbetrag bleibt offen.' });
         }}
       />
+
+      {isBulkPaymentOpen && (
+        <InvoiceBulkPaymentDialog
+          invoices={selectedInvoicesForPayment}
+          onClose={() => setIsBulkPaymentOpen(false)}
+          onSaved={handleBulkPaymentSaved}
+        />
+      )}
 
       {/* Confirmation Modal */}
       <ConfirmationModal

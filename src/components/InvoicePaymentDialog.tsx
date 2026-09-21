@@ -84,18 +84,18 @@ export function InvoicePaymentDialog({ invoice, onClose, onSaved }: InvoicePayme
       description={`Rechnung ${invoice.invoiceNumber} · ${invoice.customerName}`}
       onClose={saving ? () => {} : onClose}
       onSubmit={submit}
-      size="md"
+      size="lg"
       fitContent
       footer={(
-        <>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} disabled={saving} className="min-h-12 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50">Abbrechen</button>
           <button type="submit" disabled={saving || amounts.outstanding < 0.005} className="btn-primary min-h-12 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">
             {saving ? 'Wird gebucht …' : 'Zahlung buchen'}
           </button>
-        </>
+        </div>
       )}
     >
-      <div className="space-y-5 pb-2">
+      <div className="min-w-0 space-y-5 pb-2">
         <dl className="grid grid-cols-3 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
           <div><dt className="text-gray-500">Rechnung</dt><dd className="mt-1 font-semibold text-gray-900">{money(invoice.total)}</dd></div>
           <div><dt className="text-gray-500">Bezahlt</dt><dd className="mt-1 font-semibold text-gray-900">{money(amounts.paid)}</dd></div>
@@ -103,7 +103,7 @@ export function InvoicePaymentDialog({ invoice, onClose, onSaved }: InvoicePayme
         </dl>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium text-gray-700">
+          <label className="min-w-0 text-sm font-medium text-gray-700">
             Zahlungsbetrag
             <LocalizedNumberInput
               required
@@ -118,7 +118,7 @@ export function InvoicePaymentDialog({ invoice, onClose, onSaved }: InvoicePayme
               className="form-input mt-1 w-full"
             />
           </label>
-          <label className="text-sm font-medium text-gray-700">
+          <label className="min-w-0 text-sm font-medium text-gray-700">
             Zahlungsdatum
             <LocalizedDateInput
               required

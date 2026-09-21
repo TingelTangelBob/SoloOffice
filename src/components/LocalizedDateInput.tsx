@@ -234,7 +234,7 @@ export function LocalizedDateInput({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-30 mt-2 w-[19rem] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-2 w-[min(19rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between gap-2">
             <button
               type="button"

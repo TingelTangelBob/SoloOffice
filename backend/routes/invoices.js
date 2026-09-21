@@ -117,6 +117,142 @@ router.post('/from-jobs', async (req, res) => {
   }
 });
 
+// Mehrere Zahlungseingänge in einer Transaktion erfassen. Die Bündelung ist
+// wichtig, damit eine größere Auswahl nicht in hunderten Einzelanfragen an
+// das Rate-Limit läuft und die Rechnungsliste nicht nach jedem Eintrag neu
+// geladen werden muss.
+router.post('/bulk-payments', async (req, res) => {
+  const rawPayments = Array.isArray(req.body?.payments) ? req.body.payments : [];
+  if (rawPayments.length === 0 || rawPayments.length > 1000) {
+    return res.status(400).json({ error: 'Bitte zwischen 1 und 1000 Zahlungen auswählen.' });
+  }
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const seenIds = new Set();
+  const payments = [];
+  for (const item of rawPayments) {
+    const invoiceId = typeof item?.invoiceId === 'string' ? item.invoiceId.trim() : '';
+    const amount = Number(item?.amount);
+    const amountCents = Math.round(amount * 100);
+    const entryDate = typeof item?.entryDate === 'string' ? item.entryDate : '';
+    const notes = typeof item?.notes === 'string' ? item.notes.trim() : '';
+    const parsedEntryDate = new Date(`${entryDate}T00:00:00Z`);
+
+    if (!uuidPattern.test(invoiceId) || seenIds.has(invoiceId)) {
+      return res.status(400).json({ error: 'Die Rechnungsauswahl enthält ungültige oder doppelte Einträge.' });
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isSafeInteger(amountCents) || Math.abs(amount * 100 - amountCents) > 0.00001) {
+      return res.status(400).json({ error: 'Der Zahlungsbetrag muss größer als 0 sein und darf höchstens zwei Nachkommastellen haben.' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || Number.isNaN(parsedEntryDate.getTime()) || parsedEntryDate.toISOString().slice(0, 10) !== entryDate) {
+      return res.status(400).json({ error: 'Mindestens ein Zahlungsdatum ist ungültig.' });
+    }
+    if (notes.length > 500) {
+      return res.status(400).json({ error: 'Die Notiz darf höchstens 500 Zeichen enthalten.' });
+    }
+
+    seenIds.add(invoiceId);
+    payments.push({ invoiceId, amount, amountCents, entryDate, notes });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const invoiceResult = await client.query(`
+      SELECT id, invoice_number, document_type, status, subtotal, tax_amount, total
+      FROM invoices
+      WHERE id = ANY($1::uuid[])
+      FOR UPDATE
+    `, [[...seenIds]]);
+    const invoicesById = new Map(invoiceResult.rows.map(invoice => [invoice.id, invoice]));
+    const missingId = payments.find(payment => !invoicesById.has(payment.invoiceId));
+    if (missingId) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Mindestens eine Rechnung wurde nicht gefunden.' });
+    }
+
+    const paidResult = await client.query(`
+      SELECT source_id, COALESCE(SUM(amount), 0) AS amount
+      FROM euer_entries
+      WHERE source_type = 'invoice_payment' AND source_id = ANY($1::uuid[]) AND status = 'active'
+      GROUP BY source_id
+    `, [[...seenIds]]);
+    const paidByInvoice = new Map(paidResult.rows.map(row => [row.source_id, Number(row.amount || 0)]));
+    const prepared = [];
+
+    for (const payment of payments) {
+      const invoice = invoicesById.get(payment.invoiceId);
+      if (invoice.document_type && invoice.document_type !== 'invoice') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Die Auswahl enthält keine normale Rechnung (${invoice.invoice_number}).` });
+      }
+      if (invoice.status === 'draft') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Für den Entwurf ${invoice.invoice_number} kann noch kein Zahlungseingang erfasst werden.` });
+      }
+
+      const alreadyPaidCents = Math.round((paidByInvoice.get(payment.invoiceId) || 0) * 100);
+      const remainingCents = Math.max(0, Math.round(Number(invoice.total) * 100) - alreadyPaidCents);
+      if (invoice.status === 'paid' || remainingCents === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Die Rechnung ${invoice.invoice_number} ist bereits vollständig bezahlt.` });
+      }
+      if (payment.amountCents > remainingCents) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Der Zahlungsbetrag für ${invoice.invoice_number} überschreitet den offenen Betrag von ${(remainingCents / 100).toFixed(2)} €.` });
+      }
+
+      const taxableNet = Number(invoice.total) - Number(invoice.tax_amount || 0);
+      const taxRate = taxableNet > 0 ? Number(invoice.tax_amount || 0) / taxableNet * 100 : 0;
+      prepared.push({
+        ...payment,
+        invoiceNumber: invoice.invoice_number,
+        taxRate,
+        isFullyPaid: payment.amountCents === remainingCents,
+      });
+    }
+
+    const values = [];
+    const parameters = [];
+    prepared.forEach((payment, index) => {
+      const offset = index * 6;
+      values.push(`($${offset + 1}, $${offset + 2}, 'income', $${offset + 3}, 'other_income', $${offset + 4}, $${offset + 5}, 'invoice_payment', $${offset + 6})`);
+      parameters.push(
+        payment.entryDate,
+        `Zahlung Rechnung ${payment.invoiceNumber}`,
+        payment.amountCents / 100,
+        payment.taxRate,
+        payment.notes || null,
+        payment.invoiceId,
+      );
+    });
+    await client.query(`
+      INSERT INTO euer_entries
+        (entry_date, description, entry_type, amount, category, tax_rate, notes, source_type, source_id)
+      VALUES ${values.join(', ')}
+    `, parameters);
+
+    const paidIds = prepared.filter(payment => payment.isFullyPaid).map(payment => payment.invoiceId);
+    if (paidIds.length > 0) {
+      await client.query("UPDATE invoices SET status = 'paid' WHERE id = ANY($1::uuid[])", [paidIds]);
+    }
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      processed: prepared.length,
+      totalAmount: prepared.reduce((sum, payment) => sum + payment.amountCents / 100, 0),
+      invoiceIds: prepared.map(payment => payment.invoiceId),
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    logger.error('Failed to record bulk invoice payments', { error: error.message, count: payments.length });
+    res.status(500).json({ error: 'Zahlungseingänge konnten nicht gesammelt erfasst werden.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Zahlungseingang erfassen und die Rechnung bei vollständiger Zahlung
 // innerhalb derselben Transaktion auf "bezahlt" setzen.
 router.post('/:id/payments', async (req, res) => {
