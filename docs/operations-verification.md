@@ -23,12 +23,20 @@ derselbe Commit als Archiv übertragen und serverseitig mit
 `manage-instances.sh update` gebaut, gesichert und geprüft. So bleibt die
 Staging-Instanz exakt auf dem Commit, der auch in GitHub liegt.
 
-In einer eingeschränkten Agentenumgebung kann der erste `git push` wegen DNS-
-oder Netzwerkbeschränkungen fehlschlagen. Dann wird derselbe Push mit einer
-Netzwerkfreigabe wiederholt; ein zweiter Commit oder ein erneutes Staging-
-Archiv ist dafür nicht nötig. Der direkte Archivtransfer zu Staging benötigt
-ebenfalls eine explizite Netzwerkfreigabe, weil dabei Quellcode an den Server
-übertragen wird.
+In einer eingeschränkten Agentenumgebung müssen `git push`, GitHub-Abfragen und
+der Staging-Transfer direkt mit der nötigen Netzwerkfreigabe gestartet werden.
+Ein vorheriger Versuch ohne Freigabe ist zu vermeiden, weil er nur einen
+vorhersehbaren DNS-Fehler erzeugt. Schlägt ein bereits gestarteter Push dennoch
+fehl, wird derselbe Push wiederholt; ein zweiter Commit oder ein erneutes
+Staging-Archiv ist dafür nicht nötig. Der direkte Archivtransfer zu Staging
+benötigt ebenfalls eine explizite Netzwerkfreigabe, weil dabei Quellcode an den
+Server übertragen wird.
+
+Für einen schnellen Standardablauf gilt daher:
+
+1. lokal prüfen und committen;
+2. `git push origin main` direkt mit Netzwerkfreigabe ausführen;
+3. denselben Commit zur gewünschten Instanz übertragen und prüfen.
 
 ## Lastprüfung bei großen Rechnungsläufen
 
