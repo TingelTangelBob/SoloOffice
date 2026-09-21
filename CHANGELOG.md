@@ -45,6 +45,12 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   Betriebsunterlagen dokumentiert.
 - Massenänderungen von Rechnungsstatus werden atomar über eine Sammelanfrage
   verarbeitet und zeigen ihren Fortschritt bzw. Abschluss in der Glocke an.
+- Hintergrundaufgaben öffnen die Hinweisglocke beim Start kurz automatisch und
+  bestätigen den Abschluss mit einer dezenten, bewegungsreduzierten Animation.
+- Zahlungseingänge können jetzt als eigener Import mit Rechnungsnummer,
+  Zahlungsdatum, Betrag und optionaler Import-ID übernommen werden. Die
+  Zuordnung prüft Rechnungsbezug, offene Beträge und Dubletten und aktualisiert
+  verknüpfte Rechnungsstatus transaktionssicher.
 
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 

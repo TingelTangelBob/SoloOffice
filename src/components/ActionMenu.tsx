@@ -18,6 +18,8 @@ interface ActionMenuProps {
   title?: string;
   triggerClassName?: string;
   variant?: 'default' | 'primary';
+  /** Öffnet das Menü einmal automatisch, wenn sich das Signal ändert. */
+  autoOpenSignal?: string | number | null;
 }
 
 interface MenuPosition {
@@ -79,12 +81,14 @@ export function ActionMenu({
   menuClassName = 'min-w-52',
   title = 'Aktionen',
   triggerClassName = 'action-icon-button action-icon-blue',
-  variant = 'default'
+  variant = 'default',
+  autoOpenSignal = null,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const autoCloseTimer = useRef<number | null>(null);
   const portalTarget = typeof document !== 'undefined'
     ? document.getElementById('app-shell') || document.body
     : null;
@@ -123,6 +127,24 @@ export function ActionMenu({
   useLayoutEffect(() => {
     if (isOpen) updatePosition();
   }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (autoOpenSignal == null) return undefined;
+
+    setIsOpen(true);
+    updatePosition();
+    if (autoCloseTimer.current !== null) window.clearTimeout(autoCloseTimer.current);
+    autoCloseTimer.current = window.setTimeout(() => {
+      setIsOpen(false);
+      autoCloseTimer.current = null;
+    }, 2400);
+
+    return undefined;
+  }, [autoOpenSignal, updatePosition]);
+
+  useEffect(() => () => {
+    if (autoCloseTimer.current !== null) window.clearTimeout(autoCloseTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;

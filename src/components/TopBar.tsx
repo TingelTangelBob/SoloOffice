@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertCircle, Bell, CheckCircle2, Loader2, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import type { BackgroundTask } from '../context/FeedbackContext';
@@ -51,6 +51,47 @@ export function TopBar({
   onOpenMobileMenu,
 }: TopBarProps) {
   const noticeCount = notices.length + backgroundTasks.length;
+  const latestBackgroundTask = backgroundTasks[backgroundTasks.length - 1] || null;
+  const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
+  const [completedTaskId, setCompletedTaskId] = useState<string | null>(null);
+  const seenTaskIds = useRef(new Set<string>());
+  const previousTaskStatuses = useRef(new Map<string, BackgroundTask['status']>());
+  const startPulseTimer = useRef<number | null>(null);
+  const completionPulseTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    const taskId = latestBackgroundTask?.id;
+    if (!taskId || seenTaskIds.current.has(taskId)) return;
+
+    seenTaskIds.current.add(taskId);
+    setStartingTaskId(taskId);
+    if (startPulseTimer.current !== null) window.clearTimeout(startPulseTimer.current);
+    startPulseTimer.current = window.setTimeout(() => {
+      setStartingTaskId(null);
+      startPulseTimer.current = null;
+    }, 900);
+  }, [latestBackgroundTask?.id]);
+
+  useEffect(() => {
+    const previousStatuses = previousTaskStatuses.current;
+    const completedTask = backgroundTasks.find(task => (
+      previousStatuses.get(task.id) === 'running' && task.status !== 'running'
+    ));
+    previousTaskStatuses.current = new Map(backgroundTasks.map(task => [task.id, task.status]));
+
+    if (!completedTask) return;
+    setCompletedTaskId(completedTask.id);
+    if (completionPulseTimer.current !== null) window.clearTimeout(completionPulseTimer.current);
+    completionPulseTimer.current = window.setTimeout(() => {
+      setCompletedTaskId(null);
+      completionPulseTimer.current = null;
+    }, 1000);
+  }, [backgroundTasks]);
+
+  useEffect(() => () => {
+    if (startPulseTimer.current !== null) window.clearTimeout(startPulseTimer.current);
+    if (completionPulseTimer.current !== null) window.clearTimeout(completionPulseTimer.current);
+  }, []);
 
   /* Titel und Seitenaktionen teilen sich den Platz neben der Suche zu
      gleichen Teilen – ab `xl` außer die Aktionen brauchen mehr: Dann ist die
@@ -102,7 +143,8 @@ export function TopBar({
           ariaLabel={noticeCount > 0 ? `Hinweise (${noticeCount})` : 'Hinweise'}
           title="Hinweise"
           menuClassName="min-w-[17rem]"
-          triggerClassName="topbar-icon-button relative"
+          triggerClassName={`topbar-icon-button relative ${startingTaskId ? 'topbar-notice-start-pulse' : ''} ${completedTaskId ? 'topbar-notice-complete-pulse' : ''}`}
+          autoOpenSignal={latestBackgroundTask?.id ?? null}
           icon={
             <>
               <Bell className="h-[1.125rem] w-[1.125rem]" />
@@ -125,9 +167,9 @@ export function TopBar({
                 ? CheckCircle2
                 : AlertCircle;
             return (
-              <div key={task.id} className="topbar-background-task">
+              <div key={task.id} className={`topbar-background-task ${completedTaskId === task.id ? 'topbar-task-complete-pulse' : ''}`}>
                 <div className="flex min-w-0 items-start gap-2">
-                  <TaskIcon className={`mt-0.5 h-4 w-4 shrink-0 ${task.status === 'error' ? 'text-red-500' : task.status === 'success' ? 'text-green-500' : 'text-primary-custom'} ${task.status === 'running' ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  <TaskIcon className={`mt-0.5 h-4 w-4 shrink-0 ${task.status === 'error' ? 'text-red-500' : task.status === 'success' ? 'text-green-500' : 'text-primary-custom'} ${task.status === 'running' ? 'animate-spin' : ''} ${completedTaskId === task.id ? 'topbar-task-complete-icon' : ''}`} aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">{task.title}</p>
                     <p className="mt-0.5 text-xs text-gray-500">{task.detail}</p>

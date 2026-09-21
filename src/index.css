@@ -1878,6 +1878,44 @@
     box-shadow: 0 0 0 2px var(--surface-raised);
   }
 
+  @keyframes topbar-notice-start-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+    45% { transform: scale(1.08); box-shadow: 0 0 0 0.3rem color-mix(in srgb, var(--primary-color) 18%, transparent); }
+  }
+
+  @keyframes topbar-notice-complete-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+    45% { transform: scale(1.08); box-shadow: 0 0 0 0.3rem rgba(16, 185, 129, 0.2); }
+  }
+
+  @keyframes topbar-task-complete-pulse {
+    0%, 100% { background-color: transparent; }
+    35% { background-color: rgba(16, 185, 129, 0.1); }
+  }
+
+  @keyframes topbar-task-complete-icon {
+    0% { opacity: 0.5; transform: scale(0.75); }
+    65% { opacity: 1; transform: scale(1.14); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  .topbar-notice-start-pulse {
+    animation: topbar-notice-start-pulse 800ms var(--motion-ease);
+  }
+
+  .topbar-notice-complete-pulse {
+    animation: topbar-notice-complete-pulse 850ms var(--motion-ease);
+  }
+
+  .topbar-task-complete-pulse {
+    border-radius: 0.5rem;
+    animation: topbar-task-complete-pulse 850ms var(--motion-ease);
+  }
+
+  .topbar-task-complete-icon {
+    animation: topbar-task-complete-icon 650ms var(--motion-ease);
+  }
+
   .topbar-background-task {
     margin: 0.25rem 0.25rem 0.5rem;
     border-bottom: 1px solid var(--line-soft);
@@ -2659,6 +2697,10 @@
   .chart-bar-grow,
   .position-row-enter,
   .calendar-event-enter,
+  .topbar-notice-start-pulse,
+  .topbar-notice-complete-pulse,
+  .topbar-task-complete-pulse,
+  .topbar-task-complete-icon,
   .skeleton {
     animation: none !important;
   }

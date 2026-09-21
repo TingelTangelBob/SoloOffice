@@ -177,6 +177,27 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'notes', label: 'Notizen', aliases: ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'] },
     ],
   },
+  invoicePayments: {
+    resource: 'invoicePayments',
+    label: 'Zahlungseingänge',
+    description: 'Zahlungseingänge aus CSV-, TSV- oder JSON-Exporten bestehenden Rechnungen zuordnen und in die EÜR übernehmen.',
+    requiredGroups: [
+      { label: 'Rechnungsbezug', fields: ['invoiceId', 'invoiceNumber', 'customerId', 'customerNumber', 'customerName', 'customerEmail'] },
+    ],
+    fields: [
+      { key: 'invoiceId', label: 'Rechnungs-ID', aliases: ['invoiceId', 'invoice_id', 'rechnungsId', 'rechnungs_id'] },
+      { key: 'invoiceNumber', label: 'Rechnungsnummer', aliases: ['invoiceNumber', 'invoice_number', 'rechnungsnummer', 'rechnungsnr', 'rechnungsNr', 'belegnummer'] },
+      { key: 'customerId', label: 'Kunden-ID', aliases: ['customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId'] },
+      { key: 'customerNumber', label: 'Kundennummer', aliases: ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer'] },
+      { key: 'customerName', label: 'Kundenname', aliases: ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'schülername', 'schuelername', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername', 'teilnehmer_name'] },
+      { key: 'customerEmail', label: 'Kunden-E-Mail', aliases: ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address', 'schülerEmail', 'schuelerEmail', 'studentEmail', 'student_email', 'teilnehmerEmail'] },
+      { key: 'serviceDate', label: 'Leistungsdatum', aliases: ['serviceDate', 'service_date', 'leistungsdatum', 'unterrichtsdatum', 'kursdatum', 'jobDate', 'job_date'] },
+      { key: 'entryDate', label: 'Zahlungsdatum', aliases: ['entryDate', 'entry_date', 'paymentDate', 'payment_date', 'zahlungsdatum', 'buchungsdatum', 'belegdatum', 'date', 'datum'], required: true },
+      { key: 'amount', label: 'Zahlungsbetrag', aliases: ['amount', 'paymentAmount', 'payment_amount', 'zahlungsbetrag', 'betrag', 'paidAmount', 'paid_amount', 'brutto', 'grossAmount', 'gross_amount'], required: true },
+      { key: 'externalReference', label: 'Externe Zahlungs-ID', aliases: ['externalReference', 'external_reference', 'externalPaymentId', 'external_payment_id', 'paymentId', 'payment_id', 'importId', 'import_id', 'importnummer'] },
+      { key: 'notes', label: 'Notizen', aliases: ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung', 'verwendungszweck', 'zweck'] },
+    ],
+  },
 };
 
 const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
@@ -286,7 +307,7 @@ function extractJsonRows(value: unknown): unknown[] {
   if (!value || typeof value !== 'object') return [{ value }];
 
   const object = value as Record<string, unknown>;
-  const preferredKeys = ['data', 'items', 'records', 'customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries', 'expenses', 'ausgaben'];
+  const preferredKeys = ['data', 'items', 'records', 'customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries', 'invoicePayments', 'payments', 'zahlungen', 'expenses', 'ausgaben'];
   for (const key of preferredKeys) {
     if (Array.isArray(object[key])) return object[key] as unknown[];
   }

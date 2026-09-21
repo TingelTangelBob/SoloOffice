@@ -836,6 +836,38 @@ function demoImportItems(row: DemoRecord): DemoRecord[] {
   return [{ id: generateUUID(), description, quantity, unitPrice, taxRate: demoImportNumber(row.itemTaxRate || row.taxRate || row.mwst) ?? 19, total: quantity * unitPrice, order: 1 }];
 }
 
+function demoInvoiceMatchesServiceDate(invoice: DemoRecord, serviceDate: string): boolean {
+  if (!serviceDate) return true;
+  const sourceDates = Array.isArray(invoice.sourceJobs)
+    ? invoice.sourceJobs.map(job => demoImportDate((job as DemoRecord).jobDate || (job as DemoRecord).date))
+    : [];
+  return [invoice.issueDate, invoice.serviceDate, ...sourceDates]
+    .some(value => value && String(value).slice(0, 10) === serviceDate);
+}
+
+function demoFindPaymentInvoice(state: DemoState, row: DemoRecord, amountCents: number, serviceDate: string): { invoice?: DemoRecord; matchedBy?: string; error?: string } {
+  const invoiceId = demoImportText(row.invoiceId || row.invoice_id);
+  const invoiceNumber = demoImportText(row.invoiceNumber || row.invoice_number || row.rechnungsnummer || row.rechnungsnr);
+  const invoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note');
+  if (invoiceId) {
+    const invoice = invoices.find(candidate => candidate.id === invoiceId);
+    return invoice ? { invoice, matchedBy: 'Rechnungs-ID' } : { error: `Rechnung mit der ID „${invoiceId}“ wurde nicht gefunden.` };
+  }
+  if (invoiceNumber) {
+    const invoice = invoices.find(candidate => demoImportNormaliseKey(candidate.invoiceNumber) === demoImportNormaliseKey(invoiceNumber));
+    return invoice ? { invoice, matchedBy: 'Rechnungsnummer' } : { error: `Rechnung „${invoiceNumber}“ wurde nicht gefunden.` };
+  }
+  const customer = demoImportCustomer(state, row);
+  if (!customer) return { error: 'Es fehlt ein eindeutiger Kundenbezug.' };
+  const candidates = invoices
+    .filter(invoice => invoice.customerId === customer.id)
+    .filter(invoice => Math.round(Number(invoice.total || 0) * 100) === amountCents)
+    .filter(invoice => demoInvoiceMatchesServiceDate(invoice, serviceDate));
+  if (candidates.length === 1) return { invoice: candidates[0], matchedBy: serviceDate ? 'Kunde, Leistungsdatum und Betrag' : 'Kunde und Betrag' };
+  if (candidates.length === 0) return { error: 'Keine eindeutige Rechnung über Bezug, Leistungsdatum und Betrag gefunden.' };
+  return { error: `${candidates.length} Rechnungen passen zu diesem Bezug und Betrag.` };
+}
+
 function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string, state: DemoState, commit: boolean) {
   const entries: Array<{ rowNumbers: number[]; status: string; message: string; data?: DemoRecord; existingId?: string }> = [];
   const entityLabel = demoImportEntityLabel(state);
@@ -854,9 +886,73 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
               ? state.euerEntries
             : ((state.company.invoiceTemplates || []) as DemoRecord[]);
   const seen = new Set<string>();
+  const plannedInvoicePayments = new Map<string, number>();
 
   rows.forEach((row, index) => {
     const rowNumber = Number(row._rowNumber || index + 2);
+
+    if (resource === 'invoicePayments') {
+      const entryDate = demoImportDate(row.entryDate || row.entry_date || row.paymentDate || row.payment_date || row.zahlungsdatum || row.buchungsdatum || row.belegdatum || row.date || row.datum);
+      const serviceDate = demoImportDate(row.serviceDate || row.service_date || row.leistungsdatum || row.unterrichtsdatum || row.kursdatum || row.jobDate || row.job_date);
+      const amount = demoImportNumber(row.amount || row.paymentAmount || row.payment_amount || row.zahlungsbetrag || row.betrag || row.paidAmount || row.paid_amount || row.brutto || row.grossAmount || row.gross_amount);
+      const notes = demoImportText(row.notes || row.note || row.notizen || row.bemerkung || row.anmerkung || row.verwendungszweck || row.zweck);
+      const externalReference = demoImportText(row.externalReference || row.external_reference || row.externalPaymentId || row.external_payment_id || row.paymentId || row.payment_id || row.importId || row.import_id || row.importnummer);
+      if (!entryDate) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Zahlungsdatum fehlt oder ist ungültig.' });
+        return;
+      }
+      if (amount === null || amount <= 0) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Zahlungsbetrag ist ungültig oder fehlt.' });
+        return;
+      }
+      if (notes.length > 500 || externalReference.length > 255) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: notes.length > 500 ? 'Die Notiz darf höchstens 500 Zeichen enthalten.' : 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.' });
+        return;
+      }
+      const amountCents = Math.round(amount * 100);
+      const match = demoFindPaymentInvoice(state, row, amountCents, serviceDate || '');
+      if (match.error || !match.invoice) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: match.error || 'Rechnung konnte nicht gefunden werden.' });
+        return;
+      }
+      const invoice = match.invoice;
+      if (invoice.status === 'draft') {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: `Für den Entwurf ${invoice.invoiceNumber} kann noch kein Zahlungseingang erfasst werden.` });
+        return;
+      }
+      const existingPayments = state.euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status === 'active');
+      const alreadyPaidCents = existingPayments.reduce((sum, entry) => sum + Math.round(Number(entry.amount || 0) * 100), 0);
+      const remainingCents = Math.max(0, Math.round(Number(invoice.total || 0) * 100) - alreadyPaidCents - (plannedInvoicePayments.get(invoice.id) || 0));
+      const identity = `${invoice.id}|${entryDate}|${amountCents}|${notes.toLocaleLowerCase()}`;
+      const duplicate = existingPayments.some(entry => (externalReference && entry.externalReference === externalReference)
+        || (!externalReference && `${invoice.id}|${entry.entryDate}|${Math.round(Number(entry.amount || 0) * 100)}|${String(entry.notes || '').toLocaleLowerCase()}` === identity)) || seen.has(identity);
+      if (duplicate) {
+        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `Zahlung für Rechnung ${invoice.invoiceNumber} wurde bereits importiert oder ist doppelt enthalten.` });
+        return;
+      }
+      if (remainingCents === 0) {
+        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `Rechnung ${invoice.invoiceNumber} ist bereits vollständig bezahlt.` });
+        return;
+      }
+      if (amountCents > remainingCents) {
+        entries.push({ rowNumbers: [rowNumber], status: 'error', message: `Der Betrag überschreitet den offenen Betrag für Rechnung ${invoice.invoiceNumber}.` });
+        return;
+      }
+      seen.add(identity);
+      plannedInvoicePayments.set(invoice.id, (plannedInvoicePayments.get(invoice.id) || 0) + amountCents);
+      const taxableNet = Number(invoice.total || 0) - Number(invoice.taxAmount || 0);
+      entries.push({
+        rowNumbers: [rowNumber],
+        status: 'valid',
+        message: `Zahlung für Rechnung ${invoice.invoiceNumber} kann gebucht werden (${match.matchedBy}).`,
+        data: {
+          id: generateUUID(), invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, entryDate,
+          amount: amountCents / 100, taxRate: taxableNet > 0 ? Number(invoice.taxAmount || 0) / taxableNet * 100 : 0,
+          notes: notes || undefined, externalReference: externalReference || undefined,
+        },
+      });
+      return;
+    }
 
     if (resource === 'euerEntries') {
       const rawDate = demoImportText(row.entryDate ?? row.entry_date ?? row.date ?? row.datum ?? row.buchungsdatum ?? row.belegdatum);
@@ -1050,6 +1146,25 @@ function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string,
         const createdEntry = { ...entry.data, id: generateUUID(), status: 'active', sourceType: 'manual', createdAt: isoDate(), updatedAt: isoDate() };
         state.euerEntries.push(createdEntry);
         state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: createdEntry.id, action: 'created', reason: '', oldData: null, newData: { ...createdEntry }, changedAt: isoDate() });
+      } else if (resource === 'invoicePayments') {
+        const invoice = state.invoices.find(item => item.id === entry.data?.invoiceId);
+        if (!invoice) return;
+        const createdEntry = {
+          ...entry.data,
+          id: generateUUID(),
+          entryType: 'income',
+          description: `Zahlung Rechnung ${entry.data.invoiceNumber}`,
+          category: 'other_income',
+          sourceType: 'invoice_payment',
+          sourceId: invoice.id,
+          status: 'active',
+          createdAt: isoDate(),
+          updatedAt: isoDate(),
+        };
+        state.euerEntries.push(createdEntry);
+        state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: createdEntry.id, action: 'created', reason: '', oldData: null, newData: { ...createdEntry }, changedAt: isoDate() });
+        const paidCents = state.euerEntries.filter(item => item.sourceType === 'invoice_payment' && item.sourceId === invoice.id && item.status === 'active').reduce((sum, item) => sum + Math.round(Number(item.amount || 0) * 100), 0);
+        if (paidCents >= Math.round(Number(invoice.total || 0) * 100) - 1) invoice.status = 'paid';
       } else {
         const targetCollection = resource === 'hourlyRates' ? state.hourlyRates : state.materialTemplates;
         if (entry.status === 'update') {

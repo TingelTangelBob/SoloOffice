@@ -7,7 +7,7 @@ import { hasPermission } from '../middleware/auth.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 
 const router = express.Router();
-const supportedResources = new Set(['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries']);
+const supportedResources = new Set(['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries', 'invoicePayments']);
 const MAX_IMPORT_ROWS = 5000;
 const MAX_DETAIL_ROWS = 250;
 const MAX_IMPORT_CELL_LENGTH = 100000;
@@ -787,6 +787,163 @@ async function planEuerEntries(client, rows) {
   return { entries };
 }
 
+const invoiceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function paymentInvoiceReference(row) {
+  return {
+    invoiceId: text(pick(row, ['invoiceId', 'invoice_id', 'rechnungsId', 'rechnungs_id'])),
+    invoiceNumber: text(pick(row, ['invoiceNumber', 'invoice_number', 'rechnungsnummer', 'rechnungsnr', 'rechnungsNr', 'belegnummer'])),
+    customerId: text(pick(row, ['customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId'])),
+    customerNumber: text(pick(row, ['customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'kundenNr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer'])),
+    customerEmail: normaliseKey(pick(row, ['customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address'])),
+    customerName: normaliseKey(pick(row, ['customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'schülername', 'schuelername', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername', 'teilnehmer_name'])),
+  };
+}
+
+function invoiceHasServiceDate(invoice, serviceDate) {
+  if (!serviceDate) return true;
+  return [invoice.issue_date, invoice.service_date, ...(invoice.job_dates || [])]
+    .some(value => value && String(value).slice(0, 10) === serviceDate);
+}
+
+function findPaymentInvoice(invoices, row, amountCents, serviceDate) {
+  const reference = paymentInvoiceReference(row);
+  if (reference.invoiceId) {
+    if (!invoiceIdPattern.test(reference.invoiceId)) return { error: 'Die Rechnungs-ID ist ungültig.' };
+    const invoice = invoices.find(candidate => candidate.id === reference.invoiceId);
+    return invoice ? { invoice, matchedBy: 'Rechnungs-ID' } : { error: `Rechnung mit der ID „${reference.invoiceId}“ wurde nicht gefunden.` };
+  }
+  if (reference.invoiceNumber) {
+    const invoice = invoices.find(candidate => normaliseKey(candidate.invoice_number) === normaliseKey(reference.invoiceNumber));
+    return invoice ? { invoice, matchedBy: 'Rechnungsnummer' } : { error: `Rechnung „${reference.invoiceNumber}“ wurde nicht gefunden.` };
+  }
+
+  let candidates = invoices;
+  if (reference.customerId) candidates = candidates.filter(invoice => invoice.customer_id === reference.customerId);
+  else if (reference.customerNumber) candidates = candidates.filter(invoice => normaliseKey(invoice.customer_number) === normaliseKey(reference.customerNumber));
+  else if (reference.customerEmail) candidates = candidates.filter(invoice => normaliseKey(invoice.customer_email) === reference.customerEmail);
+  else if (reference.customerName) candidates = candidates.filter(invoice => normaliseKey(invoice.customer_name) === reference.customerName);
+  else return { error: 'Es fehlt eine Rechnungsnummer, Rechnungs-ID oder ein Kundenbezug.' };
+
+  candidates = candidates
+    .filter(invoice => Math.round(Number(invoice.total) * 100) === amountCents)
+    .filter(invoice => invoiceHasServiceDate(invoice, serviceDate));
+  if (candidates.length === 1) {
+    const matchedBy = serviceDate ? 'Kunde, Leistungsdatum und Betrag' : 'Kunde und Betrag';
+    return { invoice: candidates[0], matchedBy };
+  }
+  if (candidates.length === 0) return { error: 'Keine eindeutige Rechnung über Bezug, Leistungsdatum und Betrag gefunden.' };
+  return { error: `${candidates.length} Rechnungen passen zu diesem Bezug und Betrag. Bitte eine Rechnungsnummer oder Rechnungs-ID ergänzen.` };
+}
+
+async function planInvoicePayments(client, rows) {
+  const invoiceResult = await client.query(`
+    SELECT i.id, i.invoice_number, i.customer_id, i.customer_name, i.issue_date, i.service_date,
+           i.status, i.total, i.tax_amount, c.customer_number, c.email AS customer_email,
+           COALESCE(array_agg(DISTINCT ijs.job_date) FILTER (WHERE ijs.job_date IS NOT NULL), ARRAY[]::date[]) AS job_dates
+    FROM invoices i
+    LEFT JOIN customers c ON c.id = i.customer_id
+    LEFT JOIN invoice_job_sources ijs ON ijs.invoice_id = i.id
+    WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+    GROUP BY i.id, c.customer_number, c.email
+  `);
+  const invoices = invoiceResult.rows;
+  const paymentResult = await client.query(`
+    SELECT source_id, entry_date, amount, notes, external_reference
+    FROM euer_entries
+    WHERE source_type = 'invoice_payment' AND status = 'active'
+  `);
+  const existingPaid = new Map();
+  const existingExternalReferences = new Set();
+  const existingPaymentKeys = new Set();
+  paymentResult.rows.forEach(payment => {
+    if (payment.source_id) existingPaid.set(payment.source_id, (existingPaid.get(payment.source_id) || 0) + Math.round(Number(payment.amount || 0) * 100));
+    if (payment.external_reference) existingExternalReferences.add(normaliseKey(payment.external_reference));
+    if (payment.source_id) existingPaymentKeys.add(`${payment.source_id}|${String(payment.entry_date).slice(0, 10)}|${Math.round(Number(payment.amount || 0) * 100)}|${normaliseKey(payment.notes)}`);
+  });
+
+  const allocated = new Map(existingPaid);
+  const seenExternalReferences = new Set();
+  const seenPaymentKeys = new Set();
+  const entries = [];
+
+  rows.forEach((row, index) => {
+    const currentRow = rowNumber(row, index);
+    const entryDate = parseDate(pick(row, ['entryDate', 'entry_date', 'paymentDate', 'payment_date', 'zahlungsdatum', 'buchungsdatum', 'belegdatum', 'date', 'datum']));
+    const serviceDate = parseDate(pick(row, ['serviceDate', 'service_date', 'leistungsdatum', 'unterrichtsdatum', 'kursdatum', 'jobDate', 'job_date']));
+    const amount = parseNumber(pick(row, ['amount', 'paymentAmount', 'payment_amount', 'zahlungsbetrag', 'betrag', 'paidAmount', 'paid_amount', 'brutto', 'grossAmount', 'gross_amount']));
+    const notes = text(pick(row, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung', 'verwendungszweck', 'zweck']));
+    const externalReference = text(pick(row, ['externalReference', 'external_reference', 'externalPaymentId', 'external_payment_id', 'paymentId', 'payment_id', 'importId', 'import_id', 'importnummer']));
+    if (!entryDate) {
+      entries.push(resultEntry([currentRow], 'error', 'Zahlungsdatum fehlt oder ist ungültig.'));
+      return;
+    }
+    if (amount === null || amount <= 0) {
+      entries.push(resultEntry([currentRow], 'error', 'Zahlungsbetrag ist ungültig oder fehlt.'));
+      return;
+    }
+    if (notes.length > 500) {
+      entries.push(resultEntry([currentRow], 'error', 'Die Notiz darf höchstens 500 Zeichen enthalten.'));
+      return;
+    }
+    if (externalReference.length > 255) {
+      entries.push(resultEntry([currentRow], 'error', 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.'));
+      return;
+    }
+
+    const amountCents = Math.round(amount * 100);
+    const match = findPaymentInvoice(invoices, row, amountCents, serviceDate);
+    if (match.error) {
+      entries.push(resultEntry([currentRow], 'error', match.error));
+      return;
+    }
+    const invoice = match.invoice;
+    if (invoice.status === 'draft') {
+      entries.push(resultEntry([currentRow], 'error', `Für den Entwurf ${invoice.invoice_number} kann noch kein Zahlungseingang erfasst werden.`));
+      return;
+    }
+
+    const paymentKey = `${invoice.id}|${entryDate}|${amountCents}|${normaliseKey(notes)}`;
+    if ((externalReference && (existingExternalReferences.has(normaliseKey(externalReference)) || seenExternalReferences.has(normaliseKey(externalReference))))
+      || (!externalReference && (existingPaymentKeys.has(paymentKey) || seenPaymentKeys.has(paymentKey)))) {
+      entries.push(resultEntry([currentRow], 'duplicate', `Zahlung für Rechnung ${invoice.invoice_number} wurde bereits importiert oder ist in der Datei doppelt enthalten.`));
+      return;
+    }
+
+    const alreadyAllocated = allocated.get(invoice.id) || 0;
+    const remainingCents = Math.max(0, Math.round(Number(invoice.total) * 100) - alreadyAllocated);
+    if (remainingCents === 0) {
+      entries.push(resultEntry([currentRow], 'duplicate', `Rechnung ${invoice.invoice_number} ist bereits vollständig bezahlt.`));
+      return;
+    }
+    if (amountCents > remainingCents) {
+      entries.push(resultEntry([currentRow], 'error', `Der Betrag überschreitet den offenen Betrag von ${(remainingCents / 100).toFixed(2)} € für Rechnung ${invoice.invoice_number}.`));
+      return;
+    }
+
+    const taxableNet = Number(invoice.total) - Number(invoice.tax_amount || 0);
+    const taxRate = taxableNet > 0 ? Number(invoice.tax_amount || 0) / taxableNet * 100 : 0;
+    allocated.set(invoice.id, alreadyAllocated + amountCents);
+    if (externalReference) seenExternalReferences.add(normaliseKey(externalReference));
+    seenPaymentKeys.add(paymentKey);
+    entries.push(resultEntry(
+      [currentRow],
+      'valid',
+      `Zahlung für Rechnung ${invoice.invoice_number} kann gebucht werden (${match.matchedBy}).`,
+      {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoice_number,
+        entryDate,
+        amount: amountCents / 100,
+        taxRate,
+        notes: notes || null,
+        externalReference: externalReference || null,
+      },
+    ));
+  });
+  return { entries };
+}
+
 async function createPlan(client, resource, rows, duplicateMode, entityLabel) {
   switch (resource) {
     case 'customers': return planCustomers(client, rows, duplicateMode, entityLabel);
@@ -794,6 +951,7 @@ async function createPlan(client, resource, rows, duplicateMode, entityLabel) {
     case 'quotes': return planQuotes(client, rows, duplicateMode, entityLabel);
     case 'positions': return planPositions(client, rows, duplicateMode);
     case 'euerEntries': return planEuerEntries(client, rows);
+    case 'invoicePayments': return planInvoicePayments(client, rows);
     case 'hourlyRates':
     case 'materials':
       return planSimpleMaster(client, resource, rows, duplicateMode);
@@ -944,6 +1102,41 @@ async function applyEuerEntry(client, entry) {
   return 'created';
 }
 
+async function applyInvoicePayments(client, entries) {
+  for (const entry of entries) {
+    const data = entry.data;
+    await client.query(`
+      INSERT INTO euer_entries (
+        entry_type, entry_date, description, category, amount, tax_rate, notes,
+        source_type, source_id, external_reference, status, correction_reason
+      ) VALUES ('income', $1, $2, 'other_income', $3, $4, $5, 'invoice_payment', $6, $7, 'active', NULL)
+    `, [
+      data.entryDate,
+      `Zahlung Rechnung ${data.invoiceNumber}`,
+      data.amount,
+      data.taxRate,
+      data.notes || null,
+      data.invoiceId,
+      data.externalReference || null,
+    ]);
+  }
+
+  const invoiceIds = [...new Set(entries.map(entry => entry.data.invoiceId))];
+  if (invoiceIds.length > 0) {
+    await client.query(`
+      UPDATE invoices i
+      SET status = CASE
+        WHEN COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
+          WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0) >= i.total - 0.005
+          THEN 'paid'
+        ELSE i.status
+      END
+      WHERE i.id = ANY($1::uuid[])
+    `, [invoiceIds]);
+  }
+  return entries.map(() => 'created');
+}
+
 async function applyJob(client, entry) {
   const data = entry.data;
   const year = new Date(`${data.date}T00:00:00Z`).getUTCFullYear();
@@ -1026,6 +1219,9 @@ async function applyPlan(client, resource, plan, entityLabel) {
   const applicable = plan.entries.filter(entry => ['valid', 'warning', 'update'].includes(entry.status));
   if (resource === 'positions') {
     return applyPositions(client, applicable, plan.positionTemplates || []);
+  }
+  if (resource === 'invoicePayments') {
+    return applyInvoicePayments(client, applicable);
   }
   await lockImportDocumentNumbers(client, resource, applicable);
   const results = [];

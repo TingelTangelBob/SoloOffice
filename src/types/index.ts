@@ -578,7 +578,7 @@ export type ExportFormat = 'zugferd' | 'xrechnung';
 // Import Types
 // ============================================================================
 
-export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials' | 'euerEntries';
+export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials' | 'euerEntries' | 'invoicePayments';
 export type ImportDuplicateMode = 'skip' | 'update';
 export type ImportRowStatus = 'valid' | 'update' | 'duplicate' | 'warning' | 'error' | 'imported';
 
@@ -791,6 +791,7 @@ export interface EuerEntry extends Timestamps {
   notes?: string;
   sourceType?: EuerEntrySourceType;
   sourceId?: UUID;
+  externalReference?: string;
   status?: 'active' | 'voided';
   correctionReason?: string;
 }
@@ -833,6 +834,7 @@ export interface EuerEntryPayload {
   notes?: string;
   sourceType?: EuerEntrySourceType;
   sourceId?: UUID;
+  externalReference?: string;
   correctionReason?: string;
 }
 

@@ -24,6 +24,7 @@ function toEntry(row) {
     notes: row.notes || undefined,
     sourceType: row.source_type || 'manual',
     sourceId: row.source_id || undefined,
+    externalReference: row.external_reference || undefined,
     status: row.status || 'active',
     correctionReason: row.correction_reason || undefined,
     createdAt: row.created_at,
@@ -66,6 +67,7 @@ function validateEntry(data) {
   const category = String(data.category || '');
   const sourceType = String(data.sourceType || 'manual');
   const sourceId = data.sourceId ? String(data.sourceId) : '';
+  const externalReference = data.externalReference ? String(data.externalReference).trim() : '';
   const amount = Number(data.amount);
   const taxRate = data.taxRate === undefined || data.taxRate === null || data.taxRate === '' ? 0 : Number(data.taxRate);
 
@@ -77,6 +79,7 @@ function validateEntry(data) {
   if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.';
   if (!sourceTypes.has(sourceType)) return 'Ungültige Buchungsquelle.';
   if (sourceId && !uuidPattern.test(sourceId)) return 'Ungültige Quellenreferenz.';
+  if (externalReference.length > 255) return 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.';
   if (data.correctionReason && String(data.correctionReason).length > 500) return 'Der Korrekturgrund darf höchstens 500 Zeichen enthalten.';
 
   return null;
@@ -143,7 +146,7 @@ async function validateSource(data, currentId = null, executor = query) {
 }
 
 const entryColumns = `id, entry_type, entry_date, description, category, amount, tax_rate, notes,
-  source_type, source_id, status, correction_reason, created_at, updated_at`;
+  source_type, source_id, external_reference, status, correction_reason, created_at, updated_at`;
 
 router.get('/', async (req, res, next) => {
   try {
@@ -208,16 +211,16 @@ router.post('/', async (req, res, next) => {
 
     const {
       entryType, entryDate, description, category, amount, taxRate = 0, notes,
-      sourceType = 'manual', sourceId, correctionReason,
+      sourceType = 'manual', sourceId, externalReference, correctionReason,
     } = req.body;
     const result = await client.query(`
       INSERT INTO euer_entries
-        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, correction_reason)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, external_reference, correction_reason)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING ${entryColumns}
     `, [
       entryType, entryDate, String(description).trim(), category, Number(amount), Number(taxRate),
-      notes || null, sourceType, sourceId || null, correctionReason || null,
+      notes || null, sourceType, sourceId || null, externalReference || null, correctionReason || null,
     ]);
     if (sourceType === 'receipt') {
       const receiptResult = await client.query(`
@@ -284,13 +287,13 @@ router.put('/:id', async (req, res, next) => {
       UPDATE euer_entries
       SET entry_type = $1, entry_date = $2, description = $3, category = $4, amount = $5,
           tax_rate = $6, notes = $7, source_type = $8, source_id = $9,
-          correction_reason = $10, updated_at = NOW()
-      WHERE id = $11 AND status = 'active'
+          external_reference = $10, correction_reason = $11, updated_at = NOW()
+      WHERE id = $12 AND status = 'active'
       RETURNING ${entryColumns}
     `, [
       merged.entryType, merged.entryDate, String(merged.description).trim(), merged.category,
       Number(merged.amount), Number(merged.taxRate || 0), merged.notes || null,
-      merged.sourceType, merged.sourceId || null, merged.correctionReason || null, req.params.id,
+      merged.sourceType, merged.sourceId || null, merged.externalReference || null, merged.correctionReason || null, req.params.id,
     ]);
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');

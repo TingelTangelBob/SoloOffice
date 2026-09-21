@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight, FileUp } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -39,6 +39,7 @@ import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
 import { trackTelemetry } from '../services/telemetry';
+import { ImportWizard } from './ImportWizard';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -94,6 +95,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [isBulkOperation, setIsBulkOperation] = useState(false);
   const [invoicePage, setInvoicePage] = useState(1);
   const [isBulkPaymentOpen, setIsBulkPaymentOpen] = useState(false);
+  const [isPaymentImportOpen, setIsPaymentImportOpen] = useState(false);
   
   const [newCustomerData, setNewCustomerData] = useState({
     name: '',
@@ -1084,6 +1086,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     setPaymentInvoice(null);
   };
 
+  const handlePaymentImport = () => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    setIsPaymentImportOpen(true);
+  };
+
   const selectedInvoicesForPayment = useMemo(
     () => invoiceRecords.filter(invoice => selectedInvoiceIds.includes(invoice.id)),
     [invoiceRecords, selectedInvoiceIds],
@@ -1126,6 +1136,17 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       <div className="page-header-slot flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <PageHeader icon={Receipt} title="Rechnungen" subtitle="Verwalten Sie Ihre Rechnungen">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePaymentImport}
+            disabled={!canWrite}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+            aria-label="Zahlungseingänge aus Datei importieren"
+            title="Zahlungseingänge aus Datei importieren"
+          >
+            <FileUp className="h-5 w-5" />
+            <span className="hidden sm:inline">Zahlungen importieren</span>
+          </button>
           <button
             type="button"
             onClick={handleExportPeriodCsv}
@@ -1579,6 +1600,16 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           onSaved={handleBulkPaymentSaved}
         />
       )}
+
+      <ImportWizard
+        resource="invoicePayments"
+        isOpen={isPaymentImportOpen}
+        onClose={() => setIsPaymentImportOpen(false)}
+        onImported={async () => {
+          await refreshInvoices();
+          notify({ variant: 'success', message: 'Zahlungseingänge wurden importiert und die Rechnungsstatus aktualisiert.' });
+        }}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal

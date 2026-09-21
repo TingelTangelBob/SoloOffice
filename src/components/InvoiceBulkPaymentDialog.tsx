@@ -48,9 +48,20 @@ export function InvoiceBulkPaymentDialog({ invoices, onClose, onSaved }: Invoice
   const skippedCount = invoices.length - payableInvoices.length;
   const totalOutstanding = payableInvoices.reduce((sum, invoice) => sum + outstandingAmount(invoice), 0);
   const money = (value: number) => formatCurrency(value, locale, company?.numberFormat, company?.currency);
+  const createdPaymentDates = useMemo(
+    () => payableInvoices.map(invoiceCreationDate),
+    [payableInvoices],
+  );
+  const distinctCreatedPaymentDates = useMemo(
+    () => [...new Set(createdPaymentDates)].sort(),
+    [createdPaymentDates],
+  );
+  const formatDate = (value: string) => new Intl.DateTimeFormat(locale).format(new Date(`${value}T00:00:00`));
   const selectedDateDescription = dateMode === 'createdAt'
-    ? 'Erstelldatum je Rechnung'
-    : `${commonDate ? new Intl.DateTimeFormat(locale).format(new Date(`${commonDate}T00:00:00`)) : 'Datum fehlt'} für alle`;
+    ? distinctCreatedPaymentDates.length === 1
+      ? `${formatDate(distinctCreatedPaymentDates[0])} für alle`
+      : `${distinctCreatedPaymentDates.length} unterschiedliche Erstelldaten`
+    : `${commonDate ? formatDate(commonDate) : 'Datum fehlt'} für alle`;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -116,34 +127,38 @@ export function InvoiceBulkPaymentDialog({ invoices, onClose, onSaved }: Invoice
 
         <fieldset className="space-y-3">
           <legend className="text-base font-semibold text-gray-900">Zahlungsdatum festlegen</legend>
-          <label className={`flex min-w-0 items-start gap-3 rounded-xl border p-4 transition-colors ${dateMode === 'common' ? 'border-primary-custom bg-primary-custom/10 ring-1 ring-primary-custom/30' : 'border-gray-200 hover:border-primary-custom/50'}`}>
+          <label className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${dateMode === 'common' ? 'border-primary-custom bg-primary-custom/10 ring-1 ring-primary-custom/30' : 'border-gray-200 hover:border-primary-custom/50'}`}>
             <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${dateMode === 'common' ? 'border-primary-custom bg-primary-custom text-white' : 'border-gray-400'}`}>
               {dateMode === 'common' && <Check className="h-3 w-3" aria-hidden="true" />}
             </span>
             <input type="radio" name="bulk-payment-date" checked={dateMode === 'common'} onChange={() => setDateMode('common')} className="sr-only" />
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-gray-900">Ein Datum für alle Zahlungen</span>
-              <span className="mt-1 block text-sm text-gray-500">Verwendet für jede ausgewählte Rechnung.</span>
+              <span className="mt-1 block text-sm text-gray-500">Dasselbe Zahlungsdatum für jede ausgewählte Rechnung.</span>
               <span className="mt-2 block max-w-xs">
                 <LocalizedDateInput value={commonDate} onChange={setCommonDate} locale={locale} dateFormat={company?.dateFormat} className="w-full" aria-label="Gemeinsames Zahlungsdatum" />
               </span>
             </span>
           </label>
-          <label className={`flex min-w-0 items-start gap-3 rounded-xl border p-4 transition-colors ${dateMode === 'createdAt' ? 'border-primary-custom bg-primary-custom/10 ring-1 ring-primary-custom/30' : 'border-gray-200 hover:border-primary-custom/50'}`}>
+          <label className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${dateMode === 'createdAt' ? 'border-primary-custom bg-primary-custom/10 ring-1 ring-primary-custom/30' : 'border-gray-200 hover:border-primary-custom/50'}`}>
             <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${dateMode === 'createdAt' ? 'border-primary-custom bg-primary-custom text-white' : 'border-gray-400'}`}>
               {dateMode === 'createdAt' && <Check className="h-3 w-3" aria-hidden="true" />}
             </span>
             <input type="radio" name="bulk-payment-date" checked={dateMode === 'createdAt'} onChange={() => setDateMode('createdAt')} className="sr-only" />
-            <span className="min-w-0">
-              <span className="block font-medium text-gray-900">Erstelldatum der jeweiligen Rechnung verwenden</span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium text-gray-900">Erstelldatum je Rechnung</span>
               <span className="mt-1 block text-sm leading-5 text-gray-500">Für ältere Rechnungen ohne Erstelldatum wird das Rechnungsdatum verwendet.</span>
+              {dateMode === 'createdAt' && (
+                <span className="mt-3 block rounded-lg border border-primary-custom/30 bg-primary-custom/5 px-3 py-2 text-sm leading-5 text-gray-700">
+                  <span className="font-semibold text-primary-custom">Aktiv:</span>{' '}
+                  {distinctCreatedPaymentDates.length === 1
+                    ? `Alle ${payableInvoices.length} ${payableInvoices.length === 1 ? 'Rechnung wurde' : 'Rechnungen wurden'} am ${formatDate(distinctCreatedPaymentDates[0])} erstellt. Daher wird dieses Datum bei allen verwendet.`
+                    : `${distinctCreatedPaymentDates.length} unterschiedliche Erstelldaten werden je Rechnung verwendet.`}
+                </span>
+              )}
             </span>
           </label>
         </fieldset>
-
-        <p className="rounded-lg border border-primary-custom/30 bg-primary-custom/5 px-4 py-3 text-sm text-gray-700">
-          <span className="font-semibold text-primary-custom">Aktive Auswahl:</span> {selectedDateDescription}. Kurs- oder Leistungsdaten werden nicht verändert.
-        </p>
 
         <label className="block text-sm font-medium text-gray-700">
           Notiz für alle Zahlungseingänge <span className="font-normal text-gray-500">(optional)</span>
