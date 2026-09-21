@@ -632,8 +632,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           {/* SMTP Settings Tab */}
           {activeTab === 'settings' && (
             <div className="p-6">
-              <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+              <div className="max-w-2xl mx-auto space-y-4">
                   <div className="flex items-center justify-between mb-4">
                     <label className="text-sm font-medium text-gray-700">
                       SMTP-Konfiguration aktivieren
@@ -770,7 +769,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       type="button"
                       onClick={saveSmtpSettings}
                       disabled={isSavingSettings}
-                      className="btn-primary text-white px-6 py-2 rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                      className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isSavingSettings ? (
                         <RefreshCw className="h-4 w-4 animate-spin" />
@@ -783,7 +782,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       type="button"
                       onClick={testSmtpConnection}
                       disabled={isTestingConnection}
-                      className="btn-secondary text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                      className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isTestingConnection ? (
                         <RefreshCw className="h-4 w-4 animate-spin" />
@@ -793,7 +792,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       <span>{isTestingConnection ? 'Teste...' : 'Verbindung testen'}</span>
                     </button>
                   </div>
-                </div>
               </div>
             </div>
           )}
@@ -801,8 +799,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           {/* Test Email Tab */}
           {activeTab === 'test' && (
             <div className="p-6">
-              <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+              <div className="max-w-2xl mx-auto space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Empfänger-E-Mail-Adresse *
@@ -848,7 +845,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       type="button"
                       onClick={sendTestEmail}
                       disabled={isSendingTest || !testEmailRecipient}
-                      className="btn-primary text-white px-6 py-2 rounded-lg hover:brightness-90 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                      className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isSendingTest ? (
                         <RefreshCw className="h-4 w-4 animate-spin" />
@@ -868,7 +865,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                       <li>• Bei Fehlern überprüfen Sie die SMTP-Konfiguration und Verbindung</li>
                     </ul>
                   </div>
-                </div>
               </div>
             </div>
           )}

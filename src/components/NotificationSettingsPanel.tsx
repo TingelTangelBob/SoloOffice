@@ -87,7 +87,7 @@ export function NotificationSettingsPanel() {
   const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div>
       {loadError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</div>}
 
       <form onSubmit={submit} className="form-consistent-fields space-y-4">
@@ -141,13 +141,13 @@ export function NotificationSettingsPanel() {
         </label>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" disabled={busy !== null || !dirty} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="submit" disabled={busy !== null || !dirty} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50">
             {busy === 'save' ? 'Speichert…' : 'Benachrichtigungen speichern'}
           </button>
-          <button type="button" onClick={() => { void loadPreview(); }} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-50">
+          <button type="button" onClick={() => { void loadPreview(); }} disabled={busy !== null} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50">
             {busy === 'preview' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}Vorschau
           </button>
-          <button type="button" onClick={() => { void sendNow(); }} disabled={busy !== null || dirty || !saved || !(saved.jobsCompleted || saved.invoiceDrafts || saved.invoicesOverdue)} title={dirty ? 'Zuerst speichern' : undefined} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-50">
+          <button type="button" onClick={() => { void sendNow(); }} disabled={busy !== null || dirty || !saved || !(saved.jobsCompleted || saved.invoiceDrafts || saved.invoicesOverdue)} title={dirty ? 'Zuerst speichern' : undefined} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50">
             {busy === 'send' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Jetzt senden
           </button>
         </div>
@@ -188,6 +188,6 @@ export function NotificationSettingsPanel() {
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
