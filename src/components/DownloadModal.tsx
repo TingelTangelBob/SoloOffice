@@ -5,6 +5,7 @@ import { formatFileSize, getFileIcon } from '../utils/fileUtils';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
+import { DialogShell } from './DialogShell';
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -68,57 +69,45 @@ export function DownloadModal({
   };
 
   return (
-    <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 lg:p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-2 lg:space-x-3">
-            <div className="p-2 rounded-full bg-green-100">
-              <Download className="h-5 w-5 lg:h-6 lg:w-6 text-green-600" />
-            </div>
-            <h3 className="text-base lg:text-lg font-semibold text-gray-900">
-              {isBulkMode ? `${bulkCount} Rechnungen herunterladen` : 'Rechnung herunterladen'}
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 p-1"
-            disabled={isLoading}
-          >
-            <X className="h-5 w-5" />
+    <DialogShell
+      titleId="download-invoices-dialog-title"
+      icon={Download}
+      title={isBulkMode ? 'Rechnungen herunterladen' : 'Rechnung herunterladen'}
+      description={isBulkMode ? `${bulkCount} Rechnungen ausgewählt` : `${invoice.invoiceNumber} · ${invoice.customerName}`}
+      onClose={isLoading ? () => {} : onClose}
+      size={isBulkMode ? 'lg' : 'md'}
+      fitContent
+      footer={(
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={isLoading} className="min-h-12 rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50">
+            Abbrechen
+          </button>
+          <button type="button" onClick={handleDownload} disabled={isLoading} className="btn-primary inline-flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-lg px-5 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:opacity-50">
+            {isLoading ? (
+              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> <span>Wird heruntergeladen …</span></>
+            ) : (
+              <><Download className="h-4 w-4 shrink-0" /> <span>Herunterladen{isBulkMode ? ` (${bulkCount})` : ''}</span></>
+            )}
           </button>
         </div>
-        
-        <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
-          {/* Rechnung Details */}
-          <div className="bg-primary-custom/10 border border-primary-custom/30 rounded-lg p-3 lg:p-4">
-            <h4 className="text-sm font-semibold text-primary-custom mb-2">
-              📄 Download Details
-            </h4>
-            {isBulkMode ? (
-              <p className="text-sm text-primary-custom">
-                <strong>Anzahl Rechnungen:</strong> {bulkCount}<br/>
-                <strong>Aktion:</strong> Bulk-Download
-              </p>
-            ) : (
-              <p className="text-sm text-primary-custom">
-                <strong>Rechnung:</strong> {invoice.invoiceNumber}<br/>
-                <strong>{terminology.entity.singular}:</strong> {invoice.customerName}<br/>
-                <strong>Betrag:</strong> {formatCurrency(invoice.total, company.locale, company.numberFormat, company.currency)}<br/>
-                <strong>Status:</strong> {invoice.status === 'draft' ? 'Entwurf' : 
-                                       invoice.status === 'sent' ? 'Versendet' :
-                                       invoice.status === 'paid' ? 'Bezahlt' : 
-                                       invoice.status === 'overdue' ? 'Überfällig' : invoice.status}
-              </p>
-            )}
+      )}
+    >
+      <div className="min-w-0 space-y-5 pb-2">
+        {!isBulkMode && (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm sm:grid-cols-4">
+            <div><dt className="text-gray-500">Rechnung</dt><dd className="mt-1 truncate font-medium text-gray-900">{invoice.invoiceNumber}</dd></div>
+            <div><dt className="text-gray-500">{terminology.entity.singular}</dt><dd className="mt-1 truncate font-medium text-gray-900">{invoice.customerName}</dd></div>
+            <div><dt className="text-gray-500">Betrag</dt><dd className="mt-1 font-medium text-gray-900">{formatCurrency(invoice.total, company.locale, company.numberFormat, company.currency)}</dd></div>
+            <div><dt className="text-gray-500">Status</dt><dd className="mt-1 font-medium text-gray-900">{invoice.status === 'draft' ? 'Entwurf' : invoice.status === 'sent' ? 'Versendet' : invoice.status === 'paid' ? 'Bezahlt' : invoice.status === 'overdue' ? 'Überfällig' : invoice.status}</dd></div>
+          </dl>
+        )}
+
+        <section aria-labelledby="download-format-heading">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 id="download-format-heading" className="text-base font-semibold text-gray-900">Dateiformat</h3>
+            <span className="text-sm text-gray-500">Mehrfachauswahl möglich</span>
           </div>
-          
-          {/* Format Selection */}
-          <div>
-            <h4 className="text-sm font-medium text-gray-900 mb-3">
-              Wählen Sie die gewünschten Dateiformate (Mehrfachauswahl möglich):
-            </h4>
-            
-            <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
               {formatOptions.map((option) => {
                 const IconComponent = option.icon;
                 const isSelected = selectedFormats.includes(option.value);
@@ -127,30 +116,30 @@ export function DownloadModal({
                 return (
                   <label
                     key={option.value}
-                    className={`block p-3 lg:p-4 border rounded-lg cursor-pointer transition-colors ${
+                    className={`block rounded-xl border p-3 transition-colors ${
                       isDisabled 
-                        ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
+                        ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-50'
                         : isSelected
-                        ? 'border-green-500 bg-green-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-primary-custom bg-primary-custom/10 ring-1 ring-primary-custom/30'
+                        : 'border-gray-200 hover:border-primary-custom/50'
                     }`}
                   >
-                    <div className="flex items-start space-x-3">
+                    <div className="flex min-w-0 items-start gap-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         disabled={isDisabled}
                         onChange={() => !isDisabled && handleFormatToggle(option.value)}
-                        className="mt-1 h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500 disabled:opacity-50 flex-shrink-0"
+                        className="mt-1 h-4 w-4 shrink-0 accent-primary-custom disabled:opacity-50"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <IconComponent className="h-4 w-4 text-gray-600 flex-shrink-0" />
-                          <span className="text-sm font-medium text-gray-900">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <IconComponent className="h-4 w-4 shrink-0 text-primary-custom" />
+                          <span className="text-sm font-semibold text-gray-900">
                             {option.label}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs leading-5 text-gray-500">
                           {option.description}
                         </p>
 
@@ -160,18 +149,7 @@ export function DownloadModal({
                 );
               })}
             </div>
-            
-            {selectedFormats.length > 1 && (
-              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-xs text-green-800">
-                  <strong>✓ Ausgewählt:</strong> {selectedFormats.map(f => {
-                    const option = formatOptions.find(opt => opt.value === f);
-                    return option?.label;
-                  }).join(', ')}
-                </p>
-              </div>
-            )}
-          </div>
+        </section>
 
           {/* Attachment Selection */}
           {!isBulkMode && invoice && invoice.attachments && invoice.attachments.length > 0 && (
@@ -249,22 +227,20 @@ export function DownloadModal({
           )}
 
           {/* Mark as Sent Option */}
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-orange-900 mb-2">
-                  Status beim Download ändern
-                </h4>
-                <p className="text-sm text-orange-800 mb-3">
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-amber-900">Versandstatus</h3>
+                <p className="mt-1 text-sm leading-5 text-amber-800">
                   {isBulkMode 
-                    ? 'Möchten Sie alle ausgewählten Rechnungen beim Download automatisch als "Versendet" markieren?'
+                    ? 'Ausgewählte Rechnungen beim Download als „Versendet“ markieren?'
                     : isPaid
-                    ? 'Diese Rechnung ist bereits bezahlt. Der Status kann nicht auf "Versendet" zurückgesetzt werden.'
-                    : 'Möchten Sie diese Rechnung beim Download automatisch als "Versendet" markieren?'
+                    ? 'Bereits bezahlte Rechnungen bleiben bezahlt.'
+                    : 'Die Rechnung beim Download als „Versendet“ markieren?'
                   }
                 </p>
-                <label className={`flex items-center space-x-3 ${canMarkAsSent ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                <label className={`mt-3 flex items-center gap-3 ${canMarkAsSent ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
                   <div className="relative">
                     <input
                       type="checkbox"
@@ -287,60 +263,17 @@ export function DownloadModal({
                       )}
                     </div>
                   </div>
-                  <span className={`text-sm font-medium ${canMarkAsSent ? 'text-orange-900' : 'text-gray-500'}`}>
-                    Als "Versendet" markieren
-                    {!canMarkAsSent && ' (nicht verfügbar für bezahlte Rechnungen)'}
+                  <span className={`text-sm font-medium ${canMarkAsSent ? 'text-amber-900' : 'text-gray-500'}`}>
+                    Als „Versendet“ markieren{!canMarkAsSent && ' (nicht verfügbar)'}
                   </span>
                 </label>
               </div>
             </div>
           </div>
-          
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-xs text-green-800">
-              <strong>💡 Hinweis:</strong> Der Download startet automatisch nach der Bestätigung. 
-              {selectedFormats.length > 1 && ' Bei mehreren Dateien erfolgt der Download mit Abständen.'}
-              {isBulkMode && ' Bei Bulk-Downloads werden längere Pausen zwischen den Downloads eingehalten.'}
-              {' Sie können wählen, ob die Rechnung(en) dabei als versendet markiert werden sollen.'}
-            </p>
-          </div>
-        </div>
-        
-        <div className="form-action-bar border-t border-gray-200 p-4 lg:p-6">
-          <button
-            onClick={onClose}
-            disabled={isLoading}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleDownload}
-            disabled={isLoading}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                <span className="hidden sm:inline">Wird heruntergeladen...</span>
-                <span className="sm:hidden">Download...</span>
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">
-                  {selectedFormats.length === 1 
-                    ? (selectedFormats[0] === 'zugferd' ? 'PDF' : 'XRechnung')
-                    : `${selectedFormats.length} Dateien`} herunterladen
-                  {isBulkMode && ` (${bulkCount} Rechnungen)`}
-                  {markAsSent && canMarkAsSent && ' & als versendet markieren'}
-                </span>
-                <span className="sm:hidden">Herunterladen</span>
-              </>
-            )}
-          </button>
-        </div>
+        <p className="text-xs leading-5 text-gray-500">
+          Der Download startet nach der Bestätigung. Bei mehreren Rechnungen werden die Dateien nacheinander geladen.
+        </p>
       </div>
-    </div>
+    </DialogShell>
   );
 }

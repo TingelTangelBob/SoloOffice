@@ -4,6 +4,14 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+- Der Bulk-Download von Rechnungen nutzt jetzt eine kompakte, eindeutige
+  Dialogstruktur ohne doppelte Detail- und Hinweisboxen.
+- Die Auswahl des Zahlungsdatums bei Sammelzahlungen ist sichtbar markiert und
+  zeigt die tatsächlich aktive Variante direkt in der Zusammenfassung an.
+- Die Dashboard-Umsatzstatistik berücksichtigt Zahlungsbuchungen mit ihrem
+  Zahlungsdatum, bietet eine Jahresauswahl und kann offene Rechnungsbeträge
+  per Umschalter zusätzlich einbeziehen. Entwürfe und nicht bestätigte
+  Aufträge werden dabei ausgeschlossen.
 - Zahlungseingänge können für eine Mehrfachauswahl in einer gebündelten,
   atomaren Serveraktion erfasst werden. Dabei lässt sich ein gemeinsames
   Zahlungsdatum oder das Erstelldatum der jeweiligen Rechnung verwenden;

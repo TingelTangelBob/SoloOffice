@@ -13,7 +13,7 @@ import { EmailSendModal } from './EmailSendModal';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
-import type { Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
+import type { EuerEntry, Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
 import { PageHeader } from './PageHeader';
 import {
   DeltaBadge,
@@ -43,6 +43,12 @@ type DashboardCourseSeries = {
   key: string;
   job: JobEntry;
   jobs: JobEntry[];
+};
+
+type DashboardRevenueRecord = {
+  customerName: string;
+  date: Date;
+  amount: number;
 };
 
 function parseLocalJobDate(value: Date | string | number): Date {
@@ -124,6 +130,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
+  const [dashboardYear, setDashboardYear] = useState(() => new Date().getFullYear());
+  const [includeUnpaidInvoices, setIncludeUnpaidInvoices] = useState(false);
+  const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
 
   // Email modal state
   const [emailModal, setEmailModal] = useState<{
@@ -136,6 +145,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     customer: null
   });
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void apiService.getEuerEntries().then(entries => {
+      if (active) setEuerEntries(entries);
+    }).catch(error => {
+      logger.warn('EÜR-Einträge für die Dashboard-Auswertung konnten nicht geladen werden.', error);
+      if (active) setEuerEntries([]);
+    });
+    return () => { active = false; };
+  }, []);
 
   // Get locale from company settings, default to 'de-DE'
   const locale = company?.locale || 'de-DE';
@@ -402,31 +422,89 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   }
 
   /**
-   * Umsatzverlauf der letzten zwölf Monate.
-   *
-   * Fester Zeitraum statt „alle vorhandenen Monate“: Die Kurve behält dadurch
-   * eine gleichbleibende Rasterbreite, Monate ohne Rechnung bleiben als Lücke
-   * sichtbar, und die Karte wächst nicht mit jedem weiteren Geschäftsjahr.
-   * Die vollständige Historie steht in den Auswertungen.
+   * Die Dashboard-Auswertung arbeitet mit Zahlungseingängen. Dadurch wird bei
+   * bezahlten Rechnungen das tatsächliche Zahlungsdatum verwendet. Offene
+   * Rechnungen können optional zugeschaltet werden und verwenden dann ihr
+   * Rechnungsdatum.
    */
-  const REVENUE_WINDOW_MONTHS = 12;
-
   const monthKeyOf = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  const availableYears = Array.from(new Set([
+    today.getFullYear(),
+    ...invoices.map(invoice => parseLocalJobDate(invoice.issueDate).getFullYear()),
+    ...euerEntries.map(entry => parseLocalJobDate(entry.entryDate).getFullYear()),
+  ])).sort((a, b) => b - a);
 
-  const monthlyRevenue = new Map<string, number>();
-  invoices.forEach(invoice => {
-    const key = monthKeyOf(new Date(invoice.issueDate));
-    monthlyRevenue.set(key, (monthlyRevenue.get(key) || 0) + Number(invoice.total || 0));
+  const activePayments = euerEntries.filter(entry => (
+    entry.entryType === 'income'
+    && entry.sourceType === 'invoice_payment'
+    && entry.sourceId
+    && entry.status !== 'voided'
+    && Number(entry.amount || 0) > 0
+  ));
+  const paymentsByInvoice = new Map<string, EuerEntry[]>();
+  activePayments.forEach(entry => {
+    const invoiceEntries = paymentsByInvoice.get(entry.sourceId!) || [];
+    invoiceEntries.push(entry);
+    paymentsByInvoice.set(entry.sourceId!, invoiceEntries);
   });
 
-  const monthStartOffsetBy = (monthsBack: number) => new Date(today.getFullYear(), today.getMonth() - monthsBack, 1);
+  const revenueRecords: DashboardRevenueRecord[] = [];
+  invoices.forEach(invoice => {
+    const hasUnconfirmedSourceJob = invoice.sourceJobs?.some(sourceJob => {
+      const source = jobEntries.find(job => job.id === sourceJob.jobId);
+      return source && source.status !== 'completed' && source.status !== 'invoiced';
+    }) ?? false;
+    if (hasUnconfirmedSourceJob) return;
+
+    const payments = paymentsByInvoice.get(invoice.id) || [];
+    if (payments.length > 0) {
+      payments.forEach(payment => revenueRecords.push({
+        customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
+        date: parseLocalJobDate(payment.entryDate),
+        amount: Number(payment.amount || 0),
+      }));
+    }
+
+    // Bezahlte Alt-Rechnungen können aus der Zeit vor der EÜR-Buchung stammen.
+    // Für diese bleibt das Rechnungsdatum der nachvollziehbare Fallback.
+    if (payments.length === 0 && invoice.status === 'paid') {
+      revenueRecords.push({
+        customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
+        date: parseLocalJobDate(invoice.issueDate),
+        amount: Number(invoice.total || 0),
+      });
+    }
+
+    if (includeUnpaidInvoices && invoice.status !== 'draft' && invoice.status !== 'paid') {
+      const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const openAmount = Math.max(0, Number(invoice.total || 0) - paidAmount);
+      if (openAmount > 0) {
+        revenueRecords.push({
+          customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
+          date: parseLocalJobDate(invoice.issueDate),
+          amount: openAmount,
+        });
+      }
+    }
+  });
+
+  const recordsForYear = (year: number) => revenueRecords.filter(record => record.date.getFullYear() === year);
+  const monthlyRevenueForYear = (year: number) => {
+    const monthly = new Map<string, number>();
+    recordsForYear(year).forEach(record => {
+      const key = monthKeyOf(record.date);
+      monthly.set(key, (monthly.get(key) || 0) + record.amount);
+    });
+    return monthly;
+  };
+  const monthlyRevenue = monthlyRevenueForYear(dashboardYear);
+  const previousYearRevenue = monthlyRevenueForYear(dashboardYear - 1);
   const monthLabelFormat = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' });
   const monthShortFormat = new Intl.DateTimeFormat(locale, { month: 'short' });
 
-  const revenuePoints = Array.from({ length: REVENUE_WINDOW_MONTHS }, (_, index) => {
-    const date = monthStartOffsetBy(REVENUE_WINDOW_MONTHS - 1 - index);
+  const revenuePoints = Array.from({ length: 12 }, (_, month) => {
+    const date = new Date(dashboardYear, month, 1);
     const key = monthKeyOf(date);
-
     return {
       key,
       label: monthLabelFormat.format(date),
@@ -435,12 +513,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     };
   });
 
-  const revenueWindowKeys = new Set(revenuePoints.map(point => point.key));
   const revenueWindowTotal = revenuePoints.reduce((sum, point) => sum + point.value, 0);
-  const previousWindowTotal = Array.from({ length: REVENUE_WINDOW_MONTHS }, (_, index) => {
-    const date = monthStartOffsetBy(REVENUE_WINDOW_MONTHS * 2 - 1 - index);
-    return monthlyRevenue.get(monthKeyOf(date)) || 0;
-  }).reduce((sum, value) => sum + value, 0);
+  const previousWindowTotal = Array.from(previousYearRevenue.values()).reduce((sum, value) => sum + value, 0);
 
   // Ohne Vergleichswert lässt sich keine Veränderung angeben. Dann entfällt die
   // Angabe, statt einen Platzhalter zu zeigen.
@@ -457,10 +531,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   )} %`;
 
   const customerRevenue = new Map<string, number>();
-  invoices.forEach(invoice => {
-    if (!revenueWindowKeys.has(monthKeyOf(new Date(invoice.issueDate)))) return;
-    const name = invoice.customerName?.trim() || 'Ohne Zuordnung';
-    customerRevenue.set(name, (customerRevenue.get(name) || 0) + Number(invoice.total || 0));
+  recordsForYear(dashboardYear).forEach(record => {
+    customerRevenue.set(record.customerName, (customerRevenue.get(record.customerName) || 0) + record.amount);
   });
   const topCustomers = Array.from(customerRevenue.entries())
     .filter(([, revenue]) => revenue > 0)
@@ -532,9 +604,39 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </button>
           <button type="button" onClick={() => onNavigate('jobs', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
             <span className="dashboard-quick-action-icon"><Briefcase className="h-7 w-7" /></span>
-            {terminology.work.newLabel}
+          {terminology.work.newLabel}
           </button>
       </div>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm" aria-label="Dashboard-Auswertung filtern">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Auswertung</h2>
+            <p className="mt-1 text-xs text-gray-500">Bezahlte Rechnungen verwenden das Zahlungsdatum.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              Jahr
+              <select value={dashboardYear} onChange={event => setDashboardYear(Number(event.target.value))} className="form-input min-h-10 w-auto py-1.5">
+                {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={includeUnpaidInvoices}
+              onClick={() => setIncludeUnpaidInvoices(value => !value)}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-primary-custom hover:text-primary-custom"
+            >
+              <span className={`relative h-5 w-9 rounded-full transition-colors ${includeUnpaidInvoices ? 'bg-primary-custom' : 'bg-gray-300'}`} aria-hidden="true">
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${includeUnpaidInvoices ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </span>
+              {includeUnpaidInvoices ? 'Bezahlte und offene' : 'Nur bezahlte Rechnungen'}
+            </button>
+          </div>
+        </div>
+        {includeUnpaidInvoices && <p className="mt-3 text-xs text-gray-500">Offene Rechnungsbeträge werden mit dem Rechnungsdatum berücksichtigt. Entwürfe und nicht bestätigte Aufträge fließen nicht ein.</p>}
+      </section>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Umsatzverlauf */}
@@ -542,13 +644,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardHeader>
             <div className="flex min-w-0 flex-col">
               <MetricValue>{money(revenueWindowTotal)}</MetricValue>
-              <MetricCardDescription>Gesamtumsatz der letzten 12 Monate</MetricCardDescription>
+              <MetricCardDescription>Gesamtumsatz {dashboardYear} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
             </div>
             {revenueDelta !== null && (
               <DeltaBadge
                 value={revenueDelta}
                 formattedValue={formatPercent(revenueDelta)}
-                label="ggü. Vorjahreszeitraum"
+                label="ggü. Vorjahr"
               />
             )}
           </MetricCardHeader>
@@ -557,10 +659,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <RevenueAreaChart
                 points={revenuePoints}
                 formatValue={money}
-                ariaLabel={`Umsatzverlauf der letzten 12 Monate, insgesamt ${money(revenueWindowTotal)}`}
+                ariaLabel={`Umsatzverlauf ${dashboardYear}, insgesamt ${money(revenueWindowTotal)}`}
               />
             ) : (
-              <MetricEmptyState>In den letzten 12 Monaten wurden keine Umsätze erfasst.</MetricEmptyState>
+              <MetricEmptyState>Für {dashboardYear} wurden keine Umsätze erfasst.</MetricEmptyState>
             )}
           </MetricCardContent>
           {company.reportingEnabled && (
@@ -575,7 +677,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardHeader bordered>
             <div className="min-w-0">
               <MetricCardTitle>Top-{terminology.entity.plural}</MetricCardTitle>
-              <MetricCardDescription className="mt-1">Umsatzstärkste der letzten 12 Monate</MetricCardDescription>
+              <MetricCardDescription className="mt-1">Umsatzstärkste {dashboardYear}</MetricCardDescription>
             </div>
           </MetricCardHeader>
           <MetricCardContent className="flex flex-1 flex-col justify-center py-1">
