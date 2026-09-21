@@ -90,6 +90,7 @@ type DisplayedJob = {
 const JOB_STATUS_INDICATOR_WIDTH = 22;
 const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
 const JOBS_PER_PAGE = 50;
+const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
 
 export function JobManagement({ onNavigate, initialFilter, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
@@ -655,7 +656,20 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const handleBulkStatusChange = async (newStatus: JobEntry['status']) => {
     if (selectedJobIds.length === 0) return;
 
-    await runStatusChange([...selectedJobIds], newStatus, true);
+    const jobIds = [...selectedJobIds];
+    if (jobIds.length > BULK_STATUS_CONFIRMATION_THRESHOLD) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Massenänderung bestätigen',
+        message: `Sie sind dabei, den Status von ${jobIds.length} ${jobIds.length === 1 ? terminology.work.singular : terminology.work.plural} auf „${getStatusText(newStatus)}“ zu setzen. Bitte bestätigen Sie die Änderung für alle ausgewählten ${terminology.work.plural}.`,
+        onConfirm: () => {
+          void runStatusChange(jobIds, newStatus, true);
+        },
+      });
+      return;
+    }
+
+    await runStatusChange(jobIds, newStatus, true);
   };
 
   const handleBulkDownload = async () => {

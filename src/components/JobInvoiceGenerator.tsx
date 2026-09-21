@@ -8,7 +8,8 @@ import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
 import { generateJobPDF } from '../utils/pdfGenerator';
 import { generateUUID } from '../utils/uuid';
-import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue } from '../utils/formatters';
+import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue, formatNumber } from '../utils/formatters';
+import { calculateTotalHours } from '../utils/jobUtils';
 import { getTerminology } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiService } from '../services/api';
@@ -421,6 +422,14 @@ export function JobInvoiceGenerator({
     return billableJobs.reduce((sum: number, job: JobEntry) => sum + calculateJobTotal(job), 0);
   };
 
+  const getTotalHours = () => {
+    return billableJobs.reduce((sum: number, job: JobEntry) => sum + calculateTotalHours(job), 0);
+  };
+
+  const getEffectiveHourlyRate = (amount: number, hours: number) => {
+    return hours > 0 ? amount / hours : null;
+  };
+
   const getPreviewInfo = () => {
     switch (generationType) {
       case 'single':
@@ -612,6 +621,14 @@ export function JobInvoiceGenerator({
                 <p className="text-sm text-blue-700">
                   Gesamtbetrag: <strong>{formatCurrency(getTotalAmount())}</strong> (netto)
                 </p>
+                <p className="text-sm text-blue-700">
+                  Effektiver Stundensatz: <strong>
+                    {getEffectiveHourlyRate(getTotalAmount(), getTotalHours()) === null
+                      ? '–'
+                      : `${formatCurrency(getEffectiveHourlyRate(getTotalAmount(), getTotalHours()) || 0)} / h`}
+                  </strong>
+                  {' '}({formatNumber(getTotalHours(), company?.locale || 'de-DE', company?.numberFormat, 1)} Stunden)
+                </p>
               </div>
             </div>
           </div>
@@ -628,6 +645,10 @@ export function JobInvoiceGenerator({
                   const customerTotal = customerJobs
                     .filter(job => includedJobIds.includes(job.id))
                     .reduce((sum, job) => sum + calculateJobTotal(job), 0);
+                  const customerHours = customerJobs
+                    .filter(job => includedJobIds.includes(job.id))
+                    .reduce((sum, job) => sum + calculateTotalHours(job), 0);
+                  const customerHourlyRate = getEffectiveHourlyRate(customerTotal, customerHours);
                   
                   return (
                     <div key={customerId} className="border border-gray-200 rounded-lg p-3 bg-white">
@@ -636,9 +657,14 @@ export function JobInvoiceGenerator({
                           <Users className="h-4 w-4 text-gray-400 mr-2" />
                           <span className="font-medium text-gray-900">{customer?.name}</span>
                         </div>
-                        <span className="text-sm font-medium text-gray-900">
-                          {formatCurrency(customerTotal)}
-                        </span>
+                        <div className="text-right">
+                          <span className="block text-sm font-medium text-gray-900">
+                            {formatCurrency(customerTotal)}
+                          </span>
+                          <span className="block text-xs text-gray-500">
+                            {customerHourlyRate === null ? '–' : `${formatCurrency(customerHourlyRate)} / h`}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="space-y-1">
@@ -659,11 +685,16 @@ export function JobInvoiceGenerator({
                               <span className="truncate text-gray-900">
                                 {job.title}{job.recurrence ? ` - Einheit ${job.recurrence.occurrenceIndex || 1}` : ''}
                               </span>
-                              <span className="text-gray-500">({job.hoursWorked}h)</span>
+                              <span className="text-gray-500">({formatNumber(calculateTotalHours(job), company?.locale || 'de-DE', company?.numberFormat, 1)}h)</span>
                             </label>
-                            <span className={`shrink-0 text-gray-900 ${includedJobIds.includes(job.id) ? '' : 'text-gray-400 line-through'}`}>
-                              {formatCurrency(calculateJobTotal(job))}
-                            </span>
+                            <div className={`shrink-0 text-right ${includedJobIds.includes(job.id) ? 'text-gray-900' : 'text-gray-400'}`}>
+                              <span className="block">{formatCurrency(calculateJobTotal(job))}</span>
+                              <span className={`block text-xs ${includedJobIds.includes(job.id) ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {getEffectiveHourlyRate(calculateJobTotal(job), calculateTotalHours(job)) === null
+                                  ? '–'
+                                  : `${formatCurrency(getEffectiveHourlyRate(calculateJobTotal(job), calculateTotalHours(job)) || 0)} / h`}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
