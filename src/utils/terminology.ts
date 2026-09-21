@@ -165,3 +165,8 @@ export function getTerminology(profile?: string | null): TerminologyDefinition {
   }
   return profileDefinitions.customers;
 }
+
+/** Formatiert Zähler mit der passenden deutschen Singular-/Pluralform. */
+export function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}

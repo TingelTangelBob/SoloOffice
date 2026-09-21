@@ -5,6 +5,7 @@ import { apiService } from '../services/api';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency } from '../utils/formatters';
 import { toDateInputValue } from '../utils/invoicePeriod';
+import { formatCountLabel } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { LocalizedDateInput } from './LocalizedDateInput';
 
@@ -84,7 +85,7 @@ export function InvoiceBulkPaymentDialog({ invoices, onClose, onSaved }: Invoice
       titleId="invoice-bulk-payment-dialog-title"
       icon={Banknote}
       title="Zahlungseingänge erfassen"
-      description={`${payableInvoices.length} Rechnungen · vollständige offene Beträge buchen`}
+      description={`${formatCountLabel(payableInvoices.length, 'Rechnung', 'Rechnungen')} · vollständige offene Beträge buchen`}
       onClose={saving ? () => {} : onClose}
       onSubmit={submit}
       size="lg"
@@ -109,7 +110,7 @@ export function InvoiceBulkPaymentDialog({ invoices, onClose, onSaved }: Invoice
 
         {skippedCount > 0 && (
           <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-            {skippedCount} Auswahl(en) werden übersprungen, weil sie noch ein Entwurf oder bereits vollständig bezahlt sind.
+            {formatCountLabel(skippedCount, 'Auswahl', 'Auswahlen')} {skippedCount === 1 ? 'wird' : 'werden'} übersprungen, weil sie Entwürfe oder bereits vollständig bezahlt sind.
           </p>
         )}
 

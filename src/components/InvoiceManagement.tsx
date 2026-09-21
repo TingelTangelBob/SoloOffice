@@ -27,7 +27,7 @@ import { InvoicePaymentDialog } from './InvoicePaymentDialog';
 import { InvoiceBulkPaymentDialog } from './InvoiceBulkPaymentDialog';
 import { DocumentOrigin } from './DocumentOrigin';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
@@ -66,7 +66,7 @@ const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
 const INVOICES_PER_PAGE = 50;
 
 export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, initialCustomerId, onNavigate }: InvoiceManagementProps = {}) {
-  const { notify } = useFeedback();
+  const { notify, startBackgroundTask, updateBackgroundTask } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
   const { customers, addCustomer } = useCustomers();
@@ -206,7 +206,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       }
       
       if (overdueUpdates.length > 0) {
-        logger.debug(`${overdueUpdates.length} Rechnungen wurden automatisch als überfällig markiert.`);
+        logger.debug(`${formatCountLabel(overdueUpdates.length, 'Rechnung', 'Rechnungen')} wurden automatisch als überfällig markiert.`);
       }
     };
 
@@ -499,7 +499,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           }
         }
         
-        notify({ variant: errorCount > 0 ? 'warning' : 'success', message: `${successCount} Rechnung(en) erfolgreich heruntergeladen.${errorCount > 0 ? ` ${errorCount} mit Fehler.` : ''}` });
+        notify({ variant: errorCount > 0 ? 'warning' : 'success', message: `${formatCountLabel(successCount, 'Rechnung', 'Rechnungen')} erfolgreich heruntergeladen.${errorCount > 0 ? ` ${errorCount} mit Fehler.` : ''}` });
         
         // Clear selection and close modal
         setSelectedInvoiceIds([]);
@@ -733,8 +733,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           errorCount > 0 ? `${errorCount} mit Fehler` : '',
         ].filter(Boolean).join(', ');
         const summary = successCount === 0
-          ? `Keine der ${emailModal.bulkInvoices.length} Rechnungen konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.`
-          : `${successCount} Rechnung(en) erfolgreich versendet (${formatLabels.join(', ')})${attachmentInfo}.${failedCount > 0 ? ` ${failureInfo}.` : ''}`;
+          ? `Keine der ${formatCountLabel(emailModal.bulkInvoices.length, 'Rechnung', 'Rechnungen')} konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.`
+          : `${formatCountLabel(successCount, 'Rechnung', 'Rechnungen')} erfolgreich versendet (${formatLabels.join(', ')})${attachmentInfo}.${failedCount > 0 ? ` ${failureInfo}.` : ''}`;
         notify({ variant: successCount === 0 ? 'error' : failedCount > 0 ? 'warning' : 'success', message: summary });
         
         // Clear selection and close modal
@@ -990,14 +990,26 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
 
   const applyBulkStatusChange = async (invoiceIds: string[], newStatus: Invoice['status']) => {
     setIsBulkOperation(true);
+    const taskId = startBackgroundTask({
+      title: 'Rechnungsstatus wird geändert',
+      detail: `${formatCountLabel(invoiceIds.length, 'Rechnung', 'Rechnungen')} werden verarbeitet …`,
+      page: 'invoices',
+    });
     try {
-      for (const invoiceId of invoiceIds) {
-        await updateInvoice(invoiceId, { status: newStatus });
-      }
+      const result = await apiService.updateInvoiceStatuses(invoiceIds, newStatus);
+      await refreshInvoices();
       setSelectedInvoiceIds([]);
-      notify({ variant: 'success', message: `${invoiceIds.length} Rechnung(en) erfolgreich aktualisiert.` });
+      updateBackgroundTask(taskId, {
+        status: 'success',
+        detail: `${formatCountLabel(result.updatedIds.length, 'Rechnung', 'Rechnungen')} erfolgreich aktualisiert.`,
+        progress: 100,
+      });
     } catch (error) {
       logger.error('Error updating invoice statuses:', error);
+      updateBackgroundTask(taskId, {
+        status: 'error',
+        detail: error instanceof Error ? error.message : 'Die Statusänderung konnte nicht abgeschlossen werden.',
+      });
       notify({ variant: 'error', message: 'Fehler beim Aktualisieren der Rechnungen.' });
     } finally {
       setIsBulkOperation(false);
@@ -1017,7 +1029,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       setConfirmModal({
         isOpen: true,
         title: 'Status vieler Rechnungen ändern',
-        message: `Sie ändern den Status von ${invoiceIds.length} Rechnungen auf „${getStatusLabel(newStatus)}“. Diese Änderung wird für alle ausgewählten Rechnungen ausgeführt. Möchten Sie fortfahren?`,
+        message: `Sie ändern den Status von ${formatCountLabel(invoiceIds.length, 'Rechnung', 'Rechnungen')} auf „${getStatusLabel(newStatus)}“. Diese Änderung wird für alle ausgewählten Rechnungen ausgeführt. Möchten Sie fortfahren?`,
         onConfirm: () => {
           void applyBulkStatusChange(invoiceIds, newStatus);
         },

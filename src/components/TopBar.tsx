@@ -161,9 +161,9 @@ export function TopBar({
                 <span className="block truncate text-xs text-gray-500">{notice.detail}</span>
               </ActionMenuItem>
             ))
-          ) : (
-            <p className="px-3 pb-2 pt-1 text-sm text-gray-500">Zurzeit nichts zu tun.</p>
-          )}
+          ) : backgroundTasks.length === 0 ? (
+            <p className="px-3 pb-2 pt-1 text-sm text-gray-500">Keine offenen Hinweise.</p>
+          ) : null}
         </ActionMenu>
       </div>
     </header>

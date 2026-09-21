@@ -3,6 +3,7 @@ import { Check, Copy, Plus, Save, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '../types';
 import { PageHeader } from './PageHeader';
+import { formatCountLabel } from '../utils/terminology';
 
 const roleLabels: Record<WorkspaceRole, string> = {
   owner: 'Eigentümer',
@@ -194,7 +195,7 @@ export function WorkspaceManagement() {
               </div>
             </form>
             {latestInviteLink && <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-800"><p className="font-medium">Einladungslink einmalig kopieren und sicher übermitteln:</p><div className="mt-2 flex items-center gap-2"><code className="min-w-0 flex-1 break-all">{latestInviteLink}</code><button type="button" onClick={copyInvite} title="Kopieren" className="rounded p-1 hover:bg-blue-100"><Copy className="h-4 w-4" /></button></div></div>}
-            {invitations.length > 0 && <p className="mt-3 text-xs text-gray-500">{invitations.filter(invitation => !invitation.acceptedAt).length} offene Einladung(en)</p>}
+            {invitations.length > 0 && <p className="mt-3 text-xs text-gray-500">{formatCountLabel(invitations.filter(invitation => !invitation.acceptedAt).length, 'offene Einladung', 'offene Einladungen')}</p>}
           </section>
         </div>
       ) : (

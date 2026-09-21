@@ -18,7 +18,7 @@ import { formatCurrency, formatDate, formatNumber, getCurrencySymbol } from '../
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { LocalizedDateInput } from './LocalizedDateInput';
 import { LocalizedTimeInput } from './LocalizedTimeInput';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { getIsoWeekday, getJobRecurrenceDates, getRecurrenceWeekdayLabel, RECURRENCE_WEEKDAYS } from '../utils/jobRecurrence';
 import { DialogShell } from './DialogShell';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
@@ -1231,7 +1231,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs leading-4 text-blue-900 sm:text-sm">
                   <strong>Vorschau:</strong>{' '}
                   {recurrenceWeekdays.length > 0
-                    ? `${recurrencePreviewDescription} = ${recurrenceUnitCount} Einheiten`
+                    ? `${recurrencePreviewDescription} = ${formatCountLabel(recurrenceUnitCount, 'Einheit', 'Einheiten')}`
                     : 'Bitte mindestens einen Wochentag w\u00e4hlen.'}
                 </div>
             </div>

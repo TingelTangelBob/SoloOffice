@@ -37,6 +37,14 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   Hintergrund weiter und zeigen den Fortschritt in der Glocke an.
 - Massenstatusänderungen von mehr als zehn Rechnungen verlangen jetzt eine
   Bestätigung.
+- Zählertexte verwenden jetzt korrekte Singular- und Pluralformen. Während
+  laufender Hintergrundaufgaben zeigt der Hinweisbereich keinen widersprüchlichen
+  Leerstatus mehr.
+- Die Serverauslastung großer Rechnungsläufe sowie die aktuelle clientseitige
+  Verarbeitung und ihr nächster sinnvoller Skalierungsschritt sind in den
+  Betriebsunterlagen dokumentiert.
+- Massenänderungen von Rechnungsstatus werden atomar über eine Sammelanfrage
+  verarbeitet und zeigen ihren Fortschritt bzw. Abschluss in der Glocke an.
 
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 

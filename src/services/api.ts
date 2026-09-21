@@ -424,6 +424,13 @@ class ApiService {
     });
   }
 
+  async updateInvoiceStatuses(ids: string[], status: Invoice['status']): Promise<{ updatedIds: string[]; updatedAt: string | null }> {
+    return this.request<{ updatedIds: string[]; updatedAt: string | null }>('/invoices/bulk-status', {
+      method: 'PATCH',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
+
   async recordInvoicePayment(id: string, payment: InvoicePaymentPayload): Promise<InvoicePaymentResult> {
     return this.request<InvoicePaymentResult>(`/invoices/${id}/payments`, {
       method: 'POST',

@@ -30,6 +30,30 @@ Archiv ist dafür nicht nötig. Der direkte Archivtransfer zu Staging benötigt
 ebenfalls eine explizite Netzwerkfreigabe, weil dabei Quellcode an den Server
 übertragen wird.
 
+## Lastprüfung bei großen Rechnungsläufen
+
+Am 21.09.2026 wurde die Staging-Maschine bei der Analyse eines großen
+Rechnungslaufs mit sechs Messpunkten über rund eine Minute beobachtet. Der Host
+hat 4 vCPU; die Systemlast sank dabei von `0,52` auf `0,19` (1-Minuten-Wert).
+Das Backend lag bei etwa `57 MiB` von `1 GiB`, PostgreSQL bei etwa `69 MiB` von
+`768 MiB`. Backend und Datenbank lagen fast durchgehend nahe `0 %` CPU; ein
+kurzer Backend-Peak von `15,67 %` blieb ohne erkennbare Auswirkung auf die
+Hostlast.
+
+Zusätzlich wurden Speicher und Containerzustand geprüft: etwa `4,5 GiB` RAM
+waren verfügbar, rund `49 GiB` Speicher frei und der Swap praktisch ungenutzt.
+Es gab keine lang laufende oder blockierte Datenbankabfrage. Eine direkte
+Zählung der Fachtabellen ist ohne Workspace-Anfragekontext wegen aktivem und
+erzwungenem RLS nicht aussagekräftig.
+
+Die Verarbeitung von 494 Rechnungen ist aktuell vor allem durch den Browser
+begrenzt: Pro Rechnung wird ein eigener API-Aufruf ausgeführt, vorher wird
+clientseitig ein PDF erzeugt und zwischen den Aufrufen liegen bewusst 300 ms.
+Das schützt das API-Limit, verlängert den Lauf aber auf mindestens rund 2,5
+Minuten plus PDF-Erzeugung. Für deutlich größere Mengen wäre eine serverseitige
+Sammelerstellung mit einer gemeinsamen Transaktion und optionaler
+Hintergrundwarteschlange der nächste sinnvolle Performance-Schritt.
+
 SoloOffice kann eine laufende Self-Hosting-Instanz technisch prüfen, ohne sich
 anzumelden oder Fachdaten zu verändern:
 

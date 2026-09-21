@@ -19,7 +19,7 @@ import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
 import { usePageSearch } from '../context/PageSearchContext';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { BulkSelectionHeader } from './BulkSelectionHeader';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
@@ -321,7 +321,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       }
       await loadQuotes();
       setSelectedQuoteIds([]);
-      notify({ variant: 'success', message: `${selectedQuoteIds.length} Angebot(e) erfolgreich aktualisiert.` });
+      notify({ variant: 'success', message: `${formatCountLabel(selectedQuoteIds.length, 'Angebot', 'Angebote')} erfolgreich aktualisiert.` });
     } catch (error) {
       logger.error('Error updating quote statuses:', error);
       notify({ variant: 'error', message: 'Fehler beim Aktualisieren der Angebote.' });
@@ -365,7 +365,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           }
         }
       }
-      notify({ variant: 'success', message: `${selectedQuoteIds.length} Angebot(e) erfolgreich heruntergeladen.` });
+      notify({ variant: 'success', message: `${formatCountLabel(selectedQuoteIds.length, 'Angebot', 'Angebote')} erfolgreich heruntergeladen.` });
     } catch (error) {
       logger.error('Error downloading quotes:', error);
       notify({ variant: 'error', message: 'Fehler beim Herunterladen der Angebote.' });
@@ -596,11 +596,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           errorCount > 0 ? `${errorCount} mit Fehler` : '',
         ].filter(Boolean).join(', ');
         if (successCount === 0) {
-          notify({ variant: 'error', message: `Keine der ${emailModal.bulkQuotes.length} Angebote konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.` });
+          notify({ variant: 'error', message: `Keine der ${formatCountLabel(emailModal.bulkQuotes.length, 'Angebot', 'Angebote')} konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.` });
         } else if (failedCount > 0) {
-          notify({ variant: 'warning', message: `${successCount} Angebote versendet; ${failureInfo}.` });
+          notify({ variant: 'warning', message: `${formatCountLabel(successCount, 'Angebot', 'Angebote')} versendet; ${failureInfo}.` });
         } else {
-          notify({ variant: 'success', message: `Alle ${successCount} Angebote erfolgreich per E-Mail versendet!` });
+          notify({ variant: 'success', message: `Alle ${formatCountLabel(successCount, 'Angebot', 'Angebote')} erfolgreich per E-Mail versendet!` });
         }
         
         setEmailModal({ isOpen: false, quote: null, customer: null, isBulkMode: false, bulkQuotes: [] });

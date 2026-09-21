@@ -10,7 +10,7 @@ import { generateJobPDF } from '../utils/pdfGenerator';
 import { generateUUID } from '../utils/uuid';
 import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue, formatNumber } from '../utils/formatters';
 import { calculateTotalHours } from '../utils/jobUtils';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiService } from '../services/api';
 import { useFeedback } from '../context/FeedbackContext';
@@ -173,7 +173,7 @@ export function JobInvoiceGenerator({
     const totalInvoiceBatches = getInvoiceBatchCount();
     const taskId = startBackgroundTask({
       title: 'Rechnungserstellung läuft',
-      detail: `0 von ${totalInvoiceBatches} Rechnung(en) erstellt.`,
+      detail: `0 von ${formatCountLabel(totalInvoiceBatches, 'Rechnung', 'Rechnungen')} erstellt.`,
       progress: 0,
       page: 'invoices',
     });
@@ -183,7 +183,7 @@ export function JobInvoiceGenerator({
       try {
         const createdInvoices = await generateInvoices((processed, total) => {
           updateBackgroundTask(taskId, {
-            detail: `${processed} von ${total} Rechnung(en) erstellt.`,
+            detail: `${processed} von ${formatCountLabel(total, 'Rechnung', 'Rechnungen')} erstellt.`,
             progress: total > 0 ? (processed / total) * 100 : 100,
           });
         });
@@ -193,7 +193,7 @@ export function JobInvoiceGenerator({
         await Promise.all([refreshInvoices(), refreshJobEntries()]);
         updateBackgroundTask(taskId, {
           status: 'success',
-          detail: `${createdInvoices.length} Rechnung(en) erfolgreich erstellt.`,
+          detail: `${formatCountLabel(createdInvoices.length, 'Rechnung', 'Rechnungen')} erfolgreich erstellt.`,
           progress: 100,
         });
       } catch (error) {
@@ -521,9 +521,9 @@ export function JobInvoiceGenerator({
   const getPreviewInfo = () => {
     switch (generationType) {
       case 'single':
-        return `${billableJobs.length} Rechnung(en) werden erstellt (eine pro ${terminology.work.singular})`;
+        return `${formatCountLabel(billableJobs.length, 'Rechnung', 'Rechnungen')} ${billableJobs.length === 1 ? 'wird' : 'werden'} erstellt (eine pro ${terminology.work.singular})`;
       case 'course':
-        return `${Object.keys(jobsByCustomer).length} Rechnung(en) werden erstellt (eine für den gesamten Kurs)`;
+        return `${formatCountLabel(Object.keys(jobsByCustomer).length, 'Rechnung', 'Rechnungen')} ${Object.keys(jobsByCustomer).length === 1 ? 'wird' : 'werden'} erstellt (eine für den gesamten Kurs)`;
       case 'daily': {
         const completedJobsByDate = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
           const dateKey = new Date(job.date).toDateString();
@@ -533,7 +533,7 @@ export function JobInvoiceGenerator({
           acc[dateKey].push(job);
           return acc;
         }, {} as Record<string, JobEntry[]>);
-        return `${Object.keys(completedJobsByDate).length} Rechnung(en) werden erstellt (eine pro Tag)`;
+        return `${formatCountLabel(Object.keys(completedJobsByDate).length, 'Rechnung', 'Rechnungen')} ${Object.keys(completedJobsByDate).length === 1 ? 'wird' : 'werden'} erstellt (eine pro Tag)`;
       }
       case 'weekly': {
         const completedJobsByWeek = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
@@ -552,7 +552,7 @@ export function JobInvoiceGenerator({
           acc[weekKey].push(job);
           return acc;
         }, {} as Record<string, JobEntry[]>);
-        return `${Object.keys(completedJobsByWeek).length} Rechnung(en) werden erstellt (eine pro Woche)`;
+        return `${formatCountLabel(Object.keys(completedJobsByWeek).length, 'Rechnung', 'Rechnungen')} ${Object.keys(completedJobsByWeek).length === 1 ? 'wird' : 'werden'} erstellt (eine pro Woche)`;
       }
       case 'monthly': {
         const completedJobsByMonth = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
@@ -564,7 +564,7 @@ export function JobInvoiceGenerator({
           acc[monthKey].push(job);
           return acc;
         }, {} as Record<string, JobEntry[]>);
-        return `${Object.keys(completedJobsByMonth).length} Rechnung(en) werden erstellt (eine pro Monat)`;
+        return `${formatCountLabel(Object.keys(completedJobsByMonth).length, 'Rechnung', 'Rechnungen')} ${Object.keys(completedJobsByMonth).length === 1 ? 'wird' : 'werden'} erstellt (eine pro Monat)`;
       }
       default:
         return '';
@@ -658,7 +658,7 @@ export function JobInvoiceGenerator({
                 <h4 className="text-sm font-medium text-blue-900">Vorschau</h4>
                 <p className="text-sm text-blue-700 mt-1">{getPreviewInfo()}</p>
                 <p className="text-sm text-blue-700">
-                  {billableJobs.length} Einheit(en) geprüft; jede Einheit wird als eigene Rechnungsposition übernommen.
+                  {formatCountLabel(billableJobs.length, 'Einheit', 'Einheiten')} geprüft; jede Einheit wird als eigene Rechnungsposition übernommen.
                 </p>
                 <p className="text-sm text-blue-700">
                   Gesamtbetrag: <strong>{formatCurrency(getTotalAmount())}</strong> (netto)
@@ -773,7 +773,7 @@ export function JobInvoiceGenerator({
               className="btn-primary text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm disabled:opacity-50"
             >
               <FileText className="h-4 w-4" />
-              <span>{getPreviewInfo().split(' ')[0]} Rechnung(en) erstellen</span>
+              <span>{formatCountLabel(getInvoiceBatchCount(), 'Rechnung', 'Rechnungen')} erstellen</span>
             </button>
           </div>
         </div>
@@ -781,7 +781,7 @@ export function JobInvoiceGenerator({
       <ConfirmationModal
         isOpen={showFinalConfirmation}
         title="Rechnungseinheiten bestätigen"
-        message={`${billableJobs.length} ausgewählte Einheit(en) werden nach der Prüfung als Rechnungspositionen übernommen. Gesamtbetrag netto: ${formatCurrency(getTotalAmount())}. Danach werden diese Einheiten als abgerechnet markiert.`}
+        message={`${formatCountLabel(billableJobs.length, 'ausgewählte Einheit', 'ausgewählte Einheiten')} ${billableJobs.length === 1 ? 'wird' : 'werden'} nach der Prüfung als Rechnungsposition${billableJobs.length === 1 ? '' : 'en'} übernommen. Gesamtbetrag netto: ${formatCurrency(getTotalAmount())}. Danach ${billableJobs.length === 1 ? 'wird diese Einheit' : 'werden diese Einheiten'} als abgerechnet markiert.`}
         confirmText="Rechnungen erstellen"
         onConfirm={confirmGenerate}
         onClose={() => setShowFinalConfirmation(false)}

@@ -1,5 +1,6 @@
 import { ArrowUpRight } from 'lucide-react';
 import type { Invoice } from '../types';
+import { formatCountLabel } from '../utils/terminology';
 
 interface DocumentOriginProps {
   invoice: Invoice;
@@ -31,7 +32,7 @@ export function DocumentOrigin({ invoice, onNavigate }: DocumentOriginProps) {
     const firstJob = invoice.sourceJobs?.[0];
     links.push({
       key: 'jobs',
-      label: jobCount === 1 && firstJob?.jobNumber ? `aus ${firstJob.jobNumber}` : `aus ${jobCount} Einheiten`,
+      label: jobCount === 1 && firstJob?.jobNumber ? `aus ${firstJob.jobNumber}` : `aus ${formatCountLabel(jobCount, 'Einheit', 'Einheiten')}`,
       page: 'jobs',
       searchTerm: jobCount === 1 ? firstJob?.jobNumber : undefined,
     });

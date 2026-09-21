@@ -5,6 +5,8 @@ import { createInvoice, updateInvoice, deleteInvoice } from '../services/invoice
 import { pool, query } from '../database.js';
 
 const router = express.Router();
+const INVOICE_STATUSES = new Set(['draft', 'sent', 'paid', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Get all invoices
 router.get('/', async (req, res) => {
@@ -114,6 +116,82 @@ router.post('/from-jobs', async (req, res) => {
     }
     if (error.message === 'Customer not found') return res.status(400).json({ error: error.message });
     res.status(500).json({ error: 'Failed to create invoice from jobs' });
+  }
+});
+
+// Mehrere Rechnungsstatus in einer atomaren Anfrage ändern. Eine einzelne
+// Anfrage verhindert, dass große Auswahlen das API-Rate-Limit durch hunderte
+// Einzelupdates überschreiten.
+router.patch('/bulk-status', async (req, res) => {
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = [...new Set(rawIds.filter((id) => typeof id === 'string').map((id) => id.trim()))];
+  const status = typeof req.body?.status === 'string' ? req.body.status : '';
+
+  if (ids.length === 0 || ids.length > 1000 || ids.some((id) => !UUID_PATTERN.test(id))) {
+    return res.status(400).json({ error: 'Ungültige Rechnungsauswahl.' });
+  }
+  if (!INVOICE_STATUSES.has(status)) {
+    return res.status(400).json({ error: 'Ungültiger Rechnungsstatus.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const currentResult = await client.query(
+      `SELECT id, status, document_type
+       FROM invoices
+       WHERE id = ANY($1::uuid[])
+       FOR UPDATE`,
+      [ids],
+    );
+    const currentInvoices = currentResult.rows;
+    const currentIds = new Set(currentInvoices.map((invoice) => invoice.id));
+    const missingIds = ids.filter((id) => !currentIds.has(id));
+    if (missingIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Mindestens eine Rechnung wurde nicht gefunden.', missingIds });
+    }
+
+    const creditNoteIds = currentInvoices
+      .filter((invoice) => invoice.document_type === 'credit_note')
+      .map((invoice) => invoice.id);
+    if (creditNoteIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Gutschriften müssen separat verwaltet werden.', creditNoteIds });
+    }
+
+    const draftDowngradeIds = currentInvoices
+      .filter((invoice) => invoice.status !== 'draft' && status === 'draft')
+      .map((invoice) => invoice.id);
+    if (draftDowngradeIds.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Ausgestellte Rechnungen können nicht wieder zu Entwürfen zurückgesetzt werden.',
+        draftDowngradeIds,
+      });
+    }
+
+    const result = await client.query(
+      `UPDATE invoices
+       SET status = $1, updated_at = NOW()
+       WHERE id = ANY($2::uuid[])
+       RETURNING id, updated_at`,
+      [status, ids],
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      message: `${result.rows.length} Rechnungen erfolgreich aktualisiert.`,
+      updatedIds: result.rows.map((row) => row.id),
+      updatedAt: result.rows[0]?.updated_at || null,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Error updating invoice statuses in bulk:', error);
+    res.status(500).json({ error: 'Die Statusänderung konnte nicht abgeschlossen werden.' });
+  } finally {
+    client.release();
   }
 });
 

@@ -4,7 +4,7 @@ import { Invoice } from '../types';
 import { formatFileSize, getFileIcon } from '../utils/fileUtils';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 
 interface DownloadModalProps {
@@ -73,7 +73,7 @@ export function DownloadModal({
       titleId="download-invoices-dialog-title"
       icon={Download}
       title={isBulkMode ? 'Rechnungen herunterladen' : 'Rechnung herunterladen'}
-      description={isBulkMode ? `${bulkCount} Rechnungen ausgewählt` : `${invoice.invoiceNumber} · ${invoice.customerName}`}
+      description={isBulkMode ? `${formatCountLabel(bulkCount, 'Rechnung', 'Rechnungen')} ausgewählt` : `${invoice.invoiceNumber} · ${invoice.customerName}`}
       onClose={isLoading ? () => {} : onClose}
       size={isBulkMode ? 'lg' : 'md'}
       fitContent

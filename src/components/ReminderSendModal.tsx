@@ -10,7 +10,7 @@ import { apiService } from '../services/api';
 import logger from '../utils/logger';
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
-import { getTerminology } from '../utils/terminology';
+import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
 import { getReminderTextForStage } from '../utils/documentTextTemplates';
 
@@ -327,7 +327,7 @@ export function ReminderSendModal({
       }
 
       if (successCount > 0) {
-        notify({ variant: 'success', message: `${successCount} Mahnung(en) erfolgreich versendet!` });
+        notify({ variant: 'success', message: `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} erfolgreich versendet!` });
         onSuccess();
         onClose();
       } else {
