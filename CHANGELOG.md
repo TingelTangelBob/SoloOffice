@@ -14,6 +14,10 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   Bestätigungsaktion zuverlässig an.
 - Firmendaten verwenden eindeutige Browser-Autofill-Zuordnungen.
 - Die Importzuordnung nutzt eine zurückhaltende, workspace-farbige Darstellung.
+- Große Rechnungserstellungen laufen nach dem Schließen des Dialogs im
+  Hintergrund weiter und zeigen den Fortschritt in der Glocke an.
+- Massenstatusänderungen von mehr als zehn Rechnungen verlangen jetzt eine
+  Bestätigung.
 
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 

@@ -852,14 +852,6 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
           setShowInvoiceGenerator(false);
           setSelectedJobIds([]);
         }}
-        onInvoiceGenerated={(createdInvoices) => {
-          setShowInvoiceGenerator(false);
-          setSelectedJobIds([]);
-          const createdInvoice = createdInvoices.length === 1 ? createdInvoices[0] : undefined;
-          if (createdInvoice) {
-            onNavigate?.('invoices', 'all', undefined, createdInvoice.id);
-          }
-        }}
       />
     );
   }

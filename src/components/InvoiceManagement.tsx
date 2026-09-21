@@ -61,6 +61,8 @@ const INVOICE_TABLE_LAYOUT = listTableLayout({
   statusDotWidth: 32,
 });
 
+const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
+
 export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInvoiceId, initialCustomerId, onNavigate }: InvoiceManagementProps = {}) {
   const { notify } = useFeedback();
   const { can } = useAuth();
@@ -964,27 +966,44 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   };
 
-  const handleBulkStatusChange = async (newStatus: Invoice['status']) => {
-    if (!canWrite) {
-      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
-      return;
-    }
-
-    if (selectedInvoiceIds.length === 0) return;
-    
+  const applyBulkStatusChange = async (invoiceIds: string[], newStatus: Invoice['status']) => {
     setIsBulkOperation(true);
     try {
-      for (const invoiceId of selectedInvoiceIds) {
+      for (const invoiceId of invoiceIds) {
         await updateInvoice(invoiceId, { status: newStatus });
       }
       setSelectedInvoiceIds([]);
-      notify({ variant: 'success', message: `${selectedInvoiceIds.length} Rechnung(en) erfolgreich aktualisiert.` });
+      notify({ variant: 'success', message: `${invoiceIds.length} Rechnung(en) erfolgreich aktualisiert.` });
     } catch (error) {
       logger.error('Error updating invoice statuses:', error);
       notify({ variant: 'error', message: 'Fehler beim Aktualisieren der Rechnungen.' });
     } finally {
       setIsBulkOperation(false);
     }
+  };
+
+  const handleBulkStatusChange = (newStatus: Invoice['status']) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+
+    if (selectedInvoiceIds.length === 0) return;
+
+    const invoiceIds = [...selectedInvoiceIds];
+    if (invoiceIds.length > BULK_STATUS_CONFIRMATION_THRESHOLD) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Status vieler Rechnungen ändern',
+        message: `Sie ändern den Status von ${invoiceIds.length} Rechnungen auf „${getStatusLabel(newStatus)}“. Diese Änderung wird für alle ausgewählten Rechnungen ausgeführt. Möchten Sie fortfahren?`,
+        onConfirm: () => {
+          void applyBulkStatusChange(invoiceIds, newStatus);
+        },
+      });
+      return;
+    }
+
+    void applyBulkStatusChange(invoiceIds, newStatus);
   };
 
   const handleBulkEmail = async () => {

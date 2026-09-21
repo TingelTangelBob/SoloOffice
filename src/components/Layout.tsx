@@ -18,6 +18,7 @@ import { isDemoMode } from '../services/demoApi';
 import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
 import { useSupportAvailability } from '../hooks/useSupportAvailability';
+import { useFeedback } from '../context/FeedbackContext';
 
 interface LayoutProps {
   children: ReactNode;
@@ -87,6 +88,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
   const { user, workspace, logout } = useAuth();
+  const { backgroundTasks, dismissBackgroundTask } = useFeedback();
   // Ticket-Support nur im gehosteten Betrieb; Self-Hoster sehen den Punkt nicht.
   const supportAvailable = useSupportAvailability();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -738,6 +740,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               isSidebarCompact={isSidebarCompact}
               onToggleSidebar={toggleSidebar}
               notices={topBarNotices}
+              backgroundTasks={backgroundTasks}
+              onDismissBackgroundTask={dismissBackgroundTask}
               onNavigate={handlePageChange}
               onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
             />

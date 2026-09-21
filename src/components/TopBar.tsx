@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { Bell, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { AlertCircle, Bell, CheckCircle2, Loader2, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import type { BackgroundTask } from '../context/FeedbackContext';
 
 export interface TopBarNotice {
   id: string;
@@ -15,6 +16,8 @@ interface TopBarProps {
   isSidebarCompact: boolean;
   onToggleSidebar: () => void;
   notices: TopBarNotice[];
+  backgroundTasks: BackgroundTask[];
+  onDismissBackgroundTask: (id: string) => void;
   onNavigate: (page: string) => void;
   onOpenMobileMenu: () => void;
 }
@@ -42,10 +45,12 @@ export function TopBar({
   isSidebarCompact,
   onToggleSidebar,
   notices,
+  backgroundTasks,
+  onDismissBackgroundTask,
   onNavigate,
   onOpenMobileMenu,
 }: TopBarProps) {
-  const noticeCount = notices.length;
+  const noticeCount = notices.length + backgroundTasks.length;
 
   /* Titel und Seitenaktionen teilen sich den Platz neben der Suche zu
      gleichen Teilen – ab `xl` außer die Aktionen brauchen mehr: Dann ist die
@@ -113,6 +118,37 @@ export function TopBar({
           <p className="px-3 pb-1 pt-2 text-xs font-medium text-gray-500">
             {noticeCount > 0 ? 'Offene Hinweise' : 'Hinweise'}
           </p>
+          {backgroundTasks.map((task) => {
+            const TaskIcon = task.status === 'running'
+              ? Loader2
+              : task.status === 'success'
+                ? CheckCircle2
+                : AlertCircle;
+            return (
+              <div key={task.id} className="topbar-background-task">
+                <div className="flex min-w-0 items-start gap-2">
+                  <TaskIcon className={`mt-0.5 h-4 w-4 shrink-0 ${task.status === 'error' ? 'text-red-500' : task.status === 'success' ? 'text-green-500' : 'text-primary-custom'} ${task.status === 'running' ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{task.title}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{task.detail}</p>
+                    {task.progress != null && (
+                      <div className="topbar-task-progress mt-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress}>
+                        <span style={{ width: `${task.progress}%` }} />
+                      </div>
+                    )}
+                    {task.status !== 'running' && task.page && (
+                      <button type="button" className="mt-2 text-xs font-medium text-primary-custom hover:underline" onClick={() => onNavigate(task.page || 'invoices')}>
+                        Rechnungen öffnen
+                      </button>
+                    )}
+                  </div>
+                  <button type="button" className="topbar-task-dismiss" aria-label="Hinweis schließen" title="Hinweis schließen" onClick={() => onDismissBackgroundTask(task.id)}>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
           {notices.length > 0 ? (
             notices.map((notice) => (
               <ActionMenuItem

@@ -16,11 +16,40 @@ export interface NotifyOptions {
   message: string;
 }
 
+export type BackgroundTaskStatus = 'running' | 'success' | 'error';
+
+export interface BackgroundTask {
+  id: string;
+  title: string;
+  detail: string;
+  progress?: number;
+  status: BackgroundTaskStatus;
+  page?: string;
+}
+
+export interface BackgroundTaskOptions {
+  title: string;
+  detail: string;
+  progress?: number;
+  page?: string;
+}
+
+export interface BackgroundTaskUpdate {
+  detail?: string;
+  progress?: number;
+  status?: BackgroundTaskStatus;
+}
+
 export interface FeedbackContextValue {
   /** Öffnet eine gestaltete Rückfrage und liefert die Entscheidung. */
   confirm: (options: ConfirmOptions) => Promise<boolean>;
   /** Zeigt eine kurze Rückmeldung am oberen Rand an. */
   notify: (options: NotifyOptions) => void;
+  /** Legt einen langlebigen Fortschrittseintrag für die Glocke an. */
+  backgroundTasks: BackgroundTask[];
+  startBackgroundTask: (options: BackgroundTaskOptions) => string;
+  updateBackgroundTask: (id: string, update: BackgroundTaskUpdate) => void;
+  dismissBackgroundTask: (id: string) => void;
 }
 
 export const FeedbackContext = createContext<FeedbackContextValue | null>(null);

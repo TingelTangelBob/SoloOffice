@@ -29,24 +29,21 @@ const wait = (milliseconds: number) => new Promise<void>(resolve => {
 interface JobInvoiceGeneratorProps {
   selectedJobIds: string[];
   onClose: () => void;
-  onInvoiceGenerated: (invoices: Invoice[]) => void;
   initialGenerationType?: JobInvoiceGenerationType;
 }
 
 export function JobInvoiceGenerator({ 
   selectedJobIds, 
   onClose,
-  onInvoiceGenerated,
   initialGenerationType = 'single',
 }: JobInvoiceGeneratorProps) {
-  const { notify } = useFeedback();
+  const { notify, startBackgroundTask, updateBackgroundTask } = useFeedback();
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
   const { jobEntries: jobs, refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const [generationType, setGenerationType] = useState<JobInvoiceGenerationType>(initialGenerationType);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [nonCompletedNoticeDismissed, setNonCompletedNoticeDismissed] = useState(false);
   const [includedJobIds, setIncludedJobIds] = useState<string[]>([]);
   const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
@@ -130,6 +127,34 @@ export function JobInvoiceGenerator({
     return weekNo;
   };
 
+  const getInvoiceBatchCount = () => {
+    switch (generationType) {
+      case 'single':
+        return billableJobs.length;
+      case 'course':
+        return Object.keys(jobsByCustomer).length;
+      case 'daily':
+        return new Set(billableJobs.map(job => `${job.customerId}-${new Date(job.date).toDateString()}`)).size;
+      case 'weekly':
+        return new Set(billableJobs.map(job => {
+          const date = new Date(job.date);
+          const monday = new Date(date);
+          const day = date.getDay();
+          const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+          monday.setDate(diff);
+          monday.setHours(0, 0, 0, 0);
+          return `${job.customerId}-${monday.getFullYear()}-W${String(getISOWeek(monday)).padStart(2, '0')}`;
+        })).size;
+      case 'monthly':
+        return new Set(billableJobs.map(job => {
+          const date = new Date(job.date);
+          return `${job.customerId}-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        })).size;
+      default:
+        return 0;
+    }
+  };
+
   const handleGenerate = () => {
     if (billableJobs.length === 0) return;
     if (missingCompanyFields.length > 0) {
@@ -143,34 +168,57 @@ export function JobInvoiceGenerator({
     setShowFinalConfirmation(true);
   };
 
-  const confirmGenerate = async () => {
+  const confirmGenerate = () => {
     setShowFinalConfirmation(false);
-    setIsGenerating(true);
-    try {
-      const createdInvoices = await generateInvoices();
-      // Erst nach dem gesamten Batch aktualisieren. Eine Aktualisierung pro
-      // Rechnung würde bei mehreren hundert Einheiten zusätzlich hunderte
-      // GET-Anfragen auslösen und das API-Limit unnötig belasten.
-      await Promise.all([refreshInvoices(), refreshJobEntries()]);
-      onInvoiceGenerated(createdInvoices);
-      onClose();
-    } catch (error) {
-      logger.error('Error generating invoice:', error);
-      notify({
-        variant: 'error',
-        title: 'Rechnung konnte nicht erstellt werden',
-        message: error instanceof Error ? error.message : 'Die Rechnung konnte wegen eines unbekannten Fehlers nicht erstellt werden.',
-      });
-    } finally {
-      setIsGenerating(false);
-    }
+    const totalInvoiceBatches = getInvoiceBatchCount();
+    const taskId = startBackgroundTask({
+      title: 'Rechnungserstellung läuft',
+      detail: `0 von ${totalInvoiceBatches} Rechnung(en) erstellt.`,
+      progress: 0,
+      page: 'invoices',
+    });
+    onClose();
+
+    void (async () => {
+      try {
+        const createdInvoices = await generateInvoices((processed, total) => {
+          updateBackgroundTask(taskId, {
+            detail: `${processed} von ${total} Rechnung(en) erstellt.`,
+            progress: total > 0 ? (processed / total) * 100 : 100,
+          });
+        });
+        // Erst nach dem gesamten Batch aktualisieren. Eine Aktualisierung pro
+        // Rechnung würde bei mehreren hundert Einheiten zusätzlich hunderte
+        // GET-Anfragen auslösen und das API-Limit unnötig belasten.
+        await Promise.all([refreshInvoices(), refreshJobEntries()]);
+        updateBackgroundTask(taskId, {
+          status: 'success',
+          detail: `${createdInvoices.length} Rechnung(en) erfolgreich erstellt.`,
+          progress: 100,
+        });
+      } catch (error) {
+        logger.error('Error generating invoice:', error);
+        updateBackgroundTask(taskId, {
+          status: 'error',
+          detail: error instanceof Error ? error.message : 'Die Rechnungserstellung ist fehlgeschlagen.',
+        });
+        notify({
+          variant: 'error',
+          title: 'Rechnungserstellung fehlgeschlagen',
+          message: 'Details und den letzten Stand finden Sie in der Glocke.',
+        });
+      }
+    })();
   };
 
-  const generateInvoices = async () => {
+  const generateInvoices = async (onProgress?: (processed: number, total: number) => void) => {
     const createdInvoices: Invoice[] = [];
+    let processed = 0;
     const createAndCollect = async (jobsToInvoice: JobEntry[]) => {
       const invoice = await createInvoiceForJobs(jobsToInvoice);
       if (invoice) createdInvoices.push(invoice);
+      processed += 1;
+      onProgress?.(processed, getInvoiceBatchCount());
       await wait(INVOICE_REQUEST_INTERVAL_MS);
     };
 
@@ -721,16 +769,11 @@ export function JobInvoiceGenerator({
             </button>
             <button
               onClick={handleGenerate}
-              disabled={isGenerating || billableJobs.length === 0}
+              disabled={billableJobs.length === 0}
               className="btn-primary text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm disabled:opacity-50"
             >
               <FileText className="h-4 w-4" />
-              <span>
-                {isGenerating 
-                  ? 'Erstelle Rechnungen...' 
-                  : `${getPreviewInfo().split(' ')[0]} Rechnung(en) erstellen`
-                }
-              </span>
+              <span>{getPreviewInfo().split(' ')[0]} Rechnung(en) erstellen</span>
             </button>
           </div>
         </div>

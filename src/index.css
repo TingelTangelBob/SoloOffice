@@ -1878,6 +1878,49 @@
     box-shadow: 0 0 0 2px var(--surface-raised);
   }
 
+  .topbar-background-task {
+    margin: 0.25rem 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--line-soft);
+    padding: 0.5rem 0.5rem 0.75rem;
+  }
+
+  .topbar-background-task:last-of-type {
+    margin-bottom: 0.25rem;
+  }
+
+  .topbar-task-progress {
+    height: 0.25rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background-color: var(--surface-sunken);
+  }
+
+  .topbar-task-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--primary-color);
+    transition: width 180ms ease;
+  }
+
+  .topbar-task-dismiss {
+    display: inline-flex;
+    height: 1.5rem;
+    width: 1.5rem;
+    min-height: 0;
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.375rem;
+    color: var(--ink-muted);
+  }
+
+  .topbar-task-dismiss:hover {
+    background-color: var(--surface-hover);
+    color: var(--ink-strong);
+  }
+
   .topbar-user-button {
     display: inline-flex;
     height: 2.25rem;

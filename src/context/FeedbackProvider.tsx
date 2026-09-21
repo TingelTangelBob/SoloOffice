@@ -4,7 +4,14 @@ import { ConfirmationModal } from '../components/ConfirmationModal';
 import { Notice } from '../components/Notice';
 import type { NoticeVariant } from '../components/Notice';
 import { generateUUID } from '../utils/uuid';
-import { FeedbackContext, type ConfirmOptions, type NotifyOptions } from './FeedbackContext';
+import {
+  FeedbackContext,
+  type BackgroundTask,
+  type BackgroundTaskOptions,
+  type BackgroundTaskUpdate,
+  type ConfirmOptions,
+  type NotifyOptions,
+} from './FeedbackContext';
 
 interface FeedbackMessage extends NotifyOptions {
   id: string;
@@ -26,6 +33,7 @@ const MAX_VISIBLE_MESSAGES = 4;
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<FeedbackMessage[]>([]);
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
   const [confirmOptions, setConfirmOptions] = useState<ConfirmOptions | null>(null);
   const pendingConfirm = useRef<((result: boolean) => void) | null>(null);
   const timeouts = useRef<number[]>([]);
@@ -54,6 +62,29 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     timeouts.current.push(timeout);
   }, [dismiss]);
 
+  const startBackgroundTask = useCallback(({ title, detail, progress = 0, page }: BackgroundTaskOptions) => {
+    const id = generateUUID();
+    setBackgroundTasks(current => [
+      ...current.filter(task => task.id !== id),
+      { id, title, detail, progress, status: 'running', page },
+    ]);
+    return id;
+  }, []);
+
+  const updateBackgroundTask = useCallback((id: string, update: BackgroundTaskUpdate) => {
+    setBackgroundTasks(current => current.map(task => task.id === id
+      ? {
+          ...task,
+          ...update,
+          progress: update.progress == null ? task.progress : Math.min(100, Math.max(0, update.progress)),
+        }
+      : task));
+  }, []);
+
+  const dismissBackgroundTask = useCallback((id: string) => {
+    setBackgroundTasks(current => current.filter(task => task.id !== id));
+  }, []);
+
   const confirm = useCallback((options: ConfirmOptions) => new Promise<boolean>(resolve => {
     // Eine noch offene Rückfrage wird abgebrochen, damit kein Aufrufer wartet.
     pendingConfirm.current?.(false);
@@ -69,7 +100,14 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     resolve(result);
   }, []);
 
-  const value = useMemo(() => ({ confirm, notify }), [confirm, notify]);
+  const value = useMemo(() => ({
+    confirm,
+    notify,
+    backgroundTasks,
+    startBackgroundTask,
+    updateBackgroundTask,
+    dismissBackgroundTask,
+  }), [backgroundTasks, confirm, dismissBackgroundTask, notify, startBackgroundTask, updateBackgroundTask]);
 
   return (
     <FeedbackContext.Provider value={value}>
