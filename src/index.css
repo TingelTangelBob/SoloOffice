@@ -303,6 +303,29 @@
     transition: background-color 150ms ease, color 150ms ease;
   }
 
+  /* Die E-Mail-Bereiche teilen sich am Desktop die komplette verfügbare Breite. */
+  .email-management-tab-bar .theme-tab-list {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .email-management-tab-bar .theme-tab-button {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  @media (max-width: 767px) {
+    .email-management-tab-bar .theme-tab-list {
+      width: max-content;
+      min-width: max-content;
+    }
+
+    .email-management-tab-bar .theme-tab-button {
+      min-width: max-content;
+      flex: 0 0 auto;
+    }
+  }
+
   .theme-tab-button::after {
     content: '';
     position: absolute;

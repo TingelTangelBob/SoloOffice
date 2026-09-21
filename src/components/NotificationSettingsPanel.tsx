@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { BellRing, Eye, Loader2, Send } from 'lucide-react';
+import { Eye, Loader2, Send } from 'lucide-react';
 import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
 import { useCompany } from '../context/CompanyContext';
@@ -25,7 +25,6 @@ export function NotificationSettingsPanel() {
   const terminology = getTerminology(company.terminologyProfile);
   const locale = company.locale || 'de-DE';
   const [saved, setSaved] = useState<NotificationSettings | null>(null);
-  const [email, setEmail] = useState('');
   const [form, setForm] = useState<NotificationSettingsPayload>(DEFAULT_FORM);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState<'save' | 'preview' | 'send' | null>(null);
@@ -38,7 +37,6 @@ export function NotificationSettingsPanel() {
         if (!active) return;
         setSaved(result.settings);
         setForm(toPayload(result.settings));
-        setEmail(result.email);
       })
       .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Die Einstellungen konnten nicht geladen werden.'); });
     return () => { active = false; };
@@ -90,14 +88,6 @@ export function NotificationSettingsPanel() {
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-3">
-        <BellRing className="h-5 w-5 text-primary-custom" />
-        <div>
-          <h2 className="font-semibold text-gray-900">E-Mail-Benachrichtigungen</h2>
-          <p className="text-sm text-gray-500">Tägliche Zusammenfassung offener Punkte{email ? ` an ${email}` : ''} – nur, wenn es etwas gibt.</p>
-        </div>
-      </div>
-
       {loadError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</div>}
 
       <form onSubmit={submit} className="form-consistent-fields space-y-4">

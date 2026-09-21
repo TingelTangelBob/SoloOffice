@@ -18,8 +18,7 @@ import {
   X,
   TrendingUp,
   BellRing,
-  Database,
-  Lock
+  Database
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useCompany } from '../context/CompanyContext';
@@ -370,7 +369,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
 
         <div className="theme-tab-group flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-x-0 border-b-0 shadow-none">
           <ThemeTabBar
-            className="theme-tab-bar-attached theme-tab-bar-modal flex-shrink-0"
+            className="theme-tab-bar-attached theme-tab-bar-modal email-management-tab-bar flex-shrink-0"
             ariaLabel="E-Mail-Bereiche"
             activeTab={activeTab}
             onChange={setActiveTab}
@@ -634,18 +633,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           {activeTab === 'settings' && (
             <div className="p-6">
               <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <Lock className="h-5 w-5 text-blue-500 mr-3 mt-0.5" />
-                    <div>
-                      <h3 className="font-medium text-blue-900">SMTP-Konfiguration</h3>
-                      <p className="text-sm text-blue-800 mt-1">
-                        Diese Einstellungen überschreiben die Backend-Umgebungsvariablen. Alle E-Mails werden über diese Konfiguration versendet, wenn sie aktiviert ist.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
                   <div className="flex items-center justify-between mb-4">
                     <label className="text-sm font-medium text-gray-700">
@@ -815,18 +802,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           {activeTab === 'test' && (
             <div className="p-6">
               <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <TestTube className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
-                    <div>
-                      <h3 className="font-medium text-green-900">Test-E-Mail senden</h3>
-                      <p className="text-sm text-green-800 mt-1">
-                        Senden Sie eine Test-E-Mail, um Ihre SMTP-Konfiguration zu überprüfen.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
