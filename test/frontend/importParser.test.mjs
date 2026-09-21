@@ -5,6 +5,7 @@ import {
   analyseHeaderMapping,
   getImportDefinition,
   mapImportRows,
+  parseImportFile,
 } from '../../.test-dist/utils/importParser.js';
 
 test('Jede Importfunktion beschreibt ihre Pflichtspalten und Suchbegriffe', () => {
@@ -97,4 +98,17 @@ test('Eine Quellspalte kann für Name und Titel zugleich verwendet werden', () =
 test('Schüler-Spalten werden beim Auftragsimport als Bezug erkannt', () => {
   const result = analyseHeaderMapping(['Schüler'], getImportDefinition('jobs'));
   assert.equal(result.mapping.customerName, 'Schüler');
+});
+
+test('Leere und unbenannte CSV-Spalten werden nicht als Quellspalten übernommen', async () => {
+  const file = new File([
+    'Name;;Leere Spalte\nMuster GmbH;;\nNoch eine GmbH;;\n',
+  ], 'kunden.csv', { type: 'text/csv' });
+
+  const result = await parseImportFile(file);
+  assert.deepEqual(result.headers, ['Name']);
+  assert.deepEqual(result.rows, [
+    { Name: 'Muster GmbH' },
+    { Name: 'Noch eine GmbH' },
+  ]);
 });

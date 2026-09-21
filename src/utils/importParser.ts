@@ -258,6 +258,10 @@ function uniqueHeaders(headers: string[]): string[] {
   });
 }
 
+function hasValueAtColumn(rows: string[][], index: number): boolean {
+  return rows.some(row => String(row[index] ?? '').trim() !== '');
+}
+
 function flattenJsonValue(value: unknown, prefix = '', output: Record<string, string> = {}): Record<string, string> {
   if (value === null || value === undefined) {
     if (prefix) output[prefix] = '';
@@ -296,7 +300,8 @@ function parseJson(text: string): { headers: string[]; rows: Array<Record<string
     if (row && typeof row === 'object') return flattenJsonValue(row);
     return { value: String(row ?? ''), row: String(index + 1) };
   });
-  const headers = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
+  const headers = Array.from(new Set(rows.flatMap(row => Object.keys(row))))
+    .filter(header => header.trim() && rows.some(row => String(row[header] ?? '').trim() !== ''));
   return {
     headers,
     rows: rows.map(row => Object.fromEntries(headers.map(header => [header, row[header] || '']))),
@@ -458,8 +463,14 @@ export async function parseImportFile(file: File): Promise<ParsedImportFile> {
   const delimiter = detectDelimiter(text);
   const matrix = parseDelimited(text, delimiter);
   if (matrix.length < 2) throw new Error('Die Datei benötigt eine Kopfzeile und mindestens eine Datenzeile.');
-  const headers = uniqueHeaders(matrix[0]);
-  const rows = matrix.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, values[index] || ''])));
+  const sourceRows = matrix.slice(1);
+  const usableIndexes = matrix[0]
+    .map((header, index) => ({ header: header.replace(/^\uFEFF/, '').trim(), index }))
+    .filter(({ header, index }) => header && hasValueAtColumn(sourceRows, index))
+    .map(({ index }) => index);
+  if (usableIndexes.length === 0) throw new Error('Die Datei enthält keine benannten und befüllten Spalten.');
+  const headers = uniqueHeaders(usableIndexes.map(index => matrix[0][index]));
+  const rows = sourceRows.map(values => Object.fromEntries(headers.map((header, index) => [header, values[usableIndexes[index]] || ''])));
   return {
     fileName: file.name,
     format: delimiter === '\t' ? 'tsv' : 'csv',

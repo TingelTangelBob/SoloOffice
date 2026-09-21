@@ -289,7 +289,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 </div>
                 <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
                   <p className="font-semibold">Automatische Spaltenzuordnung</p>
-                  <p className="mt-1 leading-5">Die erkannten Spalten Ihrer Datei stehen oben. Ordnen Sie ihnen ein oder mehrere Zielfelder zu. Eine Spalte darf mehrfach verwendet werden, zum Beispiel als Name und als Titel.</p>
+                  <p className="mt-1 leading-5">Die Quellspalten Ihrer Datei stehen oben, die Zielfelder des Workspace rechts daneben. Eine bestehende Zuordnung ändern Sie über „Entfernen“; weitere freie Zielfelder ordnen Sie unten zu.</p>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-blue-800">
                     <span>{mappedFieldCount} von {definition.fields.length} Zielfeldern zugeordnet</span>
                     {ambiguousFieldCount > 0 && <span className="text-amber-800">{ambiguousFieldCount} bitte manuell prüfen</span>}
@@ -305,10 +305,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div className="space-y-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Spalten aus Ihrer Datei</h4>
-                      <p className="mt-1 text-sm text-gray-500">Beispielwerte helfen Ihnen beim Zuordnen. Mehrfachzuordnungen sind möglich.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Quellspalten aus Ihrer Datei</h4>
+                      <p className="mt-1 text-sm text-gray-500">Links sehen Sie die Spalte aus Ihrer Datei, rechts die Zielfelder im Workspace.</p>
                     </div>
-                    <span className="hidden text-xs text-gray-400 sm:inline">{parsedFile.headers.length} Spalten</span>
+                    <span className="hidden text-xs text-gray-400 sm:inline">{parsedFile.headers.length} Quellspalten</span>
                   </div>
                   <div className="space-y-2">
                     {parsedFile.headers.map(header => {
@@ -321,6 +321,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                         <div key={header} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0 lg:w-2/5">
+                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Quellspalte aus Datei</span>
                               <div className="flex items-center gap-2">
                                 <span className="h-2 w-2 shrink-0 rounded-full bg-primary-custom" />
                                 <p className="truncate font-semibold text-gray-900" title={header}>{header}</p>
@@ -330,6 +331,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                               </p>
                             </div>
                             <div className="min-w-0 flex-1 space-y-2">
+                              <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfelder im Workspace</span>
                               {mappedTargets.length > 0 ? mappedTargets.map(field => (
                                 <div key={field.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
                                   <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
@@ -338,10 +340,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                                   </span>
                                   <button type="button" onClick={() => setTargetMapping(field.key, '')} className="rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">Entfernen</button>
                                 </div>
-                              )) : <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500">Noch kein Zielfeld zugeordnet.</p>}
-                              {definition.fields.some(field => !mapping[field.key]) ? (
+                              )) : <p className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500">Noch kein Zielfeld im Workspace zugeordnet.</p>}
+                              {mappedTargets.length === 0 && definition.fields.some(field => !mapping[field.key]) ? (
                                 <label className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                                  <span className="text-xs font-medium text-gray-500">Zielfeld hinzufügen</span>
+                                  <span className="text-xs font-medium text-gray-500">Zielfeld im Workspace wählen</span>
                                   <select
                                     value=""
                                     onChange={event => setTargetMapping(event.target.value, header)}
@@ -351,6 +353,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                                     {definition.fields.filter(field => !mapping[field.key]).map(field => <option key={field.key} value={field.key}>{field.label}{field.required ? ' *' : ''}</option>)}
                                   </select>
                                 </label>
+                              ) : mappedTargets.length > 0 ? (
+                                <p className="text-xs text-gray-400">Zuordnung zuerst entfernen, um ein anderes Zielfeld zu wählen.</p>
                               ) : <p className="text-xs text-gray-400">Alle Zielfelder sind bereits zugeordnet.</p>}
                             </div>
                           </div>
@@ -365,8 +369,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div>
                   <div className="mb-3 flex items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Noch nicht zugeordnete Zielfelder</h4>
-                      <p className="mt-1 text-sm text-gray-500">Nur Felder, die noch keine Spalte haben. Optionale Felder können Sie auslassen.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Weitere Zielfelder im Workspace</h4>
+                      <p className="mt-1 text-sm text-gray-500">Wählen Sie für jedes noch freie Zielfeld eine Quellspalte aus Ihrer Datei. Optionale Felder können Sie auslassen.</p>
                     </div>
                     {unmappedFields.length === 0 && <span className="text-sm font-medium text-green-700">Alles zugeordnet</span>}
                   </div>
@@ -374,8 +378,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {unmappedFields.map(field => (
                         <label key={field.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <span className="block text-sm font-semibold text-gray-800">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
-                          <select value={mapping[field.key] || ''} onChange={event => setTargetMapping(field.key, event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
+                          <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfeld im Workspace</span>
+                          <span className="mt-1 block text-sm font-semibold text-gray-800">{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</span>
+                          <span className="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Quellspalte aus Ihrer Datei</span>
+                          <select aria-label={`Quellspalte für ${field.label}`} value={mapping[field.key] || ''} onChange={event => setTargetMapping(field.key, event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary-custom focus:outline-none focus:ring-2 focus:ring-primary-custom/20">
                             <option value="">Nicht importieren</option>
                             {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
                           </select>
