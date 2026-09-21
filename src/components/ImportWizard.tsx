@@ -289,7 +289,6 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <h3 className="font-semibold text-gray-900">Spalten zuordnen</h3>
-                    <p className="text-sm text-gray-500">Die Zuordnung ist auf diesen Importbereich zugeschnitten und kann vor der Prüfung angepasst werden.</p>
                   </div>
                   <label className="text-sm text-gray-700">
                     <span className="mr-2 font-medium">Duplikate</span>
@@ -299,28 +298,21 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                     </select>
                   </label>
                 </div>
-                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-                  <p className="font-semibold">Automatische Spaltenzuordnung</p>
-                  <p className="mt-1 leading-5">Die Quellspalten Ihrer Datei stehen oben, die Zielfelder des Workspace rechts daneben. Eine bestehende Zuordnung ändern Sie über „Entfernen“; weitere freie Zielfelder ordnen Sie unten zu.</p>
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-blue-800">
-                    <span>{mappedFieldCount} von {definition.fields.length} Zielfeldern zugeordnet</span>
-                    {ambiguousFieldCount > 0 && <span className="text-amber-800">{ambiguousFieldCount} bitte manuell prüfen</span>}
-                    {requiredMappingIssueCount > 0 && <span className="text-red-800">{requiredMappingIssueCount} Pflichtangaben fehlen</span>}
-                    {definition.requiredGroups && definition.requiredGroups.length > 0 && <span>* Pflichtfeld · † eine Spalte je Bereich genügt</span>}
-                  </div>
+                <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-200 pb-3 text-sm">
+                  <span className="font-medium text-gray-700">{mappedFieldCount}/{definition.fields.length} zugeordnet</span>
+                  {ambiguousFieldCount > 0 && <span className="text-amber-700">{ambiguousFieldCount} prüfen</span>}
+                  {requiredMappingIssueCount > 0 && <span className="text-red-700">{requiredMappingIssueCount} Pflichtzuordnung{requiredMappingIssueCount === 1 ? ' fehlt' : 'en fehlen'}</span>}
+                  {definition.requiredGroups && definition.requiredGroups.length > 0 && <span className="text-xs text-gray-500">* Pflichtfeld · † Pflichtbereich</span>}
                 </div>
-                {mappingAnalysis && mappingAnalysis.warnings.length > 0 && (
-                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    {mappingAnalysis.warnings.map(warning => <p key={warning}>{warning}</p>)}
-                  </div>
-                )}
                 <div className="space-y-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Zielfelder für diesen Import</h4>
-                      <p className="mt-1 text-sm text-gray-500">Links stehen die benötigten Felder im Workspace, rechts die passende Spalte aus Ihrer Datei.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Zielfelder</h4>
                     </div>
-                    <span className="hidden text-xs text-gray-400 sm:inline">{definition.fields.length} Zielfelder</span>
+                  </div>
+                  <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-5 px-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400 sm:grid sm:px-4">
+                    <span>Zielfeld im Workspace</span>
+                    <span>Spalte aus Ihrer Datei</span>
                   </div>
                   <div className="space-y-2">
                     {orderedMappingFields.map(field => {
@@ -334,17 +326,12 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                         <div key={field.key} className={`rounded-xl border p-3 sm:p-4 ${sourceHeader ? 'border-blue-100 bg-white' : isRequired ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-gray-50'}`}>
                           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] sm:items-center sm:gap-5">
                             <div className="min-w-0">
-                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Zielfeld im Workspace</span>
                               <div className="flex items-center gap-2">
                                 <span className={`h-2 w-2 shrink-0 rounded-full ${isRequired ? 'bg-amber-500' : 'bg-gray-300'}`} />
                                 <p className="truncate font-semibold text-gray-900" title={field.label}>{field.label}{field.required ? ' *' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? ' †' : ''}</p>
                               </div>
-                              <p className={`mt-1 pl-4 text-xs ${isRequired ? 'text-amber-800' : 'text-gray-500'}`}>
-                                {field.required ? 'Pflichtfeld' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? 'Pflichtbereich: mindestens eine Spalte genügt' : 'Optional'}
-                              </p>
                             </div>
                             <div className="min-w-0">
-                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-400">Spalte aus Ihrer Datei</span>
                               {sourceHeader ? (
                                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
                                   <div className="flex items-center gap-2">
@@ -362,9 +349,6 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                                     <option value="">Keine passende Spalte gefunden</option>
                                     {parsedFile.headers.map(header => <option key={header} value={header}>{header}</option>)}
                                   </select>
-                                  <p className={`mt-1 text-xs ${isRequired ? 'font-medium text-amber-800' : 'text-gray-500'}`}>
-                                    {field.required ? 'Bitte manuell zuordnen.' : definition.requiredGroups?.some(group => group.fields.includes(field.key)) ? 'Mindestens eine Spalte aus diesem Bereich muss zugeordnet sein.' : 'Kann bei Bedarf manuell zugeordnet werden.'}
-                                  </p>
                                 </>
                               )}
                               {confidence === 'ambiguous' && <p className="mt-1 text-xs font-medium text-amber-700">Mehrere passende Spalten erkannt – bitte prüfen.</p>}
@@ -381,24 +365,15 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                 <div>
                   <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Weitere Spalten aus Ihrer Datei</h4>
-                      <p className="mt-1 text-sm text-gray-500">Für diese Spalten wurde kein Zielfeld automatisch gefunden. Sie werden nur importiert, wenn Sie sie oben manuell zuordnen.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Nicht zugeordnete Dateispalten</h4>
                     </div>
                     <span className="text-xs text-gray-400">{unmappedSourceHeaders.length} nicht zugeordnet</span>
                   </div>
                   {unmappedSourceHeaders.length > 0 ? (
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {unmappedSourceHeaders.map(header => {
-                        const samples = parsedFile.rows.slice(0, 2).map(row => String(row[header] ?? '').trim()).filter(Boolean);
-                        return (
-                          <div key={header} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                            <p className="truncate text-sm font-medium text-gray-800" title={header}>{header}</p>
-                            <p className="mt-1 truncate text-xs text-gray-500" title={samples.join(' · ') || 'Keine Beispielwerte'}>
-                              {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
-                            </p>
-                          </div>
-                        );
-                      })}
+                    <div className="flex flex-wrap gap-2">
+                      {unmappedSourceHeaders.map(header => (
+                        <span key={header} className="max-w-full truncate rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-700" title={header}>{header}</span>
+                      ))}
                     </div>
                   ) : (
                     <p className="rounded-lg border border-dashed border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">Alle Spalten Ihrer Datei sind bereits einem Zielfeld zugeordnet.</p>
