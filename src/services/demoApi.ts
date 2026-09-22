@@ -55,7 +55,7 @@ function getDemoDataStorageKey(): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 7;
+const DEMO_SEED_VERSION = 8;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -423,7 +423,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
       reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
       invoiceNumberPattern: 'RE-{YYYY}-{NNN}', creditNoteNumberPattern: 'GS-{YYYY}-{NNN}',
-      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege', taxBusinessType: 'commercial', legalForm: 'gmbh',
+      locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege',
       invoiceTemplates: [], createdAt: isoDate(),
     },
   };
@@ -1223,9 +1223,17 @@ function demoPaidAmount(state: DemoState, invoice: DemoRecord): number {
 
 function withDemoPaymentState(state: DemoState, invoice: DemoRecord): DemoRecord {
   const paidAmount = demoPaidAmount(state, invoice);
+  const paymentDates = state.euerEntries
+    .filter(entry => entry.sourceType === 'invoice_payment'
+      && entry.sourceId === invoice.id
+      && entry.status !== 'voided'
+      && entry.entryDate)
+    .map(entry => String(entry.entryDate))
+    .sort();
   return {
     ...invoice,
     paidAmount,
+    paymentReceivedAt: paymentDates[paymentDates.length - 1] || null,
     outstandingAmount: invoice.status === 'paid'
       ? 0
       : Math.max(Number(invoice.total || 0) - paidAmount, 0),
@@ -1261,6 +1269,25 @@ function nextDemoInvoiceNumber(state: DemoState, issueDate: unknown, documentTyp
     candidate = formatInvoiceNumberPattern(pattern, new Date(year, month - 1, day), counter);
   }
   return candidate;
+}
+
+function resolveDemoInvoiceNumber(
+  state: DemoState,
+  requestedValue: unknown,
+  issueDate: unknown,
+  documentType: 'invoice' | 'credit_note' = 'invoice',
+): string {
+  const requested = requestedValue === undefined || requestedValue === null ? '' : String(requestedValue).trim();
+  if (requested.length > 50) throw new Error('Die Rechnungsnummer darf höchstens 50 Zeichen enthalten.');
+  if (/[\r\n]/.test(requested)) throw new Error('Die Rechnungsnummer darf keine Zeilenumbrüche enthalten.');
+  if (!requested) return nextDemoInvoiceNumber(state, issueDate, documentType);
+
+  const reserved = new Set([
+    ...state.invoices.map(invoice => String(invoice.invoiceNumber || '')),
+    ...state.invoiceHistory.map(entry => String(entry.invoiceNumber || '')),
+  ].filter(Boolean));
+  if (reserved.has(requested)) throw new Error(`Die Rechnungsnummer „${requested}“ ist in diesem Workspace bereits vergeben.`);
+  return requested;
 }
 
 
@@ -1859,7 +1886,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       sourceJobs: sourceJobSources,
       customerId: customer.id,
       customerName: customer.name,
-      invoiceNumber: nextDemoInvoiceNumber(state, data.issueDate || isoDate()),
+      invoiceNumber: resolveDemoInvoiceNumber(state, data.invoiceNumber, data.issueDate || isoDate()),
       issueDate: dateOnly(data.issueDate || isoDate()),
       dueDate: dateOnly(data.dueDate || isoDate(30)),
       ...totals,
@@ -2456,7 +2483,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       else record.quoteNumber = data.quoteNumber || `AN-${new Date().getFullYear()}-${String(items.length + 1).padStart(3, '0')}`;
     }
     if (key === 'invoices') {
-      record.invoiceNumber = nextDemoInvoiceNumber(state, data.issueDate || isoDate());
+      record.invoiceNumber = resolveDemoInvoiceNumber(state, data.invoiceNumber, data.issueDate || isoDate());
       record.documentType = 'invoice';
     }
     items.push(record);

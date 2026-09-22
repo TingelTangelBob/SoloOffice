@@ -245,8 +245,8 @@ export const defaultCompany: Company = {
   website: '',
   taxId: '',
   taxIdentificationNumber: '',
-  taxBusinessType: 'commercial',
-  legalForm: 'other',
+  taxBusinessType: undefined,
+  legalForm: undefined,
   logo: null,
   icon: null,
   terminologyProfile: 'customers',
@@ -338,8 +338,8 @@ export function CompanyProvider({
         themeMode: updatedCompany.themeMode || previousCompany.themeMode || 'system',
         terminologyProfile: updatedCompany.terminologyProfile || previousCompany.terminologyProfile || 'customers',
         receiptLabel: updatedCompany.receiptLabel || previousCompany.receiptLabel || 'Belege',
-        taxBusinessType: updatedCompany.taxBusinessType || previousCompany.taxBusinessType || 'commercial',
-        legalForm: updatedCompany.legalForm || previousCompany.legalForm || 'other',
+        taxBusinessType: updatedCompany.taxBusinessType ?? previousCompany.taxBusinessType,
+        legalForm: updatedCompany.legalForm ?? previousCompany.legalForm,
         paymentInformationMode: updatedCompany.paymentInformationMode || previousCompany.paymentInformationMode || 'separate',
         documentTemplates: updatedCompany.documentTemplates?.length
           ? updatedCompany.documentTemplates
