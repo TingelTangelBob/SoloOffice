@@ -25,6 +25,7 @@ function mapInvoice(row) {
     total: parseFloat(row.total),
     paidAmount: parseFloat(row.paid_amount || 0),
     outstandingAmount: parseFloat(row.outstanding_amount ?? row.total),
+    paymentReceivedAt: row.payment_received_at || null,
     status: row.status,
     notes: row.notes,
     globalDiscountType: row.global_discount_type,
@@ -63,6 +64,9 @@ const itemSelect = `
         WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0),
       0
     ) END AS outstanding_amount
+  , (SELECT MAX(ee.entry_date) FROM euer_entries ee
+      WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'
+    ) AS payment_received_at
 `;
 
 export async function findAllInvoices() {

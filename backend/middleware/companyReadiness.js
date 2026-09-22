@@ -14,7 +14,6 @@ export async function requireCompanyReadiness(req, res, next) {
     city: company?.city,
     postal_code: company?.postal_code,
     email: company?.email,
-    tax_id: company?.tax_id,
     bank_account: company?.bank_account,
   };
   const missing = Object.entries(requiredFields).filter(([, value]) => !String(value || '').trim()).map(([field]) => field);

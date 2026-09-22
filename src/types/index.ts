@@ -118,6 +118,8 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   paidAmount?: number;
   /** Noch offener Rechnungsbetrag nach aktiven Zahlungseingängen. */
   outstandingAmount?: number;
+  /** Letztes aktives Zahlungsdatum; leer, wenn noch kein Zahlungseingang vorliegt. */
+  paymentReceivedAt?: Date | string | null;
   status: InvoiceStatus;
   notes?: string;
   attachments?: InvoiceAttachment[];

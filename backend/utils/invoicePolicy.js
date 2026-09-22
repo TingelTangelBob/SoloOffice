@@ -14,6 +14,15 @@ export function invoiceError(message, statusCode = 400) {
   return error;
 }
 
+export function normalizeInvoiceNumber(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  if (typeof value !== 'string') throw invoiceError('Die Rechnungsnummer muss als Text übergeben werden.');
+  const invoiceNumber = value.trim();
+  if (invoiceNumber.length > 50) throw invoiceError('Die Rechnungsnummer darf höchstens 50 Zeichen enthalten.');
+  if (/[\r\n]/.test(invoiceNumber)) throw invoiceError('Die Rechnungsnummer darf keine Zeilenumbrüche enthalten.');
+  return invoiceNumber;
+}
+
 export function validateInvoiceUpdate(current, data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw invoiceError('Ungültige Rechnungsdaten.');
   if (data.documentType !== undefined && data.documentType !== (current.document_type || 'invoice')) {

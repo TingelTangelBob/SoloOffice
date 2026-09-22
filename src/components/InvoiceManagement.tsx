@@ -947,7 +947,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     setInvoiceEndDate('');
   };
 
-  const csvDate = (value: Invoice['issueDate']): Date | '' => {
+  const csvDate = (value: Date | string | null | undefined): Date | '' => {
     const dateKey = toDateInputValue(value);
     if (!dateKey) return '';
     const [year, month, day] = dateKey.split('-').map(Number);
@@ -960,6 +960,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     { header: 'Kunde', value: invoice => invoice.customerName },
     { header: 'IssueDate', value: invoice => csvDate(invoice.issueDate) },
     { header: 'Faelligkeit', value: invoice => csvDate(invoice.dueDate) },
+    { header: 'Zahlungsdatum', value: invoice => invoice.paymentReceivedAt ? csvDate(invoice.paymentReceivedAt) : '' },
     { header: 'Status', value: invoice => getStatusLabel(invoice.status) },
     { header: 'Netto', value: invoice => invoice.subtotal, decimals: 2 },
     { header: 'Steuer', value: invoice => invoice.taxAmount, decimals: 2 },
