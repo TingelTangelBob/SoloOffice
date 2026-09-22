@@ -1,6 +1,6 @@
 {
   "name": "solooffice-backend",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Backend for SoloOffice",
   "main": "server.js",
   "type": "module",

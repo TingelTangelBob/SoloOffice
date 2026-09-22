@@ -2,55 +2,51 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
-## Unreleased
+## v0.9.3 – Rechnungen, Importe und Hintergrundaufgaben
 
-- Der Gesamtupdate-Ablauf unterstützt jetzt `--staging` und überträgt nach dem
-  Push automatisch denselben Commit zur Staging-Instanz, inklusive Backup,
-  Docker-Build und technischer Prüfung.
-- Der Bulk-Download von Rechnungen nutzt jetzt eine kompakte, eindeutige
-  Dialogstruktur ohne doppelte Detail- und Hinweisboxen.
-- Die Auswahl des Zahlungsdatums bei Sammelzahlungen ist sichtbar markiert und
-  zeigt die tatsächlich aktive Variante direkt in der Zusammenfassung an.
-- Die Dashboard-Umsatzstatistik berücksichtigt Zahlungsbuchungen mit ihrem
-  Zahlungsdatum, bietet eine Jahresauswahl und kann offene Rechnungsbeträge
-  per Umschalter zusätzlich einbeziehen. Entwürfe und nicht bestätigte
-  Aufträge werden dabei ausgeschlossen.
-- Zahlungseingänge können für eine Mehrfachauswahl in einer gebündelten,
-  atomaren Serveraktion erfasst werden. Dabei lässt sich ein gemeinsames
-  Zahlungsdatum oder das Erstelldatum der jeweiligen Rechnung verwenden;
-  Entwürfe und bereits bezahlte Rechnungen werden übersprungen.
-- Der Zahlungsdialog ist auf breiten und schmalen Ansichten responsiv und
-  verhindert überlaufende Datumsfelder und Kalender.
-- Die Rechnungsübersicht zeigt höchstens 50 Rechnungen pro Seite und bietet
-  dadurch auch bei großen Rechnungsmengen eine deutlich ruhigere Darstellung.
-- Große Rechnungsläufe takten die einzelnen Entwürfe und aktualisieren die
-  Ansichten erst nach dem vollständigen Lauf, damit unnötige API-Anfragen kein
-  Rate-Limit auslösen.
-- Bereits abgerechnete Einheiten werden aus einer veralteten Auswahl entfernt,
-  bevor der Rechnungsdialog geöffnet wird.
-- Die Rechnungsart ist kompakt aufklappbar; die aktive Auswahl bleibt sichtbar.
-- Bestätigungsdialoge sind im Dunkelmodus lesbar und zeigen die
-  Bestätigungsaktion zuverlässig an.
-- Firmendaten verwenden eindeutige Browser-Autofill-Zuordnungen.
-- Die Importzuordnung nutzt eine zurückhaltende, workspace-farbige Darstellung.
-- Große Rechnungserstellungen laufen nach dem Schließen des Dialogs im
-  Hintergrund weiter und zeigen den Fortschritt in der Glocke an.
-- Massenstatusänderungen von mehr als zehn Rechnungen verlangen jetzt eine
-  Bestätigung.
-- Zählertexte verwenden jetzt korrekte Singular- und Pluralformen. Während
-  laufender Hintergrundaufgaben zeigt der Hinweisbereich keinen widersprüchlichen
-  Leerstatus mehr.
-- Die Serverauslastung großer Rechnungsläufe sowie die aktuelle clientseitige
-  Verarbeitung und ihr nächster sinnvoller Skalierungsschritt sind in den
-  Betriebsunterlagen dokumentiert.
-- Massenänderungen von Rechnungsstatus werden atomar über eine Sammelanfrage
-  verarbeitet und zeigen ihren Fortschritt bzw. Abschluss in der Glocke an.
-- Hintergrundaufgaben öffnen die Hinweisglocke beim Start kurz automatisch und
-  bestätigen den Abschluss mit einer dezenten, bewegungsreduzierten Animation.
-- Zahlungseingänge können jetzt als eigener Import mit Rechnungsnummer,
+- Rückwirkende Rechnungen können erstellt und mit einer eigenen Rechnungsnummer
+  versehen werden. Bereits abgerechnete Einheiten werden vor dem Öffnen des
+  Rechnungsdialogs aus einer veralteten Auswahl entfernt.
+- Zahlungseingänge können als eigener Import mit Rechnungsnummer,
   Zahlungsdatum, Betrag und optionaler Import-ID übernommen werden. Die
   Zuordnung prüft Rechnungsbezug, offene Beträge und Dubletten und aktualisiert
   verknüpfte Rechnungsstatus transaktionssicher.
+- Zahlungseingänge lassen sich für eine Mehrfachauswahl in einer gebündelten,
+  atomaren Serveraktion erfassen. Ein gemeinsames Zahlungsdatum oder das
+  Erstelldatum der jeweiligen Rechnung kann verwendet werden; Entwürfe und
+  bereits bezahlte Rechnungen werden übersprungen.
+- Das Dashboard berücksichtigt Zahlungsbuchungen mit ihrem Zahlungsdatum,
+  bietet eine Jahresauswahl und kann offene Rechnungsbeträge zusätzlich
+  einbeziehen. Entwürfe und nicht bestätigte Aufträge werden ausgeschlossen.
+- Der Zahlungsdialog ist für breite und schmale Ansichten angepasst. Die
+  aktive Auswahl des Zahlungsdatums bleibt sichtbar und Datumsfelder sowie
+  Kalender laufen nicht mehr über.
+- Große Rechnungsläufe laufen nach dem Schließen des Dialogs im Hintergrund,
+  zeigen ihren Fortschritt in der Hinweisglocke und takten die einzelnen
+  Entwürfe, damit unnötige API-Anfragen kein Rate-Limit auslösen.
+- Massenänderungen von Rechnungsstatus werden atomar verarbeitet. Bei größeren
+  Auswahlen wird die Aktion bestätigt; Fortschritt und Abschluss erscheinen in
+  der Hinweisglocke. Die Glocke öffnet sich beim Start kurz automatisch und
+  bestätigt den Abschluss mit einer bewegungsreduzierten Animation.
+- Die Rechnungsübersicht ist auf höchstens 50 Rechnungen pro Seite begrenzt.
+  Rechnungsart, Bulk-Download und Bestätigungsdialoge sind kompakter und auch
+  im Dunkelmodus lesbar. Zählertexte verwenden korrekte Singular- und
+  Pluralformen.
+- Der Importassistent bietet eine fachbezogene Feldzuordnung mit Vorschau und
+  nutzt eine zurückhaltende, workspace-farbige Darstellung.
+- Die optionale USt-IdNr. sowie das Zahlungsdatum im Rechnungs-Export werden
+  unterstützt. Die Ersteinrichtung startet ohne vorausgewähltes Steuerprofil.
+- Firmendaten verwenden eindeutige Browser-Autofill-Zuordnungen. Einstellungen
+  und relevante Import- sowie Mitteilungsansichten wurden übersichtlicher
+  angeordnet.
+- Der Gesamtupdate-Ablauf unterstützt `--staging` und überträgt nach dem Push
+  denselben Commit zur Staging-Instanz, inklusive Backup, Docker-Build und
+  technischer Prüfung. Die Betriebsunterlagen dokumentieren die Auslastung
+  großer Rechnungsläufe und den nächsten sinnvollen Skalierungsschritt.
+
+## Unreleased
+
+- Platzhalter für die nächste Version.
 
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 
