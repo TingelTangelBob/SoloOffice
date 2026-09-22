@@ -185,7 +185,7 @@ export function TopBar({
                       </button>
                     )}
                   </div>
-                  <button type="button" className="topbar-task-dismiss" aria-label="Hinweis schließen" title="Hinweis schließen" onClick={() => onDismissBackgroundTask(task.id)}>
+                  <button type="button" className="topbar-task-dismiss" aria-label="Hinweis schließen" title="Hinweis schließen" onClick={(event) => { event.stopPropagation(); onDismissBackgroundTask(task.id); }}>
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>

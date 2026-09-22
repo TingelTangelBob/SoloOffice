@@ -324,14 +324,14 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
         aria-modal={embedded ? undefined : true}
         aria-labelledby="email-management-title"
         className={embedded
-          ? 'flex w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white'
+          ? 'flex w-full flex-col overflow-hidden'
           : 'flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg bg-white shadow-xl'}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+        <div className={`flex flex-shrink-0 items-center justify-between border-b border-gray-200 ${embedded ? 'px-0 py-4' : 'p-6'}`}>
           <div className="flex items-center">
             <Mail className="h-6 w-6 text-primary-custom mr-3" />
-            <h2 id="email-management-title" className="text-xl font-semibold text-gray-900">E-Mail-Verwaltung</h2>
+            <h2 id="email-management-title" className="text-lg font-semibold text-gray-900">E-Mail &amp; Backup</h2>
           </div>
           {onClose && (
             <button

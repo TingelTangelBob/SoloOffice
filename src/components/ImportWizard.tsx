@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileUp, Link2, Loader2, RefreshCw, Upload, X } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileUp, Link2, Loader2, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { ImportDuplicateMode, ImportResource, ImportResponse } from '../types';
@@ -98,6 +98,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mappingScrollRef = useRef<HTMLDivElement>(null);
+  const mappingScrollTopRef = useRef<number | null>(null);
 
   const mappedRows = useMemo(
     () => parsedFile ? mapImportRows(parsedFile, mapping) : [],
@@ -107,6 +109,12 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
     () => parsedFile ? analyseHeaderMapping(parsedFile.headers, definition) : null,
     [definition, parsedFile]
   );
+
+  useLayoutEffect(() => {
+    if (mappingScrollTopRef.current === null || !mappingScrollRef.current) return;
+    mappingScrollRef.current.scrollTop = mappingScrollTopRef.current;
+    mappingScrollTopRef.current = null;
+  }, [mapping]);
 
   if (!isOpen) return null;
 
@@ -143,6 +151,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   };
 
   const setTargetMapping = (targetField: string, sourceHeader: string) => {
+    mappingScrollTopRef.current = mappingScrollRef.current?.scrollTop ?? null;
     setMapping(previous => {
       const next = { ...previous };
       if (sourceHeader) next[targetField] = sourceHeader;
@@ -204,17 +213,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
   const missingRequiredFields = definition.fields.filter(field => field.required && !mapping[field.key]);
   const missingRequiredGroups = (definition.requiredGroups || []).filter(group => group.fields.every(fieldKey => !mapping[fieldKey]));
   const requiredMappingIssueCount = missingRequiredFields.length + missingRequiredGroups.length;
-  const orderedMappingFields = [...definition.fields].sort((left, right) => {
-    const leftRequired = left.required || definition.requiredGroups?.some(group => group.fields.includes(left.key)) || false;
-    const rightRequired = right.required || definition.requiredGroups?.some(group => group.fields.includes(right.key)) || false;
-    if (leftRequired !== rightRequired) return leftRequired ? -1 : 1;
-
-    const leftMapped = Boolean(mapping[left.key]);
-    const rightMapped = Boolean(mapping[right.key]);
-    if (leftMapped !== rightMapped) return leftMapped ? -1 : 1;
-
-    return definition.fields.indexOf(left) - definition.fields.indexOf(right);
-  });
+  const orderedMappingFields = definition.fields;
   const mappedSourceHeaders = new Set(Object.values(mapping).filter(Boolean));
   const unmappedSourceHeaders = parsedFile
     ? parsedFile.headers.filter(header => !mappedSourceHeaders.has(header))
@@ -236,7 +235,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
+        <div ref={mappingScrollRef} className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
           {error && (
             <div className="mb-5 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -338,12 +337,16 @@ export function ImportWizard({ resource, isOpen, onClose, onImported }: ImportWi
                                 <div className="import-mapping-source">
                                   <div className="flex items-center gap-2">
                                     <Link2 className="h-4 w-4 shrink-0 text-primary-custom" />
-                                    <span className="import-mapping-source-title min-w-0 flex-1 truncate text-sm font-semibold" title={sourceHeader}>{sourceHeader}</span>
-                                    <button type="button" onClick={() => setTargetMapping(field.key, '')} className="import-mapping-remove shrink-0 rounded-md px-2 py-1 text-xs font-medium">Entfernen</button>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="import-mapping-source-title truncate text-sm font-semibold" title={sourceHeader}>{sourceHeader}</p>
+                                      <p className="import-mapping-sample truncate text-xs" title={samples.join(' · ') || 'Keine Beispielwerte'}>
+                                        {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
+                                      </p>
+                                    </div>
+                                    <button type="button" onClick={() => setTargetMapping(field.key, '')} className="import-mapping-remove inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md" aria-label="Verknüpfung entfernen" title="Verknüpfung entfernen">
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
                                   </div>
-                                  <p className="import-mapping-sample mt-1 truncate pl-6 text-xs" title={samples.join(' · ') || 'Keine Beispielwerte'}>
-                                    {samples.length > 0 ? `Beispiel: ${samples.join(' · ')}` : 'Keine Beispielwerte'}
-                                  </p>
                                 </div>
                               ) : (
                                 <>

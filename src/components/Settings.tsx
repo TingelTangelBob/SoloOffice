@@ -36,8 +36,8 @@ const colorPresets = [
   { name: 'Koralle', primary: '#ea580c', secondary: '#475569' },
 ] as const;
 
-function TerminologyPreview({ profile, receiptLabel }: { profile: TerminologyDefinition; receiptLabel: string }) {
-  const preview = profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
+function TerminologyPreview({ profile, receiptLabel, previewOverride }: { profile: TerminologyDefinition; receiptLabel: string; previewOverride?: NonNullable<TerminologyDefinition['preview']> }) {
+  const preview = previewOverride || profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
   const menuItems = [
     { label: 'Übersicht', icon: Home },
     { label: profile.work.navLabel, icon: Briefcase, active: true },
@@ -414,11 +414,11 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           ]}
         />
 
-      <form onSubmit={handleSubmit} autoComplete="on" className={`${embedded ? '' : 'theme-tab-panel'} form-consistent-fields space-y-8`}>
+      <form onSubmit={handleSubmit} autoComplete="on" className={`${embedded ? '' : 'theme-tab-panel'} settings-form form-consistent-fields space-y-8`}>
         {activeTab === 'app' && (
           <div className="space-y-8">
         {/* Terminology Settings */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-start gap-4">
             <div>
               <div className="flex items-center gap-2">
@@ -441,7 +441,15 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:min-w-[920px] md:grid-cols-5 xl:min-w-0">
             {terminologyProfiles.map(profile => {
               const selected = (formData.terminologyProfile || 'customers') === profile.id;
-              const preview = profile.preview;
+              const preview = terminologyColorSource === 'appearance'
+                ? {
+                    ...profile.preview,
+                    accent: formData.primaryColor || '#2563eb',
+                    secondary: formData.secondaryColor || '#64748b',
+                    accentSoft: `color-mix(in srgb, ${formData.primaryColor || '#2563eb'} 20%, white)`,
+                    accentWash: `color-mix(in srgb, ${formData.primaryColor || '#2563eb'} 8%, white)`,
+                  }
+                : profile.preview;
               return (
                 <button
                   key={profile.id}
@@ -466,7 +474,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                   <span className="flex min-h-[2.75rem] items-start justify-center pt-1 text-center">
                     <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
                   </span>
-                  <TerminologyPreview profile={profile} receiptLabel={normalizedReceiptLabel || 'Belege'} />
+                  <TerminologyPreview profile={profile} receiptLabel={normalizedReceiptLabel || 'Belege'} previewOverride={preview} />
                 </button>
               );
             })}
@@ -517,7 +525,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Module Settings */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <Briefcase className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Module</h3>
@@ -629,7 +637,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Company Information */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <Building2 className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.dataLabel}</h3>
@@ -717,7 +725,6 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
               </label>
               <input
                 type="text"
-                required
                 name="tax-id"
                 autoComplete="off"
                 value={formData.taxId}
@@ -747,8 +754,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             <p className="mt-1 text-xs leading-5 text-gray-600">Betriebsart und Rechtsform werden in Prüfhinweisen und Exporten verwendet. Sie blenden keine Kernmenüpunkte aus.</p>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="block text-sm font-medium text-gray-900">
-                Betriebsart
-                <select value={formData.taxBusinessType || 'commercial'} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value as TaxBusinessType }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
+                Betriebsart *
+                <select required value={formData.taxBusinessType || ''} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value ? event.target.value as TaxBusinessType : undefined }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
+                  <option value="" disabled>Bitte wählen …</option>
                   <option value="freelance">Freiberuflich</option>
                   <option value="commercial">Gewerblich</option>
                   <option value="agriculture">Land- und Forstwirtschaft</option>
@@ -757,8 +765,9 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
                 </select>
               </label>
               <label className="block text-sm font-medium text-gray-900">
-                Rechtsform
-                <select value={formData.legalForm || 'other'} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value as LegalForm }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
+                Rechtsform *
+                <select required value={formData.legalForm || ''} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value ? event.target.value as LegalForm : undefined }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
+                  <option value="" disabled>Bitte wählen …</option>
                   <option value="sole_proprietorship">Einzelunternehmen</option>
                   <option value="partnership">Personengesellschaft</option>
                   <option value="gbr">GbR</option>
@@ -794,7 +803,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Contact Information */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <Mail className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Kontaktdaten</h3>
@@ -848,7 +857,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Payment Information - Enhanced Section */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <CreditCard className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Zahlungsinformationen</h3>
@@ -1020,7 +1029,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {/* Logo & Icon Upload */}
         <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
         {/* Logo Upload */}
-        <div className="h-full rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section h-full">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
@@ -1072,7 +1081,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Icon Upload */}
-        <div className="h-full rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section h-full">
           <div className="flex items-center mb-4">
             <Upload className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
@@ -1131,7 +1140,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'invoices' && (
           <div className="space-y-8">
         {/* Invoice Settings */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <FileText className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Rechnungseinstellungen</h3>
@@ -1237,7 +1246,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
 
 
         {/* Yearly Invoice Start Numbers */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <FileText className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Rechnungsnummern</h3>
@@ -1314,7 +1323,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         {activeTab === 'appearance' && (
           <div className="flex flex-col gap-8">
         {/* Color Settings */}
-        <div className="order-3 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section order-3">
           <div className="flex items-center mb-4">
             <Palette className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Farbschema</h3>
@@ -1418,7 +1427,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         </div>
 
         {/* Locale Settings */}
-        <div className="order-1 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section order-1">
           <div className="flex items-center mb-4">
             <Globe className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Sprache und Formatierung</h3>
@@ -1523,7 +1532,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           </div>
         </div>
 
-        <div className="order-2 rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section order-2">
           <div className="mb-4 flex items-center">
             <Palette className="mr-2 h-5 w-5 text-primary-custom" />
             <div>
@@ -1571,7 +1580,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {/* Backup und Wiederherstellung */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 lg:p-6">
+        <div className="settings-section">
           <div className="flex items-center mb-4">
             <Database className="h-5 w-5 text-primary-custom mr-2" />
             <h3 className="text-lg font-semibold text-gray-900">Daten-Backup und Wiederherstellung</h3>

@@ -1272,7 +1272,7 @@
     border: 1px solid color-mix(in srgb, var(--primary-color) 36%, var(--line-soft));
     border-radius: 0.5rem;
     background: color-mix(in srgb, var(--primary-color) 9%, var(--surface-raised));
-    padding: 0.5rem 0.75rem;
+    padding: 0.4rem 0.65rem;
   }
 
   .import-mapping-source-title,
@@ -1880,7 +1880,8 @@
 
   .topbar-badge-running::after {
     position: absolute;
-    inset: -0.25rem;
+    /* Die innere Ringkante liegt direkt an der roten Markierung. */
+    inset: -0.125rem;
     border: 2px solid var(--surface-raised);
     border-top-color: var(--primary-color);
     border-radius: 999px;
@@ -2094,6 +2095,10 @@
 
   .topbar-page-actions-slot {
     overflow-x: auto;
+    /* Hover-Skalierungen der Seitenaktionen dürfen nicht an der Rasterkante
+       abgeschnitten werden. Der zusätzliche Innenraum bleibt unsichtbar. */
+    padding: 0.25rem;
+    margin: -0.25rem;
     scrollbar-width: none;
   }
 
@@ -2103,6 +2108,18 @@
 
   .topbar-page-title {
     color: var(--ink-strong);
+  }
+
+  /* Einstellungsreiter bilden eine gemeinsame Fläche. Fachliche Hinweise
+     und einzelne Formgruppen dürfen weiterhin eigene dezente Flächen haben. */
+  .settings-section {
+    padding: 0.25rem 0;
+  }
+
+  @media (min-width: 1024px) {
+    .settings-section {
+      padding: 0.5rem 0;
+    }
   }
 
   .page-header-placeholder {

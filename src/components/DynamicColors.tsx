@@ -9,7 +9,7 @@ export function DynamicColors() {
   
   // Default colors if not set
   const terminologyProfile = terminologyProfiles.find(profile => profile.id === company.terminologyProfile) || terminologyProfiles[0];
-  const useTerminologyColors = company.terminologyColorSource === 'profile';
+  const useTerminologyColors = (company.terminologyColorSource || 'profile') === 'profile';
   const primaryColor = useTerminologyColors
     ? terminologyProfile.preview.accent
     : company.primaryColor || '#2563eb';
