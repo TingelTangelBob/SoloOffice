@@ -138,18 +138,17 @@ router.patch('/bulk-status', async (req, res) => {
 
   const client = await pool.connect();
   try {
+    // Vorprüfung ohne Sperre/Transaktion — Batches bekommen eigene kurze Transaktionen.
     const currentResult = await client.query(
       `SELECT id, status, document_type
        FROM invoices
-       WHERE id = ANY($1::uuid[])
-       FOR UPDATE`,
+       WHERE id = ANY($1::uuid[])`,
       [ids],
     );
     const currentInvoices = currentResult.rows;
     const currentIds = new Set(currentInvoices.map((invoice) => invoice.id));
     const missingIds = ids.filter((id) => !currentIds.has(id));
     if (missingIds.length > 0) {
-      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Mindestens eine Rechnung wurde nicht gefunden.', missingIds });
     }
 
@@ -157,7 +156,6 @@ router.patch('/bulk-status', async (req, res) => {
       .filter((invoice) => invoice.document_type === 'credit_note')
       .map((invoice) => invoice.id);
     if (creditNoteIds.length > 0) {
-      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Gutschriften müssen separat verwaltet werden.', creditNoteIds });
     }
 

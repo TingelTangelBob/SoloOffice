@@ -110,12 +110,16 @@ test('Ausstellen sperrt Inhalte in Service und Datenbank, Status bleibt fortschr
 }));
 
 test('Bulk-Statuswechsel funktioniert auch einzeln und in Batches', () => inWorkspace(async () => {
-  const invoices = await Promise.all(Array.from({ length: 101 }, () => createInvoice(draft())));
+  // Sequentiell anlegen: parallele Creates belasten Nummernvergabe und CI-Timeouts unnötig.
+  const invoices = [];
+  for (let index = 0; index < 101; index += 1) {
+    invoices.push(await createInvoice(draft()));
+  }
   const singleResponse = await updateInvoiceStatuses([invoices[0].id], 'sent');
-  assert.equal(singleResponse.statusCode, 200);
+  assert.equal(singleResponse.statusCode, 200, singleResponse.payload?.error || JSON.stringify(singleResponse.payload));
   assert.equal(singleResponse.payload.updatedIds.length, 1);
   const batchResponse = await updateInvoiceStatuses(invoices.slice(1).map(invoice => invoice.id), 'sent');
-  assert.equal(batchResponse.statusCode, 200);
+  assert.equal(batchResponse.statusCode, 200, batchResponse.payload?.error || JSON.stringify(batchResponse.payload));
   assert.equal(batchResponse.payload.partial, false);
   assert.equal(batchResponse.payload.updatedIds.length, 100);
   assert.deepEqual(batchResponse.payload.failedIds, []);
