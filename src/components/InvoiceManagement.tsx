@@ -1000,12 +1000,17 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     try {
       const result = await apiService.updateInvoiceStatuses(invoiceIds, newStatus);
       await refreshInvoices();
-      setSelectedInvoiceIds([]);
+      setSelectedInvoiceIds(result.failedIds);
       updateBackgroundTask(taskId, {
-        status: 'success',
-        detail: `${formatCountLabel(result.updatedIds.length, 'Rechnung', 'Rechnungen')} erfolgreich aktualisiert.`,
+        status: result.partial ? 'error' : 'success',
+        detail: result.partial
+          ? `${formatCountLabel(result.updatedIds.length, 'Rechnung', 'Rechnungen')} aktualisiert; ${formatCountLabel(result.failedIds.length, 'Rechnung', 'Rechnungen')} fehlgeschlagen.`
+          : `${formatCountLabel(result.updatedIds.length, 'Rechnung', 'Rechnungen')} erfolgreich aktualisiert.`,
         progress: 100,
       });
+      if (result.partial) {
+        notify({ variant: 'warning', message: `${formatCountLabel(result.updatedIds.length, 'Rechnung', 'Rechnungen')} aktualisiert; ${formatCountLabel(result.failedIds.length, 'Rechnung', 'Rechnungen')} konnten nicht aktualisiert werden. Die fehlgeschlagene Auswahl bleibt markiert.` });
+      }
     } catch (error) {
       logger.error('Error updating invoice statuses:', error);
       updateBackgroundTask(taskId, {

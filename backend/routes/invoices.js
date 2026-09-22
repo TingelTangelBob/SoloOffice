@@ -7,6 +7,7 @@ import { pool, query } from '../database.js';
 const router = express.Router();
 const INVOICE_STATUSES = new Set(['draft', 'sent', 'paid', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INVOICE_STATUS_BATCH_SIZE = 100;
 
 // Get all invoices
 router.get('/', async (req, res) => {
@@ -119,9 +120,10 @@ router.post('/from-jobs', async (req, res) => {
   }
 });
 
-// Mehrere Rechnungsstatus in einer atomaren Anfrage ändern. Eine einzelne
-// Anfrage verhindert, dass große Auswahlen das API-Rate-Limit durch hunderte
-// Einzelupdates überschreiten.
+// Mehrere Rechnungsstatus in wenigen, kurzen Transaktionen ändern. Die
+// Vorprüfung bleibt fachlich vollständig; die eigentliche Änderung läuft in
+// Batches, damit große Auswahlen weder ein einzelnes Lock-/Timeout-Fenster
+// noch hunderte API-Anfragen erzeugen.
 router.patch('/bulk-status', async (req, res) => {
   const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
   const ids = [...new Set(rawIds.filter((id) => typeof id === 'string').map((id) => id.trim()))];
@@ -136,8 +138,6 @@ router.patch('/bulk-status', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
     const currentResult = await client.query(
       `SELECT id, status, document_type
        FROM invoices
@@ -165,26 +165,50 @@ router.patch('/bulk-status', async (req, res) => {
       .filter((invoice) => invoice.status !== 'draft' && status === 'draft')
       .map((invoice) => invoice.id);
     if (draftDowngradeIds.length > 0) {
-      await client.query('ROLLBACK');
       return res.status(409).json({
         error: 'Ausgestellte Rechnungen können nicht wieder zu Entwürfen zurückgesetzt werden.',
         draftDowngradeIds,
       });
     }
 
-    const result = await client.query(
-      `UPDATE invoices
-       SET status = $1, updated_at = NOW()
-       WHERE id = ANY($2::uuid[])
-       RETURNING id, updated_at`,
-      [status, ids],
-    );
+    const updatedIds = [];
+    const failedIds = [];
+    const failures = [];
+    for (let offset = 0; offset < ids.length; offset += INVOICE_STATUS_BATCH_SIZE) {
+      const batchIds = ids.slice(offset, offset + INVOICE_STATUS_BATCH_SIZE);
+      try {
+        await client.query('BEGIN');
+        const result = await client.query(
+          `UPDATE invoices
+           SET status = $1
+           WHERE id = ANY($2::uuid[])
+           RETURNING id`,
+          [status, batchIds],
+        );
+        await client.query('COMMIT');
+        updatedIds.push(...result.rows.map((row) => row.id));
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        failedIds.push(...batchIds);
+        failures.push({ ids: batchIds, message: 'Dieser Teil der Auswahl konnte nicht aktualisiert werden.' });
+        logger.error('Invoice status batch failed', {
+          error: error.message,
+          count: batchIds.length,
+          offset,
+        });
+      }
+    }
 
-    await client.query('COMMIT');
-    res.json({
-      message: `${result.rows.length} Rechnungen erfolgreich aktualisiert.`,
-      updatedIds: result.rows.map((row) => row.id),
-      updatedAt: result.rows[0]?.updated_at || null,
+    const partial = failedIds.length > 0;
+    res.status(partial ? 207 : 200).json({
+      message: partial
+        ? `${updatedIds.length} Rechnungen aktualisiert, ${failedIds.length} konnten nicht aktualisiert werden.`
+        : `${updatedIds.length} Rechnungen erfolgreich aktualisiert.`,
+      updatedIds,
+      failedIds,
+      failures,
+      partial,
+      updatedAt: null,
     });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);

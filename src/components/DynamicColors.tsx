@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useCompany } from '../context/CompanyContext';
 import { terminologyProfiles } from '../utils/terminology';
 
+const THEME_PREPAINT_STORAGE_KEY = 'solooffice-theme-prepaint-v1';
+
 export function DynamicColors() {
   const { company } = useCompany();
   
@@ -152,6 +154,26 @@ export function DynamicColors() {
       // Deckung, um überhaupt sichtbar zu werden.
       appShell.style.setProperty('--accent-tint', tintOf(primaryColor, resolvedTheme === 'dark' ? 0.26 : 0.12));
       appShell.style.setProperty('--accent-edge', tintOf(primaryColor, resolvedTheme === 'dark' ? 0.55 : 0.42));
+
+      try {
+        const snapshot: Record<string, string> = {
+          theme: resolvedTheme,
+          mode: company.themeMode || 'system',
+          '--primary-color': primaryColor,
+          '--primary-light': primaryLight,
+          '--primary-medium': primaryMedium,
+          '--primary-text-color': primaryTextColor,
+          '--secondary-color': secondaryColor,
+          '--secondary-light': secondaryLight,
+          '--secondary-text-color': secondaryTextColor,
+          '--primary-on-surface': resolvedTheme === 'dark' ? primaryOnDarkSurface : primaryOnLightSurface,
+          '--accent-tint': tintOf(primaryColor, resolvedTheme === 'dark' ? 0.26 : 0.12),
+          '--accent-edge': tintOf(primaryColor, resolvedTheme === 'dark' ? 0.55 : 0.42),
+        };
+        window.localStorage.setItem(THEME_PREPAINT_STORAGE_KEY, JSON.stringify(snapshot));
+      } catch {
+        // Lokale Vorabdarstellung ist optional und darf die Oberfläche nicht stören.
+      }
     };
 
     appShell.style.setProperty('--primary-color', primaryColor);

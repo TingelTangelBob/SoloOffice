@@ -57,6 +57,7 @@ async function responseError(response: Response, fallback: string): Promise<ApiR
 
 interface ApiRequestOptions extends RequestInit {
   skipErrorLogging?: boolean;
+  allowPartialStatus?: boolean;
 }
 
 interface EmailAttachment {
@@ -96,7 +97,7 @@ class ApiService {
 
     const url = `${this.baseUrl}${endpoint}`;
     const method = options.method || 'GET';
-    const { skipErrorLogging, ...fetchOptions } = options;
+    const { skipErrorLogging, allowPartialStatus, ...fetchOptions } = options;
     
     const config: RequestInit = {
       ...fetchOptions,
@@ -111,7 +112,7 @@ class ApiService {
     try {
       const response = await fetch(url, config);
 
-      if (!response.ok) {
+      if (!response.ok && !(allowPartialStatus && response.status === 207)) {
         if (response.status === 401 && typeof window !== 'undefined') {
           window.dispatchEvent(new Event('solooffice-auth-expired'));
         }
@@ -424,10 +425,11 @@ class ApiService {
     });
   }
 
-  async updateInvoiceStatuses(ids: string[], status: Invoice['status']): Promise<{ updatedIds: string[]; updatedAt: string | null }> {
-    return this.request<{ updatedIds: string[]; updatedAt: string | null }>('/invoices/bulk-status', {
+  async updateInvoiceStatuses(ids: string[], status: Invoice['status']): Promise<{ updatedIds: string[]; failedIds: string[]; failures: Array<{ ids: string[]; message: string }>; partial: boolean; updatedAt: string | null }> {
+    return this.request<{ updatedIds: string[]; failedIds: string[]; failures: Array<{ ids: string[]; message: string }>; partial: boolean; updatedAt: string | null }>('/invoices/bulk-status', {
       method: 'PATCH',
       body: JSON.stringify({ ids, status }),
+      allowPartialStatus: true,
     });
   }
 

@@ -13,6 +13,27 @@
     <meta name="msapplication-TileColor" content="#2563eb" />
     <meta name="msapplication-TileImage" content="/SoloOffice_Icon.png" />
     <title>SoloOffice-Demo – Rechnungs- und Geschäftsverwaltung</title>
+    <script>
+      (() => {
+        try {
+          const raw = localStorage.getItem('solooffice-theme-prepaint-v1');
+          const snapshot = raw ? JSON.parse(raw) : null;
+          if (!snapshot || (snapshot.theme !== 'light' && snapshot.theme !== 'dark')) return;
+          const root = document.documentElement;
+          const theme = snapshot.mode === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : snapshot.theme;
+          root.dataset.theme = theme;
+          root.style.colorScheme = theme;
+          root.style.backgroundColor = theme === 'dark' ? '#0a0a0b' : '#f6f6f7';
+          for (const name of ['--primary-color', '--primary-light', '--primary-medium', '--primary-text-color', '--secondary-color', '--secondary-light', '--secondary-text-color', '--primary-on-surface', '--accent-tint', '--accent-edge']) {
+            if (typeof snapshot[name] === 'string') root.style.setProperty(name, snapshot[name]);
+          }
+        } catch {
+          // Ein beschädigter optionaler Snapshot darf den App-Start nicht blockieren.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

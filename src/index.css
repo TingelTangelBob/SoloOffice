@@ -1878,6 +1878,20 @@
     box-shadow: 0 0 0 2px var(--surface-raised);
   }
 
+  .topbar-badge-running::after {
+    position: absolute;
+    inset: -0.25rem;
+    border: 2px solid var(--surface-raised);
+    border-top-color: var(--primary-color);
+    border-radius: 999px;
+    content: '';
+    animation: topbar-badge-spinner 900ms linear infinite;
+  }
+
+  @keyframes topbar-badge-spinner {
+    to { transform: rotate(360deg); }
+  }
+
   @keyframes topbar-notice-start-pulse {
     0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
     45% { transform: scale(1.08); box-shadow: 0 0 0 0.3rem color-mix(in srgb, var(--primary-color) 18%, transparent); }
@@ -1914,6 +1928,16 @@
 
   .topbar-task-complete-icon {
     animation: topbar-task-complete-icon 650ms var(--motion-ease);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .topbar-badge-running::after,
+    .topbar-notice-start-pulse,
+    .topbar-notice-complete-pulse,
+    .topbar-task-complete-pulse,
+    .topbar-task-complete-icon {
+      animation: none;
+    }
   }
 
   .topbar-background-task {

@@ -713,7 +713,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                USt-IdNr. *
+                USt-IdNr.
               </label>
               <input
                 type="text"

@@ -132,7 +132,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     [company.postalCode, 'PLZ'],
     [company.city, 'Ort'],
     [company.email, 'E-Mail-Adresse'],
-    [company.taxId, 'USt-IdNr.'],
     [company.bankAccount, 'IBAN'],
   ]
     .filter(([value]) => !String(value || '').trim())
@@ -494,7 +493,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   return (
     <>
       <DynamicColors />
-      <div id="app-shell" data-demo-mode={isDemoMode ? 'true' : undefined} className="min-h-screen bg-gray-50">
+      <div
+        id="app-shell"
+        data-demo-mode={isDemoMode ? 'true' : undefined}
+        data-theme={typeof document !== 'undefined' ? document.documentElement.dataset.theme : undefined}
+        className="min-h-screen bg-gray-50"
+      >
         <div className="flex relative min-h-screen">
           {isMobileMenuOpen && (
             <div

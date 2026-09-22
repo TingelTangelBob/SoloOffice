@@ -30,6 +30,18 @@ async function recordPayment(invoiceId, amount) {
   return response;
 }
 
+async function updateInvoiceStatuses(ids, status) {
+  const handler = invoicesRouter.stack.find(layer => layer.route?.path === '/bulk-status' && layer.route.methods.patch)?.route.stack[0].handle;
+  assert.equal(typeof handler, 'function');
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(payload) { this.payload = payload; },
+  };
+  await handler({ body: { ids, status } }, response);
+  return response;
+}
+
 before(async () => {
   await query('INSERT INTO workspaces (id,name,slug) VALUES ($1,$2,$3)', [workspaceId, 'Rechnungsintegrität', `invoice-integrity-${workspaceId}`]);
   await inWorkspace(async () => {
@@ -95,6 +107,19 @@ test('Ausstellen sperrt Inhalte in Service und Datenbank, Status bleibt fortschr
     VALUES ($1,'später.txt','x','text/plain',1)`, [invoice.id]), error => error.code === '23514');
   await assert.rejects(deleteInvoice(invoice.id), error => error.statusCode === 409);
   assert.equal((await updateInvoice(invoice.id, { status: 'overdue' })).status, 'overdue');
+}));
+
+test('Bulk-Statuswechsel funktioniert auch einzeln und in Batches', () => inWorkspace(async () => {
+  const invoices = await Promise.all(Array.from({ length: 101 }, () => createInvoice(draft())));
+  const singleResponse = await updateInvoiceStatuses([invoices[0].id], 'sent');
+  assert.equal(singleResponse.statusCode, 200);
+  assert.equal(singleResponse.payload.updatedIds.length, 1);
+  const batchResponse = await updateInvoiceStatuses(invoices.slice(1).map(invoice => invoice.id), 'sent');
+  assert.equal(batchResponse.statusCode, 200);
+  assert.equal(batchResponse.payload.partial, false);
+  assert.equal(batchResponse.payload.updatedIds.length, 100);
+  assert.deepEqual(batchResponse.payload.failedIds, []);
+  assert.equal((await findInvoiceById(invoices[0].id)).status, 'sent');
 }));
 
 test('Dokumentdaten bleiben nach Änderungen an Firma und Kunde erhalten und sind im Backup enthalten', () => inWorkspace(async () => {

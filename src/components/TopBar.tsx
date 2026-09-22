@@ -52,6 +52,7 @@ export function TopBar({
 }: TopBarProps) {
   const noticeCount = notices.length + backgroundTasks.length;
   const latestBackgroundTask = backgroundTasks[backgroundTasks.length - 1] || null;
+  const hasRunningTask = backgroundTasks.some(task => task.status === 'running');
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const [completedTaskId, setCompletedTaskId] = useState<string | null>(null);
   const seenTaskIds = useRef(new Set<string>());
@@ -142,7 +143,7 @@ export function TopBar({
         <ActionMenu
           ariaLabel={noticeCount > 0 ? `Hinweise (${noticeCount})` : 'Hinweise'}
           title="Hinweise"
-          menuClassName="min-w-[17rem]"
+          menuClassName="w-[min(24rem,calc(100vw-1rem))] min-w-0"
           triggerClassName={`topbar-icon-button relative ${startingTaskId ? 'topbar-notice-start-pulse' : ''} ${completedTaskId ? 'topbar-notice-complete-pulse' : ''}`}
           autoOpenSignal={latestBackgroundTask?.id ?? null}
           icon={
@@ -150,7 +151,7 @@ export function TopBar({
               <Bell className="h-[1.125rem] w-[1.125rem]" />
               {noticeCount > 0 && (
                 <span
-                  className="topbar-badge"
+                  className={`topbar-badge ${hasRunningTask ? 'topbar-badge-running' : ''}`}
                   aria-hidden="true"
                 />
               )}
@@ -172,7 +173,7 @@ export function TopBar({
                   <TaskIcon className={`mt-0.5 h-4 w-4 shrink-0 ${task.status === 'error' ? 'text-red-500' : task.status === 'success' ? 'text-green-500' : 'text-primary-custom'} ${task.status === 'running' ? 'animate-spin' : ''} ${completedTaskId === task.id ? 'topbar-task-complete-icon' : ''}`} aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">{task.title}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">{task.detail}</p>
+                    <p className="mt-0.5 break-words text-xs text-gray-500">{task.detail}</p>
                     {task.progress != null && (
                       <div className="topbar-task-progress mt-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress}>
                         <span style={{ width: `${task.progress}%` }} />

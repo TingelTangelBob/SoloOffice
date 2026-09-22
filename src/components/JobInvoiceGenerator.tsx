@@ -61,7 +61,6 @@ export function JobInvoiceGenerator({
     [company.postalCode, 'PLZ'],
     [company.city, 'Ort'],
     [company.email, 'E-Mail-Adresse'],
-    [company.taxId, 'USt-IdNr.'],
     [company.bankAccount, 'IBAN'],
   ].filter(([value]) => !String(value || '').trim()).map(([, label]) => label);
 
