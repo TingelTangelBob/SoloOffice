@@ -20,11 +20,16 @@ Der aktuelle Stand ist **v0.8.2** und ein Beta-/Testrelease. Die Anwendung ist f
 - Import-Assistent mit Vorschau, Feldzuordnung, Validierung und Duplikatbehandlung
 - Angebote mit Vorlagen, Statusverwaltung, PDF-Vorschau, E-Mail-Versand und Umwandlung in Rechnungen
 - Rechnungen mit Positionen, Rabatten, Steuerprofilen, Zahlungsinformationen, PDF-Download und E-Mail-Versand
+- Rechnungen aus Aufträgen/Kursen mit gemeinsamem Rechnungs- und Fälligkeitsdatum sowie optionaler eigener Rechnungsnummer
 - Gutschriften mit Ursprungsrechnung und Begründung
 - Wiederkehrende Rechnungen mit Ausführungen und Verlauf
 - Aufträge, Zeiterfassung, wiederkehrende Aufträge, Entwürfe, Standorte und digitale Signatur
 - Kalender mit Tages-, Wochen- und Monatsansicht sowie Auftragsstatus
 - Mahnwesen mit Fälligkeitsermittlung, Mahnstufen, Versand und Verlauf
+
+### Rückwirkende Rechnungen und Zahlungsimport
+
+Für eine Migration zuerst die vorhandenen Daten und Kunden anlegen. Danach Rechnungen aus Aufträgen/Kursen mit dem gewünschten Rechnungsdatum, Fälligkeitsdatum und – falls erforderlich – einer freien, noch nicht vergebenen Rechnungsnummer erzeugen. Anschließend Zahlungseingänge über den Importassistenten laden und die Spalte `Rechnungsnummer` zuordnen; sie wird zur Rechnungssuche verwendet. Leere Nummernfelder nutzen weiterhin den automatischen Nummernkreis.
 
 ### E-Rechnung und Dokumente
 

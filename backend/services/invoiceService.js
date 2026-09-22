@@ -2,7 +2,7 @@ import { pool } from '../database.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
 import { calculateDocumentMoney } from '../utils/documentMoney.js';
 import { captureInvoiceSnapshot } from './invoiceSnapshot.js';
-import { invoiceError, validateInvoiceHeader, validateInvoiceUpdate, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
+import { invoiceError, normalizeInvoiceNumber, validateInvoiceHeader, validateInvoiceUpdate, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
 import { counterMatcher, formatNumberPattern, invoiceDateParts, numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -13,7 +13,6 @@ const REQUIRED_COMPANY_FIELDS = [
   ['postal_code', 'PLZ'],
   ['city', 'Ort'],
   ['email', 'E-Mail-Adresse'],
-  ['tax_id', 'USt-IdNr.'],
   ['bank_account', 'IBAN'],
 ];
 
@@ -120,6 +119,7 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice',
 export async function createInvoice(data, transactionHook) {
   const {
     customerId,
+    invoiceNumber: requestedInvoiceNumber,
     items = [],
     notes = '',
     attachments = [],
@@ -168,6 +168,8 @@ export async function createInvoice(data, transactionHook) {
 
   try {
     await client.query('BEGIN');
+
+    const manualInvoiceNumber = normalizeInvoiceNumber(requestedInvoiceNumber);
 
     await validateCompanyForInvoice(client);
 
@@ -275,7 +277,18 @@ export async function createInvoice(data, transactionHook) {
     }
 
     // Quellbelege werden vor dem Nummernkreis gesperrt (gleiche Reihenfolge wie Angebotsumwandlung).
-    const invoiceNumber = await generateInvoiceNumber(issueDate, documentType, client);
+    let invoiceNumber = manualInvoiceNumber;
+    if (invoiceNumber) {
+      const existingNumber = await client.query(
+        'SELECT 1 FROM invoices WHERE invoice_number = $1 LIMIT 1',
+        [invoiceNumber],
+      );
+      if (existingNumber.rows.length > 0) {
+        throw invoiceError(`Die Rechnungsnummer „${invoiceNumber}“ ist in diesem Workspace bereits vergeben.`, 409);
+      }
+    } else {
+      invoiceNumber = await generateInvoiceNumber(issueDate, documentType, client);
+    }
 
     const { items: processedItems, subtotal, taxAmount, total, globalDiscountType, globalDiscountValue, globalDiscountAmount: globalDiscAmount } = money;
     const documentSnapshot = await captureInvoiceSnapshot(client, customerId);
@@ -350,6 +363,9 @@ export async function createInvoice(data, transactionHook) {
     return await findInvoiceById(invoiceId);
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error?.code === '23505' && ['invoices_workspace_number_idx', 'invoices_invoice_number_key'].includes(error.constraint)) {
+      throw invoiceError('Die Rechnungsnummer ist in diesem Workspace bereits vergeben.', 409);
+    }
     throw error;
   } finally {
     client.release();

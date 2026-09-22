@@ -65,6 +65,7 @@ router.post('/', async (req, res) => {
   try {
     const {
       customerId,
+      invoiceNumber,
       items = [],
       notes = '',
       attachments = [],
@@ -77,7 +78,7 @@ router.post('/', async (req, res) => {
       globalDiscountAmount,
       sourceQuoteId,
     } = req.body;
-    const invoice = await createInvoice({ customerId, items, notes, attachments, issueDate, dueDate, serviceDate, status, globalDiscountType, globalDiscountValue, globalDiscountAmount, sourceQuoteId, documentType: 'invoice' });
+    const invoice = await createInvoice({ invoiceNumber, customerId, items, notes, attachments, issueDate, dueDate, serviceDate, status, globalDiscountType, globalDiscountValue, globalDiscountAmount, sourceQuoteId, documentType: 'invoice' });
     res.status(201).json(invoice);
   } catch (error) {
     logger.error('Failed to create invoice', {

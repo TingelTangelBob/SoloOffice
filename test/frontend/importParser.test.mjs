@@ -9,13 +9,24 @@ import {
 } from '../../.test-dist/utils/importParser.js';
 
 test('Jede Importfunktion beschreibt ihre Pflichtspalten und Suchbegriffe', () => {
-  for (const resource of ['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries']) {
+  for (const resource of ['customers', 'jobs', 'quotes', 'positions', 'hourlyRates', 'materials', 'euerEntries', 'invoicePayments']) {
     const definition = getImportDefinition(resource);
     assert.ok(definition.fields.length > 0, `${resource} benötigt Felddefinitionen`);
     assert.ok(definition.fields.filter(field => field.required).every(field => field.aliases.length > 0), `${resource} benötigt Aliaslisten für Pflichtfelder`);
   }
 
   assert.ok(getImportDefinition('jobs').fields.some(field => field.key === 'location'));
+});
+
+test('Zahlungsimport ordnet die Rechnungsnummer automatisch zu', () => {
+  const result = analyseHeaderMapping(
+    ['Rechnungsnummer', 'Zahlungsdatum', 'Zahlungsbetrag'],
+    getImportDefinition('invoicePayments'),
+  );
+
+  assert.equal(result.mapping.invoiceNumber, 'Rechnungsnummer');
+  assert.equal(result.mapping.entryDate, 'Zahlungsdatum');
+  assert.equal(result.mapping.amount, 'Zahlungsbetrag');
 });
 
 test('Kundenimport ordnet deutsche und englische Spalten automatisch zu', () => {

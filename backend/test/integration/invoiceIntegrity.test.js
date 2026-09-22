@@ -94,6 +94,15 @@ test('API ignoriert manipulierte Summen und berechnet geänderte Rabatte ohne ne
   await assert.rejects(createInvoice(draft({ status: 'paid' })), error => error.statusCode === 409);
 }));
 
+test('Manuelle Rechnungsnummern werden übernommen und im Workspace eindeutig geprüft', () => inWorkspace(async () => {
+  const invoice = await createInvoice(draft({ invoiceNumber: 'MIGRATION-2021-001', issueDate: '2021-10-10', dueDate: '2021-11-09' }));
+  assert.equal(invoice.invoiceNumber, 'MIGRATION-2021-001');
+  await assert.rejects(
+    createInvoice(draft({ invoiceNumber: 'MIGRATION-2021-001' })),
+    error => error.statusCode === 409 && /bereits vergeben/.test(error.message),
+  );
+}));
+
 test('Ausstellen sperrt Inhalte in Service und Datenbank, Status bleibt fortschreibbar', () => inWorkspace(async () => {
   const invoice = await createInvoice(draft());
   const issued = await updateInvoice(invoice.id, { items: [{ ...item, quantity: 1 }], status: 'sent' });

@@ -999,7 +999,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
     }
 
     const invoiceData: Omit<Invoice, 'id' | 'createdAt'> = {
-      invoiceNumber: invoice ? formData.invoiceNumber : '', // Keep existing number for updates, empty for new invoices
+      invoiceNumber: formData.invoiceNumber.trim(),
       customerId: formData.customerId,
       customerName: customer.name,
       issueDate: new Date(formData.issueDate),
@@ -1100,13 +1100,14 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   <input
                     type="text"
                     value={formData.invoiceNumber}
-                    placeholder={invoice ? "" : "Wird automatisch generiert"}
-                    disabled={true}
-                    readOnly={true}
-                    className="form-input form-input-compact w-full bg-gray-100 text-gray-500"
+                    placeholder={invoice ? "" : "Automatisch vergeben, wenn leer"}
+                    disabled={Boolean(invoice)}
+                    readOnly={Boolean(invoice)}
+                    onChange={(event) => setFormData(previous => ({ ...previous, invoiceNumber: event.target.value }))}
+                    className={`form-input form-input-compact w-full ${invoice ? 'bg-gray-100 text-gray-500' : ''}`}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Die Rechnungsnummer wird beim Speichern nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
+                    {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Optional. Wenn das Feld leer bleibt, wird die Nummer nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
                   </p>
                 </div>
                 <div className="min-w-0">
