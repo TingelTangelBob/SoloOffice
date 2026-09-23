@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowRightLeft, ArrowUp, CalendarCheck, CheckCircle2, Download, FileText, History, Loader2, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowRightLeft, ArrowUp, CalendarCheck, Download, FileText, History, Loader2, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
@@ -12,7 +12,6 @@ import type { EuerEntry, ImportResource, ImportRun, TakeoverStatus } from '../ty
 import { buildImportTemplate, detectImportResources, getImportDefinition, parseImportFile, analyseHeaderMapping, type ImportResourceCandidate, type ParsedImportFile } from '../utils/importParser';
 import { getTerminology } from '../utils/terminology';
 import { isValidTakeoverOrder, planTakeoverDependencies } from '../../backend/utils/takeoverDependencies.js';
-import type { TakeoverDependencyNode } from '../../backend/utils/takeoverDependencies.js';
 import { DialogShell } from './DialogShell';
 import { ImportResultTable, ImportWizard } from './ImportWizard';
 import { LocalizedDateInput } from './LocalizedDateInput';

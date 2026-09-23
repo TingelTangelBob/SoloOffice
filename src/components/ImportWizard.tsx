@@ -231,8 +231,6 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     return () => window.removeEventListener('keydown', handleKey);
   }, [isBusy, isOpen]);
 
-  if (!isOpen) return null;
-
   const reset = () => {
     setStep('file');
     setSourceFile(null);
@@ -308,6 +306,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     // are handled by the wizard's own controls.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFile, initialSheet, isOpen]);
+
+  if (!isOpen) return null;
 
   const rememberScroll = () => {
     mappingScrollTopRef.current = mappingScrollRef.current?.scrollTop ?? null;

@@ -1078,7 +1078,7 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
   }
   let categoryId: string | null = null;
   let digest: string | null = null;
-  let categories = readDemoTakeoverCategories();
+  const categories = readDemoTakeoverCategories();
   let category: DemoRecord | undefined;
   if (takeover) {
     category = categories[resource];

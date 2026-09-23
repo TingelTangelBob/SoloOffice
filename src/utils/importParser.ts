@@ -679,9 +679,9 @@ export function detectImportResources(parsed: ParsedImportFile): ImportResourceC
     const typedTotal = typedAnalysis.reduce((sum, format) => sum + format.total, 0);
     const typedInvalid = typedAnalysis.reduce((sum, format) => sum + format.invalid, 0);
     const typedQuality = typedTotal ? (typedTotal - typedInvalid) / typedTotal : 1;
-    let score = Math.min(60, matchedColumns.length * 18) + Math.round(coverage * 25) + (requiredGroupHit ? 15 : 0)
+    const score = Math.min(60, matchedColumns.length * 18) + Math.round(coverage * 25) + (requiredGroupHit ? 15 : 0)
       + (typedTotal ? Math.round(typedQuality * 10) - Math.round((1 - typedQuality) * 20) : 0);
-    let reason = matchedColumns.length
+    const reason = matchedColumns.length
       ? `${matchedColumns.length} passende Spalten aus den Felddefinitionen; ${Math.round(coverage * 100)} % der relevanten Datenzeilen enthalten dazu passende Werte${typedTotal ? `, ${Math.round(typedQuality * 100)} % der Datums- und Zahlenwerte sind lesbar` : ''}${excludedPaymentRows ? ` ${excludedPaymentRows} mit Rechnungsbezug und Zahlungsdatum verknüpfte Zeilen sind hier ausgeschlossen.` : ''}.`
       : 'Keine passende Spaltenstruktur erkannt.';
 
