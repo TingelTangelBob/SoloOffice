@@ -3,7 +3,7 @@ import { findInvoiceById } from '../queries/invoiceQueries.js';
 import { calculateDocumentMoney } from '../utils/documentMoney.js';
 import { captureInvoiceSnapshot } from './invoiceSnapshot.js';
 import { invoiceError, normalizeInvoiceNumber, validateInvoiceHeader, validateInvoiceUpdate, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
-import { counterMatcher, formatNumberPattern, invoiceDateParts, numberPatternError } from '../utils/invoiceNumberPattern.js';
+import { counterMatcher, formatNumberPattern, invoiceDateParts, legacyCounter, numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -94,9 +94,9 @@ export async function generateInvoiceNumber(issueDate, documentType = 'invoice',
         highestCounter = Math.max(highestCounter, Number(currentPatternMatch[1]));
         continue;
       }
-      // Kompatibilität mit dem bisherigen Format bei einem Musterwechsel.
-      const legacyCounter = number.match(/(\d+)$/);
-      if (legacyCounter) highestCounter = Math.max(highestCounter, Number(legacyCounter[1]));
+      // Kompatibilität mit früheren Mustern und übernommenen Rechnungen.
+      const legacy = legacyCounter(number, invoiceYear);
+      if (legacy) highestCounter = Math.max(highestCounter, legacy);
     }
 
     let counter = highestCounter + 1;

@@ -4,6 +4,8 @@ import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { getTerminology } from '../utils/terminology';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
+import { IMPORT_RESOURCES, MAX_IMPORT_ROWS, isApplicable, planImport, reportRows, summariseImport } from '../../backend/utils/importPlanner.js';
+import type { ImportPlan, PlannerContext, PlannerResource } from '../../backend/utils/importPlanner.js';
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
@@ -24,6 +26,10 @@ interface DemoState {
   fixedAssets: DemoRecord[];
   receipts: DemoRecord[];
   incomingEInvoices: DemoRecord[];
+  /** Importläufe mit den angelegten bzw. geänderten Datensätzen (für „Rückgängig“). */
+  importRuns?: DemoRecord[];
+  /** Originaldokumente übernommener Rechnungen, je Rechnungs-ID. */
+  invoiceOriginals?: Record<string, DemoRecord>;
   company: DemoRecord;
   seedProfile?: TerminologyProfile;
   seedVersion?: number;
@@ -658,6 +664,14 @@ function validateDemoEuerSource(state: DemoState, data: DemoRecord, currentId?: 
   if (sourceType === 'correction' && !state.euerEntries.some(entry => entry.id === sourceId && entry.status === 'active')) throw new Error('Die zu korrigierende EÜR-Buchung wurde nicht gefunden.');
 }
 
+// Kundenbezug gilt wie auf dem Server nur für Einnahmen ohne Rechnung.
+function demoEuerCustomerId(state: DemoState, data: DemoRecord): string | undefined {
+  if (data.entryType !== 'income' || (data.sourceType && data.sourceType !== 'manual') || !data.customerId) return undefined;
+  const customer = state.customers.find(item => item.id === String(data.customerId));
+  if (!customer) throw new Error('Der zugeordnete Kunde wurde nicht gefunden.');
+  return customer.id;
+}
+
 function payload(options: RequestInit): DemoRecord {
   return options.body ? JSON.parse(String(options.body)) as DemoRecord : {} as DemoRecord;
 }
@@ -666,524 +680,528 @@ function collectionResponse<T>(items: DemoRecord[]): T {
   return items as unknown as T;
 }
 
-function demoImportNumber(value: unknown): number | null {
-  if (value === undefined || value === null || String(value).trim() === '') return null;
-  const source = String(value).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  const number = Number(source);
-  return Number.isFinite(number) ? number : null;
+// ---------------------------------------------------------------------------
+// Importe im Demo-Modus
+//
+// Die Prüfung ist dieselbe wie auf dem Server (backend/utils/importPlanner.js);
+// nur das Schreiben erfolgt in den Browserzustand. Jeder Import wird als Lauf
+// protokolliert und kann bis zum Abschluss rückgängig gemacht werden.
+// ---------------------------------------------------------------------------
+
+interface DemoImportRunItem {
+  tableName: string;
+  recordId: string;
+  action: 'created' | 'updated';
+  oldData?: DemoRecord | null;
 }
 
-function demoImportText(value: unknown): string {
-  return value === undefined || value === null ? '' : String(value).trim();
+const DEMO_IMPORT_RESOURCE_LABELS: Record<string, string> = {
+  customers: 'Kunden', jobs: 'Aufträge', quotes: 'Angebote', positions: 'Positionsvorlagen',
+  hourlyRates: 'Stundensätze', materials: 'Materialien', euerEntries: 'Einnahmen und Ausgaben',
+  invoicePayments: 'Zahlungseingänge', invoices: 'Rechnungen',
+};
+
+const DEMO_WORK_TITLES: Record<string, string> = {
+  customers: 'Auftrag', mandants: 'Mandat', patients: 'Behandlung', students: 'Unterricht', clients: 'Beratung',
+};
+
+const DEMO_MAX_ORIGINAL_BYTES = 1024 * 1024;
+
+function demoImportRuns(state: DemoState): DemoRecord[] {
+  if (!Array.isArray(state.importRuns)) state.importRuns = [];
+  return state.importRuns;
 }
 
-function demoImportNormaliseKey(value: unknown): string {
-  return demoImportText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('de-DE')
-    .replace(/[^a-z0-9]/g, '');
+function demoInvoiceOriginals(state: DemoState): Record<string, DemoRecord> {
+  if (!state.invoiceOriginals || typeof state.invoiceOriginals !== 'object') state.invoiceOriginals = {};
+  return state.invoiceOriginals;
 }
 
-function demoImportBoolean(value: unknown): boolean | undefined {
-  const normalized = demoImportText(value).toLocaleLowerCase('de-DE');
-  if (!normalized) return undefined;
-  if (['true', '1', 'ja', 'yes', 'y', 'x'].includes(normalized)) return true;
-  if (['false', '0', 'nein', 'no', 'n'].includes(normalized)) return false;
-  return undefined;
-}
-
-function demoImportStructuredArray(value: unknown): DemoRecord[] {
-  if (Array.isArray(value)) return value as DemoRecord[];
-  const source = demoImportText(value);
-  if (!source) return [];
-  try {
-    const parsed = JSON.parse(source);
-    return Array.isArray(parsed) ? parsed as DemoRecord[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function demoImportCustomerType(value: unknown): 'person' | 'organization' {
-  const normalized = demoImportText(value)
-    .toLocaleLowerCase('de-DE')
-    .replace(/ä/g, 'a')
-    .replace(/ö/g, 'o')
-    .replace(/ü/g, 'u');
-  return ['organisation', 'organization', 'firma', 'unternehmen', 'company', 'org'].includes(normalized)
-    ? 'organization'
-    : 'person';
-}
-
-function demoImportDate(value: unknown): string | null {
-  const source = demoImportText(value);
-  if (!source) return null;
-  const germanDate = source.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
-  if (germanDate) {
-    const year = germanDate[3].length === 2 ? `20${germanDate[3]}` : germanDate[3];
-    const result = `${year}-${germanDate[2].padStart(2, '0')}-${germanDate[1].padStart(2, '0')}`;
-    const parsed = new Date(`${result}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== result ? null : result;
-  }
-  const isoDate = source.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoDate) {
-    const result = `${isoDate[1]}-${isoDate[2].padStart(2, '0')}-${isoDate[3].padStart(2, '0')}`;
-    const parsed = new Date(`${result}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== result ? null : result;
-  }
-  const excelSerial = Number(source);
-  if (Number.isFinite(excelSerial) && excelSerial > 20000 && excelSerial < 100000) {
-    const parsed = new Date(Date.UTC(1899, 11, 30) + excelSerial * 86400000);
-    return parsed.toISOString().slice(0, 10);
-  }
-  const parsed = new Date(source);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
-}
-
-function demoImportEuerCategory(value: unknown): string | null {
-  const source = demoImportText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('de-DE')
-    .replace(/[^a-z0-9]/g, '');
-  const aliases: Record<string, string> = {
-    material: 'materials', materialien: 'materials', waren: 'materials',
-    office: 'office', buro: 'office', buerobedarf: 'office', buerokosten: 'office', burobedarf: 'office', burokosten: 'office',
-    software: 'software', lizenzen: 'software',
-    telefon: 'telecommunications', internet: 'telecommunications', telekommunikation: 'telecommunications',
-    reise: 'travel', reisekosten: 'travel',
-    fahrzeug: 'vehicle', fahrzeugkosten: 'vehicle',
-    werbung: 'marketing', marketing: 'marketing',
-    beratung: 'professional_services', dienstleistung: 'professional_services', fremdleistung: 'professional_services', fremdleistungen: 'professional_services',
-    versicherung: 'insurance', versicherungen: 'insurance',
-    bankgebuehren: 'bank_fees', bankgebuhren: 'bank_fees', bankkosten: 'bank_fees',
-    sonstige: 'other_expense', sonstigeausgabe: 'other_expense', sonstigebetriebsausgaben: 'other_expense', otherexpense: 'other_expense',
+function demoImportContext(state: DemoState): PlannerContext {
+  const profile = String(state.company.terminologyProfile || 'customers') as TerminologyProfile;
+  const terminology = getTerminology(profile);
+  const invoiceCustomer = (invoiceId: unknown) => state.invoices.find(invoice => invoice.id === invoiceId)?.customerId;
+  return {
+    entityLabel: terminology.entity.singular,
+    workLabel: DEMO_WORK_TITLES[profile] || 'Auftrag',
+    today: dateOnly(isoDate()),
+    cutoverDate: typeof state.company.importCutoverDate === 'string' && state.company.importCutoverDate ? state.company.importCutoverDate : null,
+    defaultPaymentDays: Number.isInteger(Number(state.company.defaultPaymentDays)) ? Number(state.company.defaultPaymentDays) : 14,
+    customers: state.customers.map(customer => ({ ...customer })),
+    jobs: state.jobs.map(job => ({
+      id: job.id, jobNumber: job.jobNumber, externalJobNumber: job.externalJobNumber, customerId: job.customerId,
+      title: job.title, date: dateOnly(job.date), startTime: job.startTime,
+    })),
+    quotes: state.quotes.map(quote => ({ id: quote.id, quoteNumber: quote.quoteNumber })),
+    hourlyRates: state.hourlyRates.map(rate => ({ id: rate.id, name: rate.name })),
+    materials: state.materialTemplates.map(material => ({ id: material.id, name: material.name })),
+    positionTemplates: ((state.company.invoiceTemplates || []) as DemoRecord[]).map(template => ({ ...template })),
+    euerEntries: state.euerEntries.filter(entry => entry.status !== 'voided').map(entry => ({
+      ...entry,
+      entryDate: dateOnly(entry.entryDate),
+      status: 'active',
+      customerId: entry.customerId || (entry.sourceType === 'invoice_payment' ? invoiceCustomer(entry.sourceId) : undefined),
+    })),
+    invoices: state.invoices.filter(invoice => invoice.documentType !== 'credit_note').map(invoice => {
+      const customer = state.customers.find(item => item.id === invoice.customerId);
+      return {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        documentType: 'invoice',
+        customerId: invoice.customerId,
+        customerName: invoice.customerName,
+        customerNumber: customer?.customerNumber,
+        customerEmail: customer?.email,
+        issueDate: dateOnly(invoice.issueDate),
+        serviceDate: invoice.serviceDate ? dateOnly(invoice.serviceDate) : null,
+        jobDates: Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs.map(job => dateOnly((job as DemoRecord).jobDate || (job as DemoRecord).date)) : [],
+        itemTaxRates: Array.isArray(invoice.items) ? (invoice.items as DemoRecord[]).map(item => Number(item.taxRate)) : [],
+        status: invoice.status,
+        total: Number(invoice.total || 0),
+        taxAmount: Number(invoice.taxAmount || 0),
+      };
+    }),
   };
-  return aliases[source] || (['materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle', 'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense'].includes(source) ? source : null);
 }
 
-function demoImportEntityLabel(state: DemoState): string {
-  const profile = typeof state.company.terminologyProfile === 'string' ? state.company.terminologyProfile : undefined;
-  return getTerminology(profile).entity.singular;
+function nextDemoDocumentNumber(existing: unknown[], prefix: string, date: unknown): string {
+  const year = dateOnly(date || isoDate()).slice(0, 4);
+  const used = new Set(existing.map(value => String(value || '')));
+  let counter = existing.reduce<number>((highest, value) => {
+    const match = String(value || '').match(new RegExp(`^${prefix}-${year}-(\\d+)$`));
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  let candidate: string;
+  do {
+    counter += 1;
+    candidate = `${prefix}-${year}-${String(counter).padStart(3, '0')}`;
+  } while (used.has(candidate));
+  return candidate;
 }
 
-function demoImportReference(row: DemoRecord): string {
-  const fields = [
-    'customerName', 'customer_name', 'kundenname', 'kunde', 'customer', 'mandant', 'name', 'schüler', 'schueler', 'student', 'studentName', 'student_name', 'teilnehmer', 'teilnehmername',
-    'customerNumber', 'customer_number', 'customerNo', 'customer_no', 'kundennummer', 'kundennr', 'nummer', 'schülernummer', 'schuelernummer', 'studentNumber', 'student_number', 'teilnehmernummer',
-    'customerEmail', 'customer_email', 'kundenEmail', 'kundenmail', 'email', 'eMail', 'mail', 'emailAddress', 'email_address',
-    'customerId', 'customer_id', 'kundenId', 'kunden_id', 'schülerId', 'schuelerId', 'studentId', 'student_id', 'teilnehmerId',
-  ];
-  return fields.map(field => demoImportText(row[field])).find(Boolean) || '';
-}
-
-function demoImportCustomer(state: DemoState, row: DemoRecord): DemoRecord | undefined {
-  const customerId = demoImportText(row.customerId);
-  const customerNumber = demoImportText(row.customerNumber);
-  const customerEmail = demoImportNormaliseKey(row.customerEmail || row.email);
-  const customerName = demoImportNormaliseKey(row.customerName || row.name);
-  if (customerId) {
-    const match = state.customers.find(customer => customer.id === customerId);
-    if (match) return match;
-  }
-  if (customerNumber) {
-    const match = state.customers.find(customer => demoImportNormaliseKey(customer.customerNumber) === demoImportNormaliseKey(customerNumber));
-    if (match) return match;
-  }
-  if (customerEmail) {
-    const match = state.customers.find(customer => demoImportNormaliseKey(customer.email) === customerEmail);
-    if (match) return match;
-  }
-  if (customerName) {
-    const exactMatch = state.customers.find(customer => demoImportNormaliseKey(customer.name) === customerName);
-    if (exactMatch) return exactMatch;
-    if (customerName.length < 3) return undefined;
-    const partialMatches = state.customers.filter(customer => {
-      const storedName = demoImportNormaliseKey(customer.name);
-      return Boolean(storedName) && (storedName.includes(customerName) || customerName.includes(storedName));
-    });
-    if (partialMatches.length === 1) return partialMatches[0];
-  }
-  return undefined;
-}
-
-function demoImportItems(row: DemoRecord): DemoRecord[] {
-  const structured = Array.isArray(row.items)
-    ? row.items
-    : typeof row.items === 'string'
-      ? (() => { try { const parsed = JSON.parse(row.items as string); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })()
-      : [];
-  const items = structured.map((item, index) => {
-    const record = item as DemoRecord;
-    const quantity = demoImportNumber(record.quantity || record.menge) ?? 1;
-    const unitPrice = demoImportNumber(record.unitPrice || record.unit_price || record.price || record.preis) ?? 0;
-    return {
+function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, fileName = ''): DemoImportRunItem[] {
+  // Übernommene Buchungen verweisen wie auf dem Server auf ihre Quelle.
+  const importNote = (notes: unknown, rowNumbers: number[]) => String(notes || '') || `Datenübernahme: ${fileName || 'Import'}, Zeile ${rowNumbers.join(', ')}`;
+  const items: DemoImportRunItem[] = [];
+  const track = (tableName: string, recordId: string, action: 'created' | 'updated', oldData: DemoRecord | null = null) => {
+    items.push({ tableName, recordId, action, oldData: oldData ? JSON.parse(JSON.stringify(oldData)) as DemoRecord : null });
+  };
+  const usedCustomerNumbers = new Set(state.customers.map(customer => String(customer.customerNumber || '')));
+  let highestCustomerNumber = state.customers.reduce((highest, customer) => {
+    const value = String(customer.customerNumber || '');
+    return /^\d+$/.test(value) ? Math.max(highest, Number(value)) : highest;
+  }, 1000);
+  const allocateCustomerNumber = (requested?: unknown) => {
+    const wanted = String(requested || '').trim();
+    if (wanted && !usedCustomerNumbers.has(wanted)) {
+      usedCustomerNumbers.add(wanted);
+      return wanted;
+    }
+    do { highestCustomerNumber += 1; } while (usedCustomerNumbers.has(String(highestCustomerNumber)));
+    usedCustomerNumbers.add(String(highestCustomerNumber));
+    return String(highestCustomerNumber);
+  };
+  const createCustomer = (data: DemoRecord): string => {
+    const record: DemoRecord = {
+      country: 'Deutschland', address: '', city: '', postalCode: '', email: '', customerType: 'person', isActive: true,
+      ...data,
       id: generateUUID(),
-      description: demoImportText(record.description || record.name || record.position) || `Position ${index + 1}`,
-      quantity,
-      unitPrice,
-      taxRate: demoImportNumber(record.taxRate || record.tax_rate || record.mwst) ?? 19,
-      total: quantity * unitPrice,
-      order: index + 1,
-    } as DemoRecord;
-  });
-  if (items.length > 0) return items;
-  const description = demoImportText(row.itemDescription || row.description || row.position);
-  const unitPrice = demoImportNumber(row.itemUnitPrice || row.itemUnitPrice || row.price || row.preis);
-  if (!description || unitPrice === null) return [];
-  const quantity = demoImportNumber(row.itemQuantity || row.quantity || row.menge) ?? 1;
-  return [{ id: generateUUID(), description, quantity, unitPrice, taxRate: demoImportNumber(row.itemTaxRate || row.taxRate || row.mwst) ?? 19, total: quantity * unitPrice, order: 1 }];
-}
-
-function demoInvoiceMatchesServiceDate(invoice: DemoRecord, serviceDate: string): boolean {
-  if (!serviceDate) return true;
-  const sourceDates = Array.isArray(invoice.sourceJobs)
-    ? invoice.sourceJobs.map(job => demoImportDate((job as DemoRecord).jobDate || (job as DemoRecord).date))
-    : [];
-  return [invoice.issueDate, invoice.serviceDate, ...sourceDates]
-    .some(value => value && String(value).slice(0, 10) === serviceDate);
-}
-
-function demoFindPaymentInvoice(state: DemoState, row: DemoRecord, amountCents: number, serviceDate: string): { invoice?: DemoRecord; matchedBy?: string; error?: string } {
-  const invoiceId = demoImportText(row.invoiceId || row.invoice_id);
-  const invoiceNumber = demoImportText(row.invoiceNumber || row.invoice_number || row.rechnungsnummer || row.rechnungsnr);
-  const invoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note');
-  if (invoiceId) {
-    const invoice = invoices.find(candidate => candidate.id === invoiceId);
-    return invoice ? { invoice, matchedBy: 'Rechnungs-ID' } : { error: `Rechnung mit der ID „${invoiceId}“ wurde nicht gefunden.` };
-  }
-  if (invoiceNumber) {
-    const invoice = invoices.find(candidate => demoImportNormaliseKey(candidate.invoiceNumber) === demoImportNormaliseKey(invoiceNumber));
-    return invoice ? { invoice, matchedBy: 'Rechnungsnummer' } : { error: `Rechnung „${invoiceNumber}“ wurde nicht gefunden.` };
-  }
-  const customer = demoImportCustomer(state, row);
-  if (!customer) return { error: 'Es fehlt ein eindeutiger Kundenbezug.' };
-  const candidates = invoices
-    .filter(invoice => invoice.customerId === customer.id)
-    .filter(invoice => Math.round(Number(invoice.total || 0) * 100) === amountCents)
-    .filter(invoice => demoInvoiceMatchesServiceDate(invoice, serviceDate));
-  if (candidates.length === 1) return { invoice: candidates[0], matchedBy: serviceDate ? 'Kunde, Leistungsdatum und Betrag' : 'Kunde und Betrag' };
-  if (candidates.length === 0) return { error: 'Keine eindeutige Rechnung über Bezug, Leistungsdatum und Betrag gefunden.' };
-  return { error: `${candidates.length} Rechnungen passen zu diesem Bezug und Betrag.` };
-}
-
-function demoImport(resource: string, rows: DemoRecord[], duplicateMode: string, state: DemoState, commit: boolean) {
-  const entries: Array<{ rowNumbers: number[]; status: string; message: string; data?: DemoRecord; existingId?: string }> = [];
-  const entityLabel = demoImportEntityLabel(state);
-  const isUpdateable = ['customers', 'positions', 'hourlyRates', 'materials'].includes(resource);
-  const collection = resource === 'customers'
-    ? state.customers
-    : resource === 'jobs'
-      ? state.jobs
-      : resource === 'quotes'
-        ? state.quotes
-        : resource === 'hourlyRates'
-          ? state.hourlyRates
-          : resource === 'materials'
-            ? state.materialTemplates
-            : resource === 'euerEntries'
-              ? state.euerEntries
-            : ((state.company.invoiceTemplates || []) as DemoRecord[]);
-  const seen = new Set<string>();
-  const plannedInvoicePayments = new Map<string, number>();
-
-  rows.forEach((row, index) => {
-    const rowNumber = Number(row._rowNumber || index + 2);
-
-    if (resource === 'invoicePayments') {
-      const entryDate = demoImportDate(row.entryDate || row.entry_date || row.paymentDate || row.payment_date || row.zahlungsdatum || row.buchungsdatum || row.belegdatum || row.date || row.datum);
-      const serviceDate = demoImportDate(row.serviceDate || row.service_date || row.leistungsdatum || row.unterrichtsdatum || row.kursdatum || row.jobDate || row.job_date);
-      const amount = demoImportNumber(row.amount || row.paymentAmount || row.payment_amount || row.zahlungsbetrag || row.betrag || row.paidAmount || row.paid_amount || row.brutto || row.grossAmount || row.gross_amount);
-      const notes = demoImportText(row.notes || row.note || row.notizen || row.bemerkung || row.anmerkung || row.verwendungszweck || row.zweck);
-      const externalReference = demoImportText(row.externalReference || row.external_reference || row.externalPaymentId || row.external_payment_id || row.paymentId || row.payment_id || row.importId || row.import_id || row.importnummer);
-      if (!entryDate) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Zahlungsdatum fehlt oder ist ungültig.' });
-        return;
-      }
-      if (amount === null || amount <= 0) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Zahlungsbetrag ist ungültig oder fehlt.' });
-        return;
-      }
-      if (notes.length > 500 || externalReference.length > 255) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: notes.length > 500 ? 'Die Notiz darf höchstens 500 Zeichen enthalten.' : 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.' });
-        return;
-      }
-      const amountCents = Math.round(amount * 100);
-      const match = demoFindPaymentInvoice(state, row, amountCents, serviceDate || '');
-      if (match.error || !match.invoice) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: match.error || 'Rechnung konnte nicht gefunden werden.' });
-        return;
-      }
-      const invoice = match.invoice;
-      if (invoice.status === 'draft') {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: `Für den Entwurf ${invoice.invoiceNumber} kann noch kein Zahlungseingang erfasst werden.` });
-        return;
-      }
-      const existingPayments = state.euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status === 'active');
-      const alreadyPaidCents = existingPayments.reduce((sum, entry) => sum + Math.round(Number(entry.amount || 0) * 100), 0);
-      const remainingCents = Math.max(0, Math.round(Number(invoice.total || 0) * 100) - alreadyPaidCents - (plannedInvoicePayments.get(invoice.id) || 0));
-      const identity = `${invoice.id}|${entryDate}|${amountCents}|${notes.toLocaleLowerCase()}`;
-      const duplicate = existingPayments.some(entry => (externalReference && entry.externalReference === externalReference)
-        || (!externalReference && `${invoice.id}|${entry.entryDate}|${Math.round(Number(entry.amount || 0) * 100)}|${String(entry.notes || '').toLocaleLowerCase()}` === identity)) || seen.has(identity);
-      if (duplicate) {
-        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `Zahlung für Rechnung ${invoice.invoiceNumber} wurde bereits importiert oder ist doppelt enthalten.` });
-        return;
-      }
-      if (remainingCents === 0) {
-        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `Rechnung ${invoice.invoiceNumber} ist bereits vollständig bezahlt.` });
-        return;
-      }
-      if (amountCents > remainingCents) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: `Der Betrag überschreitet den offenen Betrag für Rechnung ${invoice.invoiceNumber}.` });
-        return;
-      }
-      seen.add(identity);
-      plannedInvoicePayments.set(invoice.id, (plannedInvoicePayments.get(invoice.id) || 0) + amountCents);
-      const taxableNet = Number(invoice.total || 0) - Number(invoice.taxAmount || 0);
-      entries.push({
-        rowNumbers: [rowNumber],
-        status: 'valid',
-        message: `Zahlung für Rechnung ${invoice.invoiceNumber} kann gebucht werden (${match.matchedBy}).`,
-        data: {
-          id: generateUUID(), invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, entryDate,
-          amount: amountCents / 100, taxRate: taxableNet > 0 ? Number(invoice.taxAmount || 0) / taxableNet * 100 : 0,
-          notes: notes || undefined, externalReference: externalReference || undefined,
-        },
-      });
-      return;
-    }
-
-    if (resource === 'euerEntries') {
-      const rawDate = demoImportText(row.entryDate ?? row.entry_date ?? row.date ?? row.datum ?? row.buchungsdatum ?? row.belegdatum);
-      const entryDate = demoImportDate(rawDate);
-      const description = demoImportText(row.description ?? row.beschreibung ?? row.bezeichnung ?? row.text ?? row.verwendungszweck ?? row.zweck);
-      const amount = demoImportNumber(row.amount ?? row.betrag ?? row.brutto ?? row.grossAmount ?? row.gross_amount ?? row.ausgabe ?? row.ausgabenbetrag);
-      const categoryValue = demoImportText(row.category ?? row.kategorie ?? row.ausgabenkategorie ?? row.kostenart);
-      const category = demoImportEuerCategory(categoryValue) || 'other_expense';
-      const rawTaxRate = row.taxRate ?? row.tax_rate ?? row.tax ?? row.mwst ?? row.ust ?? row.steuersatz;
-      const taxRate = rawTaxRate === undefined ? 0 : demoImportNumber(rawTaxRate);
-
-      if (!entryDate) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Datum der Ausgabe fehlt oder ist ungültig.' });
-        return;
-      }
-      if (!description || description.length > 255) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Eine Beschreibung ist erforderlich und darf höchstens 255 Zeichen enthalten.' });
-        return;
-      }
-      if (amount === null || amount < 0) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Betrag ist ungültig oder fehlt.' });
-        return;
-      }
-      if (taxRate === null || taxRate < 0 || taxRate > 100) {
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.' });
-        return;
-      }
-
-      const identity = `${entryDate}|${description.toLocaleLowerCase()}|${category}|${amount.toFixed(2)}`;
-      const existing = collection.find(item => `${item.entryDate}|${demoImportText(item.description).toLocaleLowerCase()}|${item.category}|${Number(item.amount).toFixed(2)}` === identity);
-      if (seen.has(identity) || existing) {
-        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Diese Ausgabe ist bereits vorhanden oder doppelt in der Importdatei enthalten.' });
-        return;
-      }
-      seen.add(identity);
-
-      const warnings: string[] = [];
-      if (!categoryValue) warnings.push('Kategorie wird als sonstige Betriebsausgabe übernommen');
-      else if (!demoImportEuerCategory(categoryValue)) warnings.push('Unbekannte Kategorie wird als sonstige Betriebsausgabe übernommen');
-      if (rawTaxRate === undefined) warnings.push('MwSt.-Satz wird mit 0 % übernommen');
-      entries.push({
-        rowNumbers: [rowNumber],
-        status: warnings.length ? 'warning' : 'valid',
-        message: warnings.length ? `${warnings.join(', ')}.` : 'Ausgabe kann angelegt werden.',
-        data: {
-          // `DemoRecord` verlangt eine id. Bei der Übernahme wird sie ohnehin
-          // durch eine frische ersetzt (siehe createdEntry weiter unten) – hier
-          // steht sie nur, damit die Vorschau dem Typ entspricht.
-          id: generateUUID(),
-          entryType: 'expense', entryDate, description, category, amount, taxRate,
-          notes: demoImportText(row.notes ?? row.note ?? row.notizen ?? row.bemerkung ?? row.anmerkung) || undefined,
-          sourceType: 'manual',
-        },
-      });
-      return;
-    }
-
-    const name = demoImportText(row.name || row.customerName);
-    if ((resource === 'customers' || resource === 'positions' || resource === 'hourlyRates' || resource === 'materials') && !name) {
-      entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Name fehlt.' });
-      return;
-    }
-    const identity = resource === 'customers'
-      ? demoImportText(row.customerNumber || row.email || row.name).toLocaleLowerCase()
-      : demoImportText(row.name).toLocaleLowerCase();
-    if (seen.has(identity)) {
-      entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Doppelte Zeile in der Importdatei.' });
-      return;
-    }
-    seen.add(identity);
-
-    if (resource === 'customers') {
-      const existing = collection.find(item =>
-        (row.customerId && String(item.id) === demoImportText(row.customerId))
-        || (row.customerNumber && String(item.customerNumber).toLocaleLowerCase() === demoImportText(row.customerNumber).toLocaleLowerCase())
-        || (row.email && String(item.email || '').toLocaleLowerCase() === demoImportText(row.email).toLocaleLowerCase())
-        || (!row.customerNumber && !row.email && String(item.name || '').toLocaleLowerCase() === name.toLocaleLowerCase())
-      );
-      const rawCustomerType = row.customerType || row.customer_type || row.customerKind || row.kundenart || row.kundentyp;
-      const rawAdditionalEmails = row.additionalEmails || row.additional_emails || row.weitereEmails;
-      const rawNotes = row.notes || row.note || row.notizen;
-      const customerData = {
-        name,
-        customerNumber: demoImportText(row.customerNumber) || undefined,
-        ...(rawCustomerType !== undefined ? { customerType: demoImportCustomerType(rawCustomerType) } : {}),
-        email: demoImportText(row.email),
-        ...(rawAdditionalEmails !== undefined ? { additionalEmails: demoImportStructuredArray(rawAdditionalEmails) } : {}),
-        address: demoImportText(row.address),
-        addressSupplement: demoImportText(row.addressSupplement),
-        postalCode: demoImportText(row.postalCode),
-        city: demoImportText(row.city),
-        country: demoImportText(row.country) || 'Deutschland',
-        taxId: demoImportText(row.taxId),
-        leitwegId: demoImportText(row.leitwegId || row.leitweg_id || row.leitweg),
-        phone: demoImportText(row.phone),
-        ...(rawNotes !== undefined ? { notes: demoImportText(rawNotes) } : {}),
-        ...(demoImportBoolean(row.isActive || row.active || row.aktiv) !== undefined
-          ? { isActive: demoImportBoolean(row.isActive || row.active || row.aktiv) }
-          : {}),
-        hourlyRates: demoImportStructuredArray(row.hourlyRates || row.hourly_rates || row.stundensaetze),
-        materials: demoImportStructuredArray(row.materials || row.materialien),
-      } as unknown as DemoRecord;
-      if (existing && duplicateMode === 'update') entries.push({ rowNumbers: [rowNumber], status: 'update', message: `Bestehender ${entityLabel} wird aktualisiert.`, data: customerData, existingId: existing.id });
-      else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: `${entityLabel} bereits vorhanden.` });
-      else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: `${entityLabel} kann angelegt werden.`, data: customerData });
-      return;
-    }
-
-    if (resource === 'jobs') {
-      const customer = demoImportCustomer(state, row);
-      if (!customer || !demoImportText(row.title)) {
-        const reference = demoImportReference(row);
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? `${entityLabel}${reference ? ` „${reference}“` : ''} konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.` : 'Auftragstitel fehlt.' });
-        return;
-      }
-      const date = dateOnly(row.date || isoDate());
-      const existing = collection.find(item => row.jobNumber && item.jobNumber === row.jobNumber);
-      if (existing) {
-        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Auftrag bereits vorhanden.' });
-        return;
-      }
-      entries.push({ rowNumbers: [rowNumber], status: row.date ? 'valid' : 'warning', message: row.date ? 'Auftrag kann angelegt werden.' : 'Datum wird auf heute gesetzt.', data: { ...row, customerId: customer.id, customerName: customer.name, date, description: demoImportText(row.description) || demoImportText(row.title) } });
-      return;
-    }
-
-    if (resource === 'quotes') {
-      const customer = demoImportCustomer(state, row);
-      const items = demoImportItems(row);
-      if (!customer || items.length === 0) {
-        const reference = demoImportReference(row);
-        entries.push({ rowNumbers: [rowNumber], status: 'error', message: !customer ? `${entityLabel}${reference ? ` „${reference}“` : ''} konnte nicht über ID, Nummer, E-Mail oder Namen gefunden werden.` : 'Keine gültige Position gefunden.' });
-        return;
-      }
-      const existing = collection.find(item => row.quoteNumber && item.quoteNumber === row.quoteNumber);
-      if (existing) {
-        entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Angebot bereits vorhanden.' });
-        return;
-      }
-      const totals = calculateItems(items, 'quote', row);
-      entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Angebot kann angelegt werden.', data: { ...row, customerId: customer.id, customerName: customer.name, issueDate: dateOnly(row.issueDate || isoDate()), validUntil: dateOnly(row.validUntil || isoDate()), ...totals } });
-      return;
-    }
-
-    const priceKey = resource === 'hourlyRates' ? 'rate' : 'unitPrice';
-    const price = demoImportNumber(row[priceKey] || row.price || row.preis);
-    if (price === null || price < 0) {
-      entries.push({ rowNumbers: [rowNumber], status: 'error', message: 'Preis ist ungültig oder fehlt.' });
-      return;
-    }
-    const existing = collection.find(item => String(item.name || '').toLocaleLowerCase() === name.toLocaleLowerCase());
-    const data: DemoRecord = { ...row, name, [priceKey]: price, taxRate: demoImportNumber(row.taxRate || row.mwst) ?? 19, unit: resource === 'materials' ? (demoImportText(row.unit) || 'Stück') : undefined };
-    if (existing && duplicateMode === 'update' && isUpdateable) entries.push({ rowNumbers: [rowNumber], status: 'update', message: 'Bestehender Eintrag wird aktualisiert.', data, existingId: existing.id });
-    else if (existing) entries.push({ rowNumbers: [rowNumber], status: 'duplicate', message: 'Eintrag bereits vorhanden.' });
-    else entries.push({ rowNumbers: [rowNumber], status: 'valid', message: 'Eintrag kann angelegt werden.', data });
-  });
-
-  const count = (status: string) => entries.reduce((sum, entry) => sum + (entry.status === status ? entry.rowNumbers.length : 0), 0);
-  const summary = {
-    total: rows.length,
-    valid: count('valid') + count('warning'),
-    updated: count('update'),
-    duplicates: count('duplicate'),
-    warnings: count('warning'),
-    errors: count('error'),
-    imported: 0,
-    skipped: count('duplicate') + count('error'),
+      customerNumber: allocateCustomerNumber(data.customerNumber),
+      createdAt: isoDate(),
+      updatedAt: isoDate(),
+    };
+    state.customers.push(record);
+    track('customers', record.id, 'created');
+    return record.id;
   };
-  if (commit) {
-    let imported = 0;
-    entries.forEach(entry => {
-      if (!['valid', 'warning', 'update'].includes(entry.status) || !entry.data) return;
-      if (resource === 'customers') {
-        if (entry.status === 'update') {
-          const target = state.customers.find(item => item.id === entry.existingId);
-          if (target) Object.assign(target, entry.data, { id: target.id, updatedAt: isoDate() });
-        } else {
-          state.customers.push({ ...entry.data, id: generateUUID(), customerNumber: entry.data.customerNumber || String(1001 + state.customers.length), customerType: entry.data.customerType || 'person', createdAt: isoDate() });
-        }
-      } else if (resource === 'jobs') {
-        state.jobs.push({ ...entry.data, id: generateUUID(), jobNumber: entry.data.jobNumber || `AB-${new Date().getFullYear()}-${String(state.jobs.length + 1).padStart(3, '0')}`, createdAt: isoDate(), updatedAt: isoDate() });
-      } else if (resource === 'quotes') {
-        state.quotes.push({ ...entry.data, id: generateUUID(), quoteNumber: entry.data.quoteNumber || `AN-${new Date().getFullYear()}-${String(state.quotes.length + 1).padStart(3, '0')}`, createdAt: isoDate() });
-      } else if (resource === 'positions') {
-        const templates = (state.company.invoiceTemplates || []) as DemoRecord[];
-        if (entry.status === 'update') {
-          const target = templates.find(item => item.id === entry.existingId);
-          if (target) Object.assign(target, entry.data, { updatedAt: isoDate() });
-        } else templates.push({ ...entry.data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() });
-        state.company.invoiceTemplates = templates;
-      } else if (resource === 'euerEntries') {
-        const createdEntry = { ...entry.data, id: generateUUID(), status: 'active', sourceType: 'manual', createdAt: isoDate(), updatedAt: isoDate() };
-        state.euerEntries.push(createdEntry);
-        state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: createdEntry.id, action: 'created', reason: '', oldData: null, newData: { ...createdEntry }, changedAt: isoDate() });
-      } else if (resource === 'invoicePayments') {
-        const invoice = state.invoices.find(item => item.id === entry.data?.invoiceId);
-        if (!invoice) return;
-        const createdEntry = {
-          ...entry.data,
+  const newCustomerIds = new Map<string, string>();
+  plan.newCustomers.forEach(customer => {
+    newCustomerIds.set(customer.key, createCustomer({ id: '', name: customer.name, customerNumber: customer.customerNumber, email: customer.email || '' }));
+  });
+  const customerIdFor = (data: DemoRecord) => String(data.customerId || (data.customerKey ? newCustomerIds.get(String(data.customerKey)) : '') || '');
+  const customerName = (customerId: string) => String(state.customers.find(customer => customer.id === customerId)?.name || '');
+  const applicable = plan.entries.filter(isApplicable);
+  const touchedInvoices = new Set<string>();
+
+  const addEuerEntry = (record: DemoRecord) => {
+    const entry: DemoRecord = { ...record, status: 'active', createdAt: isoDate(), updatedAt: isoDate() };
+    state.euerEntries.push(entry);
+    state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: entry.id, action: 'created', reason: '', oldData: null, newData: { ...entry }, changedAt: isoDate() });
+    track('euer_entries', entry.id, 'created');
+    return entry;
+  };
+
+  if (resource === 'customers') {
+    applicable.forEach(entry => {
+      if (entry.status === 'update' && entry.existingId) {
+        const target = state.customers.find(customer => customer.id === entry.existingId);
+        if (!target) return;
+        const changes = entry.data as DemoRecord;
+        track('customers', target.id, 'updated', Object.fromEntries(Object.keys(changes).map(key => [key, target[key]])) as DemoRecord);
+        Object.assign(target, changes, { updatedAt: isoDate() });
+        return;
+      }
+      createCustomer(entry.data as DemoRecord);
+    });
+  } else if (resource === 'hourlyRates' || resource === 'materials' || resource === 'positions') {
+    const collection = resource === 'hourlyRates'
+      ? state.hourlyRates
+      : resource === 'materials'
+        ? state.materialTemplates
+        : ((state.company.invoiceTemplates || []) as DemoRecord[]);
+    const tableName = resource === 'hourlyRates' ? 'hourly_rates' : resource === 'materials' ? 'material_templates' : 'invoice_templates';
+    applicable.forEach(entry => {
+      const data = entry.data as DemoRecord;
+      if (data.isDefault) {
+        collection.filter(item => item.isDefault).forEach(item => {
+          track(tableName, item.id, 'updated', { id: item.id, isDefault: true });
+          item.isDefault = false;
+        });
+      }
+      if (entry.status === 'update' && entry.existingId) {
+        const target = collection.find(item => item.id === entry.existingId);
+        if (!target) return;
+        track(tableName, target.id, 'updated', { ...target });
+        Object.assign(target, data, { updatedAt: isoDate() });
+        return;
+      }
+      const record: DemoRecord = { ...data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() };
+      collection.push(record);
+      track(tableName, record.id, 'created');
+    });
+    if (resource === 'positions') state.company.invoiceTemplates = collection;
+  } else if (resource === 'jobs') {
+    applicable.forEach(entry => {
+      const data = entry.data as DemoRecord;
+      const customerId = customerIdFor(data);
+      const dates = Array.isArray(data.occurrenceDates) ? data.occurrenceDates as string[] : [String(data.date)];
+      const recurrenceId = data.recurrence ? generateUUID() : undefined;
+      dates.forEach((date, index) => {
+        const hours = Number(data.hoursWorked || 0);
+        const rate = Number(data.hourlyRate || 0);
+        const timeEntries = Array.isArray(data.timeEntries) && data.timeEntries.length > 0
+          ? data.timeEntries
+          : hours > 0 || data.startTime || data.endTime
+            ? [{ id: generateUUID(), description: 'Arbeitszeit', startTime: data.startTime || undefined, endTime: data.endTime || undefined, hoursWorked: hours, hourlyRate: rate, taxRate: data.taxRate ?? 19, total: Math.round(hours * rate * 100) / 100 }]
+            : [];
+        const record: DemoRecord = {
           id: generateUUID(),
-          entryType: 'income',
-          description: `Zahlung Rechnung ${entry.data.invoiceNumber}`,
-          category: 'other_income',
-          sourceType: 'invoice_payment',
-          sourceId: invoice.id,
-          status: 'active',
+          jobNumber: index === 0 && data.jobNumber ? data.jobNumber : nextDemoDocumentNumber(state.jobs.map(job => job.jobNumber), 'AB', date),
+          externalJobNumber: data.externalJobNumber,
+          customerId,
+          customerName: customerName(customerId),
+          customerAddress: data.customerAddress,
+          location: data.location,
+          title: data.title,
+          description: data.description,
+          date,
+          startTime: data.startTime || undefined,
+          endTime: data.endTime || undefined,
+          hoursWorked: hours,
+          hourlyRate: rate,
+          hourlyRateId: data.hourlyRateId || undefined,
+          timeEntries,
+          materials: data.materials || [],
+          status: data.status,
+          notes: data.notes || '',
+          priority: data.priority,
+          recurrence: data.recurrence
+            ? { ...(data.recurrence as DemoRecord), id: recurrenceId, occurrenceIndex: index + 1, totalOccurrences: dates.length }
+            : undefined,
           createdAt: isoDate(),
           updatedAt: isoDate(),
         };
-        state.euerEntries.push(createdEntry);
-        state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: createdEntry.id, action: 'created', reason: '', oldData: null, newData: { ...createdEntry }, changedAt: isoDate() });
-        const paidCents = state.euerEntries.filter(item => item.sourceType === 'invoice_payment' && item.sourceId === invoice.id && item.status === 'active').reduce((sum, item) => sum + Math.round(Number(item.amount || 0) * 100), 0);
-        if (paidCents >= Math.round(Number(invoice.total || 0) * 100) - 1) invoice.status = 'paid';
-      } else {
-        const targetCollection = resource === 'hourlyRates' ? state.hourlyRates : state.materialTemplates;
-        if (entry.status === 'update') {
-          const target = targetCollection.find(item => item.id === entry.existingId);
-          if (target) Object.assign(target, entry.data, { updatedAt: isoDate() });
-        } else targetCollection.push({ ...entry.data, id: generateUUID(), createdAt: isoDate(), updatedAt: isoDate() });
-      }
-      imported += 1;
+        state.jobs.push(record);
+        track('job_entries', record.id, 'created');
+      });
     });
-    summary.imported = imported;
-    entries.forEach(entry => { if (['valid', 'warning', 'update'].includes(entry.status)) entry.status = 'imported'; });
+  } else if (resource === 'quotes') {
+    applicable.forEach(entry => {
+      const data = entry.data as DemoRecord;
+      const customerId = customerIdFor(data);
+      const record: DemoRecord = {
+        ...data,
+        id: generateUUID(),
+        quoteNumber: data.quoteNumber || nextDemoDocumentNumber(state.quotes.map(quote => quote.quoteNumber), 'AN', data.issueDate),
+        customerId,
+        customerName: customerName(customerId),
+        customerKey: undefined,
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      state.quotes.push(record);
+      track('quotes', record.id, 'created');
+    });
+  } else if (resource === 'euerEntries' || resource === 'invoicePayments') {
+    applicable.forEach(entry => {
+      const data = entry.data as DemoRecord;
+      if (data.kind === 'payment') {
+        addEuerEntry({
+          id: generateUUID(), entryType: 'income', entryDate: data.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
+          category: 'other_income', amount: data.amount, taxRate: data.taxRate, notes: importNote(data.notes, entry.rowNumbers),
+          sourceType: 'invoice_payment', sourceId: data.invoiceId, externalReference: data.externalReference || undefined,
+        });
+        touchedInvoices.add(String(data.invoiceId));
+        return;
+      }
+      addEuerEntry({
+        id: generateUUID(), entryType: data.entryType, entryDate: data.entryDate, description: data.description,
+        category: data.category, amount: data.amount, taxRate: data.taxRate, notes: importNote(data.notes, entry.rowNumbers),
+        sourceType: 'manual', externalReference: data.externalReference || undefined,
+        customerId: data.entryType === 'income' ? customerIdFor(data) || undefined : undefined,
+      });
+    });
+  } else if (resource === 'invoices') {
+    applicable.forEach(entry => {
+      const data = entry.data as DemoRecord;
+      const customerId = customerIdFor(data);
+      const invoice: DemoRecord = {
+        id: generateUUID(),
+        invoiceNumber: data.invoiceNumber,
+        documentType: 'invoice',
+        origin: 'imported',
+        hasOriginalDocument: false,
+        customerId,
+        customerName: customerName(customerId),
+        issueDate: data.issueDate,
+        dueDate: data.dueDate,
+        serviceDate: data.serviceDate || null,
+        items: (data.items as DemoRecord[]).map(item => ({ ...item, id: generateUUID() })),
+        subtotal: data.subtotal,
+        taxAmount: data.taxAmount,
+        total: data.total,
+        status: data.status,
+        notes: data.notes || '',
+        attachments: [],
+        createdAt: isoDate(),
+        updatedAt: isoDate(),
+      };
+      captureDemoInvoice(state, invoice);
+      state.invoices.push(invoice);
+      recordInvoiceHistory(state, invoice, 'created', null, invoice);
+      track('invoices', invoice.id, 'created');
+      const payment = data.payment as DemoRecord | null;
+      if (payment) {
+        addEuerEntry({
+          id: generateUUID(), entryType: 'income', entryDate: payment.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
+          category: 'other_income', amount: payment.amount, taxRate: payment.taxRate, notes: importNote('', entry.rowNumbers),
+          sourceType: 'invoice_payment', sourceId: invoice.id,
+        });
+      }
+    });
+  }
+  touchedInvoices.forEach(invoiceId => syncDemoInvoicePaymentStatus(state, invoiceId));
+  return items;
+}
+
+function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, state: DemoState) {
+  if (!IMPORT_RESOURCES.includes(resource as PlannerResource)) throw new Error('Nicht unterstütztes Importziel.');
+  if (rows.length === 0) throw new Error('Es wurden keine Importzeilen übergeben.');
+  if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Es dürfen höchstens ${MAX_IMPORT_ROWS.toLocaleString('de-DE')} Zeilen auf einmal importiert werden.`);
+  const plan = planImport(resource as PlannerResource, rows, demoImportContext(state), {
+    duplicateMode: data.duplicateMode === 'update' ? 'update' : 'skip',
+    createMissingCustomers: data.createMissingCustomers === true,
+    matchOpenInvoices: data.matchOpenInvoices !== false,
+  });
+  const summary = summariseImport(plan, rows.length);
+  const commit = data.dryRun === false;
+  let runId: string | null = null;
+  if (commit) {
+    if (summary.records === 0) throw new Error('Es gibt keine Zeile, die übernommen werden kann.');
+    const file = (data.file || {}) as DemoRecord;
+    const items = applyDemoImport(state, resource, plan, String(file.name || ''));
+    summary.imported = summary.records;
+    runId = generateUUID();
+    demoImportRuns(state).unshift({
+      id: runId,
+      resource,
+      resourceLabel: DEMO_IMPORT_RESOURCE_LABELS[resource] || resource,
+      fileName: String(file.name || ''),
+      fileHash: typeof file.hash === 'string' ? file.hash : null,
+      sourceHeaders: Array.isArray(file.headers) ? file.headers : [],
+      settings: { ...((data.settings || {}) as DemoRecord), options: plan.options },
+      summary,
+      report: reportRows(plan, true),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      createdByName: 'Demo',
+      items,
+    });
     saveState(state);
   }
   return {
     resource,
     dryRun: !commit,
+    runId,
     summary,
-    rows: entries.flatMap(entry => entry.rowNumbers.map(rowNumber => ({ rowNumber, status: entry.status, message: entry.message }))),
+    rows: reportRows(plan, commit),
+    totals: plan.totals,
+    newCustomers: plan.newCustomers.map(customer => ({ name: customer.name, rowNumbers: customer.rowNumbers })),
+    truncated: false,
   };
+}
+
+function demoRevertImport(state: DemoState, run: DemoRecord): void {
+  const items = (Array.isArray(run.items) ? run.items : []) as unknown as DemoImportRunItem[];
+  const created = (table: string) => new Set(items.filter(item => item.tableName === table && item.action === 'created').map(item => item.recordId));
+  const own = new Set(items.filter(item => item.action === 'created').map(item => item.recordId));
+  const blockers: string[] = [];
+  const customers = created('customers');
+  const blockedCustomers = state.customers.filter(customer => customers.has(customer.id) && (
+    state.invoices.some(invoice => invoice.customerId === customer.id && !own.has(invoice.id))
+    || state.quotes.some(quote => quote.customerId === customer.id && !own.has(quote.id))
+    || state.jobs.some(job => job.customerId === customer.id && !own.has(job.id))
+    || state.euerEntries.some(entry => entry.customerId === customer.id && entry.status !== 'voided' && !own.has(entry.id))
+  ));
+  if (blockedCustomers.length > 0) blockers.push(`Für ${blockedCustomers.slice(0, 10).map(customer => `„${customer.name}“`).join(', ')} gibt es inzwischen weitere Dokumente oder Buchungen`);
+  const invoices = created('invoices');
+  const blockedInvoices = state.invoices.filter(invoice => invoices.has(invoice.id) && (
+    state.euerEntries.some(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status !== 'voided' && !own.has(entry.id))
+    || state.invoices.some(other => other.referenceInvoiceId === invoice.id)
+    || Boolean(invoice.lastReminderSentAt)
+  ));
+  if (blockedInvoices.length > 0) blockers.push(`Zu ${blockedInvoices.slice(0, 10).map(invoice => invoice.invoiceNumber).join(', ')} wurden inzwischen Zahlungen, Gutschriften oder Mahnungen erfasst`);
+  const jobs = created('job_entries');
+  const billedJobs = state.invoices.flatMap(invoice => (Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs as DemoRecord[] : [])).filter(source => jobs.has(String(source.jobId)));
+  if (billedJobs.length > 0) blockers.push(`${billedJobs.length} importierte Termine wurden inzwischen abgerechnet`);
+  const quotes = created('quotes');
+  const convertedQuotes = state.quotes.filter(quote => quotes.has(quote.id) && quote.convertedToInvoiceId);
+  if (convertedQuotes.length > 0) blockers.push(`${convertedQuotes.length} importierte Angebote wurden inzwischen in Rechnungen umgewandelt`);
+  if (blockers.length > 0) throw new Error(`Der Import kann nicht mehr rückgängig gemacht werden: ${blockers.join('. ')}. Machen Sie gegebenenfalls zuerst spätere Importe rückgängig.`);
+
+  const touchedInvoices = new Set<string>();
+  const remove = (collection: DemoRecord[], id: string) => {
+    const index = collection.findIndex(item => item.id === id);
+    if (index >= 0) collection.splice(index, 1);
+  };
+  [...items].reverse().forEach(item => {
+    if (item.action === 'created') {
+      if (item.tableName === 'euer_entries') {
+        const entry = state.euerEntries.find(candidate => candidate.id === item.recordId);
+        if (entry && entry.status !== 'voided') {
+          const oldData = { ...entry };
+          entry.status = 'voided';
+          entry.correctionReason = 'Import rückgängig gemacht';
+          entry.updatedAt = isoDate();
+          state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: entry.id, action: 'voided', reason: 'Import rückgängig gemacht', oldData, newData: null, changedAt: isoDate() });
+          if (entry.sourceType === 'invoice_payment') touchedInvoices.add(String(entry.sourceId));
+        }
+      } else if (item.tableName === 'invoices') {
+        const invoice = state.invoices.find(candidate => candidate.id === item.recordId);
+        if (invoice) recordInvoiceHistory(state, invoice, 'deleted', invoice, null);
+        remove(state.invoices, item.recordId);
+        delete demoInvoiceOriginals(state)[item.recordId];
+        touchedInvoices.delete(item.recordId);
+      } else if (item.tableName === 'job_entries') remove(state.jobs, item.recordId);
+      else if (item.tableName === 'quotes') remove(state.quotes, item.recordId);
+      else if (item.tableName === 'customers') remove(state.customers, item.recordId);
+      else if (item.tableName === 'hourly_rates') remove(state.hourlyRates, item.recordId);
+      else if (item.tableName === 'material_templates') remove(state.materialTemplates, item.recordId);
+      else if (item.tableName === 'invoice_templates') {
+        state.company.invoiceTemplates = ((state.company.invoiceTemplates || []) as DemoRecord[]).filter(template => template.id !== item.recordId);
+      }
+      return;
+    }
+    if (!item.oldData) return;
+    const collection = item.tableName === 'customers'
+      ? state.customers
+      : item.tableName === 'hourly_rates'
+        ? state.hourlyRates
+        : item.tableName === 'material_templates'
+          ? state.materialTemplates
+          : item.tableName === 'invoice_templates'
+            ? (state.company.invoiceTemplates || []) as DemoRecord[]
+            : [];
+    const target = collection.find(candidate => candidate.id === item.recordId);
+    if (target) Object.assign(target, item.oldData);
+  });
+  touchedInvoices.forEach(invoiceId => syncDemoInvoicePaymentStatus(state, invoiceId));
+  run.status = 'reverted';
+  run.revertedAt = new Date().toISOString();
+}
+
+function demoImportRequest<T>(state: DemoState, parts: string[], method: string, data: DemoRecord): T {
+  const runs = demoImportRuns(state);
+  const publicRun = (run: DemoRecord, includeReport = false) => {
+    const result: Record<string, unknown> = { ...run };
+    delete result.items;
+    if (!includeReport) delete result.report;
+    return result as unknown as T;
+  };
+
+  if (parts[1] === 'runs') {
+    if (method === 'GET' && !parts[2]) return runs.map(run => publicRun(run)) as unknown as T;
+    if (method === 'POST' && parts[2] === 'confirm-all') {
+      const pending = runs.filter(run => run.status === 'pending');
+      pending.forEach(run => { run.status = 'confirmed'; run.confirmedAt = new Date().toISOString(); });
+      saveState(state);
+      return { confirmed: pending.length } as unknown as T;
+    }
+    const run = runs.find(item => item.id === parts[2]);
+    if (!run) throw new Error('Import nicht gefunden.');
+    if (method === 'GET') return publicRun(run, true);
+    if (run.status !== 'pending') {
+      throw new Error(run.status === 'reverted' ? 'Dieser Import wurde bereits rückgängig gemacht.' : 'Dieser Import ist abgeschlossen und kann nicht mehr rückgängig gemacht werden.');
+    }
+    if (method === 'POST' && parts[3] === 'confirm') {
+      run.status = 'confirmed';
+      run.confirmedAt = new Date().toISOString();
+      saveState(state);
+      return { success: true } as unknown as T;
+    }
+    if (method === 'POST' && parts[3] === 'revert') {
+      demoRevertImport(state, run);
+      saveState(state);
+      return { success: true } as unknown as T;
+    }
+    throw new Error('Unbekannte Importaktion.');
+  }
+
+  if (parts[1] === 'settings') {
+    if (method === 'PUT') {
+      const raw = data.cutoverDate;
+      const cutoverDate = raw ? dateOnly(raw) : null;
+      state.company.importCutoverDate = cutoverDate;
+      saveState(state);
+      return { cutoverDate } as unknown as T;
+    }
+    return {
+      cutoverDate: typeof state.company.importCutoverDate === 'string' && state.company.importCutoverDate ? state.company.importCutoverDate : null,
+      pendingRuns: runs.filter(run => run.status === 'pending').length,
+    } as unknown as T;
+  }
+
+  if (parts[1] === 'original-documents' && parts[2]) {
+    const invoice = state.invoices.find(item => item.id === parts[2]);
+    if (!invoice) throw new Error('Rechnung nicht gefunden.');
+    const originals = demoInvoiceOriginals(state);
+    const pending = runs.some(run => run.status === 'pending' && Array.isArray(run.items)
+      && (run.items as unknown as DemoImportRunItem[]).some(item => item.tableName === 'invoices' && item.recordId === invoice.id));
+    if (method === 'GET') {
+      const original = originals[invoice.id];
+      if (!original) throw new Error('Für diese Rechnung ist kein Original hinterlegt.');
+      return original as unknown as T;
+    }
+    if (invoice.origin !== 'imported') throw new Error('Originaldokumente können nur für übernommene Rechnungen hinterlegt werden.');
+    if (method === 'DELETE') {
+      if (!pending) throw new Error('Nach Abschluss des Umzugs kann das Original nicht mehr entfernt werden.');
+      delete originals[invoice.id];
+      invoice.hasOriginalDocument = false;
+      saveState(state);
+      return { success: true } as unknown as T;
+    }
+    if (originals[invoice.id] && !pending) throw new Error('Für diese Rechnung ist bereits ein Original hinterlegt. Es kann nach Abschluss des Umzugs nicht mehr ersetzt werden.');
+    const content = String(data.content || '');
+    const size = Math.floor(content.length * 3 / 4);
+    if (!content || size > DEMO_MAX_ORIGINAL_BYTES) throw new Error('Im Demo-Modus sind Originale bis 1 MB möglich.');
+    originals[invoice.id] = { id: invoice.id, name: String(data.name || 'Original'), content, contentType: String(data.contentType || 'application/pdf'), size, uploadedAt: new Date().toISOString() };
+    invoice.hasOriginalDocument = true;
+    saveState(state);
+    return { name: originals[invoice.id].name, contentType: originals[invoice.id].contentType, size } as unknown as T;
+  }
+
+  const rows = Array.isArray(data.rows) ? data.rows as DemoRecord[] : [];
+  return demoImport(parts[1], rows, data, state) as unknown as T;
 }
 
 /**
@@ -1673,9 +1691,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   }
 
   if (resource === 'imports') {
-    const importResource = parts[1];
-    const rows = Array.isArray(data.rows) ? data.rows as DemoRecord[] : [];
-    return demoImport(importResource, rows, String(data.duplicateMode || 'skip'), state, data.dryRun === false) as unknown as T;
+    return demoImportRequest<T>(state, parts, method, data);
   }
 
   if (resource === 'reporting') {
@@ -1761,6 +1777,36 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const statusInvoices = yearInvoices.filter(invoice => invoice.status === status);
       return { status, count: statusInvoices.length, totalAmount: statusInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) };
     });
+    // Einnahmen ohne Rechnung zählen wie auf dem Server mit ihrem Buchungsdatum.
+    const otherIncome = state.euerEntries.filter(entry => entry.entryType === 'income'
+      && (entry.sourceType || 'manual') === 'manual'
+      && entry.status !== 'voided'
+      && String(entry.entryDate).startsWith(`${selectedYear}-`));
+    monthlyRevenue.forEach(month => {
+      const monthEntries = otherIncome.filter(entry => Number(String(entry.entryDate).slice(5, 7)) === month.month);
+      Object.assign(month, { otherIncomeSum: monthEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0), otherIncomeCount: monthEntries.length });
+    });
+    const otherByCustomer = new Map<string, number>();
+    otherIncome.filter(entry => entry.customerId).forEach(entry => {
+      otherByCustomer.set(String(entry.customerId), (otherByCustomer.get(String(entry.customerId)) || 0) + Number(entry.amount || 0));
+    });
+    otherByCustomer.forEach((amount, customerId) => {
+      const existing = topCustomers.find(customer => customer.customerId === customerId);
+      if (existing) {
+        existing.totalRevenue += amount;
+        Object.assign(existing, { otherIncome: amount });
+      } else {
+        topCustomers.push({
+          customerId,
+          customerName: String(state.customers.find(customer => customer.id === customerId)?.name || ''),
+          invoiceCount: 0,
+          totalRevenue: amount,
+          avgInvoiceAmount: 0,
+          otherIncome: amount,
+        } as (typeof topCustomers)[number]);
+      }
+    });
+    topCustomers.sort((a, b) => b.totalRevenue - a.totalRevenue);
     const totalSubtotal = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0);
     const totalTax = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0);
     const totalAmount = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
@@ -1777,6 +1823,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         paidAmount: yearInvoices.reduce((sum, invoice) => sum + paidAmountOf(invoice), 0),
         overdueAmount: yearInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + outstandingAmountOf(invoice), 0),
         avgInvoiceAmount: yearInvoices.length ? totalAmount / yearInvoices.length : 0,
+        otherIncome: otherIncome.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+        otherIncomeCount: otherIncome.length,
       },
     } as T;
   }
@@ -1955,6 +2003,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         sourceId: data.sourceId || undefined,
         status: 'active',
         correctionReason: data.correctionReason || undefined,
+        customerId: demoEuerCustomerId(state, data),
         createdAt: isoDate(),
         updatedAt: isoDate(),
       };
@@ -1973,6 +2022,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         const oldEntry = entries[index];
         const updated: DemoRecord = { ...oldEntry, ...data, id, updatedAt: isoDate() };
         validateDemoEuerSource(state, updated, id);
+        updated.customerId = demoEuerCustomerId(state, updated);
         if (oldEntry.sourceType === 'receipt' && (updated.sourceType !== 'receipt' || updated.sourceId !== oldEntry.sourceId)) {
           const oldReceipt = state.receipts.find(receipt => receipt.id === String(oldEntry.sourceId));
           if (oldReceipt?.linkedEuerEntryId === id) oldReceipt.linkedEuerEntryId = null;
@@ -2399,7 +2449,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'importRuns' | 'invoiceOriginals'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',

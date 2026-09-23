@@ -82,6 +82,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
       { header: 'Bruttobetrag', value: row => row.totalSum, decimals: 2 },
       { header: 'Bezahlt', value: row => row.paidSum, decimals: 2 },
       { header: 'Überfällig', value: row => row.overdueSum, decimals: 2 },
+      { header: 'Einnahmen ohne Rechnung', value: row => row.otherIncomeSum || 0, decimals: 2 },
     ]);
   };
 
@@ -91,7 +92,8 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
       { header: terminology.entity.singular, value: row => row.customerName },
       { header: 'Rechnungen', value: row => row.invoiceCount },
       { header: 'Umsatz', value: row => row.totalRevenue, decimals: 2 },
-      { header: 'Durchschnitt', value: row => row.avgInvoiceAmount, decimals: 2 },
+      { header: 'Durchschnitt je Rechnung', value: row => row.avgInvoiceAmount, decimals: 2 },
+      { header: 'Davon ohne Rechnung', value: row => row.otherIncome || 0, decimals: 2 },
     ]);
   };
   
@@ -370,8 +372,11 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Gesamtumsatz</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {formatAmount(statistics.yearOverview?.totalAmount || 0)}
+                  {formatAmount((statistics.yearOverview?.totalAmount || 0) + (statistics.yearOverview?.otherIncome || 0))}
                 </p>
+                {(statistics.yearOverview?.otherIncome || 0) > 0 && (
+                  <p className="text-xs text-gray-500">inkl. {formatAmount(statistics.yearOverview?.otherIncome || 0)} ohne Rechnung</p>
+                )}
               </div>
             </div>
           </div>
@@ -384,8 +389,11 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Bezahlt</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {formatAmount(statistics.yearOverview?.paidAmount || 0)}
+                  {formatAmount((statistics.yearOverview?.paidAmount || 0) + (statistics.yearOverview?.otherIncome || 0))}
                 </p>
+                {(statistics.yearOverview?.otherIncome || 0) > 0 && (
+                  <p className="text-xs text-gray-500">inkl. Einnahmen ohne Rechnung</p>
+                )}
               </div>
             </div>
           </div>
@@ -681,7 +689,8 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   }}
                   className="form-input form-input-compact text-sm"
                 >
-                  {Array.from({ length: 5 }, (_, i) => {
+                  {/* Zehn Jahre, damit auch übernommene Altdaten auswertbar sind. */}
+                  {Array.from({ length: 10 }, (_, i) => {
                     const year = new Date().getFullYear() - i;
                     return (
                       <option key={year} value={year}>
@@ -722,8 +731,9 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <div className="space-y-2">
                   {Array.from({ length: 12 }, (_, i) => {
                     const monthData = statistics.monthlyRevenue.find(m => m.month === i + 1);
-                    const maxValue = Math.max(...statistics.monthlyRevenue.map(m => m.totalSum));
-                    const percentage = maxValue > 0 ? ((monthData?.totalSum || 0) / maxValue) * 100 : 0;
+                    const monthTotal = (item?: typeof monthData) => (item?.totalSum || 0) + (item?.otherIncomeSum || 0);
+                    const maxValue = Math.max(...statistics.monthlyRevenue.map(m => monthTotal(m)));
+                    const percentage = maxValue > 0 ? (monthTotal(monthData) / maxValue) * 100 : 0;
                     
                     return (
                       <div key={i} className="flex items-center space-x-2">
@@ -737,7 +747,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                           ></div>
                           {monthData && (
                             <span className="absolute right-2 top-0 h-4 flex items-center text-xs text-white font-medium">
-                              {formatAmount(monthData.totalSum)}
+                              {formatAmount(monthTotal(monthData))}
                             </span>
                           )}
                         </div>
@@ -784,7 +794,9 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{customer.customerName}</p>
                         <p className="text-xs text-gray-500">
-                          {customer.invoiceCount} Rechnung{customer.invoiceCount !== 1 ? 'en' : ''}
+                          {customer.invoiceCount > 0 && `${customer.invoiceCount} Rechnung${customer.invoiceCount !== 1 ? 'en' : ''}`}
+                          {customer.invoiceCount > 0 && (customer.otherIncome || 0) > 0 && ' · '}
+                          {(customer.otherIncome || 0) > 0 && `${formatAmount(customer.otherIncome || 0)} ohne Rechnung`}
                         </p>
                       </div>
                     </div>
@@ -792,9 +804,11 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                       <p className="text-sm font-medium text-gray-900">
                         {formatAmount(customer.totalRevenue)}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        Ø {formatAmount(customer.avgInvoiceAmount)}
-                      </p>
+                      {customer.invoiceCount > 0 && (
+                        <p className="text-xs text-gray-500">
+                          Ø {formatAmount(customer.avgInvoiceAmount)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

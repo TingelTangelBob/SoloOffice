@@ -49,6 +49,7 @@ import * as migration040 from './040_control_plane_workspace_admin.js';
 import * as migration041 from './041_user_notification_settings.js';
 import * as migration042 from './042_invoice_payment_import_references.js';
 import * as migration043 from './043_onboarding_tax_profile_defaults.js';
+import * as migration044 from './044_data_import_runs.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -95,6 +96,7 @@ const migrations = [
   migration041,
   migration042,
   migration043,
+  migration044,
 ];
 
 /**

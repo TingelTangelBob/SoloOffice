@@ -25,6 +25,7 @@ function toEntry(row) {
     sourceType: row.source_type || 'manual',
     sourceId: row.source_id || undefined,
     externalReference: row.external_reference || undefined,
+    customerId: row.customer_id || undefined,
     status: row.status || 'active',
     correctionReason: row.correction_reason || undefined,
     createdAt: row.created_at,
@@ -81,6 +82,7 @@ function validateEntry(data) {
   if (sourceId && !uuidPattern.test(sourceId)) return 'Ungültige Quellenreferenz.';
   if (externalReference.length > 255) return 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.';
   if (data.correctionReason && String(data.correctionReason).length > 500) return 'Der Korrekturgrund darf höchstens 500 Zeichen enthalten.';
+  if (data.customerId && !uuidPattern.test(String(data.customerId))) return 'Ungültiger Kundenbezug.';
 
   return null;
 }
@@ -146,7 +148,16 @@ async function validateSource(data, currentId = null, executor = query) {
 }
 
 const entryColumns = `id, entry_type, entry_date, description, category, amount, tax_rate, notes,
-  source_type, source_id, external_reference, status, correction_reason, created_at, updated_at`;
+  source_type, source_id, external_reference, customer_id, status, correction_reason, created_at, updated_at`;
+
+// Ein Kundenbezug gilt nur für Einnahmen ohne Rechnung; Zahlungen zu
+// Rechnungen erhalten den Kunden über die Rechnung.
+async function resolveCustomerId(data, executor) {
+  if (!data.customerId || data.entryType !== 'income' || data.sourceType === 'invoice_payment') return { customerId: null };
+  const result = await executor('SELECT id FROM customers WHERE id = $1', [data.customerId]);
+  if (!result.rows.length) return { error: 'Der zugeordnete Kunde wurde nicht gefunden.' };
+  return { customerId: result.rows[0].id };
+}
 
 router.get('/', async (req, res, next) => {
   try {
@@ -213,14 +224,19 @@ router.post('/', async (req, res, next) => {
       entryType, entryDate, description, category, amount, taxRate = 0, notes,
       sourceType = 'manual', sourceId, externalReference, correctionReason,
     } = req.body;
+    const customer = await resolveCustomerId({ ...req.body, sourceType }, client.query.bind(client));
+    if (customer.error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: customer.error });
+    }
     const result = await client.query(`
       INSERT INTO euer_entries
-        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, external_reference, correction_reason)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, external_reference, correction_reason, customer_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING ${entryColumns}
     `, [
       entryType, entryDate, String(description).trim(), category, Number(amount), Number(taxRate),
-      notes || null, sourceType, sourceId || null, externalReference || null, correctionReason || null,
+      notes || null, sourceType, sourceId || null, externalReference || null, correctionReason || null, customer.customerId,
     ]);
     if (sourceType === 'receipt') {
       const receiptResult = await client.query(`
@@ -283,17 +299,24 @@ router.put('/:id', async (req, res, next) => {
       return res.status(400).json({ error: sourceError });
     }
 
+    const customer = await resolveCustomerId(merged, client.query.bind(client));
+    if (customer.error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: customer.error });
+    }
+
     const result = await client.query(`
       UPDATE euer_entries
       SET entry_type = $1, entry_date = $2, description = $3, category = $4, amount = $5,
           tax_rate = $6, notes = $7, source_type = $8, source_id = $9,
-          external_reference = $10, correction_reason = $11, updated_at = NOW()
-      WHERE id = $12 AND status = 'active'
+          external_reference = $10, correction_reason = $11, customer_id = $12, updated_at = NOW()
+      WHERE id = $13 AND status = 'active'
       RETURNING ${entryColumns}
     `, [
       merged.entryType, merged.entryDate, String(merged.description).trim(), merged.category,
       Number(merged.amount), Number(merged.taxRate || 0), merged.notes || null,
-      merged.sourceType, merged.sourceId || null, merged.externalReference || null, merged.correctionReason || null, req.params.id,
+      merged.sourceType, merged.sourceId || null, merged.externalReference || null, merged.correctionReason || null,
+      customer.customerId, req.params.id,
     ]);
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');

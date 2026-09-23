@@ -17,6 +17,9 @@ import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { TableSkeleton } from './TableSkeleton';
 import { trackTelemetry } from '../services/telemetry';
 
+// Auf den Belegseiten werden ausschließlich Ausgaben importiert.
+const EXPENSE_IMPORT_CONSTANTS = { entryType: 'expense' };
+
 interface ReceiptsManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
   searchQuery?: string;
@@ -656,6 +659,8 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
       {!embedded && (
         <ImportWizard
           resource="euerEntries"
+          title="Ausgaben"
+          initialConstants={EXPENSE_IMPORT_CONSTANTS}
           isOpen={isImportOpen}
           onClose={() => setIsImportOpen(false)}
           onImported={() => setNotice('Ausgaben wurden importiert und in der EÜR gespeichert.')}

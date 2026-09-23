@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import logger from '../utils/logger';
-import { ArrowRight, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users, Monitor, Sun, Moon } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users, Monitor, Sun, Moon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
 import { ColorPicker } from './ColorPicker';
@@ -1578,6 +1578,27 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         ) : (
           <EmailManagement embedded />
         )}
+
+        {/* Datenübernahme aus Excel oder einem anderen Programm */}
+        <div className="settings-section">
+          <div className="flex items-center mb-4">
+            <ArrowRightLeft className="h-5 w-5 text-primary-custom mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">Datenübernahme</h3>
+          </div>
+          <div className="guidance-panel p-4">
+            <p className="text-sm text-gray-600 mb-4">
+              {terminology.entity.plural}, Rechnungen, Einnahmen und Ausgaben aus Excel, CSV oder einem anderen Programm übernehmen. Jeder Import wird vorab geprüft und kann bis zum Abschluss des Umzugs rückgängig gemacht werden.
+            </p>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('data-import')}
+              className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors"
+            >
+              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Datenübernahme öffnen
+            </button>
+          </div>
+        </div>
 
         {/* Backup und Wiederherstellung */}
         <div className="settings-section">

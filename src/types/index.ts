@@ -136,6 +136,10 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   sourceQuoteNumber?: string;
   creditNoteReason?: string;
   recurringInvoiceId?: UUID;
+  /** `imported`: aus einem anderen Programm übernommen; SoloOffice erzeugt dafür kein eigenes Dokument. */
+  origin?: 'solooffice' | 'imported';
+  /** Für übernommene Rechnungen ist das Originaldokument hinterlegt. */
+  hasOriginalDocument?: boolean;
 }
 
 export type CreditNote = Invoice & { documentType: 'credit_note' };
@@ -580,7 +584,7 @@ export type ExportFormat = 'zugferd' | 'xrechnung';
 // Import Types
 // ============================================================================
 
-export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials' | 'euerEntries' | 'invoicePayments';
+export type ImportResource = 'customers' | 'jobs' | 'quotes' | 'positions' | 'hourlyRates' | 'materials' | 'euerEntries' | 'invoicePayments' | 'invoices';
 export type ImportDuplicateMode = 'skip' | 'update';
 export type ImportRowStatus = 'valid' | 'update' | 'duplicate' | 'warning' | 'error' | 'imported';
 
@@ -599,14 +603,90 @@ export interface ImportSummary {
   errors: number;
   imported: number;
   skipped: number;
+  /** Anzahl anzulegender bzw. geänderter Datensätze (mehrzeilige Dokumente zählen einmal). */
+  records?: number;
+  newCustomers?: number;
+}
+
+export interface ImportMonthTotal {
+  month: string;
+  income: number;
+  expense: number;
+  invoicePayments: number;
+  invoiced: number;
+  count: number;
+}
+
+/** Summenkontrolle für Einnahmen, Ausgaben, Zahlungen und übernommene Rechnungen. */
+export interface ImportTotals {
+  income: number;
+  expense: number;
+  invoicePayments: number;
+  invoiced: number;
+  openAmount: number;
+  byMonth: ImportMonthTotal[];
 }
 
 export interface ImportResponse {
   resource: ImportResource;
   dryRun: boolean;
+  runId?: UUID | null;
   summary: ImportSummary;
   rows: ImportRowResult[];
+  totals?: ImportTotals | null;
+  newCustomers?: Array<{ name: string; rowNumbers: number[] }>;
   truncated?: boolean;
+}
+
+export interface ImportOptions {
+  dryRun?: boolean;
+  duplicateMode?: ImportDuplicateMode;
+  createMissingCustomers?: boolean;
+  matchOpenInvoices?: boolean;
+  file?: { name: string; hash?: string | null; headers: string[] };
+  settings?: ImportRunSettings;
+}
+
+/** Zuordnung eines Imports; wird am Importlauf gespeichert und beim nächsten Import mit gleichen Spalten angeboten. */
+export interface ImportRunSettings {
+  mapping?: Record<string, string>;
+  constants?: Record<string, string>;
+  valueMappings?: Record<string, Record<string, string>>;
+  sheet?: string;
+  options?: Record<string, unknown>;
+}
+
+export type ImportRunStatus = 'pending' | 'confirmed' | 'reverted';
+
+export interface ImportRun {
+  id: UUID;
+  resource: ImportResource;
+  resourceLabel: string;
+  fileName: string;
+  fileHash?: string | null;
+  sourceHeaders: string[];
+  settings: ImportRunSettings;
+  summary: Partial<ImportSummary>;
+  status: ImportRunStatus;
+  createdAt: string;
+  confirmedAt?: string | null;
+  revertedAt?: string | null;
+  createdByName?: string | null;
+  report?: ImportRowResult[];
+}
+
+export interface ImportCenterSettings {
+  cutoverDate: string | null;
+  pendingRuns: number;
+}
+
+export interface InvoiceOriginalDocument {
+  name: string;
+  content: string;
+  contentType: string;
+  size: number;
+  sha256?: string;
+  uploadedAt?: string;
 }
 
 // ============================================================================
@@ -728,6 +808,9 @@ export interface MonthlyRevenueStats {
   totalSum: number;
   paidSum: number;
   overdueSum: number;
+  /** Einnahmen ohne Rechnung (Buchungsdatum im Monat). */
+  otherIncomeSum?: number;
+  otherIncomeCount?: number;
 }
 
 export interface CustomerStats {
@@ -736,6 +819,8 @@ export interface CustomerStats {
   invoiceCount: number;
   totalRevenue: number;
   avgInvoiceAmount: number;
+  /** Anteil aus Einnahmen ohne Rechnung am Umsatz. */
+  otherIncome?: number;
 }
 
 export interface StatusDistribution {
@@ -752,6 +837,8 @@ export interface YearOverview {
   paidAmount: number;
   overdueAmount: number;
   avgInvoiceAmount: number;
+  otherIncome?: number;
+  otherIncomeCount?: number;
 }
 
 export interface ReportingStatistics {
@@ -794,6 +881,8 @@ export interface EuerEntry extends Timestamps {
   sourceType?: EuerEntrySourceType;
   sourceId?: UUID;
   externalReference?: string;
+  /** Kundenbezug einer Einnahme ohne Rechnung. */
+  customerId?: UUID;
   status?: 'active' | 'voided';
   correctionReason?: string;
 }
@@ -838,6 +927,7 @@ export interface EuerEntryPayload {
   sourceId?: UUID;
   externalReference?: string;
   correctionReason?: string;
+  customerId?: UUID | null;
 }
 
 export interface InvoicePaymentPayload {

@@ -13,6 +13,9 @@ import { ThemeTabBar } from './ThemeTabBar';
 import { usePageSearch } from '../context/PageSearchContext';
 import { TableSkeleton } from './TableSkeleton';
 
+// Auf den Belegseiten werden ausschließlich Ausgaben importiert.
+const EXPENSE_IMPORT_CONSTANTS = { entryType: 'expense' };
+
 type DocumentsTab = 'all' | 'receipts' | 'incoming';
 type DocumentKind = Exclude<DocumentsTab, 'all'>;
 
@@ -344,6 +347,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
       {activeTab === 'incoming' && <IncomingEInvoicesManagement ref={incomingEInvoicesRef} searchQuery={searchQuery} embedded />}
       <ImportWizard
         resource="euerEntries"
+        title="Ausgaben"
+        initialConstants={EXPENSE_IMPORT_CONSTANTS}
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         onImported={() => setNotice('Ausgaben wurden importiert und in der EÜR gespeichert.')}

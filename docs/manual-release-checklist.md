@@ -29,6 +29,16 @@ Nachweise: [RLS-Isolation](rls-isolation-nachweis.md) und
   falschem Passwort einmal vollständig durchspielen.
 - [ ] Kundenimport mit Feldzuordnung, Vorschau, Dublette, Warnung, Teilfehler
   und Ergebnisprotokoll.
+- [ ] Datenübernahme gegen PostgreSQL (Staging): Migration 044, je ein Import
+  pro Importziel mit echter .xlsx-Datei, Summenkontrolle gegen die Tabelle,
+  erneuter Import derselben Datei (nur Duplikate), Rückgängig in umgekehrter
+  Reihenfolge, blockiertes Rückgängig bei späteren Zahlungen, „Umzug
+  abschließen“.
+- [ ] Übernommene Rechnung: Original-PDF hinterlegen, Vorschau/Download zeigen
+  das Original, Mahnung mit Original als Anhang; Rechnung ohne Original zeigt
+  nur einen Hinweis.
+- [ ] Backup eines anderen Workspace nach Bestätigung übernehmen (zweite
+  Installation oder zweiter Workspace).
 - [ ] Angebot → Auftrag → Zeiterfassung → Rechnung → Teilzahlung → Mahnung als
   zusammenhängenden Fachablauf prüfen.
 - [ ] Wiederkehrende Rechnung und wiederkehrenden Auftrag mindestens einmal

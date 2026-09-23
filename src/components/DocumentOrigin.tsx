@@ -47,10 +47,22 @@ export function DocumentOrigin({ invoice, onNavigate }: DocumentOriginProps) {
     });
   }
 
-  if (links.length === 0) return null;
+  // Aus einem anderen Programm übernommene Rechnungen: Maßgeblich ist das
+  // Original, SoloOffice erzeugt dafür kein eigenes Dokument.
+  const imported = invoice.origin === 'imported';
+
+  if (links.length === 0 && !imported) return null;
 
   return (
     <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      {imported && (
+        <span
+          className="text-xs font-normal text-gray-500"
+          title={invoice.hasOriginalDocument ? 'Aus einem anderen Programm übernommen; das hinterlegte Original ist maßgeblich.' : 'Aus einem anderen Programm übernommen; das Original ist noch nicht hinterlegt.'}
+        >
+          {invoice.hasOriginalDocument ? 'übernommen' : 'übernommen · ohne Original'}
+        </span>
+      )}
       {links.map(link => (
         <button
           key={link.key}

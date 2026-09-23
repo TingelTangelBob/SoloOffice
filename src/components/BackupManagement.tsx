@@ -12,7 +12,7 @@ import {
   RefreshCw,
   X
 } from 'lucide-react';
-import { apiService } from '../services/api';
+import { ApiResponseError, apiService } from '../services/api';
 import { useFeedback } from '../context/FeedbackContext';
 
 interface BackupInfo {
@@ -50,6 +50,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [restoreData, setRestoreData] = useState<RestoreData | null>(null);
   const [restoreType, setRestoreType] = useState<'json' | 'zip'>('json');
+  const [workspaceTransfer, setWorkspaceTransfer] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
   useEffect(() => {
@@ -189,6 +190,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
           const data = JSON.parse(e.target?.result as string) as RestoreData;
           if (data.version && data.data && data.timestamp) {
             setRestoreData(data);
+            setWorkspaceTransfer(false);
             setShowRestoreConfirm(true);
           } else {
             setMessage({ type: 'error', text: 'Ungültige JSON-Backup-Datei' });
@@ -202,6 +204,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
       // Handle ZIP backup
       setRestoreType('zip');
       setRestoreData({ file });
+      setWorkspaceTransfer(false);
       setShowRestoreConfirm(true);
     } else {
       setMessage({ type: 'error', text: 'Bitte wählen Sie eine gültige JSON- oder ZIP-Datei aus' });
@@ -214,11 +217,12 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
     setIsRestoring(true);
     try {
       let response;
+      const options = { allowWorkspaceTransfer: workspaceTransfer };
       
       if (restoreType === 'zip' && restoreData.file) {
-        response = await apiService.restoreZipBackup(restoreData.file);
+        response = await apiService.restoreZipBackup(restoreData.file, options);
       } else {
-        response = await apiService.restoreBackup(restoreData);
+        response = await apiService.restoreBackup(restoreData, options);
       }
       
       if (response.success) {
@@ -237,6 +241,12 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
         setMessage({ type: 'error', text: response.message || 'Fehler beim Wiederherstellen des Backups' });
       }
     } catch (error) {
+      // Ein Backup aus einem anderen Workspace (z. B. einer eigenen
+      // Installation) wird erst nach ausdrücklicher Bestätigung übernommen.
+      if (error instanceof ApiResponseError && error.code === 'BACKUP_WORKSPACE_MISMATCH' && !workspaceTransfer) {
+        setWorkspaceTransfer(true);
+        return;
+      }
       logger.error('Error restoring backup:', error);
       setMessage({
         type: 'error',
@@ -523,6 +533,11 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                   <p className="text-gray-700 mb-4">
                     <strong>Achtung:</strong> Diese Aktion überschreibt alle vorhandenen Daten unwiderruflich!
                   </p>
+                  {workspaceTransfer && (
+                    <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      Dieses Backup stammt aus einem anderen Workspace, etwa aus einer eigenen Installation. Es kann in diesen Workspace übernommen werden; alle aktuellen Daten dieses Workspace werden dabei ersetzt. SMTP-Passwörter sind nicht enthalten und müssen neu eingetragen werden.
+                    </p>
+                  )}
                   
                   <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
                     <div><strong>Backup-Typ:</strong> {restoreType === 'zip' ? 'Vollständiges ZIP-Backup' : 'Datenbank JSON-Backup'}</div>
@@ -550,6 +565,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                       setShowRestoreConfirm(false);
                       setRestoreData(null);
                       setSelectedFile(null);
+                      setWorkspaceTransfer(false);
                     }}
                     className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                   >
@@ -565,7 +581,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                     ) : (
                       <Upload className="h-4 w-4" />
                     )}
-                    <span>{isRestoring ? 'Wiederherstellen...' : 'Wiederherstellen'}</span>
+                    <span>{isRestoring ? 'Wiederherstellen...' : workspaceTransfer ? 'In diesen Workspace übernehmen' : 'Wiederherstellen'}</span>
                   </button>
                 </div>
               </div>

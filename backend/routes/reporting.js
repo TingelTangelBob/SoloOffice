@@ -495,18 +495,46 @@ router.get('/statistics', async (req, res) => {
       ORDER BY month
     `, [year]);
 
+    // Einnahmen ohne Rechnung (z. B. aus einer übernommenen Tabelle) zählen
+    // mit ihrem Buchungsdatum zum Umsatz. Zahlungen zu Rechnungen sind bereits
+    // über die Rechnung erfasst und werden hier nicht erneut gezählt.
+    const otherIncomeResult = await query(`
+      SELECT EXTRACT(MONTH FROM entry_date) AS month, COUNT(*) AS entry_count, SUM(amount) AS amount
+      FROM euer_entries
+      WHERE entry_type = 'income' AND source_type = 'manual' AND status = 'active'
+        AND EXTRACT(YEAR FROM entry_date) = $1
+      GROUP BY EXTRACT(MONTH FROM entry_date)
+    `, [year]);
+    const otherIncomeByMonth = new Map(otherIncomeResult.rows.map(row => [parseInt(row.month), {
+      count: parseInt(row.entry_count), amount: parseFloat(row.amount || 0),
+    }]));
+
     // Customer statistics
     const customerStatsResult = await query(`
-      SELECT 
-        i.customer_id,
-        i.customer_name,
-        COUNT(*) as invoice_count,
-        SUM(i.total) as total_revenue,
-        AVG(i.total) as avg_invoice_amount
-      FROM invoices i
-      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
-        AND EXTRACT(YEAR FROM i.issue_date) = $1
-      GROUP BY i.customer_id, i.customer_name
+      WITH invoice_revenue AS (
+        SELECT i.customer_id, MAX(i.customer_name) AS customer_name, COUNT(*) AS invoice_count,
+               SUM(i.total) AS invoice_total, AVG(i.total) AS avg_invoice_amount
+        FROM invoices i
+        WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+          AND EXTRACT(YEAR FROM i.issue_date) = $1
+        GROUP BY i.customer_id
+      ), other_income AS (
+        SELECT e.customer_id, SUM(e.amount) AS amount
+        FROM euer_entries e
+        WHERE e.entry_type = 'income' AND e.source_type = 'manual' AND e.status = 'active'
+          AND e.customer_id IS NOT NULL AND EXTRACT(YEAR FROM e.entry_date) = $1
+        GROUP BY e.customer_id
+      )
+      SELECT
+        COALESCE(r.customer_id, x.customer_id) AS customer_id,
+        COALESCE(r.customer_name, c.name) AS customer_name,
+        COALESCE(r.invoice_count, 0) AS invoice_count,
+        COALESCE(r.invoice_total, 0) + COALESCE(x.amount, 0) AS total_revenue,
+        COALESCE(r.avg_invoice_amount, 0) AS avg_invoice_amount,
+        COALESCE(x.amount, 0) AS other_income
+      FROM invoice_revenue r
+      FULL OUTER JOIN other_income x ON x.customer_id = r.customer_id
+      LEFT JOIN customers c ON c.id = COALESCE(r.customer_id, x.customer_id)
       ORDER BY total_revenue DESC
       LIMIT 10
     `, [year]);
@@ -560,21 +588,30 @@ router.get('/statistics', async (req, res) => {
 
     res.json({
       year: parseInt(year),
-      monthlyRevenue: monthlyRevenueResult.rows.map(row => ({
-        month: parseInt(row.month),
-        invoiceCount: parseInt(row.invoice_count),
-        subtotalSum: parseFloat(row.subtotal_sum || 0),
-        taxSum: parseFloat(row.tax_sum || 0),
-        totalSum: parseFloat(row.total_sum || 0),
-        paidSum: parseFloat(row.paid_sum || 0),
-        overdueSum: parseFloat(row.overdue_sum || 0)
-      })),
+      monthlyRevenue: [...new Set([
+        ...monthlyRevenueResult.rows.map(row => parseInt(row.month)),
+        ...otherIncomeByMonth.keys(),
+      ])].sort((left, right) => left - right).map(month => {
+        const row = monthlyRevenueResult.rows.find(item => parseInt(item.month) === month);
+        return {
+          month,
+          invoiceCount: parseInt(row?.invoice_count || 0),
+          subtotalSum: parseFloat(row?.subtotal_sum || 0),
+          taxSum: parseFloat(row?.tax_sum || 0),
+          totalSum: parseFloat(row?.total_sum || 0),
+          paidSum: parseFloat(row?.paid_sum || 0),
+          overdueSum: parseFloat(row?.overdue_sum || 0),
+          otherIncomeSum: otherIncomeByMonth.get(month)?.amount || 0,
+          otherIncomeCount: otherIncomeByMonth.get(month)?.count || 0,
+        };
+      }),
       topCustomers: customerStatsResult.rows.map(row => ({
         customerId: row.customer_id,
         customerName: row.customer_name,
         invoiceCount: parseInt(row.invoice_count),
         totalRevenue: parseFloat(row.total_revenue),
-        avgInvoiceAmount: parseFloat(row.avg_invoice_amount)
+        avgInvoiceAmount: parseFloat(row.avg_invoice_amount),
+        otherIncome: parseFloat(row.other_income || 0)
       })),
       statusDistribution: statusDistributionResult.rows.map(row => ({
         status: row.status,
@@ -588,7 +625,9 @@ router.get('/statistics', async (req, res) => {
         totalAmount: parseFloat(yearOverviewResult.rows[0].total_amount || 0),
         paidAmount: parseFloat(yearOverviewResult.rows[0].paid_amount || 0),
         overdueAmount: parseFloat(yearOverviewResult.rows[0].overdue_amount || 0),
-        avgInvoiceAmount: parseFloat(yearOverviewResult.rows[0].avg_invoice_amount || 0)
+        avgInvoiceAmount: parseFloat(yearOverviewResult.rows[0].avg_invoice_amount || 0),
+        otherIncome: [...otherIncomeByMonth.values()].reduce((sum, item) => sum + item.amount, 0),
+        otherIncomeCount: [...otherIncomeByMonth.values()].reduce((sum, item) => sum + item.count, 0)
       } : null
     });
   } catch (error) {

@@ -5,6 +5,8 @@ function mapInvoice(row) {
     id: row.id,
     invoiceNumber: row.invoice_number,
     documentType: row.document_type || 'invoice',
+    origin: row.origin || 'solooffice',
+    hasOriginalDocument: row.has_original_document === true,
     documentSnapshot: row.document_snapshot || undefined,
     referenceInvoiceId: row.reference_invoice_id,
     referenceInvoiceNumber: row.reference_invoice_number,
@@ -67,6 +69,7 @@ const itemSelect = `
   , (SELECT MAX(ee.entry_date) FROM euer_entries ee
       WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'
     ) AS payment_received_at
+  , EXISTS (SELECT 1 FROM invoice_original_documents od WHERE od.invoice_id = i.id) AS has_original_document
 `;
 
 export async function findAllInvoices() {

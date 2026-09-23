@@ -281,10 +281,14 @@ export function ReminderSendModal({
               const originalInvoicePdfBase64 = await blobToBase64(originalInvoicePdfBlob);
               
               // Add original invoice to attachments
+              // Übernommene Rechnungen liefern ihr hinterlegtes Original, das auch
+              // ein XML- oder Bilddokument sein kann.
+              const originalType = originalInvoicePdfBlob.type || 'application/pdf';
+              const originalExtension = originalType.includes('xml') ? 'xml' : originalType === 'image/png' ? 'png' : originalType === 'image/jpeg' ? 'jpg' : 'pdf';
               additionalAttachments.push({
-                name: `Rechnung_${inv.invoiceNumber}.pdf`,
+                name: `Rechnung_${inv.invoiceNumber}.${originalExtension}`,
                 content: originalInvoicePdfBase64,
-                contentType: 'application/pdf'
+                contentType: originalType
               });
               
               // Add invoice attachments if any

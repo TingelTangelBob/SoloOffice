@@ -13,7 +13,7 @@ import { DownloadModal } from './DownloadModal';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
-import { generateInvoicePDF, downloadBlob } from '../utils/pdfGenerator';
+import { generateInvoicePDF, downloadBlob, loadImportedInvoiceOriginal } from '../utils/pdfGenerator';
 import { apiService } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
@@ -89,6 +89,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [invoiceStartDate, setInvoiceStartDate] = useState('');
   const [invoiceEndDate, setInvoiceEndDate] = useState('');
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  // Original-PDF für eine aus einem anderen Programm übernommene Rechnung.
+  const originalUploadInputRef = useRef<HTMLInputElement>(null);
+  const originalUploadInvoiceRef = useRef<Invoice | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
@@ -364,7 +367,63 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   };
 
+  const requestOriginalUpload = (invoice: Invoice) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    originalUploadInvoiceRef.current = invoice;
+    originalUploadInputRef.current?.click();
+  };
+
+  const handleOriginalFile = async (file: File | undefined) => {
+    const invoice = originalUploadInvoiceRef.current;
+    originalUploadInvoiceRef.current = null;
+    if (!file || !invoice) return;
+    const lowerName = file.name.toLowerCase();
+    const contentType = file.type || (lowerName.endsWith('.pdf') ? 'application/pdf' : lowerName.endsWith('.xml') ? 'application/xml' : '');
+    if (!['application/pdf', 'application/xml', 'text/xml', 'image/png', 'image/jpeg'].includes(contentType)) {
+      notify({ variant: 'error', message: 'Als Original sind PDF, XML, PNG und JPEG möglich.' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      notify({ variant: 'error', message: 'Das Original darf höchstens 10 MB groß sein.' });
+      return;
+    }
+    setIsExporting(invoice.id);
+    try {
+      await apiService.uploadInvoiceOriginalDocument(invoice.id, { name: file.name, contentType, content: await blobToBase64(file) });
+      await refreshInvoices();
+      notify({ variant: 'success', message: `Das Original zu Rechnung ${invoice.invoiceNumber} wurde hinterlegt.` });
+    } catch (uploadError) {
+      notify({ variant: 'error', message: uploadError instanceof Error ? uploadError.message : 'Das Original konnte nicht hinterlegt werden.' });
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const downloadImportedOriginal = async (invoice: Invoice) => {
+    if (!invoice.hasOriginalDocument) {
+      notify({ variant: 'warning', message: `Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original hinterlegt. Über „Original hinterlegen“ können Sie es ergänzen.` });
+      return;
+    }
+    setIsExporting(invoice.id);
+    try {
+      const { blob, name } = await loadImportedInvoiceOriginal(invoice);
+      downloadBlob(blob, name);
+    } catch (downloadError) {
+      notify({ variant: 'error', message: downloadError instanceof Error ? downloadError.message : 'Das Original konnte nicht geladen werden.' });
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
   const handleExport = (invoice: Invoice) => {
+    // Übernommene Rechnungen: immer das hinterlegte Original, nie ein neu erzeugtes Dokument.
+    if (invoice.origin === 'imported') {
+      void downloadImportedOriginal(invoice);
+      return;
+    }
     // Open download modal
     setDownloadModal({
       isOpen: true,
@@ -381,6 +440,10 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   };
 
   const handlePreview = (invoice: Invoice) => {
+    if (invoice.origin === 'imported' && !invoice.hasOriginalDocument) {
+      notify({ variant: 'warning', message: `Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original hinterlegt. Über „Original hinterlegen“ können Sie es ergänzen.` });
+      return;
+    }
     // Create preview documents for the invoice
     const documents = createInvoiceAttachmentPreviewDocuments(invoice);
     
@@ -1455,6 +1518,18 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                           <Download className="h-4 w-4" />
                         )}
                       </button>
+                      {invoice.origin === 'imported' && !invoice.hasOriginalDocument && (
+                        <button
+                          type="button"
+                          onClick={() => requestOriginalUpload(invoice)}
+                          disabled={isExporting === invoice.id}
+                          className="action-icon-button action-icon-indigo"
+                          title="Original hinterlegen"
+                          aria-label={`Original zu Rechnung ${invoice.invoiceNumber} hinterlegen`}
+                        >
+                          <FileUp className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleDelete(invoice)}
@@ -1471,6 +1546,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                         <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                         <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                        {invoice.origin === 'imported' && !invoice.hasOriginalDocument && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={isExporting === invoice.id}>Original hinterlegen</ActionMenuItem>}
                         <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </ActionMenu>
@@ -1546,6 +1622,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                       <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                       
                       <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                      {invoice.origin === 'imported' && !invoice.hasOriginalDocument && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={isExporting === invoice.id}>Original hinterlegen</ActionMenuItem>}
                       <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </>
@@ -1607,6 +1684,19 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         />
       )}
 
+      <input
+        ref={originalUploadInputRef}
+        type="file"
+        accept=".pdf,.xml,.png,.jpg,.jpeg,application/pdf,application/xml,text/xml,image/png,image/jpeg"
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          void handleOriginalFile(file);
+        }}
+      />
       <ImportWizard
         resource="invoicePayments"
         isOpen={isPaymentImportOpen}

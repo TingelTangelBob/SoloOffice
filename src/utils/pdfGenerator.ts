@@ -5,6 +5,7 @@
 
 import jsPDF from 'jspdf';
 import logger from './logger';
+import { apiService } from '../services/api';
 import { Invoice, Company, Customer, JobEntry, Quote } from '../types';
 import { formatCurrency, formatDate, formatTime } from './formatters';
 
@@ -67,9 +68,28 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 /**
+ * Original einer übernommenen Rechnung. SoloOffice erzeugt für Rechnungen aus
+ * einem anderen Programm bewusst kein eigenes Dokument, weil sonst ein
+ * abweichendes „Original“ entstünde.
+ */
+export async function loadImportedInvoiceOriginal(invoice: Invoice): Promise<{ blob: Blob; name: string }> {
+  if (!invoice.hasOriginalDocument) {
+    throw new Error(`Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original hinterlegt. Bitte das Original-PDF an der Rechnung hinterlegen.`);
+  }
+  const document = await apiService.getInvoiceOriginalDocument(invoice.id);
+  const binary = atob(document.content);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return { blob: new Blob([bytes], { type: document.contentType }), name: document.name };
+}
+
+/**
  * Generate Invoice PDF
  */
 export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions): Promise<Blob> {
+  if (invoice.origin === 'imported') {
+    return (await loadImportedInvoiceOriginal(invoice)).blob;
+  }
   if (invoice.documentSnapshot?.version === 1) {
     options = { ...options, company: invoice.documentSnapshot.company, customer: invoice.documentSnapshot.customer };
   }

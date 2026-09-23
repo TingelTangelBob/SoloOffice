@@ -44,6 +44,48 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   technischer Prüfung. Die Betriebsunterlagen dokumentieren die Auslastung
   großer Rechnungsläufe und den nächsten sinnvollen Skalierungsschritt.
 
+## v0.9.4 – Datenübernahme und Plattformwechsel
+
+- Neue Seite **Datenübernahme** (Einstellungen → E-Mail & Backup): geführte
+  Reihenfolge für Kunden, Leistungen und Preise, Rechnungen (Altbestand),
+  Einnahmen und Ausgaben, Zahlungseingänge sowie Aufträge/Kurse, jeweils mit
+  herunterladbarer CSV-Vorlage und optionalem Stichtag des Umzugs.
+- Jeder Import wird als Importlauf mit Protokoll gespeichert und kann bis zum
+  Abschluss des Umzugs vollständig rückgängig gemacht werden. EÜR-Buchungen
+  werden dabei storniert statt gelöscht; geänderte Stammdaten werden
+  zurückgesetzt. Spätere Abhängigkeiten (z. B. neue Zahlungen) blockieren das
+  Rückgängigmachen mit einer klaren Begründung.
+- Einnahmen **und** Ausgaben lassen sich aus Tabellen übernehmen: Art per Spalte,
+  festem Wert, Vorzeichen oder getrennten Einnahme-/Ausgabespalten; Betrag auch
+  aus Menge × Einzelpreis. Einnahmen zu vorhandenen Rechnungen werden als deren
+  Zahlung gebucht (Rechnungsnummer oder eindeutig über Kunde und Betrag), damit
+  kein Geldeingang doppelt zählt. Eine Summenkontrolle je Monat hilft beim
+  Abgleich mit der eigenen Tabelle.
+- Einnahmen ohne Rechnung können einem Kunden zugeordnet werden und erscheinen
+  in Übersicht, Auswertungen und Top-Kunden.
+- **Übernommene Rechnungen** behalten Nummer, Datum und Zahlungsstand; offene
+  Beträge bleiben offen. SoloOffice erzeugt für sie kein eigenes Dokument, das
+  Original-PDF kann an der Rechnung hinterlegt werden.
+- Import-Assistent: echte Excel-Dateien (.xlsx) ohne Umweg über CSV,
+  automatische Erkennung von Windows-Zeichensatz, Kopfzeile, Summenzeilen,
+  Zahlen- und Datumsformat je Spalte, feste Werte für ganze Spalten,
+  Zuordnung eigener Werte (z. B. Kategorien), Option „Fehlende Kunden anlegen“,
+  Wiedererkennung bereits importierter Dateien mit übernommener Zuordnung,
+  vollständige Zeilenliste mit Filtern und Download der Hinweiszeilen.
+- Kurs- und Auftragsimport legt auf Wunsch Serien an (wöchentlich, 14-tägig,
+  monatlich) und erkennt bereits vorhandene Termine auch ohne Nummer.
+- Korrekturen: Kunden-Aktualisierung per Import überschreibt keine nicht
+  zugeordneten Felder mehr; „1.234“ wird als 1234 gelesen; Excel-Datumszahlen
+  brechen den Import nicht mehr ab; größere Importdateien werden angenommen;
+  Namensteile ordnen nur noch ganze Wörter zu; fremde Rechnungsnummern wie
+  „R20250042“ verschieben den eigenen Nummernkreis nicht mehr; Kundennummern mit
+  Buchstaben verhindern das Anlegen neuer Kunden nicht mehr.
+- Ein Backup aus einem anderen Workspace (etwa von einer eigenen Installation)
+  kann nach ausdrücklicher Bestätigung übernommen werden.
+- Auswertungen und EÜR bieten zehn Jahre zur Auswahl.
+- Der Abschluss aller offenen Importläufe berücksichtigt die Rechte für
+  Stammdaten-Importe und ist für normale Datenbearbeiter gesperrt.
+
 ## Unreleased
 
 - Platzhalter für die nächste Version.

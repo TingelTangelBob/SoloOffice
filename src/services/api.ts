@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportDuplicateMode, ImportResponse, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -654,7 +654,7 @@ class ApiService {
   async importData(
     resource: ImportResource,
     rows: Array<Record<string, unknown>>,
-    options: { dryRun?: boolean; duplicateMode?: ImportDuplicateMode } = {}
+    options: ImportOptions = {}
   ): Promise<ImportResponse> {
     return this.request<ImportResponse>(`/imports/${resource}`, {
       method: 'POST',
@@ -662,8 +662,58 @@ class ApiService {
         rows,
         dryRun: options.dryRun ?? true,
         duplicateMode: options.duplicateMode ?? 'skip',
+        createMissingCustomers: options.createMissingCustomers === true,
+        matchOpenInvoices: options.matchOpenInvoices !== false,
+        ...(options.file ? { file: options.file } : {}),
+        ...(options.settings ? { settings: options.settings } : {}),
       }),
     });
+  }
+
+  async getImportRuns(): Promise<ImportRun[]> {
+    return this.request<ImportRun[]>('/imports/runs');
+  }
+
+  async getImportRun(id: string): Promise<ImportRun> {
+    return this.request<ImportRun>(`/imports/runs/${id}`);
+  }
+
+  async revertImportRun(id: string): Promise<void> {
+    await this.request(`/imports/runs/${id}/revert`, { method: 'POST' });
+  }
+
+  async confirmImportRun(id: string): Promise<void> {
+    await this.request(`/imports/runs/${id}/confirm`, { method: 'POST' });
+  }
+
+  async confirmAllImportRuns(): Promise<{ confirmed: number }> {
+    return this.request<{ confirmed: number }>('/imports/runs/confirm-all', { method: 'POST' });
+  }
+
+  async getImportSettings(): Promise<ImportCenterSettings> {
+    return this.request<ImportCenterSettings>('/imports/settings');
+  }
+
+  async updateImportSettings(settings: { cutoverDate: string | null }): Promise<{ cutoverDate: string | null }> {
+    return this.request<{ cutoverDate: string | null }>('/imports/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  async getInvoiceOriginalDocument(invoiceId: string): Promise<InvoiceOriginalDocument> {
+    return this.request<InvoiceOriginalDocument>(`/imports/original-documents/${invoiceId}`);
+  }
+
+  async uploadInvoiceOriginalDocument(invoiceId: string, document: Pick<InvoiceOriginalDocument, 'name' | 'content' | 'contentType'>): Promise<InvoiceOriginalDocument> {
+    return this.request<InvoiceOriginalDocument>(`/imports/original-documents/${invoiceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(document),
+    });
+  }
+
+  async deleteInvoiceOriginalDocument(invoiceId: string): Promise<void> {
+    await this.request(`/imports/original-documents/${invoiceId}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------
@@ -921,7 +971,8 @@ class ApiService {
     await this.downloadFile(`${this.baseUrl}/backup/download/${filename}`, filename);
   }
 
-  async restoreBackup(backupData: unknown): Promise<{
+  /** `allowWorkspaceTransfer` übernimmt ein Backup aus einem anderen Workspace nach ausdrücklicher Bestätigung. */
+  async restoreBackup(backupData: unknown, options: { allowWorkspaceTransfer?: boolean } = {}): Promise<{
     success: boolean;
     message: string;
     restoredTables: number;
@@ -930,7 +981,7 @@ class ApiService {
   }> {
     return this.request('/backup/restore', {
       method: 'POST',
-      body: JSON.stringify({ backupData }),
+      body: JSON.stringify({ backupData, ...(options.allowWorkspaceTransfer ? { allowWorkspaceTransfer: true } : {}) }),
     });
   }
 
@@ -962,7 +1013,7 @@ class ApiService {
     return this.request(`/backup/delete-zip/${filename}`, { method: 'DELETE' });
   }
 
-  async restoreZipBackup(file: File): Promise<{
+  async restoreZipBackup(file: File, options: { allowWorkspaceTransfer?: boolean } = {}): Promise<{
     success: boolean;
     message: string;
     restoredTables: number;
@@ -970,6 +1021,7 @@ class ApiService {
     timestamp: string;
   }> {
     const formData = new FormData();
+    if (options.allowWorkspaceTransfer) formData.append('allowWorkspaceTransfer', 'true');
     formData.append('backupFile', file);
 
     const response = await fetch(`${this.baseUrl}/backup/restore-zip`, {

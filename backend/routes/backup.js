@@ -36,6 +36,7 @@ const BACKUP_TABLES = [
   'invoices',
   'invoice_items',
   'invoice_attachments',
+  'invoice_original_documents',
   'invoice_job_sources',
   'quotes',
   'quote_items',
@@ -73,7 +74,7 @@ const RESTORE_CLEAR_TABLES = [
   'recurring_invoice_runs', 'recurring_invoices',
   'job_time_entries', 'job_attachments',
   'quote_attachments', 'quote_items',
-  'invoice_attachments', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices', 'quotes',
+  'invoice_attachments', 'invoice_original_documents', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices', 'quotes',
   'hourly_rates', 'material_templates', 'customers', 'company',
   'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entries', 'incoming_e_invoices'
 ];
@@ -97,6 +98,7 @@ const RESTORE_ORDER = [
   'invoice_items',
   'invoice_history',
   'invoice_attachments',
+  'invoice_original_documents',
   'recurring_invoice_runs',
   'quotes',
   'quote_items',
@@ -128,7 +130,7 @@ async function setAuditSuppressed(client, suppressed) {
 }
 
 const WORKSPACE_SCOPED_TABLES = new Set([
-  'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_job_sources',
+  'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_original_documents', 'invoice_job_sources',
   'quotes', 'quote_items', 'quote_attachments', 'job_recurrences', 'job_entries', 'job_attachments',
   'calendar_events', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
   'yearly_invoice_start_numbers', 'euer_entries', 'euer_entry_history', 'fixed_assets',
@@ -177,7 +179,29 @@ function getBackupWorkspaceId(backupData) {
 }
 
 function backupWorkspaceMismatchMessage() {
-  return 'Dieses Backup gehört zu einem anderen Workspace. Wechseln Sie zum ursprünglichen Workspace und starten Sie die Wiederherstellung dort erneut.';
+  return 'Dieses Backup stammt aus einem anderen Workspace. Sie können es ausdrücklich in diesen Workspace übernehmen; die aktuellen Daten dieses Workspace werden dabei ersetzt.';
+}
+
+// Ein Backup aus einem anderen Workspace (etwa beim Wechsel von einer eigenen
+// Installation in die gehostete Version) wird nur nach ausdrücklicher
+// Bestätigung übernommen. Beim Einspielen erhalten alle Datensätze die ID des
+// aktiven Workspace.
+function workspaceTransferConfirmed(req) {
+  const value = req.body?.allowWorkspaceTransfer;
+  return value === true || value === 'true';
+}
+
+function isDuplicateKeyError(error) {
+  return error?.code === '23505';
+}
+
+function duplicateKeyResponse(req) {
+  return {
+    success: false,
+    message: 'Die Daten dieses Backups sind auf diesem Server bereits in einem anderen Workspace vorhanden. Eine Übernahme ist nur auf eine andere Installation möglich.',
+    code: 'BACKUP_RECORDS_EXIST_ELSEWHERE',
+    requestId: req.requestId,
+  };
 }
 
 function getBackupTimeZone(req) {
@@ -224,6 +248,10 @@ async function getTableColumns(client, table) {
 }
 
 export async function clearWorkspaceData(client, workspaceId) {
+  // Importläufe beziehen sich auf den bisherigen Datenbestand. Nach einer
+  // Wiederherstellung lassen sie sich nicht mehr sinnvoll rückgängig machen.
+  await client.query('DELETE FROM import_run_items WHERE workspace_id = $1', [workspaceId]);
+  await client.query('DELETE FROM import_runs WHERE workspace_id = $1', [workspaceId]);
   for (const table of RESTORE_CLEAR_TABLES) {
     if (!WORKSPACE_SCOPED_TABLES.has(table)) continue;
     await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);
@@ -536,7 +564,7 @@ router.post('/restore', async (req, res) => {
     });
 
     const backupWorkspaceId = getBackupWorkspaceId(backupData);
-    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
+    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId && !workspaceTransferConfirmed(req)) {
       return res.status(409).json({
         success: false,
         message: backupWorkspaceMismatchMessage(),
@@ -758,6 +786,10 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
       }
     }
     
+    if (isDuplicateKeyError(error)) {
+      logger.warn('JSON restore rejected: records exist in another workspace');
+      return res.status(409).json(duplicateKeyResponse(req));
+    }
     const isValidationError = error instanceof BackupArchiveError;
     if (isValidationError) {
       logger.warn('JSON restore rejected', { code: error.code, error: error.message });
@@ -1033,7 +1065,7 @@ router.post('/restore-zip', async (req, res) => {
     });
 
     const backupWorkspaceId = getBackupWorkspaceId(backupData);
-    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId) {
+    if (backupWorkspaceId && backupWorkspaceId !== req.auth.workspaceId && !workspaceTransferConfirmed(req)) {
       return res.status(409).json({
         success: false,
         message: backupWorkspaceMismatchMessage(),
@@ -1259,6 +1291,10 @@ Wir fordern Sie hiermit letztmalig auf, den Betrag unverzüglich, spätestens je
         }
       }
 
+      if (isDuplicateKeyError(restoreError)) {
+        logger.warn('ZIP restore rejected: records exist in another workspace');
+        return res.status(409).json(duplicateKeyResponse(req));
+      }
       const isValidationError = restoreError instanceof BackupArchiveError;
       if (isValidationError) {
         logger.warn('ZIP restore rejected', { code: restoreError.code, error: restoreError.message });

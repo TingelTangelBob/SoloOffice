@@ -18,9 +18,11 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
+  Upload,
   X,
 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
+import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
 import type {
@@ -43,6 +45,8 @@ import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
+import { ImportWizard } from './ImportWizard';
+import { getTerminology } from '../utils/terminology';
 
 /**
  * Spaltenmaße der Buchungstabelle: Datum 112, Kategorie 160, Quelle 144 und
@@ -65,6 +69,8 @@ type EntryDraft = {
   sourceType: EuerEntrySourceType;
   sourceId: string;
   correctionReason: string;
+  /** Kundenbezug einer Einnahme ohne Rechnung. */
+  customerId: string;
 };
 
 interface EuerRow {
@@ -130,6 +136,7 @@ const emptyDraft = (sourceType: EuerEntrySourceType = 'manual'): EntryDraft => (
   sourceType,
   sourceId: '',
   correctionReason: '',
+  customerId: '',
 });
 
 const dateKey = (value: Date | string) => String(value).slice(0, 10);
@@ -160,6 +167,10 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const { customers } = useCustomers();
+  const terminology = getTerminology(company?.terminologyProfile);
+  const customerNames = useMemo(() => new Map(customers.map(customer => [customer.id, customer.name])), [customers]);
   const [infoNoticeDismissed, setInfoNoticeDismissed] = useState(() => isNoticeDismissed(getEuerInfoNoticeId(currentYear)));
   const [dialogEntry, setDialogEntry] = useState<EuerEntry | null | undefined>(undefined);
   const [draft, setDraft] = useState<EntryDraft>(emptyDraft());
@@ -168,7 +179,8 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
-  const years = Array.from({ length: 6 }, (_, index) => currentYear - index);
+  // Zehn Jahre, damit auch übernommene Altdaten erreichbar sind.
+  const years = Array.from({ length: 10 }, (_, index) => currentYear - index);
   const invoiceOptions = useMemo(() => invoices.filter(invoice => invoice.documentType !== 'credit_note'), [invoices]);
   const paymentTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -238,12 +250,16 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
         taxRate: Number(entry.taxRate || 0),
         notes: entry.notes,
         automatic: false,
-        sourceLabel: sourceInvoice ? `${sourceLabels.invoice_payment} · ${sourceInvoice.invoiceNumber}` : sourceLabels[entry.sourceType || 'manual'],
+        sourceLabel: sourceInvoice
+          ? `${sourceLabels.invoice_payment} · ${sourceInvoice.invoiceNumber}`
+          : entry.customerId && customerNames.get(entry.customerId)
+            ? `${sourceLabels[entry.sourceType || 'manual']} · ${customerNames.get(entry.customerId)}`
+            : sourceLabels[entry.sourceType || 'manual'],
         sourceId: entry.sourceId,
       };
     });
     return [...automaticRows, ...manualRows].sort((a, b) => b.entryDate.localeCompare(a.entryDate));
-  }, [creditNotes, entries, invoiceOptions, invoices, year]);
+  }, [creditNotes, customerNames, entries, invoiceOptions, invoices, year]);
 
   const summary = useMemo(() => {
     const income = rows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
@@ -290,6 +306,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
       sourceType: 'correction',
       sourceId: entry.id,
       correctionReason: '',
+      customerId: '',
     });
     setDialogEntry(null);
     setError('');
@@ -306,6 +323,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
       sourceType: entry.sourceType || 'manual',
       sourceId: entry.sourceId || '',
       correctionReason: entry.correctionReason || '',
+      customerId: entry.customerId || '',
     });
     setDialogEntry(entry);
     setError('');
@@ -346,6 +364,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
       sourceType: draft.sourceType,
       sourceId: draft.sourceId || undefined,
       correctionReason: draft.correctionReason.trim() || undefined,
+      customerId: draft.entryType === 'income' && draft.sourceType === 'manual' ? (draft.customerId || null) : null,
     };
     setBusy(true);
     setError('');
@@ -516,8 +535,18 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
         <ActionMenuItem icon={<Plus className="h-4 w-4" />} tone="orange" onClick={openNew}>Manuelle Buchung</ActionMenuItem>
         <ActionMenuItem icon={<FileScan className="h-4 w-4" />} tone="blue" onClick={() => onNavigate?.('receipts')}>Beleg hinzufügen</ActionMenuItem>
         <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" onClick={openPayment}>Teilzahlung</ActionMenuItem>
+        <ActionMenuItem icon={<Upload className="h-4 w-4" />} tone="indigo" onClick={() => setIsImportOpen(true)}>Aus Datei importieren</ActionMenuItem>
       </ActionMenu>
     </PageHeader>
+    <ImportWizard
+      resource="euerEntries"
+      isOpen={isImportOpen}
+      onClose={() => setIsImportOpen(false)}
+      onImported={async () => {
+        setNotice('Einnahmen und Ausgaben wurden importiert.');
+        await loadEntries();
+      }}
+    />
 
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
@@ -603,6 +632,7 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
                   <label className="text-base font-medium text-gray-700">Datum<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label>
                   <label className="text-base font-medium text-gray-700 md:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value, category: current.entryType === 'expense' && (current.category === 'office' || current.category === 'other_expense') ? suggestCategory(event.target.value) : current.category }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label>
                   <label className="text-base font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label>
+                  {draft.entryType === 'income' && draft.sourceType === 'manual' && <label className="text-base font-medium text-gray-700 md:col-span-2">{terminology.entity.singular} (optional)<select value={draft.customerId} onChange={event => setDraft(current => ({ ...current, customerId: event.target.value }))} className="form-input mt-1 w-full"><option value="">Ohne Zuordnung</option>{customers.filter(customer => customer.isActive !== false || customer.id === draft.customerId).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>}
                   <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Teilzahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>
                 </div>
               </section>

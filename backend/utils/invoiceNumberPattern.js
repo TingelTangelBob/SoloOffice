@@ -42,3 +42,25 @@ export function counterMatcher(pattern, date) {
   source += `${escape(pattern.slice(cursor))}$`;
   return new RegExp(source);
 }
+
+/**
+ * Zähler aus Nummern, die nicht zum aktuellen Muster passen, etwa nach einem
+ * Musterwechsel oder bei übernommenen Rechnungen. Jahreszahlen gehören nicht
+ * zum Zähler („R20250042“ → 42, „17/2025“ → 17); unplausibel große Werte
+ * werden ignoriert, damit eine fremde Nummer den Nummernkreis nicht sprengt.
+ */
+export function legacyCounter(number, year) {
+  const groups = String(number || '').match(/\d+/g);
+  if (!groups) return null;
+  const yearText = String(year);
+  let digits = groups[groups.length - 1];
+  if (digits === yearText) {
+    if (groups.length < 2) return null;
+    digits = groups[groups.length - 2];
+  } else if (digits.length > 4 && digits.startsWith(yearText)) {
+    digits = digits.slice(4);
+  }
+  const value = Number(digits);
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 999999 || String(value) === yearText) return null;
+  return value;
+}

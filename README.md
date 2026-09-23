@@ -17,7 +17,7 @@ Der aktuelle Stand ist **v0.8.2** und ein Beta-/Testrelease. Die Anwendung ist f
 ### Geschäftsabläufe
 
 - Kundenverwaltung mit Archivierung, mehreren Kontaktadressen, kundenspezifischen Stundensätzen und Materialvorlagen
-- Import-Assistent mit Vorschau, Feldzuordnung, Validierung und Duplikatbehandlung
+- Datenübernahme aus Excel (.xlsx), CSV und JSON mit Vorschau, Feldzuordnung, festen Werten, Summenkontrolle, Duplikaterkennung und Rückgängig bis zum Abschluss des Umzugs
 - Angebote mit Vorlagen, Statusverwaltung, PDF-Vorschau, E-Mail-Versand und Umwandlung in Rechnungen
 - Rechnungen mit Positionen, Rabatten, Steuerprofilen, Zahlungsinformationen, PDF-Download und E-Mail-Versand
 - Rechnungen aus Aufträgen/Kursen mit gemeinsamem Rechnungs- und Fälligkeitsdatum sowie optionaler eigener Rechnungsnummer
@@ -27,9 +27,11 @@ Der aktuelle Stand ist **v0.8.2** und ein Beta-/Testrelease. Die Anwendung ist f
 - Kalender mit Tages-, Wochen- und Monatsansicht sowie Auftragsstatus
 - Mahnwesen mit Fälligkeitsermittlung, Mahnstufen, Versand und Verlauf
 
-### Rückwirkende Rechnungen und Zahlungsimport
+### Datenübernahme und Umzug
 
-Für eine Migration zuerst die vorhandenen Daten und Kunden anlegen. Danach Rechnungen aus Aufträgen/Kursen mit dem gewünschten Rechnungsdatum, Fälligkeitsdatum und – falls erforderlich – einer freien, noch nicht vergebenen Rechnungsnummer erzeugen. Anschließend Zahlungseingänge über den Importassistenten laden und die Spalte `Rechnungsnummer` zuordnen; sie wird zur Rechnungssuche verwendet. Leere Nummernfelder nutzen weiterhin den automatischen Nummernkreis.
+Unter **Einstellungen → E-Mail & Backup → Datenübernahme** führt SoloOffice durch den Umzug aus Excel oder einem anderen Programm: zuerst Kunden, dann Rechnungen (Altbestand) mit ursprünglicher Nummer und Zahlungsstand, dann Einnahmen und Ausgaben, Zahlungseingänge und Aufträge/Kurse. Einnahmen zu vorhandenen Rechnungen werden als deren Zahlung gebucht, alle übrigen als Einnahme ohne Rechnung – so zählt kein Geldeingang doppelt. Jeder Import lässt sich bis zum Abschluss des Umzugs vollständig rückgängig machen. Einzelheiten stehen in [docs/datenuebernahme.md](docs/datenuebernahme.md).
+
+Rechnungen, die erst jetzt in SoloOffice geschrieben werden, können weiterhin rückwirkend aus Aufträgen/Kursen mit gewünschtem Rechnungsdatum und – falls erforderlich – einer freien, noch nicht vergebenen Rechnungsnummer erzeugt werden. Leere Nummernfelder nutzen den automatischen Nummernkreis.
 
 ### E-Rechnung und Dokumente
 
@@ -180,7 +182,7 @@ SoloOffice bringt mehrere Schutzschichten mit:
 - Rate-Limiting, Security-Header und serverseitige Rollenprüfung
 - Backend-Container als unprivilegierter Benutzer
 - Lokale OCR ohne Übertragung hochgeladener Dokumente an einen externen OCR-Dienst
-- Backups und Restores auf den aktiven Workspace begrenzt
+- Backups und Restores auf den aktiven Workspace begrenzt; ein Backup aus einem anderen Workspace wird nur nach ausdrücklicher Bestätigung übernommen
 
 Diese Mechanismen ersetzen kein individuelles Hardening des Hostings, keine Offsite-Backup-Strategie und keine fachliche Prüfung des Betriebsprozesses.
 
@@ -249,7 +251,7 @@ wichtigsten manuellen Abläufen gehören:
 
 1. Registrierung, Login, Logout, E-Mail-Verifizierung und Passwort-Reset
 2. Workspace-Wechsel, Einladung und Rollenrechte mit mindestens zwei Konten
-3. Import mit Vorschau, Duplikaten, Warnungen und Teilfehlern
+3. Datenübernahme mit Vorschau, Summenkontrolle, Duplikaten, Warnungen, Teilfehlern und Rückgängig
 4. Angebot, Rechnung, E-Mail-Versand, wiederkehrende Rechnung und Mahnung
 5. Beleg-Upload, OCR-Prüfung, EÜR-Verknüpfung und Stornierung
 6. EÜR, Anlagenverzeichnis, Reporting und PDF-Export

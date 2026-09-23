@@ -1,4 +1,6 @@
 const WORKSPACE_DATA_DELETE_ORDER = [
+  'import_run_items',
+  'import_runs',
   'smtp_settings',
   'invoice_job_sources',
   'email_history',
@@ -15,6 +17,7 @@ const WORKSPACE_DATA_DELETE_ORDER = [
   'quote_attachments',
   'quote_items',
   'invoice_attachments',
+  'invoice_original_documents',
   'invoice_history',
   'invoice_items',
   'invoices',

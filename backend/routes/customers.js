@@ -339,7 +339,14 @@ router.post('/', async (req, res) => {
 
     // Generate customer number - find highest existing number and increment
     // Always format as 4-digit number with leading zeros (e.g., 0001, 0002, etc.)
-    const maxNumberResult = await query('SELECT customer_number FROM customers ORDER BY CAST(customer_number AS INTEGER) DESC LIMIT 1');
+    // Importierte Nummern können Buchstaben enthalten („K-1001“); sie dürfen die
+    // Berechnung nicht abbrechen und werden deshalb übergangen.
+    const maxNumberResult = await query(`
+      SELECT customer_number FROM customers
+      WHERE customer_number ~ '^[0-9]{1,15}$'
+      ORDER BY customer_number::bigint DESC
+      LIMIT 1
+    `);
     let customerNumber;
     if (maxNumberResult.rows.length === 0) {
       // No customers exist, start with 0001

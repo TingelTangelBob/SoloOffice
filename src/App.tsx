@@ -17,6 +17,7 @@ const InvoiceManagement = lazy(() => import('./components/InvoiceManagement').th
 const QuoteManagement = lazy(() => import('./components/QuoteManagement').then(({ QuoteManagement: page }) => ({ default: page })));
 const QuoteEditor = lazy(() => import('./components/QuoteEditor').then(({ QuoteEditor: page }) => ({ default: page })));
 const Settings = lazy(() => import('./components/Settings').then(({ Settings: page }) => ({ default: page })));
+const DataImportCenter = lazy(() => import('./components/DataImportCenter').then(({ DataImportCenter: page }) => ({ default: page })));
 const TemplatesManagement = lazy(() => import('./components/TemplatesManagement').then(({ TemplatesManagement: page }) => ({ default: page })));
 const PositionTemplatesManagement = lazy(() => import('./components/PositionTemplatesManagement').then(({ PositionTemplatesManagement: page }) => ({ default: page })));
 const JobManagement = lazy(() => import('./components/JobManagement').then(({ JobManagement: page }) => ({ default: page })));
@@ -177,6 +178,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <TemplatesManagement />;
       case 'positions':
         return <PositionTemplatesManagement />;
+      case 'data-import':
+        return <DataImportCenter onNavigate={onPageChange} />;
       default:
         return <Dashboard onNavigate={onPageChange} />;
     }

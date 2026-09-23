@@ -115,6 +115,8 @@ app.use('/api/receipts', express.json({ limit: '35mb' }));
 app.use('/api/e-invoices', express.json({ limit: '15mb' }));
 app.use('/api/email', express.json({ limit: '100mb' }));
 app.use('/api/backup', express.json({ limit: '50mb' }));
+// Importe übertragen bis zu 5.000 Zeilen bzw. ein Originaldokument bis 10 MB (Base64).
+app.use('/api/imports', express.json({ limit: '25mb' }));
 app.use('/api', express.json({ limit: '2mb' }));
 app.use('/api', express.urlencoded({ limit: '2mb', extended: true }));
 
@@ -193,6 +195,13 @@ app.use((err, req, res, next) => {
     return res.status(400).json({
       error: 'Der Anfrageinhalt enthält kein gültiges JSON.',
       code: 'REQUEST_JSON_INVALID',
+      requestId: req.requestId,
+    });
+  }
+  if (statusCode === 413 && req.path.startsWith('/api/imports')) {
+    return res.status(413).json({
+      error: 'Die Importdaten sind zu groß. Bitte die Datei aufteilen (höchstens 5.000 Zeilen je Import).',
+      code: 'IMPORT_PAYLOAD_TOO_LARGE',
       requestId: req.requestId,
     });
   }

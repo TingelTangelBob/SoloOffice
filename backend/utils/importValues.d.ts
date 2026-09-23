@@ -1,0 +1,22 @@
+export type DateOrder = 'dmy' | 'mdy';
+export type DecimalSeparator = ',' | '.';
+
+export function text(value: unknown): string;
+export function normaliseKey(value: unknown): string;
+export function pick(row: Record<string, unknown> | null | undefined, names: string | string[]): unknown;
+export function detectNumberFormat(values: unknown[]): { decimal: DecimalSeparator; evidence: number; label: string };
+export function parseNumber(value: unknown, options?: { decimal?: DecimalSeparator }): number | null;
+export function roundMoney(value: number): number;
+export function excelSerialToIso(serial: number | string): string | null;
+export function detectDateOrder(values: unknown[]): DateOrder;
+export function parseDate(value: unknown, options?: { order?: DateOrder }): string | null;
+export function parseTime(value: unknown): string | null;
+export function parseBoolean(value: unknown): boolean | null;
+export function parseEntryType(value: unknown): 'income' | 'expense' | null;
+export const EUER_EXPENSE_CATEGORIES: string[];
+export function normaliseEuerCategory(value: unknown): string | null;
+export function parsePaymentStatus(value: unknown): 'paid' | 'open' | null;
+export function parseRepeatInterval(value: unknown): { intervalUnit: 'week' | 'month' | null; interval: number } | null | undefined;
+export function parseJobStatus(value: unknown): 'draft' | 'in-progress' | 'completed' | 'invoiced' | null;
+export function parseQuoteStatus(value: unknown): 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'billed' | null;
+export function parseCustomerType(value: unknown): 'person' | 'organization' | null;

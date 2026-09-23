@@ -488,6 +488,20 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   });
 
+  // Einnahmen ohne Rechnung (etwa aus einer übernommenen Tabelle) zählen mit
+  // ihrem Buchungsdatum. Zahlungen zu Rechnungen sind oben bereits enthalten.
+  const customerNames = new Map(customers.map(customer => [customer.id, customer.name]));
+  euerEntries
+    .filter(entry => entry.entryType === 'income'
+      && (entry.sourceType || 'manual') === 'manual'
+      && entry.status !== 'voided'
+      && Number(entry.amount || 0) > 0)
+    .forEach(entry => revenueRecords.push({
+      customerName: (entry.customerId && customerNames.get(entry.customerId)) || 'Ohne Zuordnung',
+      date: parseLocalJobDate(entry.entryDate),
+      amount: Number(entry.amount || 0),
+    }));
+
   const recordsForYear = (year: number) => revenueRecords.filter(record => record.date.getFullYear() === year);
   const monthlyRevenueForYear = (year: number) => {
     const monthly = new Map<string, number>();
