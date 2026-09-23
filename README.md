@@ -300,7 +300,7 @@ wichtigsten manuellen Abläufen gehören:
 - Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
 - Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
 
-Weitere technische Entscheidungen und Testabläufe stehen in [CONTEXT.md](CONTEXT.md), [EXPECTATIONS.md](EXPECTATIONS.md), [docs/self-hosting.md](docs/self-hosting.md), [docs/automated-tests.md](docs/automated-tests.md), [docs/operations-verification.md](docs/operations-verification.md), [docs/dependency-security.md](docs/dependency-security.md), [docs/e-rechnung-validation.md](docs/e-rechnung-validation.md) und [docs/identity-workspace-local-testing.md](docs/identity-workspace-local-testing.md).
+Weitere technische Entscheidungen und Testabläufe stehen in [Self-Hosting](docs/self-hosting.md), [automatisierten Tests](docs/automated-tests.md), [Betriebsnachweisen](docs/operations-verification.md), [Abhängigkeitssicherheit](docs/dependency-security.md), [E-Rechnungsvalidierung](docs/e-rechnung-validation.md) und [lokalen Identitäts- und Workspace-Tests](docs/identity-workspace-local-testing.md).
 
 ## Lizenz und Beiträge
 

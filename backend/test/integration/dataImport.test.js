@@ -44,8 +44,8 @@ const revert = runId => inWorkspace(() => invoke('/runs/:id/revert', 'post', { p
 
 before(async () => {
   await query('INSERT INTO workspaces (id, name, slug) VALUES ($1, $2, $3)', [workspaceId, 'Datenübernahme', `data-import-${suffix}`]);
-  await inWorkspace(() => query(`INSERT INTO company (name, address, city, postal_code, country, email, tax_id)
-    VALUES ('Nachhilfe Test', 'Weg 1', 'Köln', '50667', 'Deutschland', 'test@example.invalid', 'DE123456789')`));
+  await inWorkspace(() => query(`INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id)
+    VALUES ('Nachhilfe Test', 'Weg 1', 'Köln', '50667', 'Deutschland', '02211234567', 'test@example.invalid', 'DE123456789')`));
 });
 
 after(async () => {
