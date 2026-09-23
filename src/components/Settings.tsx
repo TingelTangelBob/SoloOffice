@@ -20,6 +20,7 @@ import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 import { useFeedback } from '../context/FeedbackContext';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { trackTelemetry } from '../services/telemetry';
+import { useMotionPreference } from '../context/MotionProvider';
 
 type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
@@ -96,6 +97,8 @@ function TerminologyPreview({ profile, receiptLabel, previewOverride }: { profil
 export function Settings({ initialTab = 'app', settingsTab, embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
   const { company, updateCompany } = useCompany();
+  const { animationsEnabled, setAnimationsEnabled } = useMotionPreference();
+  const [motionError, setMotionError] = useState(false);
   const [formData, setFormData] = useState(company);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -1581,6 +1584,20 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
                 <span className="mt-1 block text-xs opacity-80">{mode.description}</span>
               </button>
             ))}
+          </div>
+          <div className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900">Animationen</h4>
+              <p className="mt-1 text-xs text-gray-600">Bewegungen in der Oberfläche ein- oder ausschalten. Die Einstellung gilt für dein Benutzerkonto auf allen Geräten.</p>
+              <p className="mt-1 text-xs text-gray-500">„Bewegung reduzieren“ im Betriebssystem schaltet Animationen zusätzlich aus.</p>
+              {motionError && <p role="alert" className="mt-2 text-xs text-red-700">Die Einstellung konnte nicht gespeichert werden.</p>}
+            </div>
+            <button type="button" role="switch" aria-checked={animationsEnabled} aria-label="Animationen" onClick={() => {
+              setMotionError(false);
+              void setAnimationsEnabled(!animationsEnabled).catch(() => setMotionError(true));
+            }} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${animationsEnabled ? 'bg-primary-custom' : 'bg-gray-400'}`}>
+              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${animationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
           </div>
         </div>
 

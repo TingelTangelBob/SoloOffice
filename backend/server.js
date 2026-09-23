@@ -29,6 +29,7 @@ import controlPlaneWorkspacesRouter from './routes/controlPlaneWorkspaces.js';
 import telemetryRouter from './routes/telemetry.js';
 import supportRouter from './routes/support.js';
 import notificationSettingsRouter from './routes/notificationSettings.js';
+import userPreferencesRouter from './routes/userPreferences.js';
 import workspaceSetupRouter from './routes/workspaceSetup.js';
 import takeoverRouter from './routes/takeover.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
@@ -157,6 +158,7 @@ app.use('/api/calendar-events', calendarEventsRouter);
 app.use('/api/telemetry', telemetryRouter);
 app.use('/api/support', supportRouter);
 app.use('/api/notification-settings', notificationSettingsRouter);
+app.use('/api/user-preferences', userPreferencesRouter);
 app.use('/api/workspace-setup', workspaceSetupRouter);
 app.use('/api/takeover', takeoverRouter);
 

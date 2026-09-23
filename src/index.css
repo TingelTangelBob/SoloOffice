@@ -2727,6 +2727,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
   .page-root,
   .dialog-overlay,
   .dialog-overlay > [role="dialog"],
@@ -2759,5 +2765,22 @@
   .theme-tab-indicator-animated,
   .status-badge {
     transition-duration: 0ms !important;
+  }
+}
+
+/* Die Benutzerpräferenz schaltet auch Transitions außerhalb der gezielten
+   Motion-Klassen aus. Lade-Skeletons bleiben als statische Flächen sichtbar. */
+@media all {
+  :root[data-motion="off"] *,
+  :root[data-motion="off"] *::before,
+  :root[data-motion="off"] *::after {
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  :root[data-motion="off"] .chart-line-draw {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
   }
 }

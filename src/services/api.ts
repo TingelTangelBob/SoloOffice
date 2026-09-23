@@ -218,6 +218,15 @@ class ApiService {
     return this.request<{ settings: NotificationSettings; email: string }>('/notification-settings');
   }
 
+  async getMotionPreference(): Promise<boolean> {
+    const result = await this.request<{ animationsEnabled: boolean }>('/user-preferences/motion');
+    return result.animationsEnabled;
+  }
+
+  async updateMotionPreference(animationsEnabled: boolean): Promise<void> {
+    await this.request('/user-preferences/motion', { method: 'PUT', body: JSON.stringify({ animationsEnabled }) });
+  }
+
   async updateNotificationSettings(payload: NotificationSettingsPayload): Promise<{ settings: NotificationSettings; email: string }> {
     return this.request<{ settings: NotificationSettings; email: string }>('/notification-settings', { method: 'PUT', body: JSON.stringify(payload) });
   }

@@ -139,3 +139,7 @@ Die Reihenfolge begrenzt Abhängigkeiten. Jedes Paket soll einen prüfbaren vert
 3. Darf ein Owner einen Workspace mit weiteren Mitgliedern nach eigener Bestätigung löschen, oder soll das erst nach Entfernen/Übertragen aller Mitglieder möglich sein (Planannahme: sperren)?
 4. Bei einer als „bezahlt“ markierten Alt-Rechnung ohne Zahlungsdatum: bisherige Warnung mit Rechnungsdatum als Ersatz beibehalten, oder im geführten Umzug ein echtes Zahlungsdatum verlangen?
 5. Soll „Animationen an/aus“ pro Benutzer über Geräte hinweg gelten (Präferenz), oder nur für diesen Browser? Planannahme: benutzerbezogen mit Systemvorgabe als Obergrenze.
+
+### L9 Umsetzung (2026-09-23)
+
+Der Darstellungs-Schalter ist benutzerbezogen serverseitig persistiert (Migration 048), wirkt direkt auf CSS und WAAPI und respektiert `prefers-reduced-motion` als Vorrang. Manuelle Abschlussprüfung gegen Docker/Staging steht noch aus; Prüfumfang siehe [`tmp/luna-L9-result.md`](../../tmp/luna-L9-result.md).

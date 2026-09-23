@@ -6,6 +6,7 @@ import { useCompany } from './context/CompanyContext';
 import { useQuotes } from './context/QuoteContext';
 import { useAuth } from './context/AuthContext';
 import { AuthProvider } from './context/AuthProvider';
+import { MotionProvider } from './context/MotionProvider';
 import { FeedbackProvider } from './context/FeedbackProvider';
 import { AuthPage } from './components/AuthPage';
 import { trackTelemetry } from './services/telemetry';
@@ -221,7 +222,7 @@ function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps)
 
   return (
     <AppProvider key={workspace.id}>
-      <AppContent currentPageState={currentPageState} onPageChange={onPageChange} />
+      <MotionProvider><AppContent currentPageState={currentPageState} onPageChange={onPageChange} /></MotionProvider>
     </AppProvider>
   );
 }

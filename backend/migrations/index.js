@@ -53,6 +53,7 @@ import * as migration044 from './044_data_import_runs.js';
 import * as migration045 from './045_workspace_setup.js';
 import * as migration046 from './046_migration_sessions.js';
 import * as migration047 from './047_migration_categories.js';
+import * as migration048 from './048_user_motion_preference.js';
 
 // List of all migrations in execution order
 const migrations = [
@@ -103,6 +104,7 @@ const migrations = [
   migration045,
   migration046,
   migration047,
+  migration048,
 ];
 
 /**

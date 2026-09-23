@@ -9,7 +9,8 @@ const COLLAPSE_DURATION_MS = 160;
 const MOTION_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 
 export function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined'
+  return typeof document !== 'undefined' && document.documentElement.dataset.motion === 'off'
+    || typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
