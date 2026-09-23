@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, Check, LoaderCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { Company, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus } from '../types';
@@ -173,8 +173,8 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         <footer className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <button type="button" onClick={() => step > 1 ? void save(step - 1) : void save(1).then(saved => { if (saved) onNavigate('dashboard'); })} disabled={busy} className="btn-secondary inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium"><ArrowLeft className="h-4 w-4" />{step > 1 ? 'Zurück' : 'Später fortsetzen'}</button>
-          {step < 5 ? <button type="button" onClick={() => void save(step + 1)} disabled={busy} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}Speichern und weiter<ArrowRight className="h-4 w-4" /></button>
-            : <button type="button" onClick={() => void save(5, true)} disabled={busy || choice === 'undecided'} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{finalActionLabel}</button>}
+          {step < 5 ? <button type="button" onClick={() => void save(step + 1)} disabled={busy} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Speichern und weiter<ArrowRight className="h-4 w-4" /></button>
+            : <button type="button" onClick={() => void save(5, true)} disabled={busy || choice === 'undecided'} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{finalActionLabel}</button>}
         </footer>
       </section>
     </main>

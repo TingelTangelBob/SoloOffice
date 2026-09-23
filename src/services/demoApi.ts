@@ -488,6 +488,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       invoiceTemplates: [], createdAt: isoDate(),
     },
     workspaceSetup: {
+      id: 'workspace-setup',
       currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
       createdAt: isoDate(), updatedAt: isoDate(),
     },
@@ -546,6 +547,7 @@ function readState(): DemoState {
       // Vor L2 gespeicherte Demodaten werden wie ein bestehender Workspace
       // behandelt: weiterhin per Einstellungen prüfbar, ohne Einrichtungszwang.
       workspaceSetup: parsed.workspaceSetup || {
+        id: 'workspace-setup',
         currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: false,
         createdAt: isoDate(), updatedAt: isoDate(),
       },
@@ -1084,7 +1086,8 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
     category = categories[resource];
     if (takeover.phase === 'execute' && category?.sessionId === takeover.sessionId && category?.status === 'completed') {
       if (category.idempotencyKey !== takeover.idempotencyKey) throw new Error('Diese Kategorie wurde bereits freigegeben und übernommen.');
-      const previous = demoImportRuns(state).find(run => run.id === category.runId);
+      const categoryRunId = category.runId;
+      const previous = demoImportRuns(state).find(run => run.id === categoryRunId);
       if (previous) return { resource, dryRun: false, runId: previous.id, summary: previous.summary, rows: previous.report, truncated: false, idempotentReplay: true, demoMode: true };
     }
     if (!session || session.id !== takeover.sessionId || session.status !== 'open' || session.legacyBackfill) throw new Error('Die Umzugssitzung ist nicht für eine neue Kategorieübernahme offen.');
@@ -1639,9 +1642,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (parts.length === 3 && parts[2] === 'complete' && method === 'POST') {
       if (!session || session.id !== parts[1] || session.status !== 'open') throw new Error('Die Demo-Sitzung ist nicht offen oder wurde bereits abgeschlossen.');
+      const sessionId = session.id;
       if (!session.legacyBackfill) {
         (state.importRuns || []).forEach(run => {
-          if (run.migrationSessionId === session.id && run.status === 'pending') {
+          if (run.migrationSessionId === sessionId && run.status === 'pending') {
             run.status = 'confirmed';
             run.confirmedAt = new Date().toISOString();
           }
@@ -1656,11 +1660,14 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'workspace-setup') {
     state.workspaceSetup ||= {
+      id: 'workspace-setup',
       currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
       createdAt: isoDate(), updatedAt: isoDate(),
     };
+    let workspaceSetup: DemoRecord = state.workspaceSetup!;
     if (method === 'PATCH') {
-      if (data.currentStep !== undefined && (!Number.isInteger(data.currentStep) || data.currentStep < 1 || data.currentStep > 5)) {
+      const currentStep = data.currentStep;
+      if (currentStep !== undefined && (typeof currentStep !== 'number' || !Number.isInteger(currentStep) || currentStep < 1 || currentStep > 5)) {
         throw new Error('Der Einrichtungsschritt muss zwischen 1 und 5 liegen.');
       }
       if (data.migrationChoice !== undefined && !['undecided', 'takeover', 'no_legacy_data'].includes(String(data.migrationChoice))) {
@@ -1669,16 +1676,18 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (data.complete === true && !['takeover', 'no_legacy_data'].includes(String(data.migrationChoice))) {
         throw new Error('Bitte Datenübernahme starten oder „Keine Altdaten“ auswählen.');
       }
-      state.workspaceSetup = {
-        ...state.workspaceSetup,
-        ...(data.currentStep !== undefined ? { currentStep: data.currentStep } : {}),
+      workspaceSetup = {
+        ...workspaceSetup,
+        id: workspaceSetup.id || 'workspace-setup',
+        ...(currentStep !== undefined ? { currentStep } : {}),
         ...(data.migrationChoice !== undefined ? { migrationChoice: data.migrationChoice } : {}),
-        ...(data.complete === true ? { currentStep: 5, completedAt: state.workspaceSetup.completedAt || isoDate(), setupRequired: false } : {}),
+        ...(data.complete === true ? { currentStep: 5, completedAt: workspaceSetup.completedAt || isoDate(), setupRequired: false } : {}),
         updatedAt: isoDate(),
       };
+      state.workspaceSetup = workspaceSetup;
     }
     saveState(state);
-    return state.workspaceSetup as unknown as T;
+    return workspaceSetup as unknown as T;
   }
 
   if (resource === 'invoices' && parts[2] === 'payments' && id && method === 'POST') {
@@ -2640,7 +2649,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'importRuns' | 'invoiceOriginals'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'importRuns' | 'invoiceOriginals'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -2941,6 +2950,7 @@ export function resetDemoWorkspaceData() {
     email: '', phone: '', website: '', taxId: '', bankAccount: '', bic: '',
   };
   state.workspaceSetup = {
+    id: 'workspace-setup',
     currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
     createdAt: isoDate(), updatedAt: isoDate(),
   };
