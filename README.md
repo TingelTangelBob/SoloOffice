@@ -8,7 +8,25 @@
 
 SoloOffice ist eine deutschsprachige, selbst hostbare Webanwendung für Rechnungen, Angebote, Aufträge und vorbereitende Buchhaltung. Die Anwendung verbindet Kundenverwaltung, Dokumente, E-Rechnungen, lokale Belegerkennung, EÜR, Auswertungen und Workspace-Verwaltung in einer Oberfläche.
 
-Der aktuelle Stand ist **v0.8.2** und ein Beta-/Testrelease. Die Anwendung ist für Tests und Feedback gedacht und ersetzt keine Steuer-, Rechts- oder Datenschutzberatung. Die Versionsnummer folgt SemVer; **1.0.0** wird vergeben, sobald das Self-Hosting praktisch nachgewiesen ist — Migrationen, Mandantentrennung und Restore gegen eine echte Datenbank.
+Der aktuelle Stand ist **v0.9.4** (`b6c6bb2`) und ein Beta-/Testrelease. Die
+Anwendung ist für Tests und Feedback gedacht und ersetzt keine Steuer-, Rechts-
+oder Datenschutzberatung. Die Versionsnummer folgt SemVer; **1.0.0** wird
+vergeben, sobald das Self-Hosting praktisch nachgewiesen ist — Migrationen,
+Mandantentrennung und Restore gegen eine echte Datenbank.
+
+## Launch-Status
+
+Ein öffentlicher Hosted-/SaaS-Launch ist mit diesem Stand **nicht freigegeben**.
+Control Plane, Stripe-/Tarifabläufe, Export und Löschung, rechtliche Freigaben,
+die vollständige manuelle Fachabnahme sowie der Produktionsbetrieb sind noch
+offen. Die vollständige Must-Liste mit Ownern und Nachweisen steht in
+[docs/launch-must.md](docs/launch-must.md).
+
+Für einen begrenzten Self-Hosting-Test ist die Anwendung mit Einschränkungen
+geeignet. Der Staging-Stand v0.9.4 / `b6c6bb279dcd1c9807f237812c59c57de58135a3`
+bestand am 23.09.2026 den technischen Instanznachweis für Healthchecks,
+Migration 044, RLS und Image-Commit. Ein fachlicher Import-Smoke-Test, echte
+SMTP-Zustellung und die manuelle Release-Abnahme sind dadurch nicht ersetzt.
 
 > Die Screenshots in dieser README wurden am 07.08.2026 im lokalen Demo-Modus unter [http://localhost:5173/](http://localhost:5173/) aufgenommen. Sie zeigen Demo-Daten und keine echten Unternehmensdaten.
 
@@ -41,6 +59,19 @@ Rechnungen, die erst jetzt in SoloOffice geschrieben werden, können weiterhin r
 - Lokale OCR für PDF, JPG, PNG und WEBP mit Tesseract im Backend-Container
 - Erkannte Aussteller, Datums- und Betragsfelder als prüfbare Vorschläge
 - Übernahme geprüfter Belege in die EÜR und nachvollziehbare Dokumentenverknüpfungen
+
+### Geplante Funktionen
+
+Diese Punkte sind bewusst später geplant und nicht launch-blockierend:
+
+- DATEV-Buchungsstapel, CAMT/MT940 und Gutschriftenimport
+- Zuordnungsprofile für konkrete Programme auf Basis echter, anonymisierter
+  Beispielexporte
+- ELSTER-Übertragung; sie ist aktuell ausdrücklich nicht enthalten
+- Vollständige SaaS-Telemetrie und Admin-Auswertung nach Datenschutz- und
+  Betreiberfreigabe
+- Externer Belegspeicher sowie serverseitige Sammelerstellung bzw.
+  Hintergrundwarteschlange für sehr große Rechnungsläufe
 
 ### Vorbereitende Buchhaltung und Auswertungen
 
@@ -239,6 +270,8 @@ alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
 Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md). Die
 Abhängigkeitsstrategie und die aktuellen Audit-Grenzen sind in
 [docs/dependency-security.md](docs/dependency-security.md) dokumentiert.
+Der aktuelle Umfang beträgt 43 Frontend-Tests, 99 Backend-Regressions-Tests
+und 43 PostgreSQL-Integrationstests.
 Laufende Instanzen lassen sich mit `manage-instances.sh verify` ohne Anmeldung
 auf Health, Migrationen, RLS und den exakten Image-Commit prüfen; der gesicherte
 Updatepfad steht in

@@ -1,7 +1,8 @@
 # Datenübernahme
 
-**Stand:** 2026-09-22
-**Status:** umgesetzt; Datenbankpfade noch gegen PostgreSQL (CI/Staging) nachzuweisen
+**Stand:** 2026-09-23
+**Status:** umgesetzt; Staging-Stack und Migration 044 technisch geprüft,
+fachlicher Import-Smoke gegen PostgreSQL noch offen
 
 Die Datenübernahme bringt Daten aus Excel, CSV, JSON oder einem anderen
 Programm nach SoloOffice. Sie richtet sich an drei Fälle:
@@ -271,13 +272,17 @@ Import, Zellen bis 100.000 Zeichen). Weitere Optionen im Rumpf:
 
 ## Nachweise
 
-Stand 2026-09-22:
+Stand 2026-09-23:
 
 - **Automatisiert (lokal ausgeführt):** `backend/test/importValues.test.js`,
   `backend/test/importPlanner.test.js`, `backend/test/invoiceNumberPattern.test.js`
   sowie die Import-Tests in `test/frontend/importParser.test.mjs` (u. a. echte
   .xlsx-Datei, Windows-1252, die Nachhilfe-Tabelle). ESLint, TypeScript,
   Vite-Build und `scripts/verify-audit-contracts.mjs` ohne Befund.
+- **Technischer Staging-Nachweis:** Am 2026-09-23 bestand
+  `manage-instances.sh verify staging b6c6bb279dcd1c9807f237812c59c57de58135a3`;
+  Healthchecks, Image-Commit, RLS und der aktuelle Migrationsstand (044) sind
+  damit geprüft. Dieser Lauf verändert keine Fachdaten.
 - **Automatisiert, nur in der CI:** `backend/test/integration/dataImport.test.js`
   prüft gegen PostgreSQL Import, übernommene Rechnungen, Original, Abgleich,
   blockiertes und umgekehrtes Rückgängigmachen, Trigger-Schutz und Abschluss.
@@ -288,8 +293,8 @@ Stand 2026-09-22:
   Einnahme mit einer offenen Rechnung; Kursserie; Rückgängig in umgekehrter
   Reihenfolge und blockiertes Rückgängig; 375 px Breite; heller und dunkler
   Modus.
-- **Offen:** Migration 044 und die Datenbankpfade auf Staging bzw. in der CI;
-  die Punkte in der [manuellen Release-Checkliste](manual-release-checklist.md).
+- **Offen:** der fachliche Import-Smoke mit echter `.xlsx`-Datei auf Staging
+  und die Punkte in der [manuellen Release-Checkliste](manual-release-checklist.md).
 
 ## Offene Punkte und Produktentscheidungen
 

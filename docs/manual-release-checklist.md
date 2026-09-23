@@ -1,6 +1,6 @@
 # Wiedervorlage: manuelle Release-Prüfung
 
-**Stand:** 2026-08-28
+**Stand:** 2026-09-23 · Quellstand `v0.9.4` / `b6c6bb2`
 **Status:** vor dem nächsten öffentlichen Release erneut vorlegen
 **Verantwortung:** gemeinsame Prüfung mit dem Nutzer
 
