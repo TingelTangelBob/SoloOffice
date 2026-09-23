@@ -661,7 +661,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 ))}
               </div>
 
-              {setupRequired && (
+              {setupRequired && !takeoverOpen && (
                 <button
                   type="button"
                   onClick={() => handlePageChange('setup')}
@@ -681,12 +681,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   type="button"
                   onClick={() => handlePageChange('data-import')}
                   className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
-                  aria-label="Offene Umzugssitzung fortsetzen"
-                  title={isSidebarCompact ? 'Offene Umzugssitzung fortsetzen' : undefined}
+                  aria-label="Umzug abschließen"
+                  title={isSidebarCompact ? 'Umzug abschließen' : undefined}
                 >
                   <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
-                    <strong>Offene Umzugssitzung</strong>
-                    <span>Status und Fortschritt ansehen</span>
+                    <strong>Umzug abschließen</strong>
+                    <span>Offene Datenübernahme fortsetzen</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                 </button>

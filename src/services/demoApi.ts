@@ -1640,8 +1640,15 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (parts.length === 3 && parts[2] === 'complete' && method === 'POST') {
       if (!session || session.id !== parts[1] || session.status !== 'open') throw new Error('Die Demo-Sitzung ist nicht offen oder wurde bereits abgeschlossen.');
       if (session.legacyBackfill) throw new Error('Der Altbestand belegt den einmaligen Start; ein neuer Sitzungsabschluss ist hier nicht verfügbar.');
+      (state.importRuns || []).forEach(run => {
+        if (run.migrationSessionId === session.id && run.status === 'pending') {
+          run.status = 'confirmed';
+          run.confirmedAt = new Date().toISOString();
+        }
+      });
       session = { ...session, status: 'completed', completedBy: 'demo-user', completedAt: new Date().toISOString(), progressRevision: Number(session.progressRevision) + 1 };
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(session));
+      saveState(state);
       return { takeoverUsed: true, session, demoMode: true } as unknown as T;
     }
   }

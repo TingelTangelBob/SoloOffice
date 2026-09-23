@@ -326,6 +326,20 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
   const openCandidate = (resource: ImportResource) => {
     if (!scannedFile || takeover?.session?.status !== 'open' || takeover.session.legacyBackfill) return;
+    const node = dependencyPlan?.nodes.find(item => item.resource === resource && !item.synthetic);
+    if (node?.blockedReason) {
+      notify({ variant: 'error', title: 'Kategorie noch gesperrt', message: node.blockedReason });
+      return;
+    }
+    const unmetDependency = node?.dependencies.find(dependency => {
+      if (dependency === 'suggestedCustomers') return false;
+      return !completedCategory(dependency as ImportResource);
+    });
+    if (unmetDependency) {
+      const label = getImportDefinition(unmetDependency as ImportResource).label;
+      notify({ variant: 'error', title: 'Kategorie noch gesperrt', message: `Übernehmen Sie zuerst die Voraussetzung „${label}“.` });
+      return;
+    }
     const candidate = scanCandidates.find(item => item.resource === resource);
     setWizardSourceFile(scannedFile);
     setWizardSheet(scanResult?.sheet);
@@ -380,9 +394,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     : [];
   const canImportResource = (resource: ImportResource) => canWrite && takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && (!steps.find(step => step.resources.some(item => item.resource === resource))?.adminOnly || canAdmin);
   const completedCategory = (resource: ImportResource) => runs.some(run => run.migrationSessionId === takeover?.session?.id && run.resource === resource && run.status !== 'reverted');
+  const categoryBlockReason = (resource: ImportResource) => {
+    const node = dependencyPlan?.nodes.find(item => item.resource === resource && !item.synthetic);
+    if (node?.blockedReason) return node.blockedReason;
+    const dependency = node?.dependencies.find(item => item !== 'suggestedCustomers' && !completedCategory(item as ImportResource));
+    return dependency ? `Übernehmen Sie zuerst die Voraussetzung „${getImportDefinition(dependency as ImportResource).label}“.` : null;
+  };
   const categoryCount = scanCandidates.filter(candidate => !skippedCategories.includes(candidate.resource)).length;
   const completedCategoryCount = scanCandidates.filter(candidate => completedCategory(candidate.resource)).length;
-  const nextOpenCategory = scanCandidates.find(candidate => !completedCategory(candidate.resource) && !skippedCategories.includes(candidate.resource));
+  const nextOpenCategory = scanCandidates.find(candidate => !completedCategory(candidate.resource) && !skippedCategories.includes(candidate.resource) && !categoryBlockReason(candidate.resource));
 
   return (
     <div className="page-root space-y-6">
@@ -425,6 +445,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
             if (file) void scanFile(file);
           }} />
         </div>
+        {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && !scanResult && <p className="mt-3 rounded-lg border border-primary-custom/20 bg-primary-custom/5 p-3 text-sm text-gray-700">Die Umzugssitzung ist offen und kann fortgesetzt werden. Wählen Sie die Datei erneut aus; Datei-Hash und Tabellenblatt werden für jede Vorschau und Freigabe erneut geprüft.</p>}
         {scanError && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{scanError}</p>}
         {scanResult && scannedFile && <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
           <div className="grid gap-2 text-sm text-gray-700 sm:grid-cols-2 lg:grid-cols-4">
@@ -442,7 +463,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
               {scanCandidates.map(candidate => <li key={candidate.resource} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><h4 className="font-medium text-gray-900">{candidate.label}</h4><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{candidate.confidence === 'high' ? 'Hohe' : candidate.confidence === 'medium' ? 'Mittlere' : 'Niedrige'} Konfidenz · {candidate.score} %</span></div>
-                  {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && <p className={`mt-1 text-sm font-medium ${completedCategory(candidate.resource) ? 'text-green-800' : 'text-gray-700'}`}>{completedCategory(candidate.resource) ? 'Übernommen' : 'Noch offen'}</p>}
+                  {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && <p className={`mt-1 text-sm font-medium ${completedCategory(candidate.resource) ? 'text-green-800' : categoryBlockReason(candidate.resource) ? 'text-red-800' : 'text-gray-700'}`}>{completedCategory(candidate.resource) ? 'Übernommen' : categoryBlockReason(candidate.resource) ? `Gesperrt: ${categoryBlockReason(candidate.resource)}` : 'Noch offen'}</p>}
                   {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && nextOpenCategory?.resource === candidate.resource && <p className="mt-1 text-xs font-medium text-primary-custom">Nächste offene Kategorie</p>}
                   <p className="mt-1 text-sm text-gray-600">{candidate.reason}</p>
                   <p className="mt-1 text-xs text-gray-500">Zeilen mit passenden Werten: {candidate.matchedRowCount.toLocaleString('de-DE')} von {scanResult.rows.length.toLocaleString('de-DE')}{candidate.matchedRowNumbers.length > 0 ? ` · z. B. ${candidate.matchedRowNumbers.slice(0, 8).join(', ')}` : ''}</p>
@@ -450,7 +471,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                   {candidate.unclearColumns.length > 0 && <p className="mt-1 text-xs text-amber-800">In dieser Kategorie unklar: {candidate.unclearColumns.join(', ')}</p>}
                   {candidate.overlaps.length > 0 && <p className="mt-1 text-sm text-amber-800">Überschneidung prüfen: {candidate.overlaps.map(resource => `${getImportDefinition(resource).label}${candidate.overlapRows[resource]?.length ? ` (Zeile${candidate.overlapRows[resource]!.length === 1 ? '' : 'n'} ${candidate.overlapRows[resource]!.slice(0, 8).join(', ')})` : ''}`).join('; ')}. {['euerEntries', 'invoicePayments', 'invoices'].includes(candidate.resource) ? 'Geldzeilen werden nicht automatisch doppelt vorgeschlagen.' : 'Bitte prüfen Sie, welche Zuordnung zu den gemeinsamen Zeilen passt.'}</p>}
                 </div>
-                <button type="button" onClick={() => openCandidate(candidate.resource)} disabled={!canImportResource(candidate.resource) || completedCategory(candidate.resource)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{completedCategory(candidate.resource) ? 'Kategorie übernommen' : 'Zuordnung prüfen'}</button>
+                <button type="button" onClick={() => openCandidate(candidate.resource)} disabled={!canImportResource(candidate.resource) || completedCategory(candidate.resource) || Boolean(categoryBlockReason(candidate.resource))} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{completedCategory(candidate.resource) ? 'Kategorie übernommen' : categoryBlockReason(candidate.resource) ? 'Voraussetzung fehlt' : 'Zuordnung prüfen'}</button>
               </li>)}
             </ul>}
           </div>

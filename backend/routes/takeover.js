@@ -139,8 +139,9 @@ router.post('/:sessionId/complete', async (req, res) => {
       UPDATE import_runs
       SET status = 'confirmed', confirmed_at = NOW()
       WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
+        AND migration_session_id = $1
         AND status = 'pending'
-    `);
+    `, [req.params.sessionId]);
     const result = await client.query(`
       UPDATE migration_sessions
       SET status = 'completed', completed_by = $2, completed_at = NOW(),
