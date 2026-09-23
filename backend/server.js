@@ -30,6 +30,7 @@ import telemetryRouter from './routes/telemetry.js';
 import supportRouter from './routes/support.js';
 import notificationSettingsRouter from './routes/notificationSettings.js';
 import workspaceSetupRouter from './routes/workspaceSetup.js';
+import takeoverRouter from './routes/takeover.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 import { workspaceSuspensionGuard } from './middleware/workspaceSuspension.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
@@ -155,6 +156,7 @@ app.use('/api/telemetry', telemetryRouter);
 app.use('/api/support', supportRouter);
 app.use('/api/notification-settings', notificationSettingsRouter);
 app.use('/api/workspace-setup', workspaceSetupRouter);
+app.use('/api/takeover', takeoverRouter);
 
 app.get('/metrics', (req, res) => {
   const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));

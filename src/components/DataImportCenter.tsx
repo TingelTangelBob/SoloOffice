@@ -8,7 +8,7 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useQuotes } from '../context/QuoteContext';
 import { apiService } from '../services/api';
-import type { ImportResource, ImportRun } from '../types';
+import type { ImportResource, ImportRun, TakeoverStatus } from '../types';
 import { buildImportTemplate, getImportDefinition } from '../utils/importParser';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
@@ -77,13 +77,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [wizardResource, setWizardResource] = useState<ImportResource | null>(null);
   const [protocolRun, setProtocolRun] = useState<ImportRun | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [takeover, setTakeover] = useState<TakeoverStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [runList, settings] = await Promise.all([apiService.getImportRuns(), apiService.getImportSettings()]);
+      const [runList, settings, takeoverStatus] = await Promise.all([apiService.getImportRuns(), apiService.getImportSettings(), apiService.getTakeoverStatus()]);
       setRuns(runList);
+      setTakeover(takeoverStatus);
       setCutoverDate(settings.cutoverDate || '');
       setSavedCutoverDate(settings.cutoverDate || '');
     } catch (error) {
@@ -211,9 +213,9 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
   const confirmAll = async () => {
     const accepted = await confirm({
-      title: 'Umzug abschließen?',
-      message: `${pendingRuns.length} ${pendingRuns.length === 1 ? 'offener Import wird' : 'offene Importe werden'} abgeschlossen. Prüfen Sie vorher Übersicht, EÜR und Auswertungen. Danach ist kein Rückgängigmachen mehr möglich.`,
-      confirmText: 'Umzug abschließen',
+      title: 'Offene Importe bestätigen?',
+      message: `${pendingRuns.length} ${pendingRuns.length === 1 ? 'offener Import wird' : 'offene Importe werden'} bestätigt. Prüfen Sie vorher Übersicht, EÜR und Auswertungen. Danach sind diese Importe nicht mehr rückgängig zu machen.`,
+      confirmText: 'Importe bestätigen',
     });
     if (!accepted) return;
     setBusyId('all');
@@ -222,7 +224,43 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       await load();
       notify({ variant: 'success', message: `${result.confirmed} ${result.confirmed === 1 ? 'Import wurde' : 'Importe wurden'} abgeschlossen.` });
     } catch (error) {
+      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die offenen Importe konnten nicht bestätigt werden.' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const completeTakeover = async () => {
+    if (!takeover?.session || takeover.session.status !== 'open') return;
+    const accepted = await confirm({
+      title: 'Umzug abschließen?',
+      message: 'Damit wird die Umzugssitzung endgültig abgeschlossen. Noch offene Importe werden bestätigt und können danach nicht mehr rückgängig gemacht werden. Der einmalige Start bleibt dauerhaft verbraucht.',
+      confirmText: 'Umzug abschließen',
+    });
+    if (!accepted) return;
+    setBusyId('takeover');
+    try {
+      setTakeover(await apiService.completeTakeover(takeover.session.id));
+      window.dispatchEvent(new Event('solooffice-takeover-status-changed'));
+      await load();
+      notify({ variant: 'success', message: 'Der Umzug wurde abgeschlossen.' });
+    } catch (error) {
       notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Umzug konnte nicht abgeschlossen werden.' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const startTakeover = async () => {
+    if (takeover?.takeoverUsed) return;
+    setBusyId('takeover-start');
+    try {
+      setTakeover(await apiService.startTakeover());
+      window.dispatchEvent(new Event('solooffice-takeover-status-changed'));
+      notify({ variant: 'success', message: 'Die Umzugssitzung wurde gestartet.' });
+    } catch (error) {
+      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Umzug konnte nicht gestartet werden.' });
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -249,10 +287,32 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         {pendingRuns.length > 0 && canWrite && (
           <button type="button" onClick={confirmAll} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium sm:px-4 disabled:opacity-50">
             {busyId === 'all' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            <span className="hidden sm:inline">Umzug abschließen</span>
+            <span>Offene Importe bestätigen</span>
           </button>
         )}
       </PageHeader>
+
+      {takeover && <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Umzugsstatus">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">Umzugsstatus</h2>
+            {takeover.demoMode && <p className="mt-1 text-xs font-medium text-amber-800">Demo: Dieser Status wird nur in dieser Browser-Sitzung simuliert.</p>}
+            {takeover.session?.legacyBackfill
+              ? <p className="mt-1 text-sm text-gray-600">Der Umzug-Start wurde bereits durch Importläufe aus dem Altbestand belegt. Diese Läufe belegen keinen fachlichen Abschluss.</p>
+              : takeover.session?.status === 'open'
+                ? <p className="mt-1 text-sm text-gray-600">Sitzung gestartet am {formatDateTime(takeover.session.startedAt)}. Fortschrittsrevision {takeover.session.progressRevision}.</p>
+                : takeover.session?.status === 'completed'
+                  ? <p className="mt-1 text-sm text-gray-600">Abgeschlossen am {formatDateTime(takeover.session.completedAt)}. Ein neuer Umzug kann nicht gestartet werden.</p>
+                  : <p className="mt-1 text-sm text-gray-600">Noch nicht gestartet. Eine Vorschau oder Prüfung verbraucht den einmaligen Start nicht.</p>}
+          </div>
+          {!takeover.session && canAdmin && <button type="button" onClick={startTakeover} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
+            {busyId === 'takeover-start' && <Loader2 className="h-4 w-4 animate-spin" />}Datenübernahme starten
+          </button>}
+          {takeover.session?.status === 'open' && !takeover.session.legacyBackfill && canAdmin && <button type="button" onClick={completeTakeover} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
+            {busyId === 'takeover' && <Loader2 className="h-4 w-4 animate-spin" />}Umzug abschließen
+          </button>}
+        </div>
+      </section>}
 
       <section className="guidance-panel p-5 text-sm leading-6">
         <h2 className="text-base font-semibold text-gray-900">So gelingt der Umzug</h2>

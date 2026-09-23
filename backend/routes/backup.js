@@ -250,6 +250,8 @@ async function getTableColumns(client, table) {
 export async function clearWorkspaceData(client, workspaceId) {
   // Importläufe beziehen sich auf den bisherigen Datenbestand. Nach einer
   // Wiederherstellung lassen sie sich nicht mehr sinnvoll rückgängig machen.
+  // migration_sessions gehören dagegen zur Workspace-Identität und bleiben
+  // bei Restore erhalten, damit der monotone Umzugs-Claim nicht zurückspringt.
   await client.query('DELETE FROM import_run_items WHERE workspace_id = $1', [workspaceId]);
   await client.query('DELETE FROM import_runs WHERE workspace_id = $1', [workspaceId]);
   for (const table of RESTORE_CLEAR_TABLES) {

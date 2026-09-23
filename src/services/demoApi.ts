@@ -42,6 +42,7 @@ interface DemoState {
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'solooffice-demo-active-workspace-v1';
+const DEMO_TAKEOVER_STORAGE_KEY = 'solooffice-demo-takeover-v1';
 export const DEMO_DEFAULT_WORKSPACE_ID = 'demo-workspace';
 
 export const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
@@ -58,6 +59,28 @@ export function setDemoActiveWorkspaceId(workspaceId: string): void {
 function getDemoDataStorageKey(): string {
   const workspaceId = getDemoActiveWorkspaceId();
   return workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`;
+}
+
+function demoTakeoverStorageKey(): string {
+  return `${DEMO_TAKEOVER_STORAGE_KEY}:${getDemoActiveWorkspaceId()}`;
+}
+
+function readDemoTakeover(state: DemoState): DemoRecord | null {
+  if (typeof sessionStorage !== 'undefined') {
+    const saved = sessionStorage.getItem(demoTakeoverStorageKey());
+    if (saved) {
+      try { return JSON.parse(saved) as DemoRecord; } catch { sessionStorage.removeItem(demoTakeoverStorageKey()); }
+    }
+  }
+  // Importläufe aus älteren Demo-Versionen sperren den Start ebenfalls.
+  if (state.importRuns?.length) {
+    return {
+      id: `demo-legacy-${getDemoActiveWorkspaceId()}`, status: 'open', startedBy: null,
+      startedAt: String(state.importRuns[0].createdAt || isoDate()), completedBy: null,
+      completedAt: null, progressRevision: 1, legacyBackfill: true,
+    };
+  }
+  return null;
 }
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
@@ -1500,6 +1523,29 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'takeover') {
+    let session = readDemoTakeover(state);
+    if (parts[1] === 'status' && method === 'GET') {
+      return { takeoverUsed: Boolean(session), session, demoMode: true } as unknown as T;
+    }
+    if (parts[1] === 'start' && method === 'POST') {
+      if (session) throw new Error('Der einmalige Umzug-Start wurde in dieser Demo-Sitzung bereits verwendet.');
+      session = {
+        id: `demo-migration-${generateUUID()}`, status: 'open', startedBy: 'demo-user', startedAt: new Date().toISOString(),
+        completedBy: null, completedAt: null, progressRevision: 1, legacyBackfill: false,
+      };
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(session));
+      return { takeoverUsed: true, session, demoMode: true } as unknown as T;
+    }
+    if (parts.length === 3 && parts[2] === 'complete' && method === 'POST') {
+      if (!session || session.id !== parts[1] || session.status !== 'open') throw new Error('Die Demo-Sitzung ist nicht offen oder wurde bereits abgeschlossen.');
+      if (session.legacyBackfill) throw new Error('Der Altbestand belegt den einmaligen Start; ein neuer Sitzungsabschluss ist hier nicht verfügbar.');
+      session = { ...session, status: 'completed', completedBy: 'demo-user', completedAt: new Date().toISOString(), progressRevision: Number(session.progressRevision) + 1 };
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(session));
+      return { takeoverUsed: true, session, demoMode: true } as unknown as T;
+    }
+  }
 
   if (resource === 'workspace-setup') {
     state.workspaceSetup ||= {

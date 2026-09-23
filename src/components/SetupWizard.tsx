@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, LoaderCircle } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import type { Company, WorkspaceSetup, WorkspaceMigrationChoice } from '../types';
+import type { Company, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus } from '../types';
 
 const steps = ['Betrieb & Kontakt', 'Steuer & Rechnung', 'Zahlung & Auftritt', 'Module & Prüfung', 'Datenübernahme'];
 
@@ -14,6 +14,7 @@ interface SetupWizardProps {
 export function SetupWizard({ onNavigate }: SetupWizardProps) {
   const { company, updateCompany } = useCompany();
   const [setup, setSetup] = useState<WorkspaceSetup | null>(null);
+  const [takeover, setTakeover] = useState<TakeoverStatus | null>(null);
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<Partial<Company>>({});
   const [choice, setChoice] = useState<WorkspaceMigrationChoice>('undecided');
@@ -30,6 +31,7 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
     }).catch(reason => {
       if (active) setError(reason instanceof Error ? reason.message : 'Einrichtungsstand konnte nicht geladen werden.');
     });
+    apiService.getTakeoverStatus().then(value => { if (active) setTakeover(value); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -64,6 +66,9 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
     setError('');
     try {
       if (Object.keys(draft).length) await updateCompany(draft);
+      // „Keine Altdaten“ bleibt eine Setup-Entscheidung und verbraucht den
+      // späteren Start nicht. Nur der ausdrückliche Übernahme-Start claimt ihn.
+      if (complete && choice === 'takeover' && !takeover?.takeoverUsed) setTakeover(await apiService.startTakeover());
       const updated = await apiService.updateWorkspaceSetup({
         currentStep: nextStep,
         ...(complete ? { migrationChoice: choice, complete: true } : {}),
@@ -96,6 +101,13 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
 
   const fieldGrid = (children: ReactNode) => <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
   const currentCompany = { ...company, ...draft };
+  const finalActionLabel = choice !== 'takeover'
+    ? 'Einrichtung abschließen'
+    : takeover?.session?.status === 'open'
+      ? 'Datenübernahme fortsetzen'
+      : takeover?.session?.status === 'completed'
+        ? 'Einrichtung abschließen'
+        : 'Datenübernahme starten';
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
@@ -153,13 +165,16 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
             <span className="block font-semibold text-gray-900">Keine Altdaten</span><span className="mt-1 block text-sm text-gray-600">Ich beginne ohne Übernahme aus einem anderen System.</span>
           </button>
           {setup?.completedAt && <p className="text-xs text-gray-500">Einrichtung abgeschlossen. Diese Prüfung kann erneut geöffnet werden.</p>}
+          {takeover?.demoMode && <p className="text-xs font-medium text-amber-800">Demo: Der Start wird nur in dieser Browser-Sitzung simuliert.</p>}
+          {takeover?.session?.status === 'open' && <p className="text-sm text-gray-600">Es gibt bereits eine offene Umzugssitzung. Sie können sie in der Datenübernahme fortsetzen.</p>}
+          {takeover?.session?.status === 'completed' && <p className="text-sm text-gray-600">Der einmalige Umzug wurde bereits abgeschlossen.</p>}
         </div>}
 
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         <footer className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <button type="button" onClick={() => step > 1 ? void save(step - 1) : void save(1).then(saved => { if (saved) onNavigate('dashboard'); })} disabled={busy} className="btn-secondary inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium"><ArrowLeft className="h-4 w-4" />{step > 1 ? 'Zurück' : 'Später fortsetzen'}</button>
           {step < 5 ? <button type="button" onClick={() => void save(step + 1)} disabled={busy} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}Speichern und weiter<ArrowRight className="h-4 w-4" /></button>
-            : <button type="button" onClick={() => void save(5, true)} disabled={busy || choice === 'undecided'} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Einrichtung abschließen</button>}
+            : <button type="button" onClick={() => void save(5, true)} disabled={busy || choice === 'undecided'} className="btn-primary inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{finalActionLabel}</button>}
         </footer>
       </section>
     </main>

@@ -9,7 +9,7 @@ import {
 } from '../utils/auth.js';
 
 const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const settingsPrefixes = ['/company', '/hourly-rates', '/material-templates', '/email-management', '/backup', '/yearly-invoice-start-numbers', '/workspace-setup'];
+const settingsPrefixes = ['/company', '/hourly-rates', '/material-templates', '/email-management', '/backup', '/yearly-invoice-start-numbers', '/workspace-setup', '/takeover'];
 const sensitivePrefixes = ['/email-management', '/backup'];
 
 function getSessionToken(req) {

@@ -35,6 +35,10 @@ const WORKSPACE_DATA_DELETE_ORDER = [
   'incoming_e_invoices',
 ];
 
+// Ein späterer Fachdaten-Reset muss migration_sessions aus dieser Liste
+// heraushalten. Nur die echte Workspace-Löschung darf den monotonen Claim
+// zusammen mit der Workspace-Identität per FK-Kaskade entfernen.
+
 export async function deleteWorkspaceData(client, workspaceId) {
   // Audit-Historien sind im Alltag unveränderbar. Nur die ausdrücklich
   // bestätigte Löschung des gesamten Kontos darf sie innerhalb derselben

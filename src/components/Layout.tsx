@@ -20,6 +20,7 @@ import type { PageSearchContextValue, PageSearchRegistration } from '../context/
 import { useSupportAvailability } from '../hooks/useSupportAvailability';
 import { useFeedback } from '../context/FeedbackContext';
 import { apiService } from '../services/api';
+import type { TakeoverStatus } from '../types';
 
 interface LayoutProps {
   children: ReactNode;
@@ -98,6 +99,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [setupRequired, setSetupRequired] = useState(false);
   const [setupStep, setSetupStep] = useState(1);
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Angemeldete Listenansicht, deren Liste das Suchfeld gerade live filtert.
@@ -151,6 +153,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     }).catch(() => undefined);
     return () => { active = false; };
   }, [workspace?.id]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshTakeover = () => apiService.getTakeoverStatus().then((status: TakeoverStatus) => {
+      if (active) setTakeoverOpen(status.session?.status === 'open' && !status.session.legacyBackfill);
+    }).catch(() => undefined);
+    void refreshTakeover();
+    window.addEventListener('solooffice-takeover-status-changed', refreshTakeover);
+    return () => {
+      active = false;
+      window.removeEventListener('solooffice-takeover-status-changed', refreshTakeover);
+    };
+  }, [workspace?.id, currentPage]);
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -657,6 +672,21 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
                     <strong>Ersteinrichtung fortsetzen</strong>
                     <span>Schritt {setupStep} von 5</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                </button>
+              )}
+              {takeoverOpen && (
+                <button
+                  type="button"
+                  onClick={() => handlePageChange('data-import')}
+                  className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
+                  aria-label="Offene Umzugssitzung fortsetzen"
+                  title={isSidebarCompact ? 'Offene Umzugssitzung fortsetzen' : undefined}
+                >
+                  <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
+                    <strong>Offene Umzugssitzung</strong>
+                    <span>Status und Fortschritt ansehen</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                 </button>

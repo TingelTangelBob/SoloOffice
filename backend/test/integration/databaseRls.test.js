@@ -77,6 +77,7 @@ test('alle Migrationen sind auf einer frischen PostgreSQL-Datenbank ausgeführt'
     assert.equal(status.pending.length, 0);
     assert.ok(status.executed.length >= 34);
     assert.ok(status.executed.includes('045_workspace_setup'));
+    assert.ok(status.executed.includes('046_migration_sessions'));
   } finally {
     client.release();
   }
@@ -136,6 +137,60 @@ test('Einrichtungsstatus bleibt je Workspace getrennt und erzwingt RLS', async (
   ));
   assert.deepEqual(own.rows, [{ current_step: 3, completed_at: null, migration_choice: 'undecided' }]);
   assert.deepEqual(other.rows, []);
+});
+
+test('parallele Umzugstarts verbrauchen das Workspace-Recht genau einmal', async () => {
+  async function tryStart() {
+    return inWorkspace(workspaceA, userA, async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await client.query(`
+          INSERT INTO migration_sessions (workspace_id, started_by)
+          VALUES ($1, NULL)
+          RETURNING id, status, progress_revision
+        `, [workspaceA]);
+        await client.query('COMMIT');
+        return result.rows[0];
+      } catch (error) {
+        await client.query('ROLLBACK');
+        if (error.code === '23505') return null;
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
+  }
+
+  const starts = await Promise.all([tryStart(), tryStart()]);
+  assert.equal(starts.filter(Boolean).length, 1);
+  const own = await inWorkspace(workspaceA, userA, () => query(
+    'SELECT id, status, progress_revision FROM migration_sessions WHERE workspace_id = $1',
+    [workspaceA],
+  ));
+  const other = await inWorkspace(workspaceB, userB, () => query(
+    'SELECT id FROM migration_sessions WHERE workspace_id = $1',
+    [workspaceA],
+  ));
+  assert.equal(own.rows.length, 1);
+  assert.deepEqual(own.rows[0], { id: starts.find(Boolean).id, status: 'open', progress_revision: 1 });
+  assert.deepEqual(other.rows, []);
+
+  const completed = await inWorkspace(workspaceA, userA, () => query(`
+    UPDATE migration_sessions
+    SET status = 'completed', completed_at = NOW(), completed_by = NULL,
+        progress_revision = progress_revision + 1
+    WHERE workspace_id = $1 AND status = 'open'
+    RETURNING status, progress_revision
+  `, [workspaceA]));
+  assert.deepEqual(completed.rows[0], { status: 'completed', progress_revision: 2 });
+  await assert.rejects(
+    inWorkspace(workspaceA, userA, () => query(`
+      UPDATE migration_sessions SET status = 'open', completed_at = NULL, completed_by = NULL
+      WHERE workspace_id = $1
+    `, [workspaceA])),
+    error => error?.code === '23514',
+  );
 });
 
 test('ein leerer Request-Kontext erhält keine Workspace-Daten', async () => {

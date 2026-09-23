@@ -478,6 +478,27 @@ export interface WorkspaceSetup {
   updatedAt: string;
 }
 
+export type MigrationSessionStatus = 'open' | 'completed';
+
+export interface MigrationSession {
+  id: string;
+  status: MigrationSessionStatus;
+  startedBy: string | null;
+  startedAt: string;
+  completedBy: string | null;
+  completedAt: string | null;
+  progressRevision: number;
+  /** Altbestand wurde vor Einführung der Sitzungen erkannt; kein Abschlussnachweis. */
+  legacyBackfill: boolean;
+}
+
+export interface TakeoverStatus {
+  takeoverUsed: boolean;
+  session: MigrationSession | null;
+  /** Demo-Status wird ausschließlich im Browser simuliert. */
+  demoMode?: true;
+}
+
 // ============================================================================
 // Template Types
 // ============================================================================
