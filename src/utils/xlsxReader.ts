@@ -71,7 +71,10 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') {
     throw new Error('Dieser Browser kann Excel-Dateien nicht entpacken. Bitte die Datei als CSV speichern.');
   }
-  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  // Eine eigene Kopie bindet den Blob an einen ArrayBuffer statt an das
+  // allgemeinere ArrayBufferLike des eingehenden Uint8Array.
+  const blobData = new Uint8Array(data);
+  const stream = new Blob([blobData]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
