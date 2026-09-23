@@ -246,6 +246,14 @@ class ApiService {
     return this.request<WorkspaceSummary>(`/workspaces/${workspaceId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
   }
 
+  async resetWorkspace(workspaceId: string, payload: { currentPassword: string; workspaceName: string }): Promise<void> {
+    await this.request(`/workspaces/${workspaceId}/reset`, { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async deleteWorkspace(workspaceId: string, payload: { currentPassword: string; workspaceName: string }): Promise<{ signedOut: boolean; workspace: WorkspaceSummary | null; workspaces: WorkspaceSummary[] }> {
+    return this.request(`/workspaces/${workspaceId}`, { method: 'DELETE', body: JSON.stringify(payload) });
+  }
+
   async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
     return this.request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
   }
@@ -262,12 +270,12 @@ class ApiService {
     return this.request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`);
   }
 
-  async createWorkspaceInvitation(workspaceId: string, email: string, role: WorkspaceInvitation['role'] = 'member'): Promise<WorkspaceInvitation> {
-    return this.request<WorkspaceInvitation>(`/workspaces/${workspaceId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
-  }
-
   async revokeWorkspaceInvitation(workspaceId: string, invitationId: string): Promise<void> {
     await this.request(`/workspaces/${workspaceId}/invitations/${invitationId}`, { method: 'DELETE' });
+  }
+
+  async createWorkspaceInvitation(workspaceId: string, email: string, role: WorkspaceInvitation['role'] = 'member'): Promise<WorkspaceInvitation> {
+    return this.request<WorkspaceInvitation>(`/workspaces/${workspaceId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
   }
 
   // Helper for file downloads

@@ -93,6 +93,9 @@ router.post('/start', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Mit dem Workspace-Reset serialisieren: ein gerade gestarteter Umzug darf
+    // nicht zwischen Reset-Prüfung und Datenlöschung auftauchen.
+    await client.query('SELECT id FROM workspaces WHERE id = $1 FOR UPDATE', [req.auth.workspaceId]);
     const result = await client.query(`
       INSERT INTO migration_sessions (workspace_id, started_by)
       VALUES (NULLIF(current_setting('app.workspace_id', true), '')::uuid, $1)
@@ -129,19 +132,19 @@ router.post('/:sessionId/complete', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Die Sitzung ist nicht offen oder wurde bereits abgeschlossen.', code: 'TAKEOVER_NOT_OPEN' });
     }
-    if (openSession.rows[0].legacy_backfill) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Der Altbestand belegt den einmaligen Start; ein neuer Sitzungsabschluss ist hier nicht verfügbar.', code: 'TAKEOVER_LEGACY_BACKFILL' });
-    }
     // Bestehende Importläufe bleiben bis zum Umzugsabschluss rückgängig zu
     // machen. Der Sessionabschluss finalisiert sie in derselben Transaktion.
-    await client.query(`
-      UPDATE import_runs
-      SET status = 'confirmed', confirmed_at = NOW()
-      WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
-        AND migration_session_id = $1
-        AND status = 'pending'
-    `, [req.params.sessionId]);
+    // Ein historischer Backfill schließt nur den alten Sitzungsmarker; seine
+    // Importläufe bleiben bis zu einem möglichen Reset rückgängig zu machen.
+    if (!openSession.rows[0].legacy_backfill) {
+      await client.query(`
+        UPDATE import_runs
+        SET status = 'confirmed', confirmed_at = NOW()
+        WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
+          AND migration_session_id = $1
+          AND status = 'pending'
+      `, [req.params.sessionId]);
+    }
     const result = await client.query(`
       UPDATE migration_sessions
       SET status = 'completed', completed_by = $2, completed_at = NOW(),

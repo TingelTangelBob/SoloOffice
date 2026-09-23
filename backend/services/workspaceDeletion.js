@@ -1,56 +1,10 @@
-const WORKSPACE_DATA_DELETE_ORDER = [
-  'import_run_items',
-  'import_runs',
-  'smtp_settings',
-  'invoice_job_sources',
-  'email_history',
-  'customer_emails',
-  'customer_hourly_rates',
-  'customer_specific_hourly_rates',
-  'customer_specific_materials',
-  'recurring_invoice_runs',
-  'recurring_invoices',
-  'job_time_entries',
-  'job_attachments',
-  'job_entries',
-  'job_recurrences',
-  'quote_attachments',
-  'quote_items',
-  'invoice_attachments',
-  'invoice_original_documents',
-  'invoice_history',
-  'invoice_items',
-  'invoices',
-  'quotes',
-  'calendar_events',
-  'hourly_rates',
-  'material_templates',
-  'customers',
-  'company',
-  'yearly_invoice_start_numbers',
-  'receipts',
-  'fixed_assets',
-  'euer_entry_history',
-  'euer_entries',
-  'incoming_e_invoices',
-];
+import { clearWorkspaceBusinessData } from './workspaceData.js';
 
-// Ein späterer Fachdaten-Reset muss migration_sessions aus dieser Liste
-// heraushalten. Nur die echte Workspace-Löschung darf den monotonen Claim
-// zusammen mit der Workspace-Identität per FK-Kaskade entfernen.
+// Fachdaten-Reset und Workspace-Löschung teilen die Fachdatentabelle-Reihenfolge.
+// Nur die Workspace-Löschung darf den Umzugs-Claim per FK-Kaskade entfernen.
 
 export async function deleteWorkspaceData(client, workspaceId) {
-  // Audit-Historien sind im Alltag unveränderbar. Nur die ausdrücklich
-  // bestätigte Löschung des gesamten Kontos darf sie innerhalb derselben
-  // Transaktion entfernen, damit keine verwaisten personenbezogenen Daten
-  // zurückbleiben und die Workspace-Löschung nicht am Schutz-Trigger scheitert.
-  await client.query("SELECT set_config('app.allow_history_purge', 'true', true)");
-  // Beim anschließenden Löschen der aktuellen Rechnungen und EÜR-Sätze
-  // dürfen die Audit-Trigger nicht sofort neue Historienzeilen erzeugen.
-  await client.query("SELECT set_config('app.audit_disabled', 'true', true)");
-  for (const table of WORKSPACE_DATA_DELETE_ORDER) {
-    await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);
-  }
+  await clearWorkspaceBusinessData(client, workspaceId);
   // Die gespeicherten Control-Plane-Antworten enthalten die Eigentümeradresse.
   // Sie dürfen eine Workspace-Löschung nicht überdauern. Die Audit-Ereignisse
   // bleiben bewusst erhalten: sie halten nur Vorgang, Kennung und Grund fest.

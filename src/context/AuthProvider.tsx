@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { apiService, WORKSPACE_SUSPENDED_EVENT } from '../services/api';
-import { DEMO_DEFAULT_WORKSPACE_ID, getDemoActiveWorkspaceId, isDemoMode, setDemoActiveWorkspaceId } from '../services/demoApi';
+import { DEMO_DEFAULT_WORKSPACE_ID, deleteDemoWorkspaceData, getDemoActiveWorkspaceId, isDemoMode, resetDemoWorkspaceData, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
 import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceRole, WorkspaceSummary } from '../types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
@@ -220,6 +220,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setWorkspaces(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
   }, [workspace]);
 
+  const resetWorkspace = useCallback(async (currentPassword: string, workspaceName: string) => {
+    if (!workspace) return;
+    if (isDemoMode) {
+      resetDemoWorkspaceData();
+      return;
+    }
+    await apiService.resetWorkspace(workspace.id, { currentPassword, workspaceName });
+  }, [workspace]);
+
+  const deleteWorkspace = useCallback(async (currentPassword: string, workspaceName: string) => {
+    if (!workspace) return;
+    if (isDemoMode) {
+      const remaining = readDemoWorkspaces().filter(item => item.id !== workspace.id);
+      if (!remaining.length) throw new Error('Lege zuerst einen Ersatz-Workspace an. Danach kannst du diesen Workspace löschen.');
+      deleteDemoWorkspaceData(workspace.id);
+      persistDemoWorkspaces(remaining);
+      setDemoActiveWorkspaceId(remaining[0].id);
+      setWorkspace(remaining[0]);
+      setWorkspaces(remaining);
+      return;
+    }
+    const result = await apiService.deleteWorkspace(workspace.id, { currentPassword, workspaceName });
+    if (result.signedOut || !result.workspace) {
+      setUser(null);
+      setWorkspace(null);
+      setWorkspaces([]);
+    } else {
+      setWorkspace(result.workspace);
+      setWorkspaces(result.workspaces);
+    }
+  }, [workspace]);
+
   const can = useCallback((permission: string) => {
     if (!workspace) return false;
     if (workspace.role === 'owner' || workspace.role === 'admin') return true;
@@ -233,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const removeWorkspaceMember = useCallback((userId: string) => isDemoMode ? Promise.resolve() : apiService.removeWorkspaceMember(workspace?.id || '', userId), [workspace?.id]);
   const getWorkspaceInvitations = useCallback(() => isDemoMode ? Promise.resolve([]) : apiService.getWorkspaceInvitations(workspace?.id || ''), [workspace?.id]);
   const createWorkspaceInvitation = useCallback((email: string, role: Exclude<WorkspaceRole, 'owner'> = 'member') => isDemoMode ? Promise.resolve({ id: `demo-invite-${Date.now()}`, email, role, expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), inviteToken: 'demo-invite-token' }) : apiService.createWorkspaceInvitation(workspace?.id || '', email, role), [workspace?.id]);
+  const revokeWorkspaceInvitation = useCallback((invitationId: string) => isDemoMode ? Promise.resolve() : apiService.revokeWorkspaceInvitation(workspace?.id || '', invitationId), [workspace?.id]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
@@ -251,6 +284,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     acceptInvitation,
     createWorkspace,
     updateWorkspace,
+    resetWorkspace,
+    deleteWorkspace,
     can,
     canManageWorkspace: workspace?.role === 'owner' || workspace?.role === 'admin',
     getWorkspaceMembers,
@@ -258,7 +293,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeWorkspaceMember,
     getWorkspaceInvitations,
     createWorkspaceInvitation,
-  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation]);
+    revokeWorkspaceInvitation,
+  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, resetWorkspace, deleteWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation, revokeWorkspaceInvitation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

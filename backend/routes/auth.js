@@ -5,7 +5,6 @@ import { runWithRequestContext } from '../utils/requestContext.js';
 import { requireAuth, loadSession, clearAuthCookies } from '../middleware/auth.js';
 import { sendSystemEmail } from '../services/emailService.js';
 import { systemMails } from '../services/emailTemplates.js';
-import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
 import { lockRegistrationBootstrap } from '../services/registrationBootstrap.js';
 import { persistentRateLimit } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
@@ -442,19 +441,13 @@ router.delete('/account', requireAuth, async (req, res) => {
     FROM workspaces w
     JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $1 AND wm.role = 'owner'
   `, [req.auth.userId]);
-  for (const workspace of ownedWorkspaces.rows) {
-    const memberCount = await query('SELECT COUNT(*)::integer AS count FROM workspace_members WHERE workspace_id = $1', [workspace.id]);
-    if (memberCount.rows[0]?.count > 1) {
-      return res.status(409).json({ error: 'Ein eigener Workspace hat noch weitere Mitglieder. Entfernen Sie diese zuerst oder übertragen Sie den Workspace.' });
-    }
+  if (ownedWorkspaces.rows.length > 0) {
+    return res.status(409).json({ error: 'Löschen Sie eigene Workspaces zuerst einzeln in der Workspace-Verwaltung. Dort werden Name, Passwort, Teamstatus und Folge-Workspace geprüft.', code: 'OWNED_WORKSPACES_MUST_BE_DELETED_FIRST' });
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const workspace of ownedWorkspaces.rows) {
-      await runWithRequestContext({ userId: req.auth.userId, workspaceId: workspace.id }, () => deleteWorkspaceData(client, workspace.id));
-    }
     await client.query('DELETE FROM users WHERE id = $1', [req.auth.userId]);
     await client.query('COMMIT');
     clearAuthCookies(res);

@@ -54,7 +54,7 @@ export function ProfileManagement() {
   const handleDeleteAccount = async () => {
     const confirmed = await confirm({
       title: 'Konto endgültig löschen',
-      message: 'Konto und eigene Workspaces endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.',
+      message: 'Das Konto wird endgültig gelöscht. Eigene Workspaces müssen vorher einzeln in der Workspace-Verwaltung gelöscht werden; geteilte Workspaces bleiben davon unberührt.',
       confirmText: 'Endgültig löschen',
       isDestructive: true,
     });
@@ -102,7 +102,7 @@ export function ProfileManagement() {
 
       <section className="rounded-xl border border-red-200 bg-red-50 p-5">
         <h2 className="font-semibold text-red-900">Konto löschen</h2>
-        <p className="mt-1 text-sm text-red-800">Eigene Workspaces und Kontodaten werden endgültig gelöscht. Geteilte Workspaces müssen vorher übertragen werden.</p>
+        <p className="mt-1 text-sm text-red-800">Eigene Workspaces müssen vorher einzeln in der Workspace-Verwaltung gelöscht werden. Dort werden Teamstatus, Workspace-Name und Folgeaktion geprüft.</p>
         <form onSubmit={event => { event.preventDefault(); void handleDeleteAccount(); }} className="form-consistent-fields mt-3 flex flex-wrap gap-2">
           <input type="password" required minLength={10} value={deletePassword} onChange={event => setDeletePassword(event.target.value)} placeholder="Aktuelles Passwort bestätigen" className="min-w-[240px] flex-1 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm" />
           <button type="submit" className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">Konto endgültig löschen</button>

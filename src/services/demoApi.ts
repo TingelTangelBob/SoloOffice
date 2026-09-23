@@ -1639,13 +1639,14 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (parts.length === 3 && parts[2] === 'complete' && method === 'POST') {
       if (!session || session.id !== parts[1] || session.status !== 'open') throw new Error('Die Demo-Sitzung ist nicht offen oder wurde bereits abgeschlossen.');
-      if (session.legacyBackfill) throw new Error('Der Altbestand belegt den einmaligen Start; ein neuer Sitzungsabschluss ist hier nicht verfügbar.');
-      (state.importRuns || []).forEach(run => {
-        if (run.migrationSessionId === session.id && run.status === 'pending') {
-          run.status = 'confirmed';
-          run.confirmedAt = new Date().toISOString();
-        }
-      });
+      if (!session.legacyBackfill) {
+        (state.importRuns || []).forEach(run => {
+          if (run.migrationSessionId === session.id && run.status === 'pending') {
+            run.status = 'confirmed';
+            run.confirmedAt = new Date().toISOString();
+          }
+        });
+      }
       session = { ...session, status: 'completed', completedBy: 'demo-user', completedAt: new Date().toISOString(), progressRevision: Number(session.progressRevision) + 1 };
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(session));
       saveState(state);
@@ -2915,6 +2916,43 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 export function resetDemoData() {
   localStorage.removeItem(getDemoDataStorageKey());
   demoDataStale = false;
+}
+
+export function resetDemoWorkspaceData() {
+  const state = createInitialState();
+  state.customers = [];
+  state.invoices = [];
+  state.recurringInvoices = [];
+  state.quotes = [];
+  state.jobs = [];
+  state.yearlyInvoiceStartNumbers = [];
+  state.calendarEvents = [];
+  state.euerEntries = [];
+  state.euerEntryHistory = [];
+  state.invoiceHistory = [];
+  state.fixedAssets = [];
+  state.receipts = [];
+  state.incomingEInvoices = [];
+  state.importRuns = [];
+  state.invoiceOriginals = {};
+  state.company = {
+    ...state.company,
+    name: 'Demo Workspace', address: '', city: '', postalCode: '', country: 'Deutschland',
+    email: '', phone: '', website: '', taxId: '', bankAccount: '', bic: '',
+  };
+  state.workspaceSetup = {
+    currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
+    createdAt: isoDate(), updatedAt: isoDate(),
+  };
+  localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(state));
+  localStorage.removeItem(DEMO_NOTIFICATIONS_STORAGE_KEY);
+  demoDataStale = false;
+}
+
+export function deleteDemoWorkspaceData(workspaceId: string) {
+  localStorage.removeItem(workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`);
+  localStorage.removeItem(`${DEMO_TAKEOVER_STORAGE_KEY}:${workspaceId}`);
+  if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(`${DEMO_TAKEOVER_STORAGE_KEY}:${workspaceId}`);
 }
 
 export function seedDemoData(profile: TerminologyProfile = 'customers') {

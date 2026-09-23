@@ -230,9 +230,11 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const completeTakeover = async () => {
     if (!takeover?.session || takeover.session.status !== 'open') return;
     const accepted = await confirm({
-      title: 'Umzug abschließen?',
-      message: 'Damit wird die Umzugssitzung endgültig abgeschlossen. Noch offene Importe werden bestätigt und können danach nicht mehr rückgängig gemacht werden. Der einmalige Start bleibt dauerhaft verbraucht.',
-      confirmText: 'Umzug abschließen',
+      title: takeover.session.legacyBackfill ? 'Historischen Marker schließen?' : 'Umzug abschließen?',
+      message: takeover.session.legacyBackfill
+        ? 'Der historische Sitzungsmarker wird endgültig geschlossen. Frühere Importläufe werden dabei weder bestätigt noch gelöscht und bleiben separat verwaltbar. Der einmalige Start bleibt dauerhaft verbraucht.'
+        : 'Damit wird die Umzugssitzung endgültig abgeschlossen. Noch offene Importe werden bestätigt und können danach nicht mehr rückgängig gemacht werden. Der einmalige Start bleibt dauerhaft verbraucht.',
+      confirmText: takeover.session.legacyBackfill ? 'Marker schließen' : 'Umzug abschließen',
     });
     if (!accepted) return;
     setBusyId('takeover');
@@ -413,19 +415,19 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           <div>
             <h2 className="font-semibold text-gray-900">Umzugsstatus</h2>
             {takeover.demoMode && <p className="mt-1 text-xs font-medium text-amber-800">Demo: Dieser Status wird nur in dieser Browser-Sitzung simuliert.</p>}
-            {takeover.session?.legacyBackfill
-              ? <p className="mt-1 text-sm text-gray-600">Der Umzug-Start wurde bereits durch Importläufe aus dem Altbestand belegt. Diese Läufe belegen keinen fachlichen Abschluss.</p>
-              : takeover.session?.status === 'open'
+            {takeover.session?.status === 'completed'
+              ? <p className="mt-1 text-sm text-gray-600">{takeover.session.legacyBackfill ? 'Der historische Umzugsmarker wurde geschlossen; vorhandene Importläufe bleiben separat verwaltbar.' : `Abgeschlossen am ${formatDateTime(takeover.session.completedAt)}.`} Ein neuer Umzug kann nicht gestartet werden.</p>
+              : takeover.session?.legacyBackfill
+                ? <p className="mt-1 text-sm text-gray-600">Importläufe aus dem Altbestand haben den einmaligen Start belegt. Sie können den historischen Marker schließen; dabei werden diese Läufe nicht bestätigt.</p>
+                : takeover.session?.status === 'open'
                 ? <p className="mt-1 text-sm text-gray-600">Sitzung gestartet am {formatDateTime(takeover.session.startedAt)}. Fortschrittsrevision {takeover.session.progressRevision}.</p>
-                : takeover.session?.status === 'completed'
-                  ? <p className="mt-1 text-sm text-gray-600">Abgeschlossen am {formatDateTime(takeover.session.completedAt)}. Ein neuer Umzug kann nicht gestartet werden.</p>
-                  : <p className="mt-1 text-sm text-gray-600">Noch nicht gestartet. Eine Vorschau oder Prüfung verbraucht den einmaligen Start nicht.</p>}
+                : <p className="mt-1 text-sm text-gray-600">Noch nicht gestartet. Eine Vorschau oder Prüfung verbraucht den einmaligen Start nicht.</p>}
           </div>
           {!takeover.session && canAdmin && <button type="button" onClick={startTakeover} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
             {busyId === 'takeover-start' && <Loader2 className="h-4 w-4 animate-spin" />}Datenübernahme starten
           </button>}
-          {takeover.session?.status === 'open' && !takeover.session.legacyBackfill && canAdmin && <button type="button" onClick={completeTakeover} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
-            {busyId === 'takeover' && <Loader2 className="h-4 w-4 animate-spin" />}Umzug abschließen
+          {takeover.session?.status === 'open' && canAdmin && <button type="button" onClick={completeTakeover} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
+            {busyId === 'takeover' && <Loader2 className="h-4 w-4 animate-spin" />}{takeover.session.legacyBackfill ? 'Altbestandsmarker schließen' : 'Umzug abschließen'}
           </button>}
         </div>
       </section>}

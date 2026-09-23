@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { pool, query } from '../database.js';
-import { requireRole, requireWorkspaceFromParam } from '../middleware/auth.js';
+import { clearAuthCookies, requireRole, requireWorkspaceFromParam } from '../middleware/auth.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
 import {
   createOpaqueToken,
@@ -10,12 +10,49 @@ import {
   isValidEmail,
   normaliseEmail,
   publicWorkspace,
+  verifyPassword,
 } from '../utils/auth.js';
 import { sendSystemEmail } from '../services/emailService.js';
 import { systemMails } from '../services/emailTemplates.js';
 import logger from '../utils/logger.js';
+import { clearWorkspaceBusinessData } from '../services/workspaceData.js';
+import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const router = express.Router();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function verifyDestructiveAction(req, res) {
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+  const confirmedName = typeof req.body?.workspaceName === 'string' ? req.body.workspaceName.trim() : '';
+  if (confirmedName !== req.auth.workspace.name) {
+    res.status(400).json({ error: 'Der Workspace-Name stimmt nicht überein.', code: 'WORKSPACE_NAME_MISMATCH' });
+    return false;
+  }
+  const result = await query('SELECT password_hash FROM users WHERE id = $1', [req.auth.userId]);
+  if (!result.rows[0] || !(await verifyPassword(currentPassword, result.rows[0].password_hash))) {
+    res.status(400).json({ error: 'Das aktuelle Passwort ist nicht korrekt.', code: 'PASSWORD_INVALID' });
+    return false;
+  }
+  return true;
+}
+
+async function removeWorkspaceBackupFiles(workspaceId) {
+  const backupDir = path.join(__dirname, '../../backups');
+  let filenames;
+  try {
+    filenames = await fs.readdir(backupDir);
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  const prefixes = [`backup_${workspaceId}_`, `vollbackup_${workspaceId}_`];
+  await Promise.all(filenames
+    .filter(filename => prefixes.some(prefix => filename.startsWith(prefix)))
+    .map(filename => fs.unlink(path.join(backupDir, filename))));
+}
 
 function publicAppUrl(req) {
   return (process.env.APP_BASE_URL || process.env.CORS_ORIGIN?.split(',')[0] || `${req.protocol}://${req.get('host') || 'localhost:8080'}`).replace(/\/$/, '');
@@ -92,6 +129,145 @@ router.patch('/:workspaceId', requireWorkspaceFromParam('workspaceId'), requireR
   return res.json({
     ...publicWorkspace(result.rows[0], req.auth.role),
     permissions: req.auth.permissions || {},
+  });
+});
+
+router.post('/:workspaceId/reset', requireWorkspaceFromParam('workspaceId'), requireRole('owner'), async (req, res) => {
+  if (!(await verifyDestructiveAction(req, res))) return;
+  const workspaceId = req.params.workspaceId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lockedWorkspace = await client.query('SELECT id, name FROM workspaces WHERE id = $1 FOR UPDATE', [workspaceId]);
+    if (!lockedWorkspace.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Workspace nicht gefunden.' });
+    }
+    if (String(req.body.workspaceName || '').trim() !== lockedWorkspace.rows[0].name) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Der Workspace-Name stimmt nicht überein.', code: 'WORKSPACE_NAME_MISMATCH' });
+    }
+    const sessionResult = await client.query('SELECT id, status FROM migration_sessions WHERE workspace_id = $1 FOR UPDATE', [workspaceId]);
+    if (sessionResult.rows[0]?.status === 'open') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Der Workspace kann erst zurückgesetzt werden, wenn die offene Umzugssitzung unter „Datenübernahme“ abgeschlossen oder der historische Marker dort geschlossen wurde.',
+        code: 'TAKEOVER_OPEN',
+      });
+    }
+    await runWithRequestContext({ userId: req.auth.userId, workspaceId }, async () => {
+      await clearWorkspaceBusinessData(client, workspaceId);
+      await client.query('DELETE FROM workspace_invitations WHERE workspace_id = $1', [workspaceId]);
+      await client.query('DELETE FROM user_notification_settings WHERE workspace_id = $1', [workspaceId]);
+      await client.query("UPDATE sessions SET revoked_at = NOW() WHERE workspace_id = $1 AND id <> $2 AND revoked_at IS NULL", [workspaceId, req.auth.sessionId]);
+      // Ein zurückgesetzter Workspace bleibt direkt benutzbar und erhält die
+      // gleichen neutralen Startwerte wie ein neu angelegter Workspace.
+      await client.query(`
+        INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id, invoice_start_number, workspace_id)
+        VALUES ($1, '', '', '', 'Deutschland', '', '', '', 1, $2)
+      `, [lockedWorkspace.rows[0].name, workspaceId]);
+      await client.query(`
+        INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
+        VALUES ('Standard', 'Normale Arbeitszeit', 75, 19, TRUE)
+      `);
+      await client.query(`
+        INSERT INTO material_templates (name, description, unit_price, unit, tax_rate, is_default)
+        VALUES ('Kleinmaterial', 'Diverses Kleinmaterial', 15, 'Pauschale', 19, TRUE)
+      `);
+      await client.query(`
+        UPDATE workspace_setup SET current_step = 1, completed_at = NULL,
+          migration_choice = 'undecided', setup_required = TRUE, updated_at = NOW()
+        WHERE workspace_id = $1
+      `, [workspaceId]);
+    });
+    await client.query('COMMIT');
+    try {
+      await removeWorkspaceBackupFiles(workspaceId);
+    } catch (error) {
+      logger.error('Workspace-Sicherungen konnten nach dem Reset nicht entfernt werden', { workspaceId, error: error.message });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Workspace-Reset fehlgeschlagen', { workspaceId, error: error.message });
+    return res.status(500).json({ error: 'Workspace konnte nicht zurückgesetzt werden.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/:workspaceId', requireWorkspaceFromParam('workspaceId'), requireRole('owner'), async (req, res) => {
+  if (!(await verifyDestructiveAction(req, res))) return;
+  const workspaceId = req.params.workspaceId;
+  const client = await pool.connect();
+  let nextWorkspaceId = null;
+  try {
+    await client.query('BEGIN');
+    const lockedWorkspace = await client.query('SELECT id, name FROM workspaces WHERE id = $1 FOR UPDATE', [workspaceId]);
+    if (!lockedWorkspace.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Workspace nicht gefunden.' });
+    }
+    if (String(req.body.workspaceName || '').trim() !== lockedWorkspace.rows[0].name) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Der Workspace-Name stimmt nicht überein.', code: 'WORKSPACE_NAME_MISMATCH' });
+    }
+    const membershipResult = await client.query('SELECT user_id FROM workspace_members WHERE workspace_id = $1 FOR UPDATE', [workspaceId]);
+    if (membershipResult.rows.length > 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Der Workspace hat weitere Mitglieder. Entfernen oder übertragen Sie diese zuerst.', code: 'WORKSPACE_HAS_MEMBERS' });
+    }
+    const alternatives = await client.query(`
+      SELECT w.id FROM workspaces w
+      JOIN workspace_members wm ON wm.workspace_id = w.id
+      WHERE wm.user_id = $1 AND w.id <> $2
+      ORDER BY w.created_at ASC LIMIT 1 FOR UPDATE OF w
+    `, [req.auth.userId, workspaceId]);
+    nextWorkspaceId = alternatives.rows[0]?.id || null;
+    if (!nextWorkspaceId) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Lege zuerst einen Ersatz-Workspace an. Danach kannst du diesen Workspace löschen und wirst in den Ersatz gewechselt.', code: 'LAST_WORKSPACE' });
+    }
+    await client.query('UPDATE sessions SET workspace_id = $1 WHERE id = $2 AND user_id = $3', [nextWorkspaceId, req.auth.sessionId, req.auth.userId]);
+    await runWithRequestContext({ userId: req.auth.userId, workspaceId }, () => deleteWorkspaceData(client, workspaceId));
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Workspace-Löschung fehlgeschlagen', { workspaceId, error: error.message });
+    return res.status(500).json({ error: 'Workspace konnte nicht gelöscht werden.' });
+  } finally {
+    client.release();
+  }
+
+  try {
+    await removeWorkspaceBackupFiles(workspaceId);
+  } catch (error) {
+    logger.error('Workspace-Backups konnten nach der Löschung nicht entfernt werden', { workspaceId, error: error.message });
+  }
+
+  if (!nextWorkspaceId) {
+    clearAuthCookies(res);
+    return res.json({ signedOut: true, workspace: null, workspaces: [] });
+  }
+  const { active, remaining } = await runWithRequestContext({ userId: req.auth.userId, workspaceId: nextWorkspaceId }, async () => {
+    const [activeResult, remainingResult] = await Promise.all([
+      query(`
+        SELECT w.*, wm.role, wm.permissions FROM workspaces w
+        JOIN workspace_members wm ON wm.workspace_id = w.id
+        WHERE w.id = $1 AND wm.user_id = $2
+      `, [nextWorkspaceId, req.auth.userId]),
+      query(`
+        SELECT w.*, wm.role, wm.permissions FROM workspaces w
+        JOIN workspace_members wm ON wm.workspace_id = w.id WHERE wm.user_id = $1
+        ORDER BY w.created_at ASC
+      `, [req.auth.userId]),
+    ]);
+    return { active: activeResult, remaining: remainingResult };
+  });
+  return res.json({
+    signedOut: false,
+    workspace: { ...publicWorkspace(active.rows[0], active.rows[0].role), permissions: active.rows[0].permissions || {} },
+    workspaces: remaining.rows.map(row => ({ ...publicWorkspace(row, row.role), permissions: row.permissions || {} })),
   });
 });
 
