@@ -695,6 +695,10 @@ export interface ImportResponse {
   totals?: ImportTotals | null;
   newCustomers?: Array<{ name: string; rowNumbers: number[] }>;
   truncated?: boolean;
+  categoryId?: UUID;
+  previewDigest?: string;
+  idempotentReplay?: boolean;
+  demoMode?: true;
 }
 
 export interface ImportOptions {
@@ -704,6 +708,13 @@ export interface ImportOptions {
   matchOpenInvoices?: boolean;
   file?: { name: string; hash?: string | null; headers: string[] };
   settings?: ImportRunSettings;
+  takeover?: {
+    sessionId: UUID;
+    phase: 'preview' | 'execute';
+    categoryId?: UUID;
+    previewDigest?: string;
+    idempotencyKey?: UUID;
+  };
 }
 
 /** Zuordnung eines Imports; wird am Importlauf gespeichert und beim nächsten Import mit gleichen Spalten angeboten. */
@@ -711,6 +722,7 @@ export interface ImportRunSettings {
   mapping?: Record<string, string>;
   constants?: Record<string, string>;
   valueMappings?: Record<string, Record<string, string>>;
+  selectedRows?: number[];
   sheet?: string;
   options?: Record<string, unknown>;
 }
@@ -732,6 +744,8 @@ export interface ImportRun {
   revertedAt?: string | null;
   createdByName?: string | null;
   report?: ImportRowResult[];
+  migrationSessionId?: UUID | null;
+  migrationCategoryId?: UUID | null;
 }
 
 export interface ImportCenterSettings {

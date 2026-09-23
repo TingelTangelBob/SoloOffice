@@ -690,6 +690,7 @@ class ApiService {
         matchOpenInvoices: options.matchOpenInvoices !== false,
         ...(options.file ? { file: options.file } : {}),
         ...(options.settings ? { settings: options.settings } : {}),
+        ...(options.takeover ? { takeover: options.takeover } : {}),
       }),
     });
   }

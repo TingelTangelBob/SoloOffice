@@ -83,6 +83,37 @@ function readDemoTakeover(state: DemoState): DemoRecord | null {
   return null;
 }
 
+function demoTakeoverCategoriesKey(): string {
+  return `${demoTakeoverStorageKey()}:categories`;
+}
+
+function readDemoTakeoverCategories(): Record<string, DemoRecord> {
+  if (typeof sessionStorage === 'undefined') return {};
+  try { return JSON.parse(sessionStorage.getItem(demoTakeoverCategoriesKey()) || '{}') as Record<string, DemoRecord>; }
+  catch { sessionStorage.removeItem(demoTakeoverCategoriesKey()); return {}; }
+}
+
+function writeDemoTakeoverCategories(categories: Record<string, DemoRecord>): void {
+  if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverCategoriesKey(), JSON.stringify(categories));
+}
+
+function stableDemoValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableDemoValue);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value as DemoRecord).sort().map(key => [key, stableDemoValue((value as DemoRecord)[key])]));
+  return value;
+}
+
+function demoDigest(value: unknown): string {
+  const source = JSON.stringify(stableDemoValue(value));
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < source.length; index += 1) {
+    first = Math.imul(first ^ source.charCodeAt(index), 0x01000193) >>> 0;
+    second = Math.imul(second ^ source.charCodeAt(index), 0x85ebca6b) >>> 0;
+  }
+  return `${first.toString(16).padStart(8, '0')}${second.toString(16).padStart(8, '0')}`.repeat(4);
+}
+
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
 const DEMO_SEED_VERSION = 8;
@@ -1039,6 +1070,37 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
   });
   const summary = summariseImport(plan, rows.length);
   const commit = data.dryRun === false;
+  const takeover = data.takeover && typeof data.takeover === 'object' ? data.takeover as DemoRecord : null;
+  if (takeover && ((takeover.phase === 'preview') !== !commit)) throw new Error('Vorschau und Kategorieausführung müssen getrennt angefordert werden.');
+  const session = readDemoTakeover(state);
+  if (session && session.status === 'open' && !session.legacyBackfill && !takeover && commit) {
+    throw new Error('Während einer Umzugssitzung müssen Kategorien einzeln anhand ihrer geprüften Vorschau übernommen werden.');
+  }
+  let categoryId: string | null = null;
+  let digest: string | null = null;
+  let categories = readDemoTakeoverCategories();
+  let category: DemoRecord | undefined;
+  if (takeover) {
+    category = categories[resource];
+    if (takeover.phase === 'execute' && category?.sessionId === takeover.sessionId && category?.status === 'completed') {
+      if (category.idempotencyKey !== takeover.idempotencyKey) throw new Error('Diese Kategorie wurde bereits freigegeben und übernommen.');
+      const previous = demoImportRuns(state).find(run => run.id === category.runId);
+      if (previous) return { resource, dryRun: false, runId: previous.id, summary: previous.summary, rows: previous.report, truncated: false, idempotentReplay: true, demoMode: true };
+    }
+    if (!session || session.id !== takeover.sessionId || session.status !== 'open' || session.legacyBackfill) throw new Error('Die Umzugssitzung ist nicht für eine neue Kategorieübernahme offen.');
+    if (takeover.phase === 'execute' && (!category || category.id !== takeover.categoryId || category.status !== 'open')) throw new Error('Die Kategoriekennung ist veraltet. Vorschau erneut prüfen.');
+    digest = demoDigest({ resource, rows, options: plan.options, settings: data.settings || {}, file: data.file || {}, context: demoImportContext(state), plan });
+    if (takeover.phase === 'execute') {
+      if (!takeover.previewDigest || category?.digest !== takeover.previewDigest || category.digest !== digest) throw new Error('Der Bestand oder die Zuordnung hat sich seit der Vorschau geändert. Vorschau erneut prüfen.');
+      categoryId = String(category.id);
+    } else {
+      if (category?.status === 'completed') throw new Error('Diese Kategorie wurde in der Sitzung bereits übernommen.');
+      if (!category) category = { id: generateUUID(), status: 'open', resource };
+      categoryId = String(category.id);
+      categories[resource] = { ...category, digest, sessionId: session.id };
+      writeDemoTakeoverCategories(categories);
+    }
+  }
   let runId: string | null = null;
   if (commit) {
     if (summary.records === 0) throw new Error('Es gibt keine Zeile, die übernommen werden kann.');
@@ -1059,8 +1121,16 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
       status: 'pending',
       createdAt: new Date().toISOString(),
       createdByName: 'Demo',
+      migrationSessionId: takeover?.sessionId || null,
+      migrationCategoryId: categoryId,
       items,
     });
+    if (takeover && category) {
+      categories[resource] = { ...category, status: 'completed', idempotencyKey: takeover.idempotencyKey, runId, completedAt: new Date().toISOString() };
+      writeDemoTakeoverCategories(categories);
+      const updatedSession = { ...session!, progressRevision: Number(session!.progressRevision || 1) + 1 };
+      sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(updatedSession));
+    }
     saveState(state);
   }
   return {
@@ -1072,6 +1142,8 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
     totals: plan.totals,
     newCustomers: plan.newCustomers.map(customer => ({ name: customer.name, rowNumbers: customer.rowNumbers })),
     truncated: false,
+    ...(takeover ? { categoryId, previewDigest: digest } : {}),
+    demoMode: true,
   };
 }
 
@@ -1152,6 +1224,16 @@ function demoRevertImport(state: DemoState, run: DemoRecord): void {
   touchedInvoices.forEach(invoiceId => syncDemoInvoicePaymentStatus(state, invoiceId));
   run.status = 'reverted';
   run.revertedAt = new Date().toISOString();
+  if (run.migrationCategoryId) {
+    const categories = readDemoTakeoverCategories();
+    const category = Object.values(categories).find(item => item.id === run.migrationCategoryId);
+    if (category) {
+      categories[String(category.resource)] = { ...category, status: 'open', digest: null, idempotencyKey: null, runId: null, completedAt: null };
+      writeDemoTakeoverCategories(categories);
+      const session = readDemoTakeover(state);
+      if (session?.status === 'open') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify({ ...session, progressRevision: Number(session.progressRevision || 1) + 1 }));
+    }
+  }
 }
 
 function demoImportRequest<T>(state: DemoState, parts: string[], method: string, data: DemoRecord): T {

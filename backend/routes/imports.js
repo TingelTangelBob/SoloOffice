@@ -53,6 +53,20 @@ function sendError(res, error, fallback) {
   return res.status(500).json({ error: fallback });
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
+  }
+  return value;
+}
+
+function takeoverDigest({ resource, rows, options, settings, file, context, plan }) {
+  return createHash('sha256').update(JSON.stringify(stableValue({
+    resource, rows, options, settings, file: { hash: file?.hash || null, headers: file?.headers || [], sheet: settings?.sheet || null }, context, plan,
+  }))).digest('hex');
+}
+
 // node-postgres liefert DATE-Spalten als lokale Mitternacht. Die lokalen
 // Bestandteile ergeben deshalb unabhängig von der Serverzeitzone das Datum.
 const isoDate = value => {
@@ -107,6 +121,7 @@ async function loadEuerEntries(client) {
     FROM euer_entries e
     LEFT JOIN invoices i ON e.source_type = 'invoice_payment' AND i.id = e.source_id
     WHERE e.status = 'active'
+    ORDER BY e.entry_date, e.id
   `);
   return result.rows.map(row => ({
     id: row.id,
@@ -127,11 +142,12 @@ async function loadInvoices(client) {
   const result = await client.query(`
     SELECT i.id, i.invoice_number, i.customer_id, i.customer_name, i.issue_date, i.service_date,
            i.status, i.total, i.tax_amount, c.customer_number, c.email AS customer_email,
-           COALESCE((SELECT array_agg(DISTINCT ijs.job_date) FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id), ARRAY[]::date[]) AS job_dates,
-           COALESCE((SELECT array_agg(DISTINCT ii.tax_rate) FROM invoice_items ii WHERE ii.invoice_id = i.id), ARRAY[]::numeric[]) AS item_tax_rates
+           COALESCE((SELECT array_agg(DISTINCT ijs.job_date ORDER BY ijs.job_date) FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id), ARRAY[]::date[]) AS job_dates,
+           COALESCE((SELECT array_agg(DISTINCT ii.tax_rate ORDER BY ii.tax_rate) FROM invoice_items ii WHERE ii.invoice_id = i.id), ARRAY[]::numeric[]) AS item_tax_rates
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+    ORDER BY i.issue_date, i.invoice_number, i.id
   `);
   return result.rows.map(row => ({
     id: row.id,
@@ -163,14 +179,14 @@ async function loadContext(client, resource) {
   };
   if (!SETTINGS_IMPORT_RESOURCES.includes(resource)) context.customers = await loadCustomers(client);
   if (resource === 'jobs') {
-    const result = await client.query('SELECT id, job_number, external_job_number, customer_id, title, date, start_time FROM job_entries');
+    const result = await client.query('SELECT id, job_number, external_job_number, customer_id, title, date, start_time FROM job_entries ORDER BY id');
     context.jobs = result.rows.map(row => ({
       id: row.id, jobNumber: row.job_number, externalJobNumber: row.external_job_number,
       customerId: row.customer_id, title: row.title, date: isoDate(row.date), startTime: row.start_time,
     }));
   }
   if (resource === 'quotes') {
-    const result = await client.query('SELECT id, quote_number FROM quotes');
+    const result = await client.query('SELECT id, quote_number FROM quotes ORDER BY id');
     context.quotes = result.rows.map(row => ({ id: row.id, quoteNumber: row.quote_number }));
   }
   if (resource === 'hourlyRates' || resource === 'materials') {
@@ -630,11 +646,11 @@ function sanitizeSettings(value) {
   return json.length > 50000 ? {} : JSON.parse(json);
 }
 
-async function saveRun(client, { resource, file, settings, summary, report, items, userId }) {
+async function saveRun(client, { resource, file, settings, summary, report, items, userId, sessionId = null, categoryId = null }) {
   const headers = Array.isArray(file?.headers) ? file.headers.slice(0, 300).map(header => text(header).slice(0, 200)) : [];
   const result = await client.query(`
-    INSERT INTO import_runs (resource, file_name, file_hash, source_headers, settings, summary, report, created_by)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO import_runs (resource, file_name, file_hash, source_headers, settings, summary, report, created_by, migration_session_id, migration_category_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id
   `, [
     resource,
@@ -645,6 +661,8 @@ async function saveRun(client, { resource, file, settings, summary, report, item
     JSON.stringify(summary),
     JSON.stringify(report),
     userId || null,
+    sessionId,
+    categoryId,
   ]);
   const runId = result.rows[0].id;
   for (let offset = 0; offset < items.length; offset += 500) {
@@ -675,12 +693,15 @@ function mapRun(row, { includeReport = false } = {}) {
     confirmedAt: row.confirmed_at,
     revertedAt: row.reverted_at,
     createdByName: row.created_by_name || null,
+    migrationSessionId: row.migration_session_id || null,
+    migrationCategoryId: row.migration_category_id || null,
     ...(includeReport ? { report: row.report || [] } : {}),
   };
 }
 
 const runSelect = `
   SELECT r.id, r.resource, r.file_name, r.file_hash, r.source_headers, r.settings, r.summary, r.status,
+         r.migration_session_id, r.migration_category_id,
          r.created_at, r.confirmed_at, r.reverted_at,
          NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), '') AS created_by_name
 `;
@@ -706,7 +727,7 @@ router.get('/runs/:id', async (req, res) => {
 });
 
 async function lockPendingRun(client, runId, auth) {
-  const result = await client.query('SELECT id, resource, status FROM import_runs WHERE id = $1 FOR UPDATE', [runId]);
+  const result = await client.query('SELECT id, resource, status, migration_category_id, migration_session_id FROM import_runs WHERE id = $1 FOR UPDATE', [runId]);
   const run = result.rows[0];
   if (!run) throw httpError(404, 'Import nicht gefunden.');
   if (SETTINGS_IMPORT_RESOURCES.includes(run.resource) && !hasPermission(auth, 'workspace.settings')) {
@@ -777,7 +798,7 @@ async function restoreCustomer(client, recordId, oldData) {
 }
 
 async function revertRun(client, runId, auth) {
-  await lockPendingRun(client, runId, auth);
+  const run = await lockPendingRun(client, runId, auth);
   const itemResult = await client.query('SELECT table_name, record_id, action, old_data FROM import_run_items WHERE run_id = $1 ORDER BY seq DESC', [runId]);
   const items = itemResult.rows;
   const itemsByTable = new Map();
@@ -836,6 +857,15 @@ async function revertRun(client, runId, auth) {
   }
   await syncInvoiceStatuses(client, [...touchedInvoices]);
   await client.query("UPDATE import_runs SET status = 'reverted', reverted_at = NOW() WHERE id = $1", [runId]);
+  if (run.migration_category_id) {
+    await client.query(`
+      UPDATE migration_categories
+      SET status = 'open', preview_digest = NULL, idempotency_key = NULL,
+          completed_at = NULL, updated_at = NOW()
+      WHERE id = $1 AND status = 'completed'
+    `, [run.migration_category_id]);
+    if (run.migration_session_id) await client.query('UPDATE migration_sessions SET progress_revision = progress_revision + 1, updated_at = NOW() WHERE id = $1 AND status = \'open\'', [run.migration_session_id]);
+  }
 }
 
 router.post('/runs/:id/revert', async (req, res) => {
@@ -1030,17 +1060,113 @@ router.post('/:resource', async (req, res) => {
     createMissingCustomers: req.body?.createMissingCustomers === true,
     matchOpenInvoices: req.body?.matchOpenInvoices !== false,
   };
+  const takeover = req.body?.takeover && typeof req.body.takeover === 'object' ? req.body.takeover : null;
+  if (takeover && (!UUID_PATTERN.test(String(takeover.sessionId || ''))
+    || (takeover.categoryId != null && !UUID_PATTERN.test(String(takeover.categoryId)))
+    || (takeover.idempotencyKey != null && !UUID_PATTERN.test(String(takeover.idempotencyKey))))) {
+    return res.status(400).json({ error: 'Die Sitzungs- oder Kategoriekennung ist ungültig.', code: 'TAKEOVER_INVALID_REFERENCE' });
+  }
+  if (takeover && !['preview', 'execute'].includes(takeover.phase)) {
+    return res.status(400).json({ error: 'Der Freigabeschritt ist ungültig.', code: 'TAKEOVER_INVALID_PHASE' });
+  }
+  if (takeover && ((takeover.phase === 'preview') !== dryRun)) {
+    return res.status(400).json({ error: 'Vorschau und Kategorieausführung müssen getrennt angefordert werden.', code: 'TAKEOVER_INVALID_PHASE' });
+  }
+  if (takeover?.phase === 'execute' && (!takeover.categoryId || !takeover.previewDigest || !takeover.idempotencyKey)) {
+    return res.status(400).json({ error: 'Für die Kategorieübernahme fehlen Vorschau-Digest oder Idempotenzschlüssel.', code: 'TAKEOVER_APPROVAL_REQUIRED' });
+  }
   const client = await pool.connect();
   try {
-    if (!dryRun) await client.query('BEGIN');
+    if (takeover || !dryRun) {
+      await client.query('BEGIN');
+      if (takeover?.phase === 'execute') await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+    }
+    if (takeover) {
+      const sessionResult = await client.query(`
+        SELECT id, status, legacy_backfill FROM migration_sessions
+        WHERE id = $1 AND workspace_id = ${workspaceCondition}
+        FOR UPDATE
+      `, [takeover.sessionId]);
+      const session = sessionResult.rows[0];
+      if (!session) {
+        throw httpError(409, 'Die Umzugssitzung ist nicht für eine neue Kategorieübernahme offen.', 'TAKEOVER_NOT_OPEN');
+      }
+      if (session.status !== 'open' || session.legacy_backfill) {
+        if (takeover.phase === 'execute' && !session.legacy_backfill) {
+          const replayCategory = await client.query(`
+            SELECT id, status, idempotency_key FROM migration_categories
+            WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+            FOR UPDATE
+          `, [takeover.categoryId, takeover.sessionId, resource]);
+          if (replayCategory.rows[0]?.status === 'completed' && replayCategory.rows[0].idempotency_key === takeover.idempotencyKey) {
+            const previous = await client.query(`${runSelect}, r.report FROM import_runs r LEFT JOIN users u ON u.id = r.created_by WHERE r.migration_category_id = $1 ORDER BY r.created_at DESC LIMIT 1`, [replayCategory.rows[0].id]);
+            await client.query('COMMIT');
+            const run = previous.rows[0];
+            return res.json({ resource, dryRun: false, runId: run?.id || null, summary: run?.summary || {}, rows: run?.report || [], truncated: false, idempotentReplay: true });
+          }
+        }
+        throw httpError(409, 'Die Umzugssitzung ist nicht für eine neue Kategorieübernahme offen.', 'TAKEOVER_NOT_OPEN');
+      }
+      if (takeover.phase === 'execute') {
+        const categoryResult = await client.query(`
+          SELECT id, status, preview_digest, idempotency_key
+          FROM migration_categories
+          WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+          FOR UPDATE
+        `, [takeover.categoryId, takeover.sessionId, resource]);
+        const category = categoryResult.rows[0];
+        if (!category) throw httpError(409, 'Die Kategorie gehört nicht zu dieser Sitzung. Bitte die Vorschau erneut prüfen.', 'TAKEOVER_PREVIEW_STALE');
+        if (category.status === 'completed') {
+          if (category.idempotency_key !== takeover.idempotencyKey) throw httpError(409, 'Diese Kategorie wurde bereits freigegeben und übernommen.', 'TAKEOVER_CATEGORY_COMPLETED');
+          const previous = await client.query(`${runSelect}, r.report FROM import_runs r LEFT JOIN users u ON u.id = r.created_by WHERE r.migration_category_id = $1 LIMIT 1`, [category.id]);
+          await client.query('COMMIT');
+          const run = previous.rows[0];
+          return res.json({ resource, dryRun: false, runId: run?.id || null, summary: run?.summary || {}, rows: run?.report || [], truncated: false, idempotentReplay: true });
+        }
+      }
+    } else if (!dryRun) {
+      const openTakeover = await client.query(`
+        SELECT id FROM migration_sessions
+        WHERE workspace_id = ${workspaceCondition} AND status = 'open' AND legacy_backfill = FALSE
+        LIMIT 1
+      `);
+      if (openTakeover.rows[0]) throw httpError(409, 'Während einer Umzugssitzung müssen Kategorien einzeln anhand ihrer geprüften Vorschau übernommen werden.', 'TAKEOVER_CATEGORY_APPROVAL_REQUIRED');
+    }
     const { context, company } = await loadContext(client, resource);
     const plan = planImport(resource, rows, context, options);
     const summary = summariseImport(plan, rows.length);
+    const previewDigest = takeoverDigest({ resource, rows, options, settings: req.body?.settings || {}, file: req.body?.file, context, plan });
     let runId = null;
+    let categoryId = takeover?.categoryId || null;
+    if (takeover?.phase === 'preview') {
+      const categoryResult = await client.query(`
+        INSERT INTO migration_categories (workspace_id, session_id, resource)
+        VALUES (NULLIF(current_setting('app.workspace_id', true), '')::uuid, $1, $2)
+        ON CONFLICT (session_id, resource) DO UPDATE SET updated_at = NOW()
+        RETURNING id, status
+      `, [takeover.sessionId, resource]);
+      if (categoryResult.rows[0].status !== 'open') throw httpError(409, 'Diese Kategorie wurde in der Sitzung bereits übernommen.', 'TAKEOVER_CATEGORY_COMPLETED');
+      categoryId = categoryResult.rows[0].id;
+      if (takeover.categoryId && takeover.categoryId !== categoryId) throw httpError(409, 'Die Kategoriekennung ist veraltet. Vorschau erneut prüfen.', 'TAKEOVER_PREVIEW_STALE');
+      await client.query('UPDATE migration_categories SET preview_digest = $2, updated_at = NOW() WHERE id = $1', [categoryId, previewDigest]);
+    }
     if (!dryRun) {
       if (summary.records === 0) throw httpError(400, 'Es gibt keine Zeile, die übernommen werden kann.');
       const items = await applyPlan(client, resource, plan, company, { fileName: text(req.body?.file?.name).slice(0, 200) });
       summary.imported = summary.records;
+      if (takeover) {
+        const category = await client.query(`
+          SELECT id, status, preview_digest FROM migration_categories
+          WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+          FOR UPDATE
+        `, [takeover.categoryId, takeover.sessionId, resource]);
+        if (!category.rows[0] || category.rows[0].status !== 'open'
+          || category.rows[0].preview_digest !== String(takeover.previewDigest)
+          || category.rows[0].preview_digest !== previewDigest) {
+          throw httpError(409, 'Der Bestand oder die Zuordnung hat sich seit der Vorschau geändert. Vorschau erneut prüfen.', 'TAKEOVER_PREVIEW_STALE');
+        }
+        categoryId = category.rows[0].id;
+      }
       runId = await saveRun(client, {
         resource,
         file: req.body?.file,
@@ -1049,9 +1175,19 @@ router.post('/:resource', async (req, res) => {
         report: reportRows(plan, true),
         items,
         userId: req.auth?.userId,
+        sessionId: takeover?.sessionId || null,
+        categoryId,
       });
-      await client.query('COMMIT');
+      if (takeover) {
+        await client.query(`
+          UPDATE migration_categories
+          SET status = 'completed', idempotency_key = $2, completed_at = NOW(), updated_at = NOW()
+          WHERE id = $1
+        `, [takeover.categoryId, takeover.idempotencyKey]);
+        await client.query('UPDATE migration_sessions SET progress_revision = progress_revision + 1, updated_at = NOW() WHERE id = $1', [takeover.sessionId]);
+      }
     }
+    if (takeover || !dryRun) await client.query('COMMIT');
     res.json({
       resource,
       dryRun,
@@ -1061,9 +1197,11 @@ router.post('/:resource', async (req, res) => {
       totals: plan.totals,
       newCustomers: plan.newCustomers.slice(0, 200).map(customer => ({ name: customer.name, rowNumbers: customer.rowNumbers.slice(0, 20) })),
       truncated: false,
+      ...(takeover ? { categoryId, previewDigest } : {}),
     });
   } catch (error) {
-    if (!dryRun) await client.query('ROLLBACK').catch(() => undefined);
+    if (takeover || !dryRun) await client.query('ROLLBACK').catch(() => undefined);
+    if (error.code === '40001') return res.status(409).json({ error: 'Der Bestand hat sich während der Übernahme geändert. Vorschau erneut prüfen.', code: 'TAKEOVER_PREVIEW_STALE' });
     if (error.code === '23505') {
       return res.status(409).json({ error: 'Eine Nummer wurde zwischenzeitlich vergeben. Bitte die Vorschau neu prüfen und erneut übernehmen.' });
     }

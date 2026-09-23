@@ -79,6 +79,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [wizardResource, setWizardResource] = useState<ImportResource | null>(null);
   const [wizardSourceFile, setWizardSourceFile] = useState<File | null>(null);
   const [wizardSheet, setWizardSheet] = useState<string | undefined>(undefined);
+  const [wizardSelectedRowNumbers, setWizardSelectedRowNumbers] = useState<number[] | undefined>(undefined);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState('');
@@ -226,25 +227,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     }
   };
 
-  const confirmAll = async () => {
-    const accepted = await confirm({
-      title: 'Offene Importe bestätigen?',
-      message: `${pendingRuns.length} ${pendingRuns.length === 1 ? 'offener Import wird' : 'offene Importe werden'} bestätigt. Prüfen Sie vorher Übersicht, EÜR und Auswertungen. Danach sind diese Importe nicht mehr rückgängig zu machen.`,
-      confirmText: 'Importe bestätigen',
-    });
-    if (!accepted) return;
-    setBusyId('all');
-    try {
-      const result = await apiService.confirmAllImportRuns();
-      await load();
-      notify({ variant: 'success', message: `${result.confirmed} ${result.confirmed === 1 ? 'Import wurde' : 'Importe wurden'} abgeschlossen.` });
-    } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die offenen Importe konnten nicht bestätigt werden.' });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const completeTakeover = async () => {
     if (!takeover?.session || takeover.session.status !== 'open') return;
     const accepted = await confirm({
@@ -343,9 +325,11 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   };
 
   const openCandidate = (resource: ImportResource) => {
-    if (!scannedFile) return;
+    if (!scannedFile || takeover?.session?.status !== 'open' || takeover.session.legacyBackfill) return;
+    const candidate = scanCandidates.find(item => item.resource === resource);
     setWizardSourceFile(scannedFile);
     setWizardSheet(scanResult?.sheet);
+    setWizardSelectedRowNumbers(candidate?.matchedRowNumbers.length ? candidate.matchedRowNumbers : undefined);
     setWizardResource(resource);
   };
 
@@ -394,18 +378,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const allUnclearColumns = scanResult
     ? scanResult.headers.filter(header => !scanCandidates.some(candidate => candidate.matchedColumns.includes(header)))
     : [];
-  const canImportResource = (resource: ImportResource) => canWrite && (!steps.find(step => step.resources.some(item => item.resource === resource))?.adminOnly || canAdmin);
+  const canImportResource = (resource: ImportResource) => canWrite && takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && (!steps.find(step => step.resources.some(item => item.resource === resource))?.adminOnly || canAdmin);
+  const completedCategory = (resource: ImportResource) => runs.some(run => run.migrationSessionId === takeover?.session?.id && run.resource === resource && run.status !== 'reverted');
+  const categoryCount = scanCandidates.filter(candidate => !skippedCategories.includes(candidate.resource)).length;
+  const completedCategoryCount = scanCandidates.filter(candidate => completedCategory(candidate.resource)).length;
+  const nextOpenCategory = scanCandidates.find(candidate => !completedCategory(candidate.resource) && !skippedCategories.includes(candidate.resource));
 
   return (
     <div className="page-root space-y-6">
-      <PageHeader icon={ArrowRightLeft} title="Datenübernahme" subtitle="Daten aus Excel oder einem anderen Programm übernehmen">
-        {pendingRuns.length > 0 && canWrite && (
-          <button type="button" onClick={confirmAll} disabled={busyId !== null} className="btn-primary inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium sm:px-4 disabled:opacity-50">
-            {busyId === 'all' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            <span>Offene Importe bestätigen</span>
-          </button>
-        )}
-      </PageHeader>
+      <PageHeader icon={ArrowRightLeft} title="Datenübernahme" subtitle="Daten aus Excel oder einem anderen Programm übernehmen" />
 
       {takeover && <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Umzugsstatus">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -456,17 +437,20 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           {scanResult.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-medium">Hinweise zur Datei</p><ul className="mt-1 list-disc pl-5">{scanResult.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}
           <div>
             <h3 className="font-semibold text-gray-900">Erkannte Kategorien</h3>
+            {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && <p className="mt-1 text-sm text-gray-600">Fortschritt: {completedCategoryCount} von {categoryCount} Kategorien übernommen. Jede Kategorie braucht ihre eigene geprüfte Vorschau und Freigabe.</p>}
             {scanCandidates.length === 0 ? <p className="mt-2 text-sm text-gray-600">Es wurde keine Kategorie sicher genug erkannt. Bitte prüfen Sie Kopfzeile und Spalten manuell; es wird nichts automatisch zugeordnet.</p> : <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200">
               {scanCandidates.map(candidate => <li key={candidate.resource} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><h4 className="font-medium text-gray-900">{candidate.label}</h4><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{candidate.confidence === 'high' ? 'Hohe' : candidate.confidence === 'medium' ? 'Mittlere' : 'Niedrige'} Konfidenz · {candidate.score} %</span></div>
+                  {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && <p className={`mt-1 text-sm font-medium ${completedCategory(candidate.resource) ? 'text-green-800' : 'text-gray-700'}`}>{completedCategory(candidate.resource) ? 'Übernommen' : 'Noch offen'}</p>}
+                  {takeover?.session?.status === 'open' && !takeover.session.legacyBackfill && nextOpenCategory?.resource === candidate.resource && <p className="mt-1 text-xs font-medium text-primary-custom">Nächste offene Kategorie</p>}
                   <p className="mt-1 text-sm text-gray-600">{candidate.reason}</p>
                   <p className="mt-1 text-xs text-gray-500">Zeilen mit passenden Werten: {candidate.matchedRowCount.toLocaleString('de-DE')} von {scanResult.rows.length.toLocaleString('de-DE')}{candidate.matchedRowNumbers.length > 0 ? ` · z. B. ${candidate.matchedRowNumbers.slice(0, 8).join(', ')}` : ''}</p>
                   <p className="mt-1 text-xs text-gray-500">Passende Spalten: {candidate.matchedColumns.join(', ') || 'keine'}</p>
                   {candidate.unclearColumns.length > 0 && <p className="mt-1 text-xs text-amber-800">In dieser Kategorie unklar: {candidate.unclearColumns.join(', ')}</p>}
                   {candidate.overlaps.length > 0 && <p className="mt-1 text-sm text-amber-800">Überschneidung prüfen: {candidate.overlaps.map(resource => `${getImportDefinition(resource).label}${candidate.overlapRows[resource]?.length ? ` (Zeile${candidate.overlapRows[resource]!.length === 1 ? '' : 'n'} ${candidate.overlapRows[resource]!.slice(0, 8).join(', ')})` : ''}`).join('; ')}. {['euerEntries', 'invoicePayments', 'invoices'].includes(candidate.resource) ? 'Geldzeilen werden nicht automatisch doppelt vorgeschlagen.' : 'Bitte prüfen Sie, welche Zuordnung zu den gemeinsamen Zeilen passt.'}</p>}
                 </div>
-                <button type="button" onClick={() => openCandidate(candidate.resource)} disabled={!canImportResource(candidate.resource)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">Zuordnung prüfen</button>
+                <button type="button" onClick={() => openCandidate(candidate.resource)} disabled={!canImportResource(candidate.resource) || completedCategory(candidate.resource)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{completedCategory(candidate.resource) ? 'Kategorie übernommen' : 'Zuordnung prüfen'}</button>
               </li>)}
             </ul>}
           </div>
@@ -647,7 +631,9 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           isOpen
           initialFile={wizardSourceFile || undefined}
           initialSheet={wizardSheet}
-          onClose={() => { setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); }}
+          initialSelectedRowNumbers={wizardSelectedRowNumbers}
+          takeoverSessionId={takeover?.session?.status === 'open' && !takeover.session.legacyBackfill ? takeover.session.id : undefined}
+          onClose={() => { setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); setWizardSelectedRowNumbers(undefined); }}
           onImported={async () => {
             await Promise.all([load(), refreshData(wizardResource)]);
           }}

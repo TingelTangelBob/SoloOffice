@@ -36,6 +36,8 @@ interface ImportWizardProps {
   /** Bereits im Datenübernahme-Scan geprüfte Datei. */
   initialFile?: File;
   initialSheet?: string;
+  initialSelectedRowNumbers?: number[];
+  takeoverSessionId?: string;
 }
 
 type ImportStep = 'file' | 'mapping' | 'preview' | 'result';
@@ -128,7 +130,7 @@ function fileSlug(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet }: ImportWizardProps) {
+export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet, initialSelectedRowNumbers, takeoverSessionId }: ImportWizardProps) {
   const { company } = useCompany();
   const baseDefinition = getImportDefinition(resource);
   const terminology = getTerminology(company.terminologyProfile);
@@ -140,6 +142,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const [step, setStep] = useState<ImportStep>('file');
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [parsedFile, setParsedFile] = useState<ParsedImportFile | null>(null);
+  const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[] | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [constants, setConstants] = useState<Record<string, string>>(initialConstants || {});
   const [valueOverrides, setValueOverrides] = useState<Record<string, Record<string, string>>>({});
@@ -147,6 +150,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const [createMissingCustomers, setCreateMissingCustomers] = useState(false);
   const [matchOpenInvoices, setMatchOpenInvoices] = useState(true);
   const [preview, setPreview] = useState<ImportResponse | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,8 +194,17 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   }, [enumValues, valueOverrides]);
 
   const mappedRows = useMemo(
-    () => parsedFile ? mapImportRows(parsedFile, mapping, { definition, constants, valueMappings }) : [],
-    [constants, definition, mapping, parsedFile, valueMappings],
+    () => {
+      if (!parsedFile) return [];
+      const selected = selectedRowIndexes === null ? parsedFile.rows.map((_, index) => index) : selectedRowIndexes;
+      const selectedFile: ParsedImportFile = {
+        ...parsedFile,
+        rows: selected.map(index => parsedFile.rows[index]).filter(Boolean),
+        rowNumbers: parsedFile.rowNumbers ? selected.map(index => parsedFile.rowNumbers?.[index] ?? index + 2) : undefined,
+      };
+      return mapImportRows(selectedFile, mapping, { definition, constants, valueMappings });
+    },
+    [constants, definition, mapping, parsedFile, selectedRowIndexes, valueMappings],
   );
   const mappingAnalysis = useMemo(
     () => parsedFile ? analyseHeaderMapping(parsedFile.headers, definition) : null,
@@ -224,6 +237,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     setStep('file');
     setSourceFile(null);
     setParsedFile(null);
+    setSelectedRowIndexes(null);
     setMapping({});
     setConstants(initialConstants || {});
     setValueOverrides({});
@@ -265,7 +279,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     return { mapping: restored, messages };
   };
 
-  const loadFile = async (file: File, sheet?: string) => {
+  const loadFile = async (file: File, sheet?: string, selectedRowNumbers?: number[]) => {
     setIsBusy(true);
     setError(null);
     try {
@@ -274,6 +288,9 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       const previous = applyPreviousRun(parsed, runs);
       setSourceFile(file);
       setParsedFile(parsed);
+      setSelectedRowIndexes(selectedRowNumbers?.length
+        ? parsed.rows.map((_, index) => index).filter(index => selectedRowNumbers.includes(parsed.rowNumbers?.[index] ?? index + 2))
+        : null);
       setMapping(previous.mapping || analyseHeaderMapping(parsed.headers, definition).mapping);
       setNotices(previous.messages);
       setPreview(null);
@@ -286,7 +303,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   };
 
   useEffect(() => {
-    if (isOpen && initialFile) void loadFile(initialFile, initialSheet);
+    if (isOpen && initialFile) void loadFile(initialFile, initialSheet, initialSelectedRowNumbers);
     // One scan result opens one wizard instance; subsequent file/sheet changes
     // are handled by the wizard's own controls.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -347,7 +364,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const missingRequiredFields = definition.fields.filter(field => field.required && !isSatisfied(field.key));
   const missingRequiredGroups = (definition.requiredGroups || []).filter(group => group.fields.every(fieldKey => !isSatisfied(fieldKey)));
 
-  const importOptions = (dryRun: boolean) => ({
+  const importOptions = (dryRun: boolean, phase: 'preview' | 'execute' = 'preview') => ({
     dryRun,
     duplicateMode,
     createMissingCustomers,
@@ -358,8 +375,14 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       constants,
       valueMappings: Object.fromEntries(Object.entries(valueOverrides).filter(([key]) => mapping[key])),
       sheet: parsedFile?.sheet,
+      selectedRows: mappedRows.map(row => Number(row._rowNumber)),
       options: { duplicateMode, createMissingCustomers, matchOpenInvoices },
     },
+    ...(takeoverSessionId ? {
+      takeover: dryRun
+        ? { sessionId: takeoverSessionId, phase }
+        : { sessionId: takeoverSessionId, phase, categoryId: preview?.categoryId, previewDigest: preview?.previewDigest, idempotencyKey },
+    } : {}),
   });
 
   const runPreview = async () => {
@@ -377,8 +400,9 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     setIsBusy(true);
     setError(null);
     try {
-      const response = await apiService.importData(resource, mappedRows, importOptions(true));
+      const response = await apiService.importData(resource, mappedRows, importOptions(true, 'preview'));
       setPreview(response);
+      setIdempotencyKey(crypto.randomUUID());
       setStep('preview');
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : 'Die Vorschau konnte nicht erstellt werden.');
@@ -392,7 +416,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     setIsBusy(true);
     setError(null);
     try {
-      const response = await apiService.importData(resource, mappedRows, importOptions(false));
+      const response = await apiService.importData(resource, mappedRows, importOptions(false, 'execute'));
       setResult(response);
       setStep('result');
       await onImported?.();
@@ -483,7 +507,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   <div className="min-w-0">
                     <p className="truncate font-medium text-gray-900">{parsedFile.fileName}</p>
                     <p className="text-sm text-gray-500">
-                      {parsedFile.format.toUpperCase()} · {parsedFile.rows.length} Datenzeilen · {parsedFile.headers.length} Spalten
+                      {parsedFile.format.toUpperCase()} · {mappedRows.length} von {parsedFile.rows.length} Zeilen ausgewählt · {parsedFile.headers.length} Spalten
                       {parsedFile.encoding && parsedFile.encoding !== 'UTF-8' ? ` · ${parsedFile.encoding}` : ''}
                     </p>
                   </div>
@@ -492,7 +516,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   {parsedFile.sheets && parsedFile.sheets.length > 1 && sourceFile && (
                     <label className="flex items-center gap-2 text-sm text-gray-700">
                       <span className="font-medium">Tabellenblatt</span>
-                      <select value={parsedFile.sheet} onChange={event => void loadFile(sourceFile, event.target.value)} disabled={isBusy} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                    <select value={parsedFile.sheet} onChange={event => void loadFile(sourceFile, event.target.value)} disabled={isBusy} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
                         {parsedFile.sheets.map(sheet => <option key={sheet} value={sheet}>{sheet}</option>)}
                       </select>
                     </label>
@@ -612,11 +636,35 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   </div>
                 </div>
               )}
+              <section className="rounded-xl border border-gray-200 p-4" aria-label="Zeilenauswahl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><h4 className="font-semibold text-gray-900">Zeilen für diese Kategorie</h4><p className="mt-1 text-sm text-gray-600">{mappedRows.length} von {parsedFile.rows.length} ausgewählt. Festwerte und Freigabe gelten nur für diese Zeilen.</p></div>
+                  <div className="flex gap-2"><button type="button" onClick={() => { setSelectedRowIndexes(null); setPreview(null); }} className="text-sm font-medium text-primary-custom hover:underline">Alle auswählen</button><button type="button" onClick={() => { setSelectedRowIndexes([]); setPreview(null); }} className="text-sm font-medium text-primary-custom hover:underline">Alle abwählen</button></div>
+                </div>
+                <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-gray-200">
+                  <table className="min-w-full text-left text-sm"><thead className="sticky top-0 bg-gray-50 text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-3 py-2">Übernehmen</th><th className="px-3 py-2">Zeile</th>{parsedFile.headers.slice(0, 3).map(header => <th key={header} className="max-w-48 truncate px-3 py-2">{header}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">
+                    {parsedFile.rows.slice(0, 200).map((row, index) => {
+                      const checked = selectedRowIndexes === null || selectedRowIndexes.includes(index);
+                      return <tr key={index}><td className="px-3 py-2"><input type="checkbox" checked={checked} aria-label={`Zeile ${parsedFile.rowNumbers?.[index] ?? index + 2} übernehmen`} onChange={event => {
+                        setSelectedRowIndexes(current => {
+                          const all = parsedFile.rows.map((_, rowIndex) => rowIndex);
+                          const next = new Set(current === null ? all : current);
+                          if (event.target.checked) next.add(index); else next.delete(index);
+                          return [...next].sort((a, b) => a - b);
+                        });
+                        setPreview(null);
+                      }} /></td><td className="px-3 py-2 text-gray-500">{parsedFile.rowNumbers?.[index] ?? index + 2}</td>{parsedFile.headers.slice(0, 3).map(header => <td key={header} className="max-w-48 truncate px-3 py-2 text-gray-700">{String(row[header] ?? '')}</td>)}</tr>;
+                    })}
+                  </tbody></table>
+                </div>
+                {parsedFile.rows.length > 200 && <p className="mt-2 text-xs text-gray-500">Die ersten 200 Zeilen sind einzeln auswählbar; „Alle auswählen“ und „Alle abwählen“ gelten für die gesamte Datei.</p>}
+              </section>
             </div>
           )}
 
           {step === 'preview' && preview && (
             <div className="space-y-5">
+              {preview.demoMode && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Demo: Vorschau und Freigabe werden in diesem Browser simuliert. Es werden keine Serverdaten geändert.</p>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <SummaryCard label="Zeilen" value={preview.summary.total} />
                 <SummaryCard label={preview.summary.updated > 0 ? 'Bereit / Aktual.' : 'Bereit'} value={preview.summary.valid + preview.summary.updated} tone="green" />
@@ -651,7 +699,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
               <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center text-green-900">
                 <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
                 <h3 className="mt-3 text-lg font-semibold">Import abgeschlossen</h3>
-                <p className="mt-1 text-sm">{result.summary.imported} {result.summary.imported === 1 ? 'Eintrag wurde' : 'Einträge wurden'} gespeichert{result.summary.newCustomers ? `; dabei ${result.summary.newCustomers === 1 ? `wurde ein neuer ${terminology.entity.singular}` : `wurden ${result.summary.newCustomers} neue ${entityPlural}`} angelegt` : ''}.</p>
+                <p className="mt-1 text-sm">{result.demoMode ? 'Simulation: ' : ''}{result.summary.imported} {result.summary.imported === 1 ? 'Eintrag wurde' : 'Einträge wurden'} {result.demoMode ? 'in der Demo simuliert' : 'gespeichert'}{result.summary.newCustomers ? `; dabei ${result.summary.newCustomers === 1 ? `wurde ein neuer ${terminology.entity.singular}` : `wurden ${result.summary.newCustomers} neue ${entityPlural}`} angelegt` : ''}.</p>
+                {takeoverSessionId && <p className="mt-2 text-sm">Die Kategorie ist freigegeben. Schließen Sie dieses Fenster und prüfen Sie danach die nächste offene Kategorie.</p>}
                 {result.runId && (
                   <p className="mt-3 text-sm">
                     Bis zum Abschluss des Umzugs können Sie diesen Import unter{' '}
@@ -687,7 +736,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
           {step === 'preview' && (
             <div className="flex items-center gap-2">
               <button type="button" onClick={runPreview} disabled={isBusy} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />Neu prüfen</button>
-              <button type="button" onClick={commitImport} disabled={isBusy || usableRows === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {usableRecords} übernehmen</button>
+              <button type="button" onClick={commitImport} disabled={isBusy || usableRows === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {takeoverSessionId ? 'Diese Kategorie übernehmen' : `${usableRecords} übernehmen`}</button>
             </div>
           )}
         </div>
