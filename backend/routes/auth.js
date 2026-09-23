@@ -186,6 +186,13 @@ router.post('/register', async (req, res) => {
           SET name = $1, email = $2, updated_at = NOW()
           WHERE workspace_id = $3
         `, [workspaceName, identity.email, workspaceId]);
+        // Der initial Workspace aus Migration 021 ist bei der ersten echten
+        // Registrierung neu für diesen Nutzer und soll die geführte Einrichtung zeigen.
+        await client.query(`
+          UPDATE workspace_setup
+          SET setup_required = TRUE, updated_at = NOW()
+          WHERE workspace_id = $1 AND completed_at IS NULL
+        `, [workspaceId]);
       });
     } else {
       workspaceId = randomUUID();
@@ -199,6 +206,7 @@ router.post('/register', async (req, res) => {
           INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id, invoice_start_number, workspace_id)
           VALUES ($1, '', '', '', 'Deutschland', '', $2, '', 1, $3)
         `, [workspaceName, identity.email, workspaceId]);
+        await client.query('INSERT INTO workspace_setup (workspace_id) VALUES ($1)', [workspaceId]);
         await client.query(`
           INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
           VALUES ('Standard', 'Normale Arbeitszeit', 75, 19, TRUE)

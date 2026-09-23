@@ -76,6 +76,7 @@ test('alle Migrationen sind auf einer frischen PostgreSQL-Datenbank ausgeführt'
     const status = await getMigrationStatus(client);
     assert.equal(status.pending.length, 0);
     assert.ok(status.executed.length >= 34);
+    assert.ok(status.executed.includes('045_workspace_setup'));
   } finally {
     client.release();
   }
@@ -118,6 +119,23 @@ test('zwei Workspace-Kontexte sehen ausschließlich ihre eigenen Kunden', async 
 
   assert.deepEqual(customersA.rows, [{ name: 'Kunde A', workspace_id: workspaceA }]);
   assert.deepEqual(customersB.rows, [{ name: 'Kunde B', workspace_id: workspaceB }]);
+});
+
+test('Einrichtungsstatus bleibt je Workspace getrennt und erzwingt RLS', async () => {
+  await inWorkspace(workspaceA, userA, () => query(`
+    INSERT INTO workspace_setup (workspace_id, current_step, setup_required)
+    VALUES ($1, 3, TRUE)
+  `, [workspaceA]));
+  const own = await inWorkspace(workspaceA, userA, () => query(
+    'SELECT current_step, completed_at, migration_choice FROM workspace_setup WHERE workspace_id = $1',
+    [workspaceA],
+  ));
+  const other = await inWorkspace(workspaceB, userB, () => query(
+    'SELECT current_step FROM workspace_setup WHERE workspace_id = $1',
+    [workspaceA],
+  ));
+  assert.deepEqual(own.rows, [{ current_step: 3, completed_at: null, migration_choice: 'undecided' }]);
+  assert.deepEqual(other.rows, []);
 });
 
 test('ein leerer Request-Kontext erhält keine Workspace-Daten', async () => {

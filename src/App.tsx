@@ -18,6 +18,7 @@ const QuoteManagement = lazy(() => import('./components/QuoteManagement').then((
 const QuoteEditor = lazy(() => import('./components/QuoteEditor').then(({ QuoteEditor: page }) => ({ default: page })));
 const Settings = lazy(() => import('./components/Settings').then(({ Settings: page }) => ({ default: page })));
 const DataImportCenter = lazy(() => import('./components/DataImportCenter').then(({ DataImportCenter: page }) => ({ default: page })));
+const SetupWizard = lazy(() => import('./components/SetupWizard').then(({ SetupWizard: page }) => ({ default: page })));
 const TemplatesManagement = lazy(() => import('./components/TemplatesManagement').then(({ TemplatesManagement: page }) => ({ default: page })));
 const PositionTemplatesManagement = lazy(() => import('./components/PositionTemplatesManagement').then(({ PositionTemplatesManagement: page }) => ({ default: page })));
 const JobManagement = lazy(() => import('./components/JobManagement').then(({ JobManagement: page }) => ({ default: page })));
@@ -119,6 +120,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
     }
 
     switch (currentPageState.page) {
+      case 'setup':
+        return <SetupWizard onNavigate={onPageChange} />;
       case 'dashboard':
         return <Dashboard onNavigate={onPageChange} />;
       case 'customers':

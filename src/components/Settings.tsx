@@ -435,6 +435,10 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
       <form onSubmit={handleSubmit} autoComplete="on" className={`${embedded ? '' : 'theme-tab-panel'} settings-form form-consistent-fields space-y-8`}>
         {activeTab === 'app' && (
           <div className="space-y-8">
+        <section className="settings-section flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h3 className="text-base font-semibold text-gray-900">Ersteinrichtung</h3><p className="mt-1 text-sm text-gray-600">Firmendaten, Rechnungseinstellungen und Module geführt prüfen.</p></div>
+          <button type="button" onClick={() => onNavigate?.('setup')} className="btn-secondary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"><ArrowRight className="h-4 w-4" />Einrichtung öffnen</button>
+        </section>
         {/* Terminology Settings */}
         <div className="settings-section">
           <div className="flex items-start gap-4">

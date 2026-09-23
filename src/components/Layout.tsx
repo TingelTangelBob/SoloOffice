@@ -19,6 +19,7 @@ import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
 import { useSupportAvailability } from '../hooks/useSupportAvailability';
 import { useFeedback } from '../context/FeedbackContext';
+import { apiService } from '../services/api';
 
 interface LayoutProps {
   children: ReactNode;
@@ -95,6 +96,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupStep, setSetupStep] = useState(1);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Angemeldete Listenansicht, deren Liste das Suchfeld gerade live filtert.
@@ -139,6 +142,15 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const companySetupComplete = missingCompanyFields.length === 0;
   const missingCompanyFieldsLabel = missingCompanyFields.join(', ');
   const companySetupHint = `Firmendaten vervollständigen: ${missingCompanyFieldsLabel}`;
+
+  useEffect(() => {
+    let active = true;
+    apiService.getWorkspaceSetup().then(setup => {
+      if (active) setSetupRequired(setup.setupRequired && !setup.completedAt);
+      if (active) setSetupStep(setup.currentStep);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [workspace?.id]);
 
   useEffect(() => {
     if (!invoiceAreaActive) {
@@ -634,6 +646,21 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 ))}
               </div>
 
+              {setupRequired && (
+                <button
+                  type="button"
+                  onClick={() => handlePageChange('setup')}
+                  className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
+                  aria-label="Ersteinrichtung fortsetzen"
+                  title={isSidebarCompact ? 'Ersteinrichtung fortsetzen' : undefined}
+                >
+                  <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
+                    <strong>Ersteinrichtung fortsetzen</strong>
+                    <span>Schritt {setupStep} von 5</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                </button>
+              )}
               {!companySetupComplete && (
                 <button
                   type="button"

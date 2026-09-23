@@ -466,6 +466,18 @@ export interface Company extends ReminderSettings, CompanyHeader {
   bic?: string;
 }
 
+export type WorkspaceMigrationChoice = 'undecided' | 'takeover' | 'no_legacy_data';
+
+export interface WorkspaceSetup {
+  currentStep: number;
+  completedAt: string | null;
+  migrationChoice: WorkspaceMigrationChoice;
+  /** Bestands-Workspaces erhalten eine nachholbare Prüfung ohne Startzwang. */
+  setupRequired: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============================================================================
 // Template Types
 // ============================================================================

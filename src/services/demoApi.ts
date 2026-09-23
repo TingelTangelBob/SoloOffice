@@ -31,6 +31,7 @@ interface DemoState {
   /** Originaldokumente übernommener Rechnungen, je Rechnungs-ID. */
   invoiceOriginals?: Record<string, DemoRecord>;
   company: DemoRecord;
+  workspaceSetup?: DemoRecord;
   seedProfile?: TerminologyProfile;
   seedVersion?: number;
   /** Zeitpunkt der Erzeugung – Grundlage für die Alterungsprüfung. */
@@ -432,6 +433,10 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege',
       invoiceTemplates: [], createdAt: isoDate(),
     },
+    workspaceSetup: {
+      currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
+      createdAt: isoDate(), updatedAt: isoDate(),
+    },
   };
   return enrichDemoState(state, profile);
 }
@@ -484,6 +489,12 @@ function readState(): DemoState {
       fixedAssets: parsed.fixedAssets || [],
       receipts: (parsed.receipts || []).map(receipt => ({ ...receipt, ocrExtractedData: receipt.ocrExtractedData || receipt.extractedData || {} })),
       incomingEInvoices: parsed.incomingEInvoices || [],
+      // Vor L2 gespeicherte Demodaten werden wie ein bestehender Workspace
+      // behandelt: weiterhin per Einstellungen prüfbar, ohne Einrichtungszwang.
+      workspaceSetup: parsed.workspaceSetup || {
+        currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: false,
+        createdAt: isoDate(), updatedAt: isoDate(),
+      },
     } as DemoState;
   } catch {
     const initial = createInitialState();
@@ -1489,6 +1500,33 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'workspace-setup') {
+    state.workspaceSetup ||= {
+      currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
+      createdAt: isoDate(), updatedAt: isoDate(),
+    };
+    if (method === 'PATCH') {
+      if (data.currentStep !== undefined && (!Number.isInteger(data.currentStep) || data.currentStep < 1 || data.currentStep > 5)) {
+        throw new Error('Der Einrichtungsschritt muss zwischen 1 und 5 liegen.');
+      }
+      if (data.migrationChoice !== undefined && !['undecided', 'takeover', 'no_legacy_data'].includes(String(data.migrationChoice))) {
+        throw new Error('Die Auswahl zur Datenübernahme ist ungültig.');
+      }
+      if (data.complete === true && !['takeover', 'no_legacy_data'].includes(String(data.migrationChoice))) {
+        throw new Error('Bitte Datenübernahme starten oder „Keine Altdaten“ auswählen.');
+      }
+      state.workspaceSetup = {
+        ...state.workspaceSetup,
+        ...(data.currentStep !== undefined ? { currentStep: data.currentStep } : {}),
+        ...(data.migrationChoice !== undefined ? { migrationChoice: data.migrationChoice } : {}),
+        ...(data.complete === true ? { currentStep: 5, completedAt: state.workspaceSetup.completedAt || isoDate(), setupRequired: false } : {}),
+        updatedAt: isoDate(),
+      };
+    }
+    saveState(state);
+    return state.workspaceSetup as unknown as T;
+  }
 
   if (resource === 'invoices' && parts[2] === 'payments' && id && method === 'POST') {
     const invoice = state.invoices.find(item => item.id === id && item.documentType !== 'credit_note');

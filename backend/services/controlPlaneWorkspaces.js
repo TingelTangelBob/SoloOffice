@@ -84,6 +84,7 @@ async function seedWorkspaceDefaults(client, { workspaceId, workspaceName, owner
       INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id, invoice_start_number, workspace_id)
       VALUES ($1, '', '', '', 'Deutschland', '', $2, '', 1, $3)
     `, [workspaceName, ownerEmail, workspaceId]);
+    await client.query('INSERT INTO workspace_setup (workspace_id) VALUES ($1)', [workspaceId]);
     await client.query(`
       INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
       VALUES ('Standard', 'Normale Arbeitszeit', 75, 19, TRUE)
