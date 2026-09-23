@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRightLeft, CalendarCheck, CheckCircle2, Download, FileText, History, Loader2, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowRightLeft, ArrowUp, CalendarCheck, CheckCircle2, Download, FileText, History, Loader2, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
@@ -8,9 +8,11 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useQuotes } from '../context/QuoteContext';
 import { apiService } from '../services/api';
-import type { ImportResource, ImportRun, TakeoverStatus } from '../types';
-import { buildImportTemplate, detectImportResources, getImportDefinition, parseImportFile, type ImportResourceCandidate, type ParsedImportFile } from '../utils/importParser';
+import type { EuerEntry, ImportResource, ImportRun, TakeoverStatus } from '../types';
+import { buildImportTemplate, detectImportResources, getImportDefinition, parseImportFile, analyseHeaderMapping, type ImportResourceCandidate, type ParsedImportFile } from '../utils/importParser';
 import { getTerminology } from '../utils/terminology';
+import { isValidTakeoverOrder, planTakeoverDependencies } from '../../backend/utils/takeoverDependencies.js';
+import type { TakeoverDependencyNode } from '../../backend/utils/takeoverDependencies.js';
 import { DialogShell } from './DialogShell';
 import { ImportResultTable, ImportWizard } from './ImportWizard';
 import { LocalizedDateInput } from './LocalizedDateInput';
@@ -61,10 +63,10 @@ function formatDateTime(value?: string | null): string {
 export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const { can } = useAuth();
   const { company, setCompany, setHourlyRates, setMaterialTemplates } = useCompany();
-  const { refreshCustomers } = useCustomers();
-  const { refreshInvoices } = useInvoices();
-  const { refreshJobEntries } = useJobs();
-  const { refreshQuotes } = useQuotes();
+  const { customers, refreshCustomers } = useCustomers();
+  const { invoices, refreshInvoices } = useInvoices();
+  const { jobEntries, refreshJobEntries } = useJobs();
+  const { quotes, refreshQuotes } = useQuotes();
   const { confirm, notify } = useFeedback();
   const terminology = getTerminology(company.terminologyProfile);
   const canWrite = can('data.write');
@@ -83,6 +85,10 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [scannedFile, setScannedFile] = useState<File | null>(null);
   const [scanResult, setScanResult] = useState<ParsedImportFile | null>(null);
   const [scanCandidates, setScanCandidates] = useState<ImportResourceCandidate[]>([]);
+  const [scannedEuerEntries, setScannedEuerEntries] = useState<EuerEntry[]>([]);
+  const [skippedCategories, setSkippedCategories] = useState<ImportResource[]>([]);
+  const [dependencyOrder, setDependencyOrder] = useState<string[]>([]);
+  const [editedCustomerNames, setEditedCustomerNames] = useState<Record<string, string>>({});
   const [manualScanResource, setManualScanResource] = useState<ImportResource | ''>('');
   const [protocolRun, setProtocolRun] = useState<ImportRun | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -122,7 +128,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     {
       id: 'customers',
       title: terminology.entity.plural,
-      description: `Stammdaten zuerst: Namen, Adressen und Nummern. Später importierte Zeilen werden den ${terminology.entity.plural} darüber zugeordnet.`,
+      description: `Namen, Adressen und Nummern für die Zuordnung in anderen Kategorien.`,
       resources: [{ resource: 'customers', label: terminology.entity.plural }],
     },
     {
@@ -296,6 +302,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     setScannedFile(null);
     setScanResult(null);
     setScanCandidates([]);
+    setScannedEuerEntries([]);
     try {
       const parsed = await parseImportFile(file, { sheet });
       if (parsed.rows.length > 5000) throw new Error('Für den Scan sind höchstens 5.000 Datenzeilen zulässig. Bitte teilen Sie die Datei auf.');
@@ -312,14 +319,23 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         sheet: parsed.sheet,
       });
       if (!validation.accepted) throw new Error('Die Datei konnte serverseitig nicht geprüft werden.');
+      const candidates = detectImportResources(parsed);
+      const euerEntries = candidates.some(candidate => ['invoicePayments', 'euerEntries'].includes(candidate.resource))
+        ? await apiService.getEuerEntries()
+        : [];
       setScannedFile(file);
       setScanResult(parsed);
-      setScanCandidates(detectImportResources(parsed));
+      setScanCandidates(candidates);
+      setScannedEuerEntries(euerEntries);
+      setSkippedCategories([]);
+      setDependencyOrder([]);
+      setEditedCustomerNames({});
       setManualScanResource('');
     } catch (error) {
       setScannedFile(null);
       setScanResult(null);
       setScanCandidates([]);
+      setScannedEuerEntries([]);
       setScanError(error instanceof Error ? error.message : 'Die Datei konnte nicht geprüft werden.');
     } finally {
       setScanBusy(false);
@@ -331,6 +347,48 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     setWizardSourceFile(scannedFile);
     setWizardSheet(scanResult?.sheet);
     setWizardResource(resource);
+  };
+
+  const dependencyPlan = useMemo(() => {
+    if (!scanResult || !scanCandidates.length) return null;
+    const categories = scanCandidates.map(candidate => {
+      const definition = getImportDefinition(candidate.resource);
+      const mapping = analyseHeaderMapping(scanResult.headers, definition).mapping;
+      const rows = scanResult.rows.map((sourceRow, index) => {
+        const mapped: Record<string, string | number> = { _rowNumber: scanResult.rowNumbers?.[index] ?? index + 2 };
+        for (const [field, header] of Object.entries(mapping)) {
+          if (sourceRow[header] !== undefined) mapped[field] = sourceRow[header];
+        }
+        return mapped;
+      });
+      return { resource: candidate.resource, label: candidate.label, rows };
+    });
+    return planTakeoverDependencies(categories, {
+      entityLabel: terminology.entity.singular,
+      workLabel: terminology.work.singular,
+      customers: customers as unknown as Array<Record<string, unknown>>,
+      invoices: invoices as unknown as Array<Record<string, unknown>>,
+      euerEntries: scannedEuerEntries as unknown as Array<Record<string, unknown>>,
+      jobs: jobEntries as unknown as Array<Record<string, unknown>>,
+      quotes: quotes as unknown as Array<Record<string, unknown>>,
+    }, skippedCategories);
+  }, [customers, invoices, jobEntries, quotes, scanCandidates, scanResult, scannedEuerEntries, skippedCategories, terminology]);
+
+  const dependencyNodes = useMemo(() => {
+    if (!dependencyPlan) return [];
+    const order = dependencyOrder.length && isValidTakeoverOrder(dependencyPlan.nodes, dependencyOrder)
+      ? dependencyOrder
+      : dependencyPlan.nodes.map(node => node.id);
+    return [...dependencyPlan.nodes].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  }, [dependencyOrder, dependencyPlan]);
+
+  const moveDependency = (nodeId: string, offset: -1 | 1) => {
+    const current = dependencyNodes.map(node => node.id);
+    const from = current.indexOf(nodeId);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= current.length) return;
+    [current[from], current[to]] = [current[to], current[from]];
+    if (dependencyPlan && isValidTakeoverOrder(dependencyPlan.nodes, current)) setDependencyOrder(current);
   };
 
   const allUnclearColumns = scanResult
@@ -412,6 +470,51 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
               </li>)}
             </ul>}
           </div>
+          {dependencyPlan && <section className="rounded-lg border border-gray-200 bg-gray-50 p-3" aria-labelledby="takeover-dependencies-title">
+            <h3 id="takeover-dependencies-title" className="font-semibold text-gray-900">Abhängigkeiten und Vorschlagsreihenfolge</h3>
+            <p className="mt-1 text-sm text-gray-600">Die Reihenfolge berücksichtigt den aktuellen Workspace-Bestand. Unabhängige Kategorien können Sie verschieben. Übersprungene oder nicht auflösbare Voraussetzungen werden hier erklärt; der Scan legt nichts an.</p>
+            <ol className="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
+              {dependencyNodes.map((node, index) => {
+                const prerequisiteLabels = node.dependencies.map(dependency => dependencyNodes.find(item => item.id === dependency)?.label || dependency);
+                return <li key={node.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500">{index + 1}.</span>
+                      <span className="font-medium text-gray-900">{node.label}</span>
+                      {node.skipped && <span className="text-xs font-medium text-gray-600">Übersprungen</span>}
+                      {node.dependencies.length > 0 && <span className="text-xs text-gray-600">Voraussetzung: {prerequisiteLabels.join(', ')}</span>}
+                    </div>
+                    {node.blockedReason && <p className="mt-1 text-sm text-red-800">Blockiert: {node.blockedReason}</p>}
+                    {node.id === 'suggestedCustomers' && <p className="mt-1 text-sm text-gray-600">Nur Personen mit einem nicht bereits auflösbaren Kundenbezug aus den Folgedaten sind enthalten.</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    {!node.synthetic && <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input type="checkbox" checked={node.skipped} onChange={event => setSkippedCategories(current => event.target.checked
+                        ? [...new Set([...current, node.resource])]
+                        : current.filter(resource => resource !== node.resource))} />
+                      Kategorie überspringen
+                    </label>}
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => moveDependency(node.id, -1)} disabled={index === 0} aria-label={`${node.label} nach oben verschieben`} className="rounded border border-gray-300 p-2 text-gray-700 disabled:opacity-40"><ArrowUp className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => moveDependency(node.id, 1)} disabled={index === dependencyNodes.length - 1} aria-label={`${node.label} nach unten verschieben`} className="rounded border border-gray-300 p-2 text-gray-700 disabled:opacity-40"><ArrowDown className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                </li>;
+              })}
+            </ol>
+            {dependencyPlan.proposedCustomers.length > 0 && <div className="mt-4 border-t border-gray-200 pt-3">
+              <h4 className="font-medium text-gray-900">Kunden aus Folgedaten prüfen</h4>
+              <p className="mt-1 text-sm text-gray-600">Diese deduplizierten Vorschläge stammen aus Aufträgen, Angeboten, Rechnungen oder Einnahmen. Namen können vor einer späteren Übernahme angepasst werden.</p>
+              <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                {dependencyPlan.proposedCustomers.map(customer => <li key={customer.key} className="rounded-lg border border-gray-200 bg-white p-3">
+                  <label className="block text-sm font-medium text-gray-700">Name
+                    <input type="text" value={editedCustomerNames[customer.key] ?? customer.name} onChange={event => setEditedCustomerNames(current => ({ ...current, [customer.key]: event.target.value }))} className="form-input mt-1 block w-full" />
+                  </label>
+                  <p className="mt-1 text-xs text-gray-500">Quelle: {customer.sources.map(source => getImportDefinition(source as ImportResource).label).join(', ')} · Zeilen {customer.rowNumbers.join(', ')}</p>
+                </li>)}
+              </ul>
+            </div>}
+          </section>}
           <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-end">
             <label className="text-sm font-medium text-gray-700">Andere Kategorie nach Scan manuell prüfen
               <select value={manualScanResource} onChange={event => setManualScanResource(event.target.value as ImportResource | '')} className="form-input mt-1 block w-full sm:w-72">
@@ -455,14 +558,13 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       </section>
 
       <section aria-labelledby="import-steps-title">
-        <h2 id="import-steps-title" className="mb-3 text-lg font-semibold text-gray-900">Vorlagen je Einzelkategorie</h2>
+        <h2 id="import-steps-title" className="mb-3 text-lg font-semibold text-gray-900">Vorlagen und Kategorien</h2>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {steps.map((step, index) => {
+          {[...steps].sort((a, b) => a.title.localeCompare(b.title, 'de')).map(step => {
             const imported = step.resources.reduce((sum, item) => sum + importedCount(item.resource), 0);
             return (
               <article key={step.id} className="flex flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-custom text-sm font-semibold text-white">{index + 1}</span>
                   <div className="min-w-0">
                     <h3 className="font-semibold text-gray-900">{step.title}</h3>
                     <p className="mt-1 text-sm text-gray-600">{step.description}</p>
