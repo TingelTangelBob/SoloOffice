@@ -86,6 +86,21 @@ export interface ImportMappingAnalysis {
   warnings: string[];
 }
 
+export interface ImportResourceCandidate {
+  resource: ImportResource;
+  label: string;
+  confidence: 'high' | 'medium' | 'low';
+  score: number;
+  reason: string;
+  matchedColumns: string[];
+  matchedRowCount: number;
+  matchedRowNumbers: number[];
+  unclearColumns: string[];
+  /** Warnung, wenn dieselben Quellzeilen auch zu einer anderen Kategorie passen. */
+  overlaps: ImportResource[];
+  overlapRows: Partial<Record<ImportResource, number[]>>;
+}
+
 const entryTypeOptions: ImportFieldOption[] = [
   { value: 'income', label: 'Einnahme' },
   { value: 'expense', label: 'Ausgabe' },
@@ -633,6 +648,64 @@ export function analyseHeaderMapping(headers: string[], definition: ImportDefini
 
 export function autoMapHeaders(headers: string[], definition: ImportDefinition): Record<string, string> {
   return analyseHeaderMapping(headers, definition).mapping;
+}
+
+/** Deterministische Ressourcenvorschläge aus bestehenden Feldaliasen und Zeilenwerten. */
+export function detectImportResources(parsed: ParsedImportFile): ImportResourceCandidate[] {
+  const candidates = (Object.keys(importDefinitions) as ImportResource[]).map(resource => {
+    const definition = getImportDefinition(resource);
+    const analysis = analyseHeaderMapping(parsed.headers, definition);
+    const matches = Object.entries(analysis.mapping).map(([key, header]) => ({
+      key, header, field: definition.fields.find(field => field.key === key)!,
+    }));
+    const matchedColumns = [...new Set(matches.map(match => match.header))];
+    const unclearColumns = parsed.headers.filter(header => !matchedColumns.includes(header));
+    const linkedDateHeader = analysis.mapping.entryDate || '';
+    const invoiceReferenceHeader = analysis.mapping.invoiceNumber || '';
+    const paymentLinkedRow = (row: Record<string, ImportCellValue>) => resource === 'euerEntries'
+      && Boolean(invoiceReferenceHeader && linkedDateHeader && /zahlung|payment/i.test(linkedDateHeader)
+        && String(row[invoiceReferenceHeader] ?? '').trim() && String(row[linkedDateHeader] ?? '').trim());
+    const eligibleRows = parsed.rows.filter(row => !paymentLinkedRow(row));
+    const excludedPaymentRows = parsed.rows.length - eligibleRows.length;
+    const requiredGroups = definition.requiredGroups || [];
+    const requiredGroupHit = requiredGroups.length === 0 || requiredGroups.some(group => group.fields.some(key => analysis.mapping[key]));
+    const rowEvidence = matches.filter(({ key }) => /date|amount|price|number|name|description|email|category|type|status|quantity|invoice|customer|title|rate|unit|address|city/i.test(key));
+    const coherentRowIndexes = parsed.rows.map((row, index) => ({ row, index })).filter(({ row }) => !paymentLinkedRow(row) && rowEvidence.filter(({ header }) => String(row[header] ?? '').trim() !== '').length >= Math.min(2, Math.max(1, rowEvidence.length))).map(({ index }) => index);
+    const coherentRows = coherentRowIndexes.map(index => parsed.rows[index]).filter(Boolean);
+    const eligiblePopulation = eligibleRows.filter(row => Object.values(row).some(value => String(value ?? '').trim() !== ''));
+    const coverage = eligiblePopulation.length ? coherentRows.length / eligiblePopulation.length : 0;
+    const typedFields = matches.filter(({ field }) => field.type === 'date' || field.type === 'number' || field.type === 'time');
+    const typedAnalysis = typedFields.map(({ header, field }) => analyseColumnFormat(parsed, header, field.type)).filter((format): format is ColumnFormat => Boolean(format));
+    const typedTotal = typedAnalysis.reduce((sum, format) => sum + format.total, 0);
+    const typedInvalid = typedAnalysis.reduce((sum, format) => sum + format.invalid, 0);
+    const typedQuality = typedTotal ? (typedTotal - typedInvalid) / typedTotal : 1;
+    let score = Math.min(60, matchedColumns.length * 18) + Math.round(coverage * 25) + (requiredGroupHit ? 15 : 0)
+      + (typedTotal ? Math.round(typedQuality * 10) - Math.round((1 - typedQuality) * 20) : 0);
+    let reason = matchedColumns.length
+      ? `${matchedColumns.length} passende Spalten aus den Felddefinitionen; ${Math.round(coverage * 100)} % der relevanten Datenzeilen enthalten dazu passende Werte${typedTotal ? `, ${Math.round(typedQuality * 100)} % der Datums- und Zahlenwerte sind lesbar` : ''}${excludedPaymentRows ? ` ${excludedPaymentRows} mit Rechnungsbezug und Zahlungsdatum verknüpfte Zeilen sind hier ausgeschlossen.` : ''}.`
+      : 'Keine passende Spaltenstruktur erkannt.';
+
+    const accepted = matchedColumns.length >= 2 && requiredGroupHit && coverage >= 0.35 && score >= 45;
+    return {
+      resource, label: definition.label, confidence: score >= 75 ? 'high' as const : score >= 58 ? 'medium' as const : 'low' as const,
+      score, reason, matchedColumns, unclearColumns, accepted,
+      matchedRowCount: coherentRowIndexes.length,
+      matchedRowNumbers: coherentRowIndexes.map(index => parsed.rowNumbers?.[index] ?? index + 2),
+    };
+  }).filter(candidate => candidate.accepted).sort((a, b) => b.score - a.score || (a.resource < b.resource ? -1 : a.resource > b.resource ? 1 : 0));
+
+  const moneyResources = new Set<ImportResource>(['euerEntries', 'invoicePayments', 'invoices']);
+  return candidates.map(candidate => {
+    const overlapRows: Partial<Record<ImportResource, number[]>> = {};
+    const overlaps = candidates.filter(other => other.resource !== candidate.resource).map(other => {
+        const sharedRows = candidate.matchedRowNumbers.filter(rowNumber => other.matchedRowNumbers.includes(rowNumber));
+        const sharedColumns = candidate.matchedColumns.filter(header => other.matchedColumns.includes(header)).length;
+        const relevant = sharedRows.length > 0 && (sharedColumns >= 2 || (moneyResources.has(candidate.resource) && moneyResources.has(other.resource) && sharedColumns > 0));
+        overlapRows[other.resource] = sharedRows;
+        return relevant ? other.resource : null;
+      }).filter((resource): resource is ImportResource => Boolean(resource));
+    return { ...candidate, overlaps, overlapRows };
+  });
 }
 
 // ---------------------------------------------------------------------------

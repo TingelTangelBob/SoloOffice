@@ -499,6 +499,32 @@ export interface TakeoverStatus {
   demoMode?: true;
 }
 
+export interface TakeoverScanPayload {
+  fileName: string;
+  format: 'csv' | 'tsv' | 'json' | 'xlsx';
+  fileSize: number;
+  hash: string;
+  headers: string[];
+  rows: Array<Record<string, string | number>>;
+  rowNumbers?: number[];
+  warnings: string[];
+  sheets?: string[];
+  sheet?: string;
+}
+
+export interface TakeoverScanResult {
+  accepted: true;
+  fileName: string;
+  format: TakeoverScanPayload['format'];
+  fileSize: number;
+  hash: string;
+  sheet: string | null;
+  headerCount: number;
+  rowCount: number;
+  warnings: string[];
+  demoMode?: true;
+}
+
 // ============================================================================
 // Template Types
 // ============================================================================

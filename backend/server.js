@@ -119,6 +119,8 @@ app.use('/api/email', express.json({ limit: '100mb' }));
 app.use('/api/backup', express.json({ limit: '50mb' }));
 // Importe übertragen bis zu 5.000 Zeilen bzw. ein Originaldokument bis 10 MB (Base64).
 app.use('/api/imports', express.json({ limit: '25mb' }));
+// Der Datei-Scan überträgt nur normalisierte Tabelleninhalte; Rohdateien werden nicht angenommen.
+app.use('/api/takeover', express.json({ limit: '15mb' }));
 app.use('/api', express.json({ limit: '2mb' }));
 app.use('/api', express.urlencoded({ limit: '2mb', extended: true }));
 

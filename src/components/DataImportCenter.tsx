@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, CalendarCheck, CheckCircle2, Download, FileText, History, Loader2, RotateCcw, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRightLeft, CalendarCheck, CheckCircle2, Download, FileText, History, Loader2, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
@@ -9,7 +9,7 @@ import { useJobs } from '../context/JobContext';
 import { useQuotes } from '../context/QuoteContext';
 import { apiService } from '../services/api';
 import type { ImportResource, ImportRun, TakeoverStatus } from '../types';
-import { buildImportTemplate, getImportDefinition } from '../utils/importParser';
+import { buildImportTemplate, detectImportResources, getImportDefinition, parseImportFile, type ImportResourceCandidate, type ParsedImportFile } from '../utils/importParser';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { ImportResultTable, ImportWizard } from './ImportWizard';
@@ -75,6 +75,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [cutoverDate, setCutoverDate] = useState('');
   const [savedCutoverDate, setSavedCutoverDate] = useState('');
   const [wizardResource, setWizardResource] = useState<ImportResource | null>(null);
+  const [wizardSourceFile, setWizardSourceFile] = useState<File | null>(null);
+  const [wizardSheet, setWizardSheet] = useState<string | undefined>(undefined);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [scannedFile, setScannedFile] = useState<File | null>(null);
+  const [scanResult, setScanResult] = useState<ParsedImportFile | null>(null);
+  const [scanCandidates, setScanCandidates] = useState<ImportResourceCandidate[]>([]);
+  const [manualScanResource, setManualScanResource] = useState<ImportResource | ''>('');
   const [protocolRun, setProtocolRun] = useState<ImportRun | null>(null);
   const [loadError, setLoadError] = useState('');
   const [takeover, setTakeover] = useState<TakeoverStatus | null>(null);
@@ -281,6 +290,54 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     downloadCsvText(`Vorlage-${label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-')}.csv`, buildImportTemplate(getImportDefinition(resource)));
   };
 
+  const scanFile = async (file: File, sheet?: string) => {
+    setScanBusy(true);
+    setScanError('');
+    setScannedFile(null);
+    setScanResult(null);
+    setScanCandidates([]);
+    try {
+      const parsed = await parseImportFile(file, { sheet });
+      if (parsed.rows.length > 5000) throw new Error('Für den Scan sind höchstens 5.000 Datenzeilen zulässig. Bitte teilen Sie die Datei auf.');
+      const validation = await apiService.scanTakeoverFile({
+        fileName: parsed.fileName,
+        format: parsed.format,
+        fileSize: file.size,
+        hash: parsed.hash || '',
+        headers: parsed.headers,
+        rows: parsed.rows,
+        rowNumbers: parsed.rowNumbers,
+        warnings: parsed.warnings,
+        sheets: parsed.sheets,
+        sheet: parsed.sheet,
+      });
+      if (!validation.accepted) throw new Error('Die Datei konnte serverseitig nicht geprüft werden.');
+      setScannedFile(file);
+      setScanResult(parsed);
+      setScanCandidates(detectImportResources(parsed));
+      setManualScanResource('');
+    } catch (error) {
+      setScannedFile(null);
+      setScanResult(null);
+      setScanCandidates([]);
+      setScanError(error instanceof Error ? error.message : 'Die Datei konnte nicht geprüft werden.');
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
+  const openCandidate = (resource: ImportResource) => {
+    if (!scannedFile) return;
+    setWizardSourceFile(scannedFile);
+    setWizardSheet(scanResult?.sheet);
+    setWizardResource(resource);
+  };
+
+  const allUnclearColumns = scanResult
+    ? scanResult.headers.filter(header => !scanCandidates.some(candidate => candidate.matchedColumns.includes(header)))
+    : [];
+  const canImportResource = (resource: ImportResource) => canWrite && (!steps.find(step => step.resources.some(item => item.resource === resource))?.adminOnly || canAdmin);
+
   return (
     <div className="page-root space-y-6">
       <PageHeader icon={ArrowRightLeft} title="Datenübernahme" subtitle="Daten aus Excel oder einem anderen Programm übernehmen">
@@ -314,11 +371,65 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         </div>
       </section>}
 
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="takeover-scan-title">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 id="takeover-scan-title" className="text-lg font-semibold text-gray-900">1. Datei prüfen</h2>
+            <p className="mt-1 text-sm text-gray-600">Die Datei wird lokal gelesen und serverseitig als normalisierte Tabelle geprüft. Der Scan schreibt keine Fachdaten.</p>
+          </div>
+          <button type="button" onClick={() => scanInputRef.current?.click()} disabled={scanBusy} className="btn-primary inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium disabled:opacity-50">
+            {scanBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}{scanBusy ? 'Datei wird geprüft …' : scannedFile ? 'Andere Datei prüfen' : 'Datei auswählen und prüfen'}
+          </button>
+          <input ref={scanInputRef} className="sr-only" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls,.ods,.numbers" onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            if (file) void scanFile(file);
+          }} />
+        </div>
+        {scanError && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{scanError}</p>}
+        {scanResult && scannedFile && <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
+          <div className="grid gap-2 text-sm text-gray-700 sm:grid-cols-2 lg:grid-cols-4">
+            <p><span className="font-medium">Datei:</span> <span className="break-all">{scanResult.fileName}</span></p>
+            <p><span className="font-medium">Typ / Größe:</span> {scanResult.format.toUpperCase()} · {(scannedFile.size / 1024).toLocaleString('de-DE', { maximumFractionDigits: 0 })} KB</p>
+            <p><span className="font-medium">Blatt:</span> {scanResult.sheet || '–'}{scanResult.sheets && scanResult.sheets.length > 1 && <select aria-label="Tabellenblatt auswählen" value={scanResult.sheet} onChange={event => void scanFile(scannedFile, event.target.value)} className="form-input ml-2 max-w-full py-1 text-sm">{scanResult.sheets.map(name => <option key={name} value={name}>{name}</option>)}</select>}</p>
+            <p><span className="font-medium">Analyse:</span> {scanResult.headers.length} Spalten · {scanResult.rows.length.toLocaleString('de-DE')} Zeilen</p>
+          </div>
+          <p className="break-all text-xs text-gray-500"><span className="font-medium">SHA-256:</span> {scanResult.hash || 'nicht verfügbar'}</p>
+          {scanResult.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-medium">Hinweise zur Datei</p><ul className="mt-1 list-disc pl-5">{scanResult.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}
+          <div>
+            <h3 className="font-semibold text-gray-900">Erkannte Kategorien</h3>
+            {scanCandidates.length === 0 ? <p className="mt-2 text-sm text-gray-600">Es wurde keine Kategorie sicher genug erkannt. Bitte prüfen Sie Kopfzeile und Spalten manuell; es wird nichts automatisch zugeordnet.</p> : <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200">
+              {scanCandidates.map(candidate => <li key={candidate.resource} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2"><h4 className="font-medium text-gray-900">{candidate.label}</h4><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{candidate.confidence === 'high' ? 'Hohe' : candidate.confidence === 'medium' ? 'Mittlere' : 'Niedrige'} Konfidenz · {candidate.score} %</span></div>
+                  <p className="mt-1 text-sm text-gray-600">{candidate.reason}</p>
+                  <p className="mt-1 text-xs text-gray-500">Zeilen mit passenden Werten: {candidate.matchedRowCount.toLocaleString('de-DE')} von {scanResult.rows.length.toLocaleString('de-DE')}{candidate.matchedRowNumbers.length > 0 ? ` · z. B. ${candidate.matchedRowNumbers.slice(0, 8).join(', ')}` : ''}</p>
+                  <p className="mt-1 text-xs text-gray-500">Passende Spalten: {candidate.matchedColumns.join(', ') || 'keine'}</p>
+                  {candidate.unclearColumns.length > 0 && <p className="mt-1 text-xs text-amber-800">In dieser Kategorie unklar: {candidate.unclearColumns.join(', ')}</p>}
+                  {candidate.overlaps.length > 0 && <p className="mt-1 text-sm text-amber-800">Überschneidung prüfen: {candidate.overlaps.map(resource => `${getImportDefinition(resource).label}${candidate.overlapRows[resource]?.length ? ` (Zeile${candidate.overlapRows[resource]!.length === 1 ? '' : 'n'} ${candidate.overlapRows[resource]!.slice(0, 8).join(', ')})` : ''}`).join('; ')}. {['euerEntries', 'invoicePayments', 'invoices'].includes(candidate.resource) ? 'Geldzeilen werden nicht automatisch doppelt vorgeschlagen.' : 'Bitte prüfen Sie, welche Zuordnung zu den gemeinsamen Zeilen passt.'}</p>}
+                </div>
+                <button type="button" onClick={() => openCandidate(candidate.resource)} disabled={!canImportResource(candidate.resource)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">Zuordnung prüfen</button>
+              </li>)}
+            </ul>}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-end">
+            <label className="text-sm font-medium text-gray-700">Andere Kategorie nach Scan manuell prüfen
+              <select value={manualScanResource} onChange={event => setManualScanResource(event.target.value as ImportResource | '')} className="form-input mt-1 block w-full sm:w-72">
+                <option value="">Kategorie auswählen …</option>
+                {steps.flatMap(step => step.resources).map(item => <option key={item.resource} value={item.resource} disabled={!canImportResource(item.resource)}>{item.label}{!canImportResource(item.resource) ? ' (keine Berechtigung)' : ''}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => manualScanResource && openCandidate(manualScanResource)} disabled={!manualScanResource || !canImportResource(manualScanResource)} className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">Manuelle Zuordnung öffnen</button>
+          </div>
+          {allUnclearColumns.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-medium">Noch nicht erkannte Spalten</p><p className="mt-1">{allUnclearColumns.join(', ')}</p><p className="mt-1 text-xs">Sie bleiben im Importassistenten sichtbar und müssen dort ausdrücklich zugeordnet oder freigelassen werden.</p></div>}
+        </div>}
+      </section>
+
       <section className="guidance-panel p-5 text-sm leading-6">
         <h2 className="text-base font-semibold text-gray-900">So gelingt der Umzug</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
-          <li>Importieren Sie in der Reihenfolge unten: zuerst {terminology.entity.plural}, dann Rechnungen, dann Geldbewegungen.</li>
-          <li>Jede Datei wird vor dem Speichern geprüft. Die Summenkontrolle zeigt Einnahmen und Ausgaben je Monat zum Abgleich mit Ihrer Tabelle.</li>
+          <li>Prüfen Sie die Datei zuerst und öffnen Sie danach jede erkannte Kategorie einzeln zur Feldzuordnung.</li>
+          <li>Die Summenkontrolle zeigt Einnahmen und Ausgaben je Monat zum Abgleich mit Ihrer Tabelle.</li>
           <li>Bis Sie den Umzug abschließen, lässt sich jeder Import vollständig rückgängig machen.</li>
         </ol>
       </section>
@@ -344,10 +455,9 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       </section>
 
       <section aria-labelledby="import-steps-title">
-        <h2 id="import-steps-title" className="mb-3 text-lg font-semibold text-gray-900">Daten übernehmen</h2>
+        <h2 id="import-steps-title" className="mb-3 text-lg font-semibold text-gray-900">Vorlagen je Einzelkategorie</h2>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {steps.map((step, index) => {
-            const disabled = !canWrite || (step.adminOnly && !canAdmin);
             const imported = step.resources.reduce((sum, item) => sum + importedCount(item.resource), 0);
             return (
               <article key={step.id} className="flex flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -363,9 +473,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                   <div className="flex flex-wrap gap-2">
                     {step.resources.map(item => (
                       <div key={item.resource} className="inline-flex overflow-hidden rounded-lg border border-gray-300">
-                        <button type="button" onClick={() => setWizardResource(item.resource)} disabled={disabled} className="inline-flex items-center gap-1.5 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title={disabled ? 'Dafür fehlt die Berechtigung' : `${item.label} importieren`}>
-                          <Upload className="h-4 w-4 text-primary-custom" /> {item.label}
-                        </button>
+                        <span className="bg-white px-3 py-1.5 text-sm text-gray-700">{item.label}</span>
                         <button type="button" onClick={() => templateFor(item.resource, item.label)} className="border-l border-gray-300 bg-white px-2 text-gray-500 hover:bg-gray-50 hover:text-gray-800" aria-label={`Vorlage für ${item.label} herunterladen`} title="Vorlage herunterladen">
                           <Download className="h-4 w-4" />
                         </button>
@@ -435,7 +543,9 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         <ImportWizard
           resource={wizardResource}
           isOpen
-          onClose={() => setWizardResource(null)}
+          initialFile={wizardSourceFile || undefined}
+          initialSheet={wizardSheet}
+          onClose={() => { setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); }}
           onImported={async () => {
             await Promise.all([load(), refreshData(wizardResource)]);
           }}

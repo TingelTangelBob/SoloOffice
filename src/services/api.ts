@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -605,6 +605,10 @@ class ApiService {
 
   async getTakeoverStatus(): Promise<TakeoverStatus> {
     return this.request<TakeoverStatus>('/takeover/status');
+  }
+
+  async scanTakeoverFile(payload: TakeoverScanPayload): Promise<TakeoverScanResult> {
+    return this.request<TakeoverScanResult>('/takeover/scan', { method: 'POST', body: JSON.stringify(payload) });
   }
 
   async startTakeover(): Promise<TakeoverStatus> {

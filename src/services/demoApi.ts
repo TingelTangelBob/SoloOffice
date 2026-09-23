@@ -1526,6 +1526,23 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'takeover') {
     let session = readDemoTakeover(state);
+    if (parts[1] === 'scan' && method === 'POST') {
+      const headers = data.headers;
+      const rows = data.rows;
+      const sheets = data.sheets;
+      if (!['csv', 'tsv', 'json', 'xlsx'].includes(String(data.format))) throw new Error('Dateiname oder Dateiformat ist ungültig.');
+      if (!Number.isInteger(data.fileSize) || Number(data.fileSize) < 1 || Number(data.fileSize) > 10 * 1024 * 1024) throw new Error('Die Importdatei darf höchstens 10 MB groß sein.');
+      if (!Array.isArray(headers) || headers.length < 1 || headers.length > 100 || new Set(headers).size !== headers.length || headers.some(header => typeof header !== 'string' || !header.trim() || header.length > 500)
+        || !Array.isArray(rows) || rows.length < 1 || rows.length > 5000
+        || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).length !== headers.length || headers.some(header => !Object.hasOwn(row, header) || (typeof row[header] !== 'string' && typeof row[header] !== 'number') || String(row[header]).length > 100000))) {
+        throw new Error('Die normalisierte Datei hat eine ungültige Tabellenstruktur.');
+      }
+      if (data.format === 'xlsx' && (!Array.isArray(sheets) || !sheets.includes(data.sheet))) throw new Error('Das ausgewählte Tabellenblatt ist unbekannt oder ungültig.');
+      if (data.format !== 'xlsx' && (data.sheet != null || (sheets != null && (!Array.isArray(sheets) || sheets.length)))) throw new Error('Für dieses Dateiformat ist keine Tabellenblattauswahl zulässig.');
+      if (!/^[a-f0-9]{64}$/i.test(String(data.hash || ''))) throw new Error('Der Datei-Hash ist ungültig.');
+      // Nur eine flüchtige Bestätigung zurückgeben: weder Inhalt noch Hash/Dateiname werden gespeichert.
+      return { accepted: true, fileName: String(data.fileName || ''), format: data.format, fileSize: data.fileSize, hash: String(data.hash).toLowerCase(), sheet: data.sheet || null, headerCount: headers.length, rowCount: rows.length, warnings: Array.isArray(data.warnings) ? data.warnings : [], demoMode: true } as unknown as T;
+    }
     if (parts[1] === 'status' && method === 'GET') {
       return { takeoverUsed: Boolean(session), session, demoMode: true } as unknown as T;
     }

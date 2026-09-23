@@ -33,6 +33,9 @@ interface ImportWizardProps {
   initialConstants?: Record<string, string>;
   /** Abweichender Titel, z. B. „Ausgaben“. */
   title?: string;
+  /** Bereits im Datenübernahme-Scan geprüfte Datei. */
+  initialFile?: File;
+  initialSheet?: string;
 }
 
 type ImportStep = 'file' | 'mapping' | 'preview' | 'result';
@@ -125,7 +128,7 @@ function fileSlug(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title }: ImportWizardProps) {
+export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet }: ImportWizardProps) {
   const { company } = useCompany();
   const baseDefinition = getImportDefinition(resource);
   const terminology = getTerminology(company.terminologyProfile);
@@ -281,6 +284,13 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       setIsBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (isOpen && initialFile) void loadFile(initialFile, initialSheet);
+    // One scan result opens one wizard instance; subsequent file/sheet changes
+    // are handled by the wizard's own controls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile, initialSheet, isOpen]);
 
   const rememberScroll = () => {
     mappingScrollTopRef.current = mappingScrollRef.current?.scrollTop ?? null;
