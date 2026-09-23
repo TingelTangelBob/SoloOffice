@@ -331,7 +331,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
         <div className={`flex flex-shrink-0 items-center justify-between border-b border-gray-200 ${embedded ? 'px-0 py-4' : 'p-6'}`}>
           <div className="flex items-center">
             <Mail className="h-6 w-6 text-primary-custom mr-3" />
-            <h2 id="email-management-title" className="text-lg font-semibold text-gray-900">E-Mail &amp; Backup</h2>
+            <h2 id="email-management-title" className="text-lg font-semibold text-gray-900">E-Mail-Verwaltung</h2>
           </div>
           {onClose && (
             <button
@@ -367,7 +367,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           </div>
         )}
 
-        <div className="theme-tab-group flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-x-0 border-b-0 shadow-none">
+        <div className={`theme-tab-group ${embedded ? '' : 'flex min-h-0 flex-1 flex-col overflow-hidden'} rounded-none border-x-0 border-b-0 shadow-none`}>
           <ThemeTabBar
             className="theme-tab-bar-attached theme-tab-bar-modal email-management-tab-bar flex-shrink-0"
             ariaLabel="E-Mail-Bereiche"
@@ -382,7 +382,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           />
 
         {/* Content */}
-        <div className="theme-tab-panel min-h-0 flex-1 overflow-y-auto p-0">
+        <div className={`theme-tab-panel p-0 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto'}`}>
           {/* Notification Settings Tab */}
           {activeTab === 'notifications' && (
             <div className="p-6">

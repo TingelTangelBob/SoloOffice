@@ -43,6 +43,14 @@ interface PageState {
   jobSeriesId?: string;
 }
 
+const SETTINGS_TABS = ['app', 'general', 'invoices', 'appearance', 'system'] as const;
+type SettingsTab = typeof SETTINGS_TABS[number];
+
+function readSettingsTab(url: URL): SettingsTab {
+  const value = url.searchParams.get('settingsTab');
+  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : 'general';
+}
+
 interface AppContentProps {
   currentPageState: PageState;
   onPageChange: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -167,7 +175,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reminders':
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : undefined} onNavigate={onPageChange} />;
+        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : readSettingsTab(new URL(window.location.href))} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
       case 'workspace':
@@ -221,7 +229,10 @@ function App() {
     const hash = window.location.hash.slice(1); // Remove #
     if (hash) {
       const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
-      return normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
+      const pageState = normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
+      return pageState.page === 'settings' && filter === 'general'
+        ? { ...pageState, filter: 'general' }
+        : pageState;
     }
     return { page: 'dashboard' };
   });
@@ -254,12 +265,25 @@ function App() {
       const hash = window.location.hash.slice(1);
       if (hash) {
         const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
-        setCurrentPageState(normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId));
+        const pageState = normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
+        if (pageState.page === 'settings' && filter === 'general') {
+          setCurrentPageState({ ...pageState, filter: 'general' });
+        } else {
+          setCurrentPageState(pageState);
+        }
       } else {
         setCurrentPageState({ page: 'dashboard' });
       }
+      if (hash.split('/')[0] !== 'settings') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('settingsTab')) {
+          url.searchParams.delete('settingsTab');
+          window.history.replaceState(window.history.state, '', url);
+        }
+      }
     };
 
+    handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);

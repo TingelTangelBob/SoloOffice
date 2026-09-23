@@ -340,7 +340,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
 
   return (
     <div className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="backup-management-title" className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="backup-management-title" className="relative flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center">
             <Database className="mr-3 h-6 w-6 shrink-0 text-primary-custom" />
@@ -521,15 +521,13 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
 
         {/* Restore Confirmation Modal */}
         {showRestoreConfirm && restoreData && (
-          <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-              <div className="p-6">
-                <div className="flex items-center mb-4">
+          <section aria-labelledby="restore-confirm-title" className="absolute inset-0 z-10 flex min-h-0 flex-col bg-white">
+                <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-5 py-4 sm:px-6">
                   <AlertTriangle className="h-6 w-6 text-red-500 mr-3" />
-                  <h3 className="text-lg font-semibold text-gray-900">Backup wiederherstellen</h3>
-                </div>
+                  <h3 id="restore-confirm-title" className="text-lg font-semibold text-gray-900">Backup wiederherstellen</h3>
+                </header>
                 
-                <div className="mb-6">
+                <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
                   <p className="text-gray-700 mb-4">
                     <strong>Achtung:</strong> Diese Aktion überschreibt alle vorhandenen Daten unwiderruflich!
                   </p>
@@ -559,7 +557,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-3">
+                <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-gray-200 p-4 sm:flex-row sm:justify-end sm:px-6">
                   <button
                     onClick={() => {
                       setShowRestoreConfirm(false);
@@ -567,14 +565,14 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                       setSelectedFile(null);
                       setWorkspaceTransfer(false);
                     }}
-                    className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="min-h-11 flex-1 rounded-lg bg-gray-100 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-200 sm:flex-none"
                   >
                     Abbrechen
                   </button>
                   <button
                     onClick={restoreBackup}
                     disabled={isRestoring}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                    className="min-h-11 flex-1 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700 disabled:opacity-50 sm:flex-none"
                   >
                     {isRestoring ? (
                       <RefreshCw className="h-4 w-4 animate-spin" />
@@ -583,10 +581,8 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
                     )}
                     <span>{isRestoring ? 'Wiederherstellen...' : workspaceTransfer ? 'In diesen Workspace übernehmen' : 'Wiederherstellen'}</span>
                   </button>
-                </div>
-              </div>
-            </div>
-          </div>
+                </footer>
+          </section>
         )}
       </div>
     </div>

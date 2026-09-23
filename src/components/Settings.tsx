@@ -25,6 +25,7 @@ type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
 
 interface SettingsProps {
   initialTab?: SettingsTab;
+  settingsTab?: SettingsTab;
   embedded?: boolean;
   onNavigate?: (page: string, filter?: string) => void;
 }
@@ -92,7 +93,7 @@ function TerminologyPreview({ profile, receiptLabel, previewOverride }: { profil
   );
 }
 
-export function Settings({ initialTab = 'app', embedded = false, onNavigate }: SettingsProps) {
+export function Settings({ initialTab = 'app', settingsTab, embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
   const { company, updateCompany } = useCompany();
   const [formData, setFormData] = useState(company);
@@ -104,7 +105,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   const [showBackupManagement, setShowBackupManagement] = useState(false);
   
   
-  const [activeTab, setActiveTab] = useState<SettingsTab>('app');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTab || initialTab);
   const terminologyScrollerRef = useRef<HTMLDivElement>(null);
   const terminologyDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false, pointerId: -1 });
   const [isDraggingTerminology, setIsDraggingTerminology] = useState(false);
@@ -197,8 +198,25 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
   };
 
   useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+    const nextTab = settingsTab || initialTab;
+    setActiveTab(nextTab);
+    if (embedded) return;
+    const url = new URL(window.location.href);
+    if (url.hash.slice(1).split('/')[0] !== 'settings') return;
+    if (url.searchParams.get('settingsTab') !== nextTab) {
+      url.searchParams.set('settingsTab', nextTab);
+      window.history.replaceState(window.history.state, '', url);
+    }
+  }, [initialTab, settingsTab, embedded]);
+
+  const changeSettingsTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (embedded) return;
+    const url = new URL(window.location.href);
+    if (url.hash.slice(1).split('/')[0] !== 'settings') return;
+    url.searchParams.set('settingsTab', tab);
+    window.history.replaceState(window.history.state, '', url);
+  };
 
   const handleResetToDefaults = async () => {
     const confirmed = await confirm({
@@ -404,7 +422,7 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
           className={`${embedded ? 'hidden ' : ''}theme-tab-bar-attached w-full`}
           ariaLabel="Einstellungsbereiche"
           activeTab={activeTab}
-          onChange={setActiveTab}
+          onChange={changeSettingsTab}
           tabs={[
             { id: 'app' as const, label: 'Allgemein' },
             { id: 'general' as const, label: 'Firmendaten' },
@@ -1566,77 +1584,62 @@ export function Settings({ initialTab = 'app', embedded = false, onNavigate }: S
         )}
 
         {activeTab === 'system' && (
-          <div className="space-y-8">
+          <div className="mx-auto w-full max-w-5xl space-y-5">
         {isDemoMode ? (
-          <div className="guidance-panel border-l-4 border-l-green-500 p-4">
-            <div className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-green-700" />
-              <h3 className="font-medium text-green-900">E-Mail-Verwaltung</h3>
+          <section className="settings-section">
+            <div className="mb-3 flex items-center gap-2">
+              <Mail className="h-5 w-5 text-primary-custom" />
+              <h3 className="text-lg font-semibold text-gray-900">E-Mail</h3>
             </div>
-            <p className="mt-2 text-sm text-green-800">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>
-          </div>
+            <p className="text-sm text-gray-600">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>
+          </section>
         ) : (
-          <EmailManagement embedded />
+          <section className="settings-section">
+            <div className="mb-1 flex items-center gap-2">
+              <Mail className="h-5 w-5 text-primary-custom" />
+              <h3 className="text-lg font-semibold text-gray-900">E-Mail</h3>
+            </div>
+            <EmailManagement embedded />
+          </section>
         )}
 
-        {/* Datenübernahme aus Excel oder einem anderen Programm */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <ArrowRightLeft className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Datenübernahme</h3>
+        <section className="settings-section">
+          <div className="mb-3 flex items-center gap-2">
+            <Database className="h-5 w-5 text-primary-custom" />
+            <h3 className="text-lg font-semibold text-gray-900">Sicherung</h3>
           </div>
-          <div className="guidance-panel p-4">
-            <p className="text-sm text-gray-600 mb-4">
-              {terminology.entity.plural}, Rechnungen, Einnahmen und Ausgaben aus Excel, CSV oder einem anderen Programm übernehmen. Jeder Import wird vorab geprüft und kann bis zum Abschluss des Umzugs rückgängig gemacht werden.
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-2xl text-sm text-gray-600">
+              JSON- und ZIP-Sicherungen erstellen, verwalten oder wiederherstellen.
             </p>
             <button
               type="button"
-              onClick={() => onNavigate?.('data-import')}
-              className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors"
+              onClick={() => setShowBackupManagement(true)}
+              disabled={isDemoMode}
+              className="btn-primary inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Sicherungen verwalten
+            </button>
+            {isDemoMode && <span className="text-xs text-gray-500">Im Demo-Modus nicht verfügbar.</span>}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="mb-3 flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5 text-primary-custom" />
+            <h3 className="text-lg font-semibold text-gray-900">Datenübernahme</h3>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-600">Datenübernahme öffnen, um den aktuellen Status einzusehen und fortzufahren.</p>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('data-import')}
+              className="btn-secondary inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-4 py-2"
+            >
               Datenübernahme öffnen
             </button>
           </div>
-        </div>
-
-        {/* Backup und Wiederherstellung */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <Database className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Daten-Backup und Wiederherstellung</h3>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="guidance-panel p-4">
-              <h4 className="font-medium text-gray-900 mb-2">Datensicherung</h4>
-              <p className="text-sm text-gray-600 mb-4">
-                Erstellen Sie regelmäßig Backups Ihrer Daten, um Datenverlust zu vermeiden.
-                Ein Backup enthält {terminology.entity.plural}, Rechnungen, {terminology.work.plural} und Einstellungen; SMTP-Passwörter werden aus Sicherheitsgründen nicht exportiert.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowBackupManagement(true)}
-                disabled={isDemoMode}
-                className="btn-primary inline-flex items-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Database className="h-4 w-4 mr-2" />
-                Backup-Verwaltung öffnen
-              </button>
-              {isDemoMode && <p className="text-xs text-gray-600 mt-2">Im Demo-Modus ist die Backup-Verwaltung deaktiviert.</p>}
-            </div>
-            
-            <div className="guidance-panel border-l-4 border-l-amber-500 p-4">
-              <h4 className="font-medium text-amber-900 mb-2">Wichtige Hinweise</h4>
-              <ul className="text-sm text-amber-800 space-y-1">
-                <li>• Erstellen Sie vor wichtigen Änderungen immer ein Backup</li>
-                <li>• Bewahren Sie Backups an einem sicheren Ort auf</li>
-                <li>• Testen Sie regelmäßig die Wiederherstellung</li>
-                <li>• Backup-Dateien sind im JSON-Format gespeichert</li>
-              </ul>
-            </div>
-          </div>
-        </div>
+        </section>
 
           </div>
         )}
