@@ -8,7 +8,7 @@
 
 SoloOffice ist eine deutschsprachige, selbst hostbare Webanwendung für Rechnungen, Angebote, Aufträge und vorbereitende Buchhaltung. Die Anwendung verbindet Kundenverwaltung, Dokumente, E-Rechnungen, lokale Belegerkennung, EÜR, Auswertungen und Workspace-Verwaltung in einer Oberfläche.
 
-Der aktuelle Stand ist **v0.9.4** (`b6c6bb2`) und ein Beta-/Testrelease. Die
+Der aktuelle Stand ist **v0.9.4** (geprüfte Codebasis `73b1756`) und ein Beta-/Testrelease. Die
 Anwendung ist für Tests und Feedback gedacht und ersetzt keine Steuer-, Rechts-
 oder Datenschutzberatung. Die Versionsnummer folgt SemVer; **1.0.0** wird
 vergeben, sobald das Self-Hosting praktisch nachgewiesen ist — Migrationen,
@@ -270,8 +270,10 @@ alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
 Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md). Die
 Abhängigkeitsstrategie und die aktuellen Audit-Grenzen sind in
 [docs/dependency-security.md](docs/dependency-security.md) dokumentiert.
-Der aktuelle Umfang beträgt 43 Frontend-Tests, 99 Backend-Regressions-Tests
-und 43 PostgreSQL-Integrationstests.
+Am 25.09.2026 wurden 43 Frontend-, 106 Backend- und 36 PostgreSQL-
+Testdeklarationen gezählt; das ist kein Nachweis eines erfolgreichen Testlaufs.
+Der CI-Status der Codebasis `73b1756` konnte bei dieser Prüfung nicht live
+abgerufen werden.
 Laufende Instanzen lassen sich mit `manage-instances.sh verify` ohne Anmeldung
 auf Health, Migrationen, RLS und den exakten Image-Commit prüfen; der gesicherte
 Updatepfad steht in

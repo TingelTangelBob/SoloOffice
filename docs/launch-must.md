@@ -1,8 +1,10 @@
 # Launch-Must-Liste
 
-**Stand:** 2026-09-23
+**Stand:** 2026-09-25
 
-**Quellstand:** `v0.9.4` · Commit `b6c6bb279dcd1c9807f237812c59c57de58135a3`
+**Geprüfte Codebasis:** `v0.9.4` · `73b1756f2794db53cca55128061731b3e93b59dc`
+**Prüfgrenze:** lokaler Quellstand; heutige GitHub-CI und Staging-Laufzeit
+wegen gesperrtem Netzwerkzugriff nicht erneut nachgewiesen.
 **Entscheidung:** Ein öffentlicher Hosted-/SaaS-Launch ist mit diesem Stand nicht
 freigegeben. Ein begrenzter Self-Hosting-Test ist mit den unten genannten
 Einschränkungen möglich.
@@ -17,22 +19,25 @@ angegeben.
 
 ### S-1 Launch-Scope
 
-- **Status:** offen
+- **Status:** teilweise entschieden
 - **Owner:** Steffen
-- **Nachweis / nächster Schritt:** Entscheiden und dokumentieren, ob zunächst
-  eine eingeladene Hosted-Beta oder ein öffentlicher Verkauf startet. Den
-  Self-Hosting-Test davon getrennt benennen. Ohne diese Entscheidung keine
-  Launch-Freigabe.
+- **Nachweis / nächster Schritt:** Die Arbeitsunterlagen vom 15.09.2026
+  dokumentieren die Vorbereitung einer geschlossenen Beta (Variante B) und
+  übernommene Beta-Vertragswerte. Das ist keine Freigabe zum öffentlichen
+  Verkauf. Offen bleibt die ausdrückliche Freigabe des konkreten Startumfangs
+  nach den technischen und rechtlichen Nachweisen.
 
 ### S-2 Control Plane, Preise und Betriebsregeln
 
 - **Status:** offen
 - **Owner:** Steffen
-- **Nachweis / nächster Schritt:** Betreiber, Repository/Commit und
-  Betriebszugang des Control Plane benennen sowie Stripe-Preise,
-  Steuer-/Zahlungskonfiguration und Kulanz-/Sperrregeln freigeben. Der
-  Control-Plane-Dienst liegt außerhalb dieses App-Repositories; der laufende
-  Staging-Dienst ist damit noch kein fachlicher End-to-End-Nachweis.
+- **Nachweis / nächster Schritt:** Der Control Plane liegt als eigenes
+  lokales Repository vor (Auditbasis `5f77421`, kein Remote); ein externes
+  privates Repository benötigt Betreiberfreigabe. Stripe ist als Anbieter
+  bereits gewählt. Die Beta-Unterlagen nennen 14 Tage Kulanz und 30 Tage
+  Lesemodus nach Vertragsende; daraus folgt keine Freigabe der Stripe-Live-
+  Konfiguration, Preise und steuerlichen Einstellungen. Ein laufender Dienst
+  ersetzt den vollständigen E2E-Nachweis nicht.
 
 ### S-3 Recht und Datenverantwortung
 
@@ -70,7 +75,10 @@ angegeben.
 - **Nachweis / nächster Schritt:** Workspace-Export und Workspace-Löschung
   müssen zwischen Control Plane und Fachapp zusammen funktionieren. Dazu
   gehört ein positiver Export sowie ein Löschtest mit korrekter und falscher
-  Bestätigung, ohne andere Workspaces zu berühren. Der vorhandene App-
+  Bestätigung, ohne andere Workspaces zu berühren. Die Fachapp bietet intern
+  derzeit nur Provisionierung, Sperre und Entsperre. Der vorhandene CP-
+  Kontoexport enthält ausgewählte CP-Daten, keine Fachdaten; der gemeinsame
+  Export- und Löschworkflow ist noch nicht implementiert. Der vorhandene App-
   Backup-/Restore-Pfad ersetzt diesen SaaS-Nachweis nicht.
 
 ### T-3 Staging, Migration und Datenübernahme
@@ -107,13 +115,32 @@ angegeben.
   produktionsnah nachweisen. Der aktuelle Stack bietet dafür noch keinen
   vollständigen Betriebsnachweis.
 
+### T-6 Aktuelle CI und reproduzierbarer Build
+
+- **Status:** Nachweis offen (Umgebungsblocker)
+- **Owner:** Tech
+- **Nachweis / nächster Schritt:** CI und Demo-Image müssen für den tatsächlichen
+  Release-Commit erfolgreich sein. Ein historischer grüner Lauf vom 23.09.2026
+  gehört zu `ad0f90e`; danach kamen weitere Änderungen bis `73b1756`.
+  Die Lint-/Typecheck-Fixes `d053153` und `73b1756` sind vorhanden. Der aktuelle
+  GitHub-Lauf war am 25.09. nicht abrufbar. Kein spekulativer CI-Fix und kein
+  Push ohne aktuellen Nachweis.
+
 ## Aktueller technischer Stand
 
-Die Dokumentation und der Staging-Stand sind auf v0.9.4 / `b6c6bb2`
-synchronisiert. Die automatisierten Zählungen betragen 43 Frontend-Tests,
-99 Backend-Regressions-Tests und 43 PostgreSQL-Integrationstests. Der aktuelle
-Teststand ist in [docs/automated-tests.md](automated-tests.md) beschrieben.
+Lokal zeigen `main` und die gespeicherte Referenz `origin/main` auf `73b1756`.
+Ohne Fetch ist das keine Bestätigung des heutigen GitHub-Stands. Der oben
+beschriebene Staging-Nachweis bleibt historisch auf `b6c6bb2` datiert; die
+behauptete heutige Staging-Revision `73b1756` wurde nicht erneut verifiziert.
 
-Diese Nachweise ändern die Entscheidung oben nicht: Control Plane, rechtliche
-Freigaben, fachliche manuelle Abnahme, Export/Löschung und der vollständige
-Produktionsbetrieb sind weiterhin offen.
+Am 25.09.2026 bestanden die statischen Audit-Verträge und die Shell-Syntaxprüfung.
+Die Quellzählung ergibt 43 Frontend-, 106 Backend- und 36 PostgreSQL-
+Testdeklarationen (kein Testlauf). Einzelheiten und Prüfgrenzen stehen in
+[automated-tests.md](automated-tests.md).
+
+Der Control Plane ist vorhanden; ältere Aussagen, er sei im Gesamtworkspace
+nicht verfügbar, sind überholt. Provisionierung und Sperrpfade existieren,
+Telemetrie und Support sind angebunden. Ein älterer Staging-E2E-Nachweis mit
+manuell gesetztem Abo ersetzt weder Stripe-Checkout/Portal/Webhooks noch den
+aktuellen gemeinsamen Export-/Löschnachweis. Rechtliche Freigaben, manuelle
+Abnahme und vollständiger Produktionsbetrieb bleiben offen.

@@ -1,6 +1,6 @@
 # Automatisierte Tests und Qualitätstore
 
-**Stand:** 2026-09-23
+**Stand:** 2026-09-25
 **Status:** im Docker-Build und in GitHub Actions integriert
 
 SoloOffice trennt schnelle Regressionstests, reproduzierbare Image-Builds und
@@ -11,9 +11,9 @@ Mac ist keine lokale Node-/PostgreSQL-Installation erforderlich.
 
 | Stufe | Umfang | Ausführung |
 |---|---|---|
-| Frontend-Fachlogik | 43 Tests für Nummernmuster, Zahlen-/Datumsformate, CSV-Schutz, Wiederholungen, Zahlungen, Kundendubletten und Importdateien (Excel-Arbeitsmappen, Zeichensätze, Spaltenformate, Vorlagen) | bei jedem Frontend-Image-Build |
-| Backend-Regressionssuite | 99 Tests für Auth, Validierung, Restore-Archive, Health, Shutdown, kontrollierten RLS-Neustart, CORS, Request-IDs, Metriken, PDFKit-Ausgabe, Rechnungsnummern und die Importplanung der Datenübernahme | bei jedem Backend-Image-Build |
-| PostgreSQL-Integration | 43 Tests für alle Migrationen, Rollenentmachtung, erzwungene RLS, Trennung zweier Workspaces, parallele Dokumentnummern, Rechnungsintegrität, Control-Plane-Workspaces und die Datenübernahme (Import, übernommene Rechnungen, Rückgängig) | im gemeinsamen GitHub-Qualitätsworkflow |
+| Frontend-Fachlogik | 43 Testdeklarationen für Nummernmuster, Zahlen-/Datumsformate, CSV-Schutz, Wiederholungen, Zahlungen, Kundendubletten und Importdateien (Excel-Arbeitsmappen, Zeichensätze, Spaltenformate, Vorlagen) | bei jedem Frontend-Image-Build |
+| Backend-Regressionssuite | 106 Testdeklarationen für Auth, Validierung, Restore-Archive, Health, Shutdown, kontrollierten RLS-Neustart, CORS, Request-IDs, Metriken, PDFKit-Ausgabe, Rechnungsnummern und die Importplanung der Datenübernahme | bei jedem Backend-Image-Build |
+| PostgreSQL-Integration | 36 Testdeklarationen für alle Migrationen, Rollenentmachtung, erzwungene RLS, Trennung zweier Workspaces, parallele Dokumentnummern, Rechnungsintegrität, Control-Plane-Workspaces und die Datenübernahme (Import, übernommene Rechnungen, Rückgängig) | im gemeinsamen GitHub-Qualitätsworkflow |
 | Statische Audit-Verträge | sicherheits- und fachkritische Quellverträge | vor beiden Image-Builds in GitHub Actions |
 | Abhängigkeits-Audit | vollständiger Frontend-Baum ab hoher Kritikalität sowie produktive Frontend-/Backend-Bäume ab mittlerer Kritikalität | vor beiden Image-Builds in GitHub Actions |
 | Betriebsverträge | Shell-Syntax, Archiv-Commit, OCI-Labels, komplette Compose-Instanz, Healthchecks und geschützte Update-/Prüfpfade | in GitHub Actions und nach jedem Instanzupdate |
@@ -24,9 +24,13 @@ in das ignorierte Verzeichnis `.test-dist` und führt sie anschließend mit
 Logik entspricht trotzdem dem TypeScript-Quellstand.
 
 Die Zahlen entsprechen dem Stand der vorhandenen `test(...)`-Deklarationen am
-23.09.2026: 43 Frontend-, 99 Backend-Unit- und 43
-PostgreSQL-Integrationstests. Sie werden bei Änderungen an den Tests erneut
-gezählt und nicht aus älteren Release-Notizen übernommen.
+25.09.2026 (Codebasis `73b1756`): 43 Frontend-, 106 Backend-Unit- und 36
+PostgreSQL-Testdeklarationen. Gezählt wurden direkte `test(...)`-Aufrufe
+in `test/frontend/*.test.mjs`, `backend/test/*.test.js` und
+`backend/test/integration/*.test.js`. Das sind statische Quellzählungen, keine
+ausgeführten oder bestandenen Tests. Parametrisierte Läufe können abweichen.
+Der aktuelle CI-Status war beim Audit wegen fehlendem Netzwerkzugriff nicht
+prüfbar; Docker ist auf dem Audit-Mac nicht installiert.
 
 ## Docker-Prüfung
 
