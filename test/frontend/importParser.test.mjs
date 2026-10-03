@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   analyseHeaderMapping,
+  detectImportResources,
   getImportDefinition,
   mapImportRows,
   parseImportFile,
@@ -40,6 +41,24 @@ test('Kundenimport ordnet deutsche und englische Spalten automatisch zu', () => 
   assert.equal(result.mapping.postalCode, 'PLZ');
   assert.equal(result.mapping.taxId, 'steuerId');
   assert.equal(result.fields.name.confidence, 'exact');
+  assert.equal(result.fields.name.score, 100, 'Anzeigenwerte bleiben auf 0 bis 100 begrenzt');
+});
+
+test('Ressourcen-Confidence bleibt auf 100 begrenzt und behält das Roh-Ranking', () => {
+  const parsedFile = {
+    fileName: 'unterricht.csv',
+    format: 'csv',
+    headers: ['Datum', 'Schüler', 'Stunden', 'Pro Stunde'],
+    rows: [{ Datum: '15.09.2025', 'Schüler': 'Anna', Stunden: '1', 'Pro Stunde': '25' }],
+    rowNumbers: [2],
+    warnings: [],
+  };
+
+  const candidates = detectImportResources(parsedFile);
+  assert.ok(candidates.length > 0, 'die Nachhilfe-Spalten werden erkannt');
+  assert.ok(candidates.every(candidate => candidate.score >= 0 && candidate.score <= 100));
+  assert.equal(candidates[0].score, 100, 'ein historischer Rohwert von 110 wird als 100 angezeigt');
+  assert.equal(candidates[0].resource, 'euerEntries', 'bei gleichem Anzeige-Score bleibt die fachliche Rangfolge stabil');
 });
 
 test('Mehrdeutige Positionsspalten werden nicht stillschweigend doppelt verwendet', () => {

@@ -2498,6 +2498,40 @@
   }
 }
 
+/* Randnahe Feldhilfen bleiben auf der Seite ihrer Auslöser. */
+.info-tooltip-align-start .info-tooltip-bubble,
+.info-tooltip-align-end .info-tooltip-bubble {
+  width: min(19rem, calc(100vw - 4rem));
+  transform: translateY(0.25rem);
+}
+
+.info-tooltip-align-start .info-tooltip-bubble {
+  left: 0;
+  right: auto;
+}
+
+.info-tooltip-align-end .info-tooltip-bubble {
+  left: auto;
+  right: 0;
+}
+
+.info-tooltip-align-start .info-tooltip-bubble::after {
+  left: 0.75rem;
+}
+
+.info-tooltip-align-end .info-tooltip-bubble::after {
+  left: auto;
+  right: 0.375rem;
+  transform: rotate(45deg);
+}
+
+.info-tooltip-align-start:hover .info-tooltip-bubble,
+.info-tooltip-align-start:focus-within .info-tooltip-bubble,
+.info-tooltip-align-end:hover .info-tooltip-bubble,
+.info-tooltip-align-end:focus-within .info-tooltip-bubble {
+  transform: translateY(0);
+}
+
 @layer components {
   /*
    * Aktionsleiste der Einstellungen.

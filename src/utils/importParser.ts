@@ -532,6 +532,10 @@ interface HeaderCandidate {
   exact: boolean;
 }
 
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
 function scoreHeader(header: string, field: ImportFieldDefinition): number {
   const normalizedHeader = normaliseHeader(header);
   if (!normalizedHeader) return 0;
@@ -615,7 +619,7 @@ export function analyseHeaderMapping(headers: string[], definition: ImportDefini
 
     return [field.key, {
       sourceHeader: selectedHeader,
-      score: selectedCandidate?.score || bestCandidate?.score || 0,
+      score: clampScore(selectedCandidate?.score || bestCandidate?.score || 0),
       confidence,
       alternatives: fieldCandidates
         .map(candidate => candidate.header)
@@ -704,7 +708,8 @@ export function detectImportResources(parsed: ParsedImportFile): ImportResourceC
         overlapRows[other.resource] = sharedRows;
         return relevant ? other.resource : null;
       }).filter((resource): resource is ImportResource => Boolean(resource));
-    return { ...candidate, overlaps, overlapRows };
+    // Erst die Ausgabe begrenzen: Rohwerte unterscheiden auch Kandidaten über 100.
+    return { ...candidate, score: clampScore(candidate.score), overlaps, overlapRows };
   });
 }
 

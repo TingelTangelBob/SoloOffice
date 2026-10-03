@@ -1084,7 +1084,7 @@ router.post('/:resource', async (req, res) => {
     if (takeover) {
       const sessionResult = await client.query(`
         SELECT id, status, legacy_backfill FROM migration_sessions
-        WHERE id = $1 AND workspace_id = ${workspaceCondition}
+        WHERE id = $1 AND ${workspaceCondition}
         FOR UPDATE
       `, [takeover.sessionId]);
       const session = sessionResult.rows[0];
@@ -1095,7 +1095,7 @@ router.post('/:resource', async (req, res) => {
         if (takeover.phase === 'execute' && !session.legacy_backfill) {
           const replayCategory = await client.query(`
             SELECT id, status, idempotency_key FROM migration_categories
-            WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+            WHERE id = $1 AND session_id = $2 AND ${workspaceCondition} AND resource = $3
             FOR UPDATE
           `, [takeover.categoryId, takeover.sessionId, resource]);
           if (replayCategory.rows[0]?.status === 'completed' && replayCategory.rows[0].idempotency_key === takeover.idempotencyKey) {
@@ -1111,7 +1111,7 @@ router.post('/:resource', async (req, res) => {
         const categoryResult = await client.query(`
           SELECT id, status, preview_digest, idempotency_key
           FROM migration_categories
-          WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+          WHERE id = $1 AND session_id = $2 AND ${workspaceCondition} AND resource = $3
           FOR UPDATE
         `, [takeover.categoryId, takeover.sessionId, resource]);
         const category = categoryResult.rows[0];
@@ -1127,7 +1127,7 @@ router.post('/:resource', async (req, res) => {
     } else if (!dryRun) {
       const openTakeover = await client.query(`
         SELECT id FROM migration_sessions
-        WHERE workspace_id = ${workspaceCondition} AND status = 'open' AND legacy_backfill = FALSE
+        WHERE ${workspaceCondition} AND status = 'open' AND legacy_backfill = FALSE
         LIMIT 1
       `);
       if (openTakeover.rows[0]) throw httpError(409, 'Während einer Umzugssitzung müssen Kategorien einzeln anhand ihrer geprüften Vorschau übernommen werden.', 'TAKEOVER_CATEGORY_APPROVAL_REQUIRED');
@@ -1157,7 +1157,7 @@ router.post('/:resource', async (req, res) => {
       if (takeover) {
         const category = await client.query(`
           SELECT id, status, preview_digest FROM migration_categories
-          WHERE id = $1 AND session_id = $2 AND workspace_id = ${workspaceCondition} AND resource = $3
+          WHERE id = $1 AND session_id = $2 AND ${workspaceCondition} AND resource = $3
           FOR UPDATE
         `, [takeover.categoryId, takeover.sessionId, resource]);
         if (!category.rows[0] || category.rows[0].status !== 'open'
