@@ -60,3 +60,10 @@ einem Neubau Sicherheitsupdates, ist aber kein bytegenau reproduzierbarer
 Digest-Pin. Lokale Agenten-Arbeitsordner und macOS-Metadaten sind aus Docker-
 und ESLint-Prüfkontexten ausgeschlossen, damit nicht versionierte Hilfsdateien
 einen ansonsten reproduzierbaren Serverbau nicht verändern.
+
+
+## 2026-10-04 – braces GHSA-vfj7-8cjw-p6xm
+
+Upstream `braces` hat noch keine gepatchte npm-Version (`<=3.0.3`, `first_patched_version: null`).
+Wir pinnen per `overrides` auf `patches/braces-3.0.4-security` (Depth-Guards aus dem offenen Upstream-PR micromatch/braces#75, Version `3.0.4-security.0`).
+Nodemailer wurde auf `^10.0.14` angehoben (High-Advisories).
