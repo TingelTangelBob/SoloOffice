@@ -140,26 +140,33 @@ test('Einrichtungsstatus bleibt je Workspace getrennt und erzwingt RLS', async (
 });
 
 test('parallele Umzugstarts verbrauchen das Workspace-Recht genau einmal', async () => {
+  // Vorherige Sitzungsreste entfernen (Workspace-Claim ist 1:1 auf workspace_id).
+  await inWorkspace(workspaceA, userA, () => query('DELETE FROM migration_sessions WHERE workspace_id = $1', [workspaceA]));
+
   async function tryStart() {
-    return inWorkspace(workspaceA, userA, async () => {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const result = await client.query(`
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Nach BEGIN setzt die Pool-Instrumentierung keinen Kontext (Transaktionskontrolle).
+      // Deshalb hier explizit transaction-local setzen, bevor der Claim geschrieben wird.
+      await client.query(
+        "SELECT set_config('app.workspace_id', $1, true), set_config('app.user_id', $2, true)",
+        [workspaceA, userA],
+      );
+      const result = await client.query(`
           INSERT INTO migration_sessions (workspace_id, started_by)
           VALUES ($1, NULL)
           RETURNING id, status, progress_revision
         `, [workspaceA]);
-        await client.query('COMMIT');
-        return result.rows[0];
-      } catch (error) {
-        await client.query('ROLLBACK');
-        if (error.code === '23505') return null;
-        throw error;
-      } finally {
-        client.release();
-      }
-    });
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* aborted */ }
+      if (error.code === '23505') return null;
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   const starts = await Promise.all([tryStart(), tryStart()]);
