@@ -169,6 +169,19 @@
     scrollbar-gutter: stable;
   }
 
+  /* Drawer und Dialoge sperren den Dokument-Scroll. Scrollbare Inhalte wie
+     Sidebar-Menü und Dialogkörper behalten ihren eigenen Scrollcontainer.
+     Die Sperre folgt der Overlay-Instanz und endet automatisch beim Schließen. */
+  html:has(.dialog-overlay),
+  body:has(.dialog-overlay) {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .dialog-overlay {
+    overscroll-behavior: contain;
+  }
+
   /* Prevent horizontal overflow */
   body {
     overflow-x: hidden;
@@ -1849,11 +1862,24 @@
 
   #app-shell .topbar-icon-button.action-menu-trigger:hover,
   #app-shell .topbar-icon-button.action-menu-trigger-primary:hover,
-  #app-shell .topbar-icon-button.action-menu-trigger[aria-expanded="true"],
   #app-shell .topbar-icon-button.action-menu-trigger-primary[aria-expanded="true"] {
     background-color: var(--surface-sunken) !important;
     color: var(--ink-strong) !important;
     filter: none !important;
+  }
+
+  /* Wie die Suche bleibt die geöffnete Glocke ein Einzel-Icon ohne leere
+     Quadratfläche. Das Popover selbst zeigt den offenen Zustand. */
+  #app-shell .topbar-icon-button.action-menu-trigger[aria-expanded="true"] {
+    background-color: transparent !important;
+  }
+
+  #app-shell .topbar-notice-menu {
+    border-color: var(--line-soft);
+    border-radius: 0.75rem;
+    background-color: var(--surface-raised);
+    color: var(--ink-strong);
+    box-shadow: 0 12px 32px rgb(15 23 42 / 0.16);
   }
 
   .topbar-icon-button:focus {
@@ -2040,6 +2066,10 @@
     border-color: var(--line-soft);
     background-color: var(--surface-sunken);
     color: var(--ink-strong);
+  }
+
+  .topbar-search-input:focus {
+    background-color: var(--surface-raised);
   }
 
   .topbar-search-toggle,
@@ -2444,13 +2474,24 @@
   }
 
   @media (max-width: 767px) {
-    .topbar-search-open {
+    .topbar-shell.topbar-search-mode #topbar-page-title {
+      visibility: hidden;
+    }
+
+    .topbar-shell.topbar-search-mode .topbar-search-slot {
       position: absolute;
-      top: 0.5rem;
       left: 3.25rem;
-      right: 3.25rem;
-      z-index: 50;
+      right: 0.75rem;
+      z-index: 1;
       width: auto;
+    }
+
+    .topbar-shell.topbar-search-mode .topbar-search {
+      width: 100%;
+    }
+
+    .topbar-shell.topbar-search-mode .topbar-actions-group {
+      display: none;
     }
 
     .topbar-search-open .topbar-search-toggle {
@@ -2459,6 +2500,10 @@
 
     .topbar-search-open .topbar-search-input-wrap {
       display: block;
+    }
+
+    .topbar-search-input {
+      font-size: 1rem;
     }
   }
 

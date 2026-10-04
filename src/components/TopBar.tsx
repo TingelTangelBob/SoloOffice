@@ -13,6 +13,7 @@ export interface TopBarNotice {
 
 interface TopBarProps {
   searchSlot: ReactNode;
+  searchOpen: boolean;
   isSidebarCompact: boolean;
   onToggleSidebar: () => void;
   notices: TopBarNotice[];
@@ -42,6 +43,7 @@ const NOTICE_DOT: Record<TopBarNotice['tone'], string> = {
  */
 export function TopBar({
   searchSlot,
+  searchOpen,
   isSidebarCompact,
   onToggleSidebar,
   notices,
@@ -103,7 +105,7 @@ export function TopBar({
      `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
      auf null drücken oder die Leiste sprengen. */
   return (
-    <header className="topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 xl:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)]">
+    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 xl:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] ${searchOpen ? 'topbar-search-mode' : ''}`}>
       <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
@@ -134,7 +136,7 @@ export function TopBar({
           wird auf kleinen Geräten von ihrem Symbol aus aufgeklappt. */}
       <div className="topbar-search-slot shrink-0">{searchSlot}</div>
 
-      <div className="flex min-w-0 items-center justify-end gap-1 lg:gap-2">
+      <div className="topbar-actions-group flex min-w-0 items-center justify-end gap-1 lg:gap-2">
         <div id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-[min(55vw,42rem)]" />
 
         {/* Dezente Abtrennung zwischen Seitenaktionen und Hinweisen. */}
@@ -143,7 +145,7 @@ export function TopBar({
         <ActionMenu
           ariaLabel={noticeCount > 0 ? `Hinweise (${noticeCount})` : 'Hinweise'}
           title="Hinweise"
-          menuClassName="w-[min(24rem,calc(100vw-1rem))] min-w-0"
+          menuClassName="topbar-notice-menu w-[min(22rem,calc(100vw-1.5rem))] min-w-0"
           triggerClassName={`topbar-icon-button relative ${startingTaskId ? 'topbar-notice-start-pulse' : ''} ${completedTaskId ? 'topbar-notice-complete-pulse' : ''}`}
           autoOpenSignal={latestBackgroundTask?.id ?? null}
           icon={

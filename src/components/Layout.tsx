@@ -102,6 +102,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchToggleRef = useRef<HTMLButtonElement>(null);
   // Angemeldete Listenansicht, deren Liste das Suchfeld gerade live filtert.
   const [pageSearch, setPageSearch] = useState<PageSearchRegistration | null>(null);
   const registerPageSearch = useCallback((registration: PageSearchRegistration) => {
@@ -194,6 +195,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       window.requestAnimationFrame(() => searchInputRef.current?.focus());
     }
   }, [isSearchOpen]);
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    window.requestAnimationFrame(() => searchToggleRef.current?.focus());
+  };
 
   useEffect(() => {
     try {
@@ -448,10 +454,13 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const searchSlot = (
     <div className={`topbar-search ${isSearchOpen ? 'topbar-search-open' : ''}`}>
       <button
+        ref={searchToggleRef}
         type="button"
         className="topbar-search-toggle md:hidden"
         onClick={() => setIsSearchOpen(true)}
         aria-label="Suche öffnen"
+        aria-expanded={isSearchOpen}
+        aria-controls="topbar-search-input"
         title="Suche öffnen"
       >
         <Search className="h-5 w-5" />
@@ -459,13 +468,14 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
       <div className={`topbar-search-input-wrap ${isSearchOpen ? '' : 'hidden md:block'}`}>
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
+          id="topbar-search-input"
           ref={searchInputRef}
           type="text"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && isSearchOpen) {
-              setIsSearchOpen(false);
+              closeSearch();
               return;
             }
             if (!pageSearch && event.key === 'Enter' && searchResults[0]) {
@@ -481,7 +491,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           <button
             type="button"
             className="topbar-search-close md:hidden"
-            onClick={() => setIsSearchOpen(false)}
+            onClick={closeSearch}
             aria-label="Suche schließen"
             title="Suche schließen"
           >
@@ -798,6 +808,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           <div className="flex min-h-screen min-w-0 flex-1 flex-col">
             <TopBar
               searchSlot={searchSlot}
+              searchOpen={isSearchOpen}
               isSidebarCompact={isSidebarCompact}
               onToggleSidebar={toggleSidebar}
               notices={topBarNotices}
