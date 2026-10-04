@@ -16,6 +16,8 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
+# Local security overrides (file:patches/...) must exist before npm ci
+COPY patches ./patches
 RUN npm ci
 
 # Vite reads these values during the static build; runtime container
