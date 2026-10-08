@@ -10,6 +10,7 @@ import { MotionProvider } from './context/MotionProvider';
 import { FeedbackProvider } from './context/FeedbackProvider';
 import { AuthPage } from './components/AuthPage';
 import { trackTelemetry } from './services/telemetry';
+import { navigatePage, readPageState, type PageState } from './utils/hashRouter';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
 const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
@@ -36,32 +37,9 @@ const ProfileManagement = lazy(() => import('./components/ProfileManagement').th
 const WorkspaceManagement = lazy(() => import('./components/WorkspaceManagement').then(({ WorkspaceManagement: page }) => ({ default: page })));
 const SupportManagement = lazy(() => import('./components/SupportManagement').then(({ SupportManagement: page }) => ({ default: page })));
 
-interface PageState {
-  page: string;
-  filter?: string;
-  searchTerm?: string;
-  quoteId?: string;
-  invoiceId?: string;
-  jobSeriesId?: string;
-}
-
-const SETTINGS_TABS = ['app', 'general', 'invoices', 'appearance', 'system'] as const;
-type SettingsTab = typeof SETTINGS_TABS[number];
-
-function readSettingsTab(url: URL): SettingsTab {
-  const value = url.searchParams.get('settingsTab');
-  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : 'general';
-}
-
 interface AppContentProps {
   currentPageState: PageState;
   onPageChange: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
-}
-
-function normalizePageState(page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string): PageState {
-  if (page === 'receipts') return { page: 'documents', filter: filter || 'receipts', searchTerm };
-  if (page === 'incoming-e-invoices') return { page: 'documents', filter: filter || 'incoming', searchTerm };
-  return { page, filter, searchTerm, quoteId: page === 'quote-editor' ? filter : undefined, invoiceId, jobSeriesId };
 }
 
 function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
@@ -179,7 +157,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reminders':
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : readSettingsTab(new URL(window.location.href))} onNavigate={onPageChange} />;
+        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : 'general'} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
       case 'workspace':
@@ -228,68 +206,39 @@ function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps)
 }
 
 function App() {
-  const [currentPageState, setCurrentPageState] = useState<PageState>(() => {
-    // Initialize from URL hash
-    const hash = window.location.hash.slice(1); // Remove #
-    if (hash) {
-      const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
-      const pageState = normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
-      return pageState.page === 'settings' && filter === 'general'
-        ? { ...pageState, filter: 'general' }
-        : pageState;
-    }
-    return { page: 'dashboard' };
-  });
+  const [currentPageState, setCurrentPageState] = useState<PageState>(() => readPageState(new URL(window.location.href)));
 
   const handlePageChange = useCallback((page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => {
-    const newState = normalizePageState(page, filter, searchTerm, invoiceId, jobSeriesId);
-    setCurrentPageState(newState);
-
-    // Update URL hash
-    let hash = page;
-    if (filter) hash += `/${filter}`;
-    if (searchTerm) hash += `/${searchTerm}`;
-    if (invoiceId) {
-      if (!filter) hash += '/';
-      if (!searchTerm) hash += '/';
-      hash += `/${invoiceId}`;
-    }
-    if (jobSeriesId) {
-      if (!filter) hash += '/';
-      if (!searchTerm) hash += '/';
-      if (!invoiceId) hash += '/';
-      hash += `/${jobSeriesId}`;
-    }
-    window.location.hash = hash;
+    setCurrentPageState(navigatePage(window.history, window.location.href, page, filter, searchTerm, invoiceId, jobSeriesId));
   }, []);
 
-  // Listen to browser back/forward buttons
+  // URL ist die gemeinsame Quelle für Hauptseite und Einstellungs-Unterbereich.
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.slice(1);
-      if (hash) {
-        const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');
-        const pageState = normalizePageState(page || 'dashboard', filter, searchTerm, invoiceId, jobSeriesId);
-        if (pageState.page === 'settings' && filter === 'general') {
-          setCurrentPageState({ ...pageState, filter: 'general' });
-        } else {
-          setCurrentPageState(pageState);
-        }
-      } else {
-        setCurrentPageState({ page: 'dashboard' });
+    const syncFromLocation = () => {
+      const url = new URL(window.location.href);
+      const nextState = readPageState(url);
+      if (nextState.page !== 'settings' && url.searchParams.has('settingsTab')) {
+        url.searchParams.delete('settingsTab');
+        window.history.replaceState(window.history.state, '', url);
       }
-      if (hash.split('/')[0] !== 'settings') {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('settingsTab')) {
-          url.searchParams.delete('settingsTab');
-          window.history.replaceState(window.history.state, '', url);
-        }
-      }
+      setCurrentPageState(previous => (
+        previous.page === nextState.page
+        && previous.filter === nextState.filter
+        && previous.searchTerm === nextState.searchTerm
+        && previous.invoiceId === nextState.invoiceId
+        && previous.jobSeriesId === nextState.jobSeriesId
+          ? previous
+          : nextState
+      ));
     };
 
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    syncFromLocation();
+    window.addEventListener('hashchange', syncFromLocation);
+    window.addEventListener('popstate', syncFromLocation);
+    return () => {
+      window.removeEventListener('hashchange', syncFromLocation);
+      window.removeEventListener('popstate', syncFromLocation);
+    };
   }, []);
 
   return (

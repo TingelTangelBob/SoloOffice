@@ -27,6 +27,7 @@
     "src/utils/paymentInformation.ts",
     "src/utils/serviceDate.ts",
     "src/utils/templateDefaults.ts",
-    "src/utils/timeZones.ts"
+    "src/utils/timeZones.ts",
+    "src/utils/hashRouter.ts"
   ]
 }
