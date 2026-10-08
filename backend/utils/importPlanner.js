@@ -631,6 +631,7 @@ function documentItems(rows, { defaultTaxRate = 19 } = {}) {
       }
       items.push({
         description, quantity, unitPrice,
+        unit: text(pick(item, ['unit', 'einheit', 'unitName', 'unit_name'])) || null,
         taxRate: parseNumber(pick(item, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'])) ?? defaultTaxRate,
         discountType: normaliseDiscountType(pick(item, ['discountType', 'discount_type'])),
         discountValue: parseNumber(pick(item, ['discountValue', 'discount_value'])),
@@ -649,6 +650,7 @@ function documentItems(rows, { defaultTaxRate = 19 } = {}) {
           description,
           quantity: itemQuantity ?? 1,
           unitPrice: itemUnitPrice,
+          unit: text(pick(row, ['itemUnit', 'item_unit', 'positionsEinheit', 'einheit', 'unit', 'unitName'])) || null,
           taxRate: parseNumber(pick(row, ['itemTaxRate', 'item_tax_rate', 'positionTaxRate', 'steuersatz', 'mwst', 'ust', 'taxRate', 'tax_rate'])) ?? defaultTaxRate,
           order: items.length + 1,
         });
@@ -1214,6 +1216,7 @@ function planInvoices(rows, context, options) {
   ]);
   const defaultPaymentDays = Number.isInteger(context.defaultPaymentDays) ? context.defaultPaymentDays : 14;
   const entries = [];
+  const availableJobs = (context.jobs || []).map(job => ({ ...job }));
 
   for (const group of groupRowsByNumber(rows, INVOICE_NUMBER_ALIASES)) {
     const firstRow = group.rows[0].row;
@@ -1337,6 +1340,20 @@ function planInvoices(rows, context, options) {
     if (paymentCents > 0 && paymentCents < totalCents) messages.push(`Teilzahlung ${euro(paymentCents / 100)} € – offen bleiben ${euro((totalCents - paymentCents) / 100)} €`);
     if (context.cutoverDate && issue.value >= context.cutoverDate) messages.push(`Liegt am oder nach dem Stichtag ${formatDateDe(context.cutoverDate)} – ist die Rechnung schon in SoloOffice erfasst?`);
     reserved.add(normaliseKey(group.number));
+    const itemsWithUnits = calculated.items.map((item, index) => ({
+      ...item,
+      unit: itemResult.items[index]?.unit || null,
+      order: index + 1,
+    }));
+    const courseActions = options.createInvoiceCourses
+      ? planInvoiceCourses({ customerId: resolution.customer?.id || null, customerKey: resolution.newCustomer?.key || null, date: serviceDate || issue.value, items: itemsWithUnits }, availableJobs)
+      : [];
+    for (const action of courseActions) {
+      if (action.action === 'assign') {
+        const job = availableJobs.find(candidate => candidate.id === action.jobId);
+        if (job) job.invoiceId = `planned:${group.number}`;
+      }
+    }
     entries.push(entry(rowNumbers, messages.length ? 'warning' : 'valid', [
       `Rechnung ${group.number} über ${euro(calculated.total)} € wird übernommen${status === 'paid' ? ' (bezahlt)' : status === 'overdue' ? ' (überfällig)' : ' (offen)'}`,
       ...infos,
@@ -1349,7 +1366,8 @@ function planInvoices(rows, context, options) {
       serviceDate,
       notes: text(pick(firstRow, ['notes', 'note', 'notizen', 'bemerkung', 'anmerkung'])),
       status,
-      items: calculated.items.map((item, index) => ({ ...item, order: index + 1 })),
+      items: itemsWithUnits,
+      courseActions,
       subtotal: calculated.subtotal,
       taxAmount: calculated.taxAmount,
       total: calculated.total,
@@ -1372,6 +1390,7 @@ export function planImport(resource, rows, context, options = {}) {
     duplicateMode: options.duplicateMode === 'update' && UPDATEABLE_IMPORT_RESOURCES.includes(resource) ? 'update' : 'skip',
     createMissingCustomers: options.createMissingCustomers === true && CUSTOMER_CREATING_RESOURCES.includes(resource),
     matchOpenInvoices: options.matchOpenInvoices !== false,
+    createInvoiceCourses: resource === 'invoices' && options.createInvoiceCourses === true,
   };
   const fullContext = { entityLabel: 'Kunde', today: new Date().toISOString().slice(0, 10), ...context };
   let plan;
@@ -1400,7 +1419,41 @@ export function planImport(resource, rows, context, options = {}) {
     entries: plan.entries,
     newCustomers: newCustomers.filter(customer => usedKeys.has(customer.key)),
     totals: importTotals(resource, plan.entries),
+    courseSummary: resource === 'invoices' && normalisedOptions.createInvoiceCourses
+      ? plan.entries.filter(item => APPLICABLE.has(item.status)).flatMap(item => item.data?.courseActions || []).reduce((summary, action) => {
+        summary[action.action === 'assign' ? 'assigned' : 'created'] += 1;
+        return summary;
+      }, { created: 0, assigned: 0 })
+      : null,
   };
+}
+
+const courseKey = value => String(value || '').trim().toLocaleLowerCase('de-DE');
+const isHourUnit = unit => !unit || /^(h|std\.?|stunde(n)?|hour(s)?)$/i.test(String(unit).trim());
+
+/** Plant genau eine Kurszuordnung je geeigneter Rechnungsposition. */
+export function planInvoiceCourses(invoice, jobs) {
+  const availableJobs = new Set(jobs.map(job => String(job.id)));
+  return invoice.items.filter(item => item.description).map(item => {
+    const existing = invoice.customerId && jobs.filter(job => job.customerId === invoice.customerId
+      && job.date === invoice.date && courseKey(job.title) === courseKey(item.description)
+      && job.status !== 'invoiced' && !job.invoiceId && availableJobs.has(String(job.id)));
+    const assignedJob = existing?.length === 1 ? existing[0] : null;
+    if (assignedJob) availableJobs.delete(String(assignedJob.id));
+    const hours = isHourUnit(item.unit) ? Number(item.quantity) || 0 : 0;
+    const rate = hours > 0 ? Number(item.unitPrice) : 0;
+    return {
+      action: assignedJob ? 'assign' : 'create',
+      jobId: assignedJob?.id || null,
+      customerKey: invoice.customerKey,
+      date: invoice.date,
+      title: String(item.description).slice(0, 255),
+      description: item.description,
+      hoursWorked: hours,
+      hourlyRate: rate,
+      itemOrder: item.order,
+    };
+  });
 }
 
 const compactText = value => text(value).slice(0, 160);

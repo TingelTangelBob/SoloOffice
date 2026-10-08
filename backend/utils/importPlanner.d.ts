@@ -45,6 +45,19 @@ export interface PlannerOptions {
   duplicateMode?: 'skip' | 'update';
   createMissingCustomers?: boolean;
   matchOpenInvoices?: boolean;
+  createInvoiceCourses?: boolean;
+}
+
+export interface InvoiceCourseAction {
+  action: 'create' | 'assign';
+  jobId: string | null;
+  customerKey?: string | null;
+  date: string;
+  title: string;
+  description: string;
+  hoursWorked: number;
+  hourlyRate: number;
+  itemOrder: number;
 }
 
 export interface PlannerContext {
@@ -70,6 +83,7 @@ export interface ImportPlan {
   entries: PlannerEntry[];
   newCustomers: PlannerNewCustomer[];
   totals: PlannerTotals | null;
+  courseSummary?: { created: number; assigned: number } | null;
 }
 
 export interface PlannerSummary {
@@ -97,6 +111,7 @@ export function createCustomerDirectory(customers?: Array<Record<string, unknown
   newCustomers: () => PlannerNewCustomer[];
 };
 export function planImport(resource: PlannerResource, rows: Array<Record<string, unknown>>, context: PlannerContext, options?: PlannerOptions): ImportPlan;
+export function planInvoiceCourses(invoice: { customerId?: string | null; customerKey?: string | null; date: string; items: Array<{ description?: string; quantity: number; unitPrice: number; order: number; unit?: string | null }> }, jobs: Array<Record<string, unknown>>): InvoiceCourseAction[];
 export function isApplicable(entry: PlannerEntry): boolean;
 export function summariseImport(plan: ImportPlan, total: number): PlannerSummary;
 export function reportRows(plan: ImportPlan, imported?: boolean): Array<{ rowNumber: number; status: PlannerStatus | 'imported'; message: string }>;

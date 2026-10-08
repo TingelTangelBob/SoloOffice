@@ -8,7 +8,7 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useQuotes } from '../context/QuoteContext';
 import { apiService } from '../services/api';
-import type { EuerEntry, ImportResource, ImportRun, TakeoverStatus } from '../types';
+import type { EuerEntry, ImportResource, ImportRun, ImportedInvoiceCoursesResponse, TakeoverStatus } from '../types';
 import {
   buildCombinedImportTemplate,
   buildImportTemplate,
@@ -90,6 +90,11 @@ function formatDateTime(value?: string | null): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatIsoDate(value: string): string {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
+}
+
 export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const { can } = useAuth();
   const { company, setCompany, setHourlyRates, setMaterialTemplates } = useCompany();
@@ -125,6 +130,8 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [manualScanResource, setManualScanResource] = useState<ImportResource | ''>('');
   const [protocolRun, setProtocolRun] = useState<ImportRun | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [coursePreview, setCoursePreview] = useState<ImportedInvoiceCoursesResponse | null>(null);
+  const [courseBusy, setCourseBusy] = useState(false);
   const [takeover, setTakeover] = useState<TakeoverStatus | null>(null);
 
   const load = useCallback(async () => {
@@ -150,13 +157,31 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     if (!resource || ['customers', 'jobs', 'quotes', 'euerEntries', 'invoices'].includes(resource)) tasks.push(refreshCustomers());
     if (!resource || ['invoices', 'invoicePayments', 'euerEntries'].includes(resource)) tasks.push(refreshInvoices());
     if (!resource || ['invoices', 'invoicePayments', 'euerEntries'].includes(resource)) tasks.push(apiService.getEuerEntries().then(setScannedEuerEntries));
-    if (!resource || resource === 'jobs') tasks.push(refreshJobEntries());
+    if (!resource || ['jobs', 'invoices'].includes(resource)) tasks.push(refreshJobEntries());
     if (!resource || resource === 'quotes') tasks.push(refreshQuotes());
     if (!resource || resource === 'hourlyRates') tasks.push(apiService.getHourlyRates().then(setHourlyRates));
     if (!resource || resource === 'materials') tasks.push(apiService.getMaterialTemplates().then(setMaterialTemplates));
     if (!resource || resource === 'positions') tasks.push(apiService.getCompany().then(setCompany));
     await Promise.allSettled(tasks);
   }, [refreshCustomers, refreshInvoices, refreshJobEntries, refreshQuotes, setCompany, setHourlyRates, setMaterialTemplates]);
+
+  const previewImportedCourses = async () => {
+    setCourseBusy(true);
+    try { setCoursePreview(await apiService.planImportedInvoiceCourses(true)); }
+    catch (error) { notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Kursvorschau konnte nicht erstellt werden.' }); }
+    finally { setCourseBusy(false); }
+  };
+
+  const createImportedCourses = async () => {
+    setCourseBusy(true);
+    try {
+      const result = await apiService.planImportedInvoiceCourses(false);
+      setCoursePreview(null);
+      notify({ variant: 'success', message: `${result.summary.created} Kurse angelegt, ${result.summary.assigned} zugeordnet.` });
+      await refreshData('invoices');
+    } catch (error) { notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Kurse konnten nicht angelegt werden.' }); }
+    finally { setCourseBusy(false); }
+  };
 
   /** Nur Kategorien, die zu den aktiven Modulen des Workspace passen. */
   const availableResources = useMemo<ImportResource[]>(() => ([
@@ -458,6 +483,19 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   return (
     <div className="page-root space-y-6">
       <PageHeader title="Datenübernahme" subtitle="Daten aus Ihrer bisherigen Lösung in einem geführten Durchgang übernehmen." />
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0"><h2 className="font-semibold text-gray-900">Kurse für übernommene Rechnungen</h2><p className="mt-1 text-sm text-gray-600">Ergänzt importierte Rechnungen ohne Kursverknüpfung. Gleiche Kunden, Daten und Positionstitel werden nur bei einem eindeutigen, noch offenen Kurs zugeordnet.</p></div>
+          <button type="button" onClick={() => void previewImportedCourses()} disabled={!canWrite || courseBusy} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{courseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Vorschau erstellen</button>
+        </div>
+        {coursePreview && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+          {coursePreview.demoMode && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Demo: Änderungen gelten nur in diesem Browser.</p>}
+          <p className="text-sm font-medium text-gray-800">{coursePreview.summary.invoices} Rechnungen · {coursePreview.summary.created} Kurse neu · {coursePreview.summary.assigned} Zuordnungen</p>
+          {coursePreview.preview.length > 0 ? <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">{coursePreview.preview.map(invoice => <li key={invoice.invoiceId} className="rounded-lg bg-gray-50 p-3"><p className="font-medium text-gray-900">Rechnung {invoice.invoiceNumber}</p><ul className="mt-1 space-y-1 text-gray-600">{invoice.actions.map((action, index) => <li key={`${invoice.invoiceId}-${index}`} className="break-words">{action.action === 'assign' ? 'Zuordnung' : 'Neuer Kurs'} · {action.title} · {formatIsoDate(action.date)}</li>)}</ul></li>)}</ul> : <p className="text-sm text-gray-600">Keine importierten Rechnungen ohne Kursverknüpfung gefunden.</p>}
+          <button type="button" onClick={() => void createImportedCourses()} disabled={!canWrite || courseBusy || coursePreview.summary.created + coursePreview.summary.assigned === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 text-sm font-medium text-white disabled:opacity-50">Kurse jetzt anlegen</button>
+        </div>}
+      </section>
 
       {loadError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">{loadError}</div>}
 

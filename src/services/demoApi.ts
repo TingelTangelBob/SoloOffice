@@ -4,11 +4,21 @@ import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { getTerminology } from '../utils/terminology';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
-import { IMPORT_RESOURCES, MAX_IMPORT_ROWS, isApplicable, planImport, reportRows, summariseImport } from '../../backend/utils/importPlanner.js';
+import { IMPORT_RESOURCES, MAX_IMPORT_ROWS, isApplicable, planImport, planInvoiceCourses, reportRows, summariseImport } from '../../backend/utils/importPlanner.js';
 import type { ImportPlan, PlannerContext, PlannerResource } from '../../backend/utils/importPlanner.js';
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
+type DemoCourseAction = {
+  action: 'create' | 'assign';
+  jobId: string | null;
+  date: string;
+  title: string;
+  description: string;
+  hoursWorked: number;
+  hourlyRate: number;
+  itemOrder: number;
+};
 
 interface DemoState {
   customers: DemoRecord[];
@@ -828,7 +838,7 @@ function demoImportContext(state: DemoState): PlannerContext {
     customers: state.customers.map(customer => ({ ...customer })),
     jobs: state.jobs.map(job => ({
       id: job.id, jobNumber: job.jobNumber, externalJobNumber: job.externalJobNumber, customerId: job.customerId,
-      title: job.title, date: dateOnly(job.date), startTime: job.startTime,
+      title: job.title, date: dateOnly(job.date), startTime: job.startTime, status: job.status, invoiceId: job.invoiceId || null,
     })),
     quotes: state.quotes.map(quote => ({ id: quote.id, quoteNumber: quote.quoteNumber })),
     hourlyRates: state.hourlyRates.map(rate => ({ id: rate.id, name: rate.name })),
@@ -1079,6 +1089,21 @@ function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, f
       state.invoices.push(invoice);
       recordInvoiceHistory(state, invoice, 'created', null, invoice);
       track('invoices', invoice.id, 'created');
+      for (const action of (data.courseActions || []) as DemoCourseAction[]) {
+        let job = state.jobs.find(candidate => candidate.id === action.jobId);
+        if (job) {
+          track('job_entries', String(job.id), 'updated', { id: String(job.id), status: job.status, invoiceId: job.invoiceId || null });
+          job.status = 'invoiced';
+        } else {
+          const date = String(action.date || data.serviceDate || data.issueDate);
+          const number = state.jobs.filter(candidate => String(candidate.jobNumber || '').startsWith(`AB-${date.slice(0, 4)}-`)).length + 1;
+          job = { id: generateUUID(), jobNumber: `AB-${date.slice(0, 4)}-${String(number).padStart(3, '0')}`, customerId, title: action.title, description: action.description, date, hoursWorked: action.hoursWorked, hourlyRate: action.hourlyRate, status: 'invoiced', invoiceId: invoice.id, materials: [], timeEntries: [] };
+          state.jobs.push(job);
+          track('job_entries', String(job.id), 'created');
+        }
+        job.invoiceId = invoice.id;
+        invoice.jobSources = [...((invoice.jobSources || []) as DemoRecord[]), { id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date }];
+      }
       const payment = data.payment as DemoRecord | null;
       if (payment) {
         addEuerEntry({
@@ -1101,6 +1126,7 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
     duplicateMode: data.duplicateMode === 'update' ? 'update' : 'skip',
     createMissingCustomers: data.createMissingCustomers === true,
     matchOpenInvoices: data.matchOpenInvoices !== false,
+    createInvoiceCourses: data.createInvoiceCourses === true,
   });
   const summary = summariseImport(plan, rows.length);
   const commit = data.dryRun === false;
@@ -1175,6 +1201,7 @@ function demoImport(resource: string, rows: DemoRecord[], data: DemoRecord, stat
     summary,
     rows: reportRows(plan, commit),
     totals: plan.totals,
+    courseSummary: plan.courseSummary,
     newCustomers: plan.newCustomers.map(customer => ({ name: customer.name, rowNumbers: customer.rowNumbers })),
     truncated: false,
     ...(takeover ? { categoryId, previewDigest: digest } : {}),
@@ -1196,13 +1223,14 @@ function demoRevertImport(state: DemoState, run: DemoRecord): void {
   ));
   if (blockedCustomers.length > 0) blockers.push(`Für ${blockedCustomers.slice(0, 10).map(customer => `„${customer.name}“`).join(', ')} gibt es inzwischen weitere Dokumente oder Buchungen`);
   const invoices = created('invoices');
+  const jobs = new Set(items.filter(item => item.tableName === 'job_entries').map(item => item.recordId));
   const blockedInvoices = state.invoices.filter(invoice => invoices.has(invoice.id) && (
     state.euerEntries.some(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status !== 'voided' && !own.has(entry.id))
     || state.invoices.some(other => other.referenceInvoiceId === invoice.id)
+    || ((invoice.jobSources || []) as DemoRecord[]).some(source => !jobs.has(String(source.jobId)))
     || Boolean(invoice.lastReminderSentAt)
   ));
   if (blockedInvoices.length > 0) blockers.push(`Zu ${blockedInvoices.slice(0, 10).map(invoice => invoice.invoiceNumber).join(', ')} wurden inzwischen Zahlungen, Gutschriften oder Mahnungen erfasst`);
-  const jobs = created('job_entries');
   const billedJobs = state.invoices.flatMap(invoice => (Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs as DemoRecord[] : [])).filter(source => jobs.has(String(source.jobId)));
   if (billedJobs.length > 0) blockers.push(`${billedJobs.length} importierte Termine wurden inzwischen abgerechnet`);
   const quotes = created('quotes');
@@ -1248,6 +1276,8 @@ function demoRevertImport(state: DemoState, run: DemoRecord): void {
       ? state.customers
       : item.tableName === 'hourly_rates'
         ? state.hourlyRates
+        : item.tableName === 'job_entries'
+          ? state.jobs
         : item.tableName === 'material_templates'
           ? state.materialTemplates
           : item.tableName === 'invoice_templates'
@@ -1306,6 +1336,42 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
       return { success: true } as unknown as T;
     }
     throw new Error('Unbekannte Importaktion.');
+  }
+
+  if (parts[1] === 'invoice-courses' && method === 'POST') {
+    const dryRun = data.dryRun !== false;
+    const candidates = state.invoices.filter(invoice => invoice.origin === 'imported' && !(Array.isArray(invoice.jobSources) && invoice.jobSources.length));
+    const jobs = state.jobs.map(job => ({ id: job.id, customerId: job.customerId, title: job.title, date: dateOnly(job.date), status: job.status, invoiceId: job.invoiceId || null }));
+    const preview = candidates.map(invoice => {
+      const actions: DemoCourseAction[] = planInvoiceCourses({ customerId: String(invoice.customerId || ''), date: dateOnly(invoice.serviceDate || invoice.issueDate), items: ((invoice.items || []) as DemoRecord[]).map((item, index) => ({ description: String(item.description || ''), quantity: Number(item.quantity || 1), unitPrice: Number(item.unitPrice || 0), order: Number(item.order || index + 1), unit: typeof item.unit === 'string' ? item.unit : null })) }, jobs);
+      actions.filter(action => action.action === 'assign').forEach(action => {
+        const job = jobs.find(candidate => candidate.id === action.jobId);
+        if (job) job.invoiceId = `planned:${invoice.id}`;
+      });
+      return { invoiceId: invoice.id, invoiceNumber: String(invoice.invoiceNumber || ''), actions };
+    });
+    const created = preview.reduce((sum, invoice) => sum + invoice.actions.filter(action => action.action === 'create').length, 0);
+    const assigned = preview.reduce((sum, invoice) => sum + invoice.actions.filter(action => action.action === 'assign').length, 0);
+    if (!dryRun) {
+      for (const invoicePlan of preview) {
+        const invoice = state.invoices.find(item => item.id === invoicePlan.invoiceId);
+        if (!invoice) continue;
+        const sources: DemoRecord[] = [];
+        invoice.jobSources = sources;
+        for (const action of invoicePlan.actions) {
+          let job = state.jobs.find(item => item.id === action.jobId);
+          if (!job) {
+            const number = state.jobs.filter(item => String(item.jobNumber || '').startsWith(`AB-${action.date.slice(0, 4)}-`)).length + 1;
+            job = { id: generateUUID(), jobNumber: `AB-${action.date.slice(0, 4)}-${String(number).padStart(3, '0')}`, customerId: invoice.customerId, title: action.title, description: action.description, date: action.date, hoursWorked: action.hoursWorked, hourlyRate: action.hourlyRate, status: 'invoiced', materials: [], timeEntries: [] };
+            state.jobs.push(job);
+          } else job.status = 'invoiced';
+          job.invoiceId = invoice.id;
+          sources.push({ id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date });
+        }
+      }
+      saveState(state);
+    }
+    return { dryRun, summary: { invoices: preview.length, created, assigned }, preview, demoMode: true } as unknown as T;
   }
 
   if (parts[1] === 'settings') {

@@ -227,3 +227,29 @@ test('Reportwerte zeigen die normalisierten bzw. gemappten Daten für alle Impor
   ], context()))[1];
   assert.deepEqual(repeated.conflict, { kind: 'file', rowNumber: 2, label: 'doppelt in Datei, Zeile 2' });
 });
+
+test('Rechnungsimport plant Kurse aus Stundenpositionen und ordnet nur eindeutige offene Kurse zu', () => {
+  const customers = [{ id: 'c1', name: 'Anna Müller' }];
+  const jobs = [
+    { id: 'j1', customerId: 'c1', title: 'Unterricht Mathe', date: '2025-02-03', status: 'completed' },
+    { id: 'j2', customerId: 'c1', title: 'Abgerechnet', date: '2025-02-03', status: 'invoiced' },
+    { id: 'j3', customerId: 'c1', title: 'Mehrdeutig', date: '2025-02-03', status: 'completed' },
+    { id: 'j4', customerId: 'c1', title: 'Mehrdeutig', date: '2025-02-03', status: 'draft' },
+  ];
+  const plan = planImport('invoices', [{ _rowNumber: 2, invoiceNumber: 'ALT-1', issueDate: '2025-02-03', serviceDate: '2025-02-04', customerName: 'Anna Müller', taxRate: 0, items: [
+    { description: 'Unterricht Mathe', quantity: 2, unitPrice: 45, unit: 'Std.' },
+    { description: 'Material', quantity: 1, unitPrice: 8, unit: 'Pauschale' },
+  ] }], context({ customers, jobs }), { createInvoiceCourses: true });
+  assert.deepEqual(plan.courseSummary, { created: 2, assigned: 0 }, 'Datumabweichung verhindert eine Zuordnung');
+  assert.equal(plan.entries[0].data.courseActions[0].date, '2025-02-04');
+  assert.equal(plan.entries[0].data.courseActions[0].hoursWorked, 2);
+  assert.equal(plan.entries[0].data.courseActions[0].hourlyRate, 45);
+
+  const exact = planImport('invoices', [{ _rowNumber: 2, invoiceNumber: 'ALT-2', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, items: [
+    { description: 'Unterricht Mathe', quantity: 2, unitPrice: 45, unit: 'h' },
+    { description: 'Abgerechnet', quantity: 1, unitPrice: 20 },
+    { description: 'Mehrdeutig', quantity: 1, unitPrice: 20 },
+  ] }], context({ customers, jobs }), { createInvoiceCourses: true });
+  assert.deepEqual(exact.entries[0].data.courseActions.map(action => action.action), ['assign', 'create', 'create']);
+  assert.deepEqual(exact.courseSummary, { created: 2, assigned: 1 });
+});

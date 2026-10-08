@@ -701,7 +701,15 @@ export interface ImportResponse {
   truncated?: boolean;
   categoryId?: UUID;
   previewDigest?: string;
+  courseSummary?: { created: number; assigned: number } | null;
   idempotentReplay?: boolean;
+  demoMode?: true;
+}
+
+export interface ImportedInvoiceCoursesResponse {
+  dryRun: boolean;
+  summary: { invoices: number; created: number; assigned: number };
+  preview: Array<{ invoiceId: UUID; invoiceNumber: string; actions: Array<{ action: 'create' | 'assign'; title: string; date: string; hoursWorked: number; hourlyRate: number; jobId?: UUID | null }> }>;
   demoMode?: true;
 }
 
@@ -710,6 +718,7 @@ export interface ImportOptions {
   duplicateMode?: ImportDuplicateMode;
   createMissingCustomers?: boolean;
   matchOpenInvoices?: boolean;
+  createInvoiceCourses?: boolean;
   file?: { name: string; hash?: string | null; headers: string[] };
   settings?: ImportRunSettings;
   takeover?: {

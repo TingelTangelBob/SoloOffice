@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -705,6 +705,7 @@ class ApiService {
         duplicateMode: options.duplicateMode ?? 'skip',
         createMissingCustomers: options.createMissingCustomers === true,
         matchOpenInvoices: options.matchOpenInvoices !== false,
+        createInvoiceCourses: options.createInvoiceCourses === true,
         ...(options.file ? { file: options.file } : {}),
         ...(options.settings ? { settings: options.settings } : {}),
         ...(options.takeover ? { takeover: options.takeover } : {}),
@@ -714,6 +715,12 @@ class ApiService {
 
   async getImportRuns(): Promise<ImportRun[]> {
     return this.request<ImportRun[]>('/imports/runs');
+  }
+
+  async planImportedInvoiceCourses(dryRun = true): Promise<ImportedInvoiceCoursesResponse> {
+    return this.request<ImportedInvoiceCoursesResponse>('/imports/invoice-courses', {
+      method: 'POST', body: JSON.stringify({ dryRun }),
+    });
   }
 
   async getImportRun(id: string): Promise<ImportRun> {

@@ -12,6 +12,7 @@ import {
   SETTINGS_IMPORT_RESOURCES,
   isApplicable,
   planImport,
+  planInvoiceCourses,
   reportRows,
   summariseImport,
 } from '../utils/importPlanner.js';
@@ -209,6 +210,14 @@ async function loadContext(client, resource) {
   if (['euerEntries', 'invoicePayments', 'invoices'].includes(resource)) {
     context.euerEntries = await loadEuerEntries(client);
     context.invoices = await loadInvoices(client);
+  }
+  if (resource === 'invoices') {
+    const result = await client.query(`
+      SELECT j.id, j.customer_id, j.title, j.date, j.status,
+             EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.job_id = j.id) AS linked
+      FROM job_entries j ORDER BY j.id
+    `);
+    context.jobs = result.rows.map(row => ({ id: row.id, customerId: row.customer_id, title: row.title, date: isoDate(row.date), status: row.status, invoiceId: row.linked ? 'linked' : null }));
   }
   return { context, company };
 }
@@ -585,6 +594,10 @@ async function applyMoneyEntries(client, entries, customerIdFor, tracker, source
 }
 
 async function applyInvoices(client, entries, customerIdFor, tracker, source) {
+  const courseYears = new Set(entries.flatMap(entry => (entry.data.courseActions || []).filter(action => action.action === 'create').map(action => Number(action.date.slice(0, 4)))));
+  for (const year of [...courseYears].sort((a, b) => a - b)) await lockDocumentNumber(client, 'job', year);
+  const numberResult = await client.query('SELECT job_number FROM job_entries');
+  const allocateJobNumber = numberAllocator(numberResult.rows.map(row => row.job_number), 'AB');
   for (const entry of entries) {
     const data = entry.data;
     const customerId = customerIdFor(data);
@@ -602,9 +615,33 @@ async function applyInvoices(client, entries, customerIdFor, tracker, source) {
     tracker.track('invoices', invoiceId, 'created');
     for (const item of data.items) {
       await client.query(`
-        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? 0]);
+        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount, unit)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? 0, item.unit || null]);
+    }
+    for (const action of data.courseActions || []) {
+      let jobId = action.jobId;
+      if (action.action === 'create') {
+        const result = await client.query(`
+          INSERT INTO job_entries (job_number, customer_id, title, description, date, hours_worked, hourly_rate, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 'invoiced') RETURNING id, job_number
+        `, [allocateJobNumber(null, action.date), customerId, action.title, action.description, action.date, action.hoursWorked, action.hourlyRate]);
+        jobId = result.rows[0].id;
+        tracker.track('job_entries', jobId, 'created');
+        action.jobNumber = result.rows[0].job_number;
+      } else {
+        const matched = await client.query('SELECT id, job_number, external_job_number, title, date, status FROM job_entries WHERE id = $1 AND status <> \'invoiced\' FOR UPDATE', [jobId]);
+        if (!matched.rows[0]) throw httpError(409, 'Ein passender Kurs wurde zwischenzeitlich abgerechnet. Bitte die Vorschau erneut prüfen.');
+        tracker.track('job_entries', jobId, 'updated', { status: matched.rows[0].status });
+        await client.query("UPDATE job_entries SET status = 'invoiced' WHERE id = $1", [jobId]);
+        Object.assign(action, { jobNumber: matched.rows[0].job_number, title: matched.rows[0].title, date: isoDate(matched.rows[0].date) });
+      }
+      const linked = await client.query(`
+        INSERT INTO invoice_job_sources (invoice_id, job_id, job_number, external_job_number, title, job_date)
+        VALUES ($1, $2, (SELECT job_number FROM job_entries WHERE id = $2), (SELECT external_job_number FROM job_entries WHERE id = $2), $3, $4)
+        ON CONFLICT (workspace_id, job_id) DO NOTHING RETURNING id
+      `, [invoiceId, jobId, action.title, action.date]);
+      if (!linked.rows.length) throw httpError(409, 'Der Kurs wurde zwischenzeitlich einer anderen Rechnung zugeordnet.');
     }
     // Erst nach den Positionen ausstellen: Danach ist die Rechnung unveränderbar.
     await client.query('UPDATE invoices SET status = $1 WHERE id = $2', [data.status, invoiceId]);
@@ -724,6 +761,88 @@ router.get('/runs', async (req, res) => {
   }
 });
 
+// Nachschritt für bereits übernommene Rechnungen ohne Kursverknüpfung.
+router.post('/invoice-courses', async (req, res) => {
+  const client = await pool.connect();
+  const dryRun = req.body?.dryRun !== false;
+  try {
+    if (!dryRun && !hasPermission(req.auth, 'data.write')) throw httpError(403, 'Für diese Aktion fehlt die Schreibberechtigung.', 'FORBIDDEN');
+    if (!dryRun) {
+      await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+      await workspaceLock(client, 'imported-invoice-courses');
+    }
+    const invoiceResult = await client.query(`
+      SELECT i.id, i.invoice_number, i.customer_id, i.issue_date, i.service_date
+      FROM invoices i
+      WHERE i.origin = 'imported' AND NOT EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id)
+      ORDER BY i.issue_date, i.invoice_number FOR UPDATE
+    `);
+    const jobsResult = await client.query(`
+      SELECT j.id, j.customer_id, j.title, j.date, j.status,
+             EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.job_id = j.id) AS linked
+      FROM job_entries j
+    `);
+    const jobs = jobsResult.rows.map(row => ({ id: row.id, customerId: row.customer_id, title: row.title, date: isoDate(row.date), status: row.status, invoiceId: row.linked ? 'linked' : null }));
+    const preview = [];
+    for (const invoice of invoiceResult.rows) {
+      const itemResult = await client.query('SELECT description, quantity, unit_price, item_order, unit FROM invoice_items WHERE invoice_id = $1 ORDER BY item_order, id', [invoice.id]);
+      const actions = planInvoiceCourses({
+        customerId: invoice.customer_id,
+        date: isoDate(invoice.service_date) || isoDate(invoice.issue_date),
+        items: itemResult.rows.map(item => ({ description: item.description, quantity: Number(item.quantity), unitPrice: Number(item.unit_price), order: item.item_order, unit: item.unit })),
+      }, jobs);
+      for (const action of actions) {
+        if (action.action === 'assign') {
+          const job = jobs.find(candidate => candidate.id === action.jobId);
+          if (job) job.invoiceId = `planned:${invoice.id}`;
+        }
+      }
+      preview.push({ invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, actions });
+    }
+    const created = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'create').length, 0);
+    const assigned = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'assign').length, 0);
+    if (!dryRun) {
+      const years = new Set(preview.flatMap(invoice => invoice.actions.filter(action => action.action === 'create').map(action => Number(action.date.slice(0, 4)))));
+      for (const year of [...years].sort((a, b) => a - b)) await lockDocumentNumber(client, 'job', year);
+      const numbers = await client.query('SELECT job_number FROM job_entries');
+      const allocate = numberAllocator(numbers.rows.map(row => row.job_number), 'AB');
+      for (const invoice of preview) {
+        for (const action of invoice.actions) {
+          let jobId = action.jobId;
+          if (action.action === 'create') {
+            const inserted = await client.query(`
+              INSERT INTO job_entries (job_number, customer_id, title, description, date, hours_worked, hourly_rate, status)
+              SELECT $1, i.customer_id, $2, $3, $4, $5, $6, 'invoiced' FROM invoices i WHERE i.id = $7
+              RETURNING id, job_number
+            `, [allocate(null, action.date), action.title, action.description, action.date, action.hoursWorked, action.hourlyRate, invoice.invoiceId]);
+            jobId = inserted.rows[0].id;
+            action.jobNumber = inserted.rows[0].job_number;
+          } else {
+            const matched = await client.query("SELECT job_number FROM job_entries WHERE id = $1 AND status <> 'invoiced' FOR UPDATE", [jobId]);
+            if (!matched.rows[0]) throw httpError(409, 'Ein passender Kurs wurde zwischenzeitlich abgerechnet. Vorschau erneut prüfen.');
+            await client.query("UPDATE job_entries SET status = 'invoiced' WHERE id = $1", [jobId]);
+            action.jobNumber = matched.rows[0].job_number;
+          }
+          const linked = await client.query(`
+            INSERT INTO invoice_job_sources (invoice_id, job_id, job_number, title, job_date)
+            VALUES ($1, $2, (SELECT job_number FROM job_entries WHERE id = $2), $3, $4)
+            ON CONFLICT (workspace_id, job_id) DO NOTHING RETURNING id
+          `, [invoice.invoiceId, jobId, action.title, action.date]);
+          if (!linked.rows.length) throw httpError(409, 'Ein Kurs wurde zwischenzeitlich einer anderen Rechnung zugeordnet. Vorschau erneut prüfen.');
+        }
+      }
+      await client.query('COMMIT');
+    }
+    res.json({ dryRun, summary: { invoices: preview.length, created, assigned }, preview });
+  } catch (error) {
+    if (!dryRun) await client.query('ROLLBACK').catch(() => undefined);
+    if (error.code === '40001') return res.status(409).json({ error: 'Der Bestand hat sich während der Vorschau geändert. Bitte erneut prüfen.' });
+    sendError(res, error, 'Die Kurse konnten nicht zugeordnet werden.');
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/runs/:id', async (req, res) => {
   try {
     if (!UUID_PATTERN.test(req.params.id)) return res.status(400).json({ error: 'Ungültige Import-ID.' });
@@ -768,22 +887,23 @@ async function findRevertBlockers(client, itemsByTable, runRecordIds) {
     if (result.rows.length > 0) blockers.push(`Für ${result.rows.map(row => `„${row.name}“`).join(', ')} gibt es inzwischen weitere Dokumente oder Buchungen`);
   }
   const invoiceIds = created('invoices');
+  const jobIdsForRun = [...new Set([...created('job_entries'), ...(itemsByTable.get('job_entries:updated') || [])])];
   if (invoiceIds.length > 0) {
     const result = await client.query(`
       SELECT DISTINCT i.invoice_number FROM invoices i
       WHERE i.id = ANY($1::uuid[]) AND (
         EXISTS (SELECT 1 FROM euer_entries e WHERE e.source_type = 'invoice_payment' AND e.source_id = i.id AND e.status = 'active' AND NOT (e.id::text = ANY($2::text[])))
         OR EXISTS (SELECT 1 FROM invoices credit WHERE credit.reference_invoice_id = i.id)
-        OR EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id)
+        OR EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id AND NOT (ijs.job_id::text = ANY($3::text[])))
         OR i.last_reminder_sent_at IS NOT NULL
       )
       ORDER BY i.invoice_number LIMIT 10
-    `, [invoiceIds, ownIds]);
+    `, [invoiceIds, ownIds, jobIdsForRun]);
     if (result.rows.length > 0) blockers.push(`Zu ${result.rows.map(row => row.invoice_number).join(', ')} wurden inzwischen Zahlungen, Gutschriften oder Mahnungen erfasst`);
   }
   const jobIds = created('job_entries');
   if (jobIds.length > 0) {
-    const result = await client.query('SELECT COUNT(*)::int AS count FROM invoice_job_sources WHERE job_id = ANY($1::uuid[])', [jobIds]);
+    const result = await client.query('SELECT COUNT(*)::int AS count FROM invoice_job_sources WHERE job_id = ANY($1::uuid[]) AND NOT (invoice_id::text = ANY($2::text[]))', [jobIds, ownIds]);
     if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} importierte Termine wurden inzwischen abgerechnet`);
   }
   const quoteIds = created('quotes');
@@ -825,6 +945,9 @@ async function revertRun(client, runId, auth) {
   }
 
   await client.query("SELECT set_config('app.import_revert', 'true', true)");
+  if (itemsByTable.has('invoices:created')) {
+    await client.query('DELETE FROM invoice_job_sources WHERE invoice_id = ANY($1::uuid[])', [itemsByTable.get('invoices:created')]);
+  }
   const touchedInvoices = new Set();
   const templateChanges = [];
   for (const item of items) {
@@ -847,7 +970,9 @@ async function revertRun(client, runId, auth) {
       }
     } else if (action === 'updated' && oldData) {
       if (table === 'customers') await restoreCustomer(client, id, oldData);
-      else if (table === 'hourly_rates' || table === 'material_templates') {
+      else if (table === 'job_entries') {
+        await client.query('UPDATE job_entries SET status = $1 WHERE id = $2', [oldData.status, id]);
+      } else if (table === 'hourly_rates' || table === 'material_templates') {
         const columns = Object.keys(oldData).filter(column => /^[a-z_]+$/.test(column));
         if (columns.length > 0) {
           await client.query(`UPDATE ${table} SET ${columns.map((column, index) => `${column} = $${index + 1}`).join(', ')} WHERE id = $${columns.length + 1}`, [...columns.map(column => oldData[column]), id]);
@@ -1072,6 +1197,7 @@ router.post('/:resource', async (req, res) => {
     duplicateMode: req.body?.duplicateMode === 'update' ? 'update' : 'skip',
     createMissingCustomers: req.body?.createMissingCustomers === true,
     matchOpenInvoices: req.body?.matchOpenInvoices !== false,
+    createInvoiceCourses: req.body?.createInvoiceCourses === true,
   };
   const takeover = req.body?.takeover && typeof req.body.takeover === 'object' ? req.body.takeover : null;
   if (takeover && (!UUID_PATTERN.test(String(takeover.sessionId || ''))
@@ -1095,6 +1221,9 @@ router.post('/:resource', async (req, res) => {
       // vor der ersten Abfrage noch den Workspace-Kontext setzen, und danach
       // wäre ein separates SET TRANSACTION nicht mehr zulässig.
       await client.query(takeover?.phase === 'execute' ? 'BEGIN ISOLATION LEVEL SERIALIZABLE' : 'BEGIN');
+    }
+    if (!dryRun && resource === 'invoices' && options.createInvoiceCourses) {
+      await workspaceLock(client, 'imported-invoice-courses');
     }
     if (takeover) {
       const sessionResult = await client.query(`
@@ -1210,6 +1339,7 @@ router.post('/:resource', async (req, res) => {
       summary,
       rows: reportRows(plan, !dryRun),
       totals: plan.totals,
+      courseSummary: plan.courseSummary,
       newCustomers: plan.newCustomers.slice(0, 200).map(customer => ({ name: customer.name, rowNumbers: customer.rowNumbers.slice(0, 20) })),
       truncated: false,
       ...(takeover ? { categoryId, previewDigest } : {}),

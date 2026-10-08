@@ -149,6 +149,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const [duplicateMode, setDuplicateMode] = useState<ImportDuplicateMode>('skip');
   const [createMissingCustomers, setCreateMissingCustomers] = useState(false);
   const [matchOpenInvoices, setMatchOpenInvoices] = useState(true);
+  const [createInvoiceCourses, setCreateInvoiceCourses] = useState(false);
   const [preview, setPreview] = useState<ImportResponse | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [result, setResult] = useState<ImportResponse | null>(null);
@@ -273,6 +274,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     if (options.duplicateMode === 'update' && canUpdate) setDuplicateMode('update');
     if (typeof options.createMissingCustomers === 'boolean') setCreateMissingCustomers(options.createMissingCustomers);
     if (typeof options.matchOpenInvoices === 'boolean') setMatchOpenInvoices(options.matchOpenInvoices);
+    if (typeof options.createInvoiceCourses === 'boolean') setCreateInvoiceCourses(options.createInvoiceCourses);
     messages.push(`Die Zuordnung vom Import am ${new Date(previous.createdAt).toLocaleDateString('de-DE')} wurde übernommen. Bitte kurz prüfen.`);
     return { mapping: restored, messages };
   };
@@ -369,6 +371,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     duplicateMode,
     createMissingCustomers,
     matchOpenInvoices,
+    createInvoiceCourses,
     file: parsedFile ? { name: parsedFile.fileName, hash: parsedFile.hash ?? null, headers: parsedFile.headers } : undefined,
     settings: {
       mapping,
@@ -376,7 +379,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       valueMappings: Object.fromEntries(Object.entries(valueOverrides).filter(([key]) => mapping[key])),
       sheet: parsedFile?.sheet,
       selectedRows: mappedRows.map(row => Number(row._rowNumber)),
-      options: { duplicateMode, createMissingCustomers, matchOpenInvoices },
+      options: { duplicateMode, createMissingCustomers, matchOpenInvoices, createInvoiceCourses },
     },
     ...(takeoverSessionId ? {
       takeover: dryRun
@@ -556,6 +559,14 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   )}
                 </div>
               )}
+              {resource === 'invoices' && (
+                <div className="rounded-xl border border-gray-200 p-4 text-sm text-gray-700">
+                  <label className="flex items-start gap-3">
+                    <input type="checkbox" className="custom-checkbox mt-0.5 shrink-0" checked={createInvoiceCourses} onChange={event => { setCreateInvoiceCourses(event.target.checked); setPreview(null); }} />
+                    <span><span className="font-medium text-gray-900">Kurse zu den Rechnungspositionen anlegen</span><span className="block text-gray-500">Je geeigneter Position wird ein Kurs angelegt oder einem eindeutig passenden, noch nicht abgerechneten Kurs zugeordnet.</span></span>
+                  </label>
+                </div>
+              )}
 
               {resource === 'euerEntries' && !isSatisfied('entryType') && !mapping.incomeAmount && !mapping.expenseAmount && (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -672,6 +683,9 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <SummaryCard label="Warnungen" value={preview.summary.warnings} tone="amber" />
                 <SummaryCard label="Fehler" value={preview.summary.errors} tone="red" />
               </div>
+              {preview.courseSummary && (
+                <p className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">Kursvorschau: {preview.courseSummary.created} werden angelegt, {preview.courseSummary.assigned} werden bestehenden Kursen zugeordnet.</p>
+              )}
               {preview.newCustomers && preview.newCustomers.length > 0 && (
                 <div className="rounded-xl border border-gray-200 p-4 text-sm text-gray-700">
                   <p className="font-semibold text-gray-900">{preview.newCustomers.length === 1 ? `Ein ${terminology.entity.singular} wird neu angelegt` : `${preview.newCustomers.length} ${entityPlural} werden neu angelegt`}</p>

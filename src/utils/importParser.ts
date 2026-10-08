@@ -402,6 +402,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
       { key: 'taxAmount', label: 'Steuerbetrag', aliases: ['taxAmount', 'tax_amount', 'steuerbetrag', 'mwstBetrag', 'ustBetrag'], type: 'number' },
       { key: 'itemDescription', label: 'Positionsbeschreibung', aliases: ['itemDescription', 'item_description', 'position', 'positionsbeschreibung', 'leistungsbeschreibung', 'artikel', 'leistung'] },
       { key: 'itemQuantity', label: 'Positionsmenge', aliases: ['itemQuantity', 'item_quantity', 'positionsmenge', 'menge', 'quantity', 'anzahl'], type: 'number' },
+      { key: 'itemUnit', label: 'Positionseinheit', aliases: ['itemUnit', 'item_unit', 'positionsEinheit', 'einheit', 'unit', 'unitName'], example: 'Stunde', template: true },
       { key: 'itemUnitPrice', label: 'Positionspreis (netto)', aliases: ['itemUnitPrice', 'item_unit_price', 'positionspreis', 'einzelpreis', 'unitPrice', 'unit_price'], type: 'number' },
       { key: 'itemTaxRate', label: 'Positions-MwSt.', aliases: ['itemTaxRate', 'item_tax_rate', 'positionTaxRate'], type: 'number' },
       { key: 'status', label: 'Zahlungsstatus', aliases: ['status', 'zahlungsstatus', 'paymentStatus', 'payment_status', 'bezahlt'], type: 'enum', options: paymentStatusOptions, example: 'bezahlt', template: true, constant: true },
