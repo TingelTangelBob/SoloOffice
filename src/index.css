@@ -2577,6 +2577,69 @@
   transform: translateY(0);
 }
 
+@media (max-width: 767px) {
+  .info-tooltip-bubble {
+    position: fixed;
+    z-index: 60;
+    top: var(--mobile-tooltip-top, 0px);
+    right: 1rem;
+    bottom: auto;
+    left: 1rem;
+    width: auto;
+    max-width: 19rem;
+    max-height: calc(100vh - 2rem);
+    margin-inline: auto;
+    overflow-y: auto;
+    transform: translateY(0.25rem);
+  }
+
+  .info-tooltip-bubble::after {
+    display: none;
+  }
+
+  #topbar-page-title .info-tooltip-bubble {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: auto;
+    bottom: auto;
+    left: 0;
+    width: min(19rem, calc(100vw - 2rem));
+    max-height: none;
+    margin: 0;
+    overflow: visible;
+    transform: translateY(-0.25rem);
+  }
+
+  #topbar-page-title .info-tooltip-bubble::after {
+    display: block;
+    top: -0.4rem;
+    bottom: auto;
+    left: 1rem;
+    right: auto;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 1px solid var(--line-strong);
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .info-tooltip-align-start .info-tooltip-bubble,
+  .info-tooltip-align-end .info-tooltip-bubble {
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+  }
+
+  .info-tooltip:hover .info-tooltip-bubble,
+  .info-tooltip:focus-within .info-tooltip-bubble {
+    transform: translateY(0);
+  }
+
+  #topbar-page-title .info-tooltip:hover .info-tooltip-bubble,
+  #topbar-page-title .info-tooltip:focus-within .info-tooltip-bubble {
+    transform: translateY(0);
+  }
+}
+
 @layer components {
   /*
    * Aktionsleiste der Einstellungen.

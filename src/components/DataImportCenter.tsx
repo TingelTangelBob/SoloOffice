@@ -556,7 +556,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                         className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm transition ${isActive ? 'border-primary-custom bg-[var(--accent-tint)] font-semibold text-gray-900' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                       >
                         <span className="text-xs font-semibold text-gray-500">{step.position}</span>
-                        <span className="max-w-40 truncate">{step.node.label}</span>
+                        <span className="max-w-[min(13rem,60vw)] whitespace-normal break-words text-left leading-tight" title={step.node.label}>{step.node.label}</span>
                         {step.completed && <CheckCircle2 className="h-4 w-4 text-green-700" aria-hidden="true" />}
                         <span className="sr-only">{state.label}</span>
                       </button>
@@ -719,15 +719,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
             </button>
           )}
         </div>
-        <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-100 pt-4">
-          <label className="text-sm font-medium text-gray-700">
+        <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="w-full min-w-0 text-sm font-medium text-gray-700 sm:w-auto">
             Stichtag
-            <LocalizedDateInput aria-label="Stichtag" value={cutoverDate} onChange={setCutoverDate} disabled={!canAdmin} locale={company.locale || 'de-DE'} dateFormat={company.dateFormat} className="mt-1 w-44" />
+            <LocalizedDateInput aria-label="Stichtag" value={cutoverDate} onChange={setCutoverDate} disabled={!canAdmin} locale={company.locale || 'de-DE'} dateFormat={company.dateFormat} className="mt-1 w-full sm:w-44" />
           </label>
-          <button type="button" onClick={saveCutover} disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50" title={canAdmin ? undefined : 'Nur Administratoren können den Stichtag festlegen'}>
+          <button type="button" onClick={saveCutover} disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 w-full rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" title={canAdmin ? undefined : 'Nur Administratoren können den Stichtag festlegen'}>
             Speichern
           </button>
-          <p className="min-w-0 flex-1 text-sm text-gray-600">Ab diesem Datum arbeiten Sie mit SoloOffice.{savedCutoverDate ? '' : ' Noch kein Stichtag gesetzt.'}</p>
+          <p className="min-w-0 w-full text-sm text-gray-600 sm:w-auto sm:flex-1">Ab diesem Datum arbeiten Sie mit SoloOffice.{savedCutoverDate ? '' : ' Noch kein Stichtag gesetzt.'}</p>
         </div>
         {onNavigate && <p className="mt-3 text-sm text-gray-600">Prüfen Sie vor der Übernahme Ihre <button type="button" className="font-medium text-primary-custom hover:underline" onClick={() => onNavigate('settings')}>Firmendaten in den Einstellungen</button>.</p>}
       </section>
@@ -762,11 +762,11 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         </div>
         <details className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
           <summary className="cursor-pointer text-sm font-medium text-gray-800">Spalten der Komplettvorlage ({combinedColumns.length})</summary>
-          <ul className="mt-2 grid gap-1 text-sm text-gray-700 sm:grid-cols-2">
+          <ul className="mt-2 grid min-w-0 gap-2 text-sm text-gray-700 sm:grid-cols-2">
             {combinedColumns.map(column => (
-              <li key={column.header} className="flex min-w-0 items-baseline justify-between gap-2">
-                <span className="truncate">{column.header}</span>
-                <span className="shrink-0 text-xs text-gray-500">{column.resourceLabel}{column.example ? ` · z. B. ${column.example}` : ''}</span>
+              <li key={column.header} className="min-w-0 rounded-md bg-gray-50 px-2 py-1.5">
+                <span className="block break-words font-medium">{column.header}</span>
+                <span className="mt-0.5 block break-words text-xs text-gray-500">{column.resourceLabel}{column.example ? ` · z. B. ${column.example}` : ''}</span>
               </li>
             ))}
           </ul>

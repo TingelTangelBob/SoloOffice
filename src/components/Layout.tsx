@@ -94,6 +94,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   // Ticket-Support nur im gehosteten Betrieb; Self-Hoster sehen den Punkt nicht.
   const supportAvailable = useSupportAvailability();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback((restoreFocus = false) => {
+    setIsMobileMenuOpen(false);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Menü öffnen"]')?.focus());
+    }
+  }, []);
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettings>(readSidebarSettings);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,6 +133,27 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const invoiceAreaWasActive = useRef(invoiceAreaActive);
   const taxAreaActive = currentPage === 'taxes' || taxSubPageIds.includes(currentPage);
   const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMobileMenu(true);
+      }
+    };
+    const closeOnRouteChange = () => closeMobileMenu();
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('hashchange', closeOnRouteChange);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('hashchange', closeOnRouteChange);
+    };
+  }, [closeMobileMenu, isMobileMenuOpen]);
+
+  useEffect(() => {
+    closeMobileMenu();
+  }, [closeMobileMenu, currentPage]);
   const taxAreaWasActive = useRef(taxAreaActive);
   // Die mobile Drawer-Navigation bleibt immer beschriftet. Die kompakte
   // Icon-Leiste ist eine Desktop-Variante und darf nicht in den Drawer
@@ -540,7 +567,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           {isMobileMenuOpen && (
             <div
               className="dialog-overlay fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
-              onClick={() => setIsMobileMenuOpen(false)}
+              onClick={() => closeMobileMenu(true)}
             />
           )}
 
@@ -563,7 +590,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               <div className={`sidebar-brand mb-3 flex h-14 shrink-0 border-b border-gray-200 ${isSidebarCompact ? '-mx-2 flex-col items-center justify-center gap-1.5 px-2' : '-mx-4 flex-row items-center justify-between gap-2 px-4'}`}>
                 <button
                   type="button"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={() => closeMobileMenu(true)}
                   className="inline-flex h-12 w-12 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 lg:hidden"
                   aria-label="Menü schließen"
                 >

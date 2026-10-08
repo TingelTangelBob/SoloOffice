@@ -46,6 +46,14 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    const clearTransientMessages = () => {
+      setMessages(current => current.filter(message => message.variant === 'warning' || message.variant === 'error'));
+    };
+    window.addEventListener('hashchange', clearTransientMessages);
+    return () => window.removeEventListener('hashchange', clearTransientMessages);
+  }, []);
+
   const dismiss = useCallback((id: string) => {
     setMessages(current => current.filter(message => message.id !== id));
   }, []);

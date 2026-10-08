@@ -959,7 +959,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       </div>
 
       {/* Compact statistics cards for tablet/mobile */}
-      <div className={`grid min-w-0 gap-2 sm:gap-3 lg:hidden ${showAllStats ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-5 max-[380px]:grid-cols-4'}`}>
+      <div className={`grid min-w-0 gap-2 sm:gap-3 lg:hidden ${showAllStats ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-3 sm:grid-cols-5'}`}>
         <button
           onClick={() => setStatusFilter('not-invoiced')}
           className="order-1 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
@@ -1004,7 +1004,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
           className="order-3 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
-            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Abgeschlossen</p>
+            <p className="flex min-h-7 max-w-full items-center justify-center break-words hyphens-auto px-0.5 text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:px-0 sm:text-[11px]">Abgeschlossen</p>
             <div className="mt-2 flex items-center justify-center gap-1">
               <CheckCircle className="h-4 w-4 shrink-0 text-green-600 sm:h-5 sm:w-5" />
               <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{stats.completedJobs}</p>
