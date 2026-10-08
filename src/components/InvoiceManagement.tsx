@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight, FileUp } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight, FileUp, Printer } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -413,6 +413,29 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       downloadBlob(blob, name);
     } catch (downloadError) {
       notify({ variant: 'error', message: downloadError instanceof Error ? downloadError.message : 'Das Original konnte nicht geladen werden.' });
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  /**
+   * Neudruck einer übernommenen Rechnung im aktuellen Layout. Nummer, Datum und
+   * Beträge bleiben unverändert; das PDF ist sichtbar als Zweitschrift
+   * gekennzeichnet und ersetzt das Original nicht.
+  */
+  const downloadLegacyReprint = async (invoice: Invoice) => {
+    const customer = invoice.documentSnapshot?.customer;
+    if (!customer) {
+      notify({ variant: 'error', message: `Für Rechnung ${invoice.invoiceNumber} fehlt der historische Empfänger-Snapshot. Ein Neudruck wäre nicht verlässlich; bitte das Original verwenden.` });
+      return;
+    }
+    setIsExporting(invoice.id);
+    try {
+      const blob = await generateInvoicePDF(invoice, { format: 'pdf', company, customer, legacyReprint: true });
+      downloadBlob(blob, `${invoice.invoiceNumber}_Zweitschrift.pdf`);
+      notify({ variant: 'success', message: `Zweitschrift zu ${invoice.invoiceNumber} erstellt. Das Original bleibt maßgeblich und aufbewahrungspflichtig.` });
+    } catch (reprintError) {
+      notify({ variant: 'error', message: reprintError instanceof Error ? reprintError.message : 'Die Zweitschrift konnte nicht erstellt werden.' });
     } finally {
       setIsExporting(null);
     }
@@ -1546,6 +1569,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                         <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
                         <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                        {invoice.origin === 'imported' && <ActionMenuItem icon={<Printer className="h-4 w-4" />} tone="gray" onClick={() => void downloadLegacyReprint(invoice)} disabled={isExporting === invoice.id}>Kopie / Neudruck im aktuellen Layout</ActionMenuItem>}
                         {invoice.origin === 'imported' && !invoice.hasOriginalDocument && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={isExporting === invoice.id}>Original hinterlegen</ActionMenuItem>}
                         <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>

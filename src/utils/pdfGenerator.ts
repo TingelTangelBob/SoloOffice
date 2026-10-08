@@ -41,6 +41,12 @@ export interface PDFOptions {
   format: 'pdf' | 'zugferd' | 'xrechnung';
   company: Company;
   customer: Customer;
+  /**
+   * Neudruck einer übernommenen Rechnung im aktuellen Layout. Nummer, Datum
+   * und Beträge bleiben unverändert; das Dokument wird sichtbar als
+   * Zweitschrift gekennzeichnet und ersetzt das Original nicht.
+   */
+  legacyReprint?: boolean;
 }
 
 export interface JobPDFOptions {
@@ -67,10 +73,53 @@ export function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const LEGACY_REPRINT_TITLE = 'Kopie / Neudruck – kein Originalbeleg';
+const LEGACY_REPRINT_NOTICE = 'Diese Rechnung wurde aus einem anderen Programm übernommen und hier im aktuellen Layout neu gedruckt. '
+  + 'Rechnungsnummer, Rechnungsdatum und gespeicherte Beträge werden unverändert aus den übernommenen Rechnungsdaten wiedergegeben. '
+  + 'Maßgeblich bleibt das ursprünglich ausgestellte Dokument; diese Kopie / dieser Neudruck ist kein zweites Original und keine neue Rechnung. '
+  + 'Positionen und Steuersätze können aus den übernommenen Daten rekonstruiert sein; für Einzelpositionen und Rundungen gilt das Original.';
+
+function mergeCurrentInvoiceLayout(snapshotCompany: Company, currentCompany: Company): Company {
+  const currentLayout = resolveDocumentTemplate(currentCompany, 'invoice');
+  const layoutFields = {
+    layout: currentLayout.layout,
+    accentColor: currentLayout.accentColor,
+    logoMode: currentLayout.logoMode,
+    headerAlignment: currentLayout.headerAlignment,
+    tableStyle: currentLayout.tableStyle,
+    showPaymentInformation: currentLayout.showPaymentInformation,
+    showFooter: currentLayout.showFooter,
+  };
+  const savedTemplates = snapshotCompany.documentTemplates || [];
+  const snapshotSelectedIndex = savedTemplates.findIndex(template => template.documentType === 'invoice' && template.isDefault)
+    >= 0
+    ? savedTemplates.findIndex(template => template.documentType === 'invoice' && template.isDefault)
+    : savedTemplates.findIndex(template => template.documentType === 'invoice');
+  const documentTemplates = [...savedTemplates];
+
+  if (snapshotSelectedIndex >= 0) {
+    documentTemplates[snapshotSelectedIndex] = {
+      ...documentTemplates[snapshotSelectedIndex],
+      ...layoutFields,
+      isDefault: true,
+    };
+  } else {
+    documentTemplates.push({
+      id: 'legacy-reprint-current-layout',
+      documentType: 'invoice',
+      name: currentLayout.name,
+      isDefault: true,
+      ...layoutFields,
+    });
+  }
+
+  return { ...snapshotCompany, documentTemplates };
+}
+
 /**
- * Original einer übernommenen Rechnung. SoloOffice erzeugt für Rechnungen aus
- * einem anderen Programm bewusst kein eigenes Dokument, weil sonst ein
- * abweichendes „Original“ entstünde.
+ * Original einer übernommenen Rechnung. Für Rechnungen aus einem anderen
+ * Programm ist das hinterlegte Original maßgeblich; ein eigenes Dokument
+ * entsteht nur als ausdrücklich gekennzeichnete Zweitschrift.
  */
 export async function loadImportedInvoiceOriginal(invoice: Invoice): Promise<{ blob: Blob; name: string }> {
   if (!invoice.hasOriginalDocument) {
@@ -87,11 +136,25 @@ export async function loadImportedInvoiceOriginal(invoice: Invoice): Promise<{ b
  * Generate Invoice PDF
  */
 export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions): Promise<Blob> {
-  if (invoice.origin === 'imported') {
+  const isLegacyReprint = invoice.origin === 'imported' && options.legacyReprint === true;
+  if (invoice.origin === 'imported' && !isLegacyReprint) {
     return (await loadImportedInvoiceOriginal(invoice)).blob;
   }
+  if (isLegacyReprint && options.format !== 'pdf') {
+    // Eine E-Rechnung aus einem Fremdbeleg zu erzeugen würde einen neuen,
+    // steuerlich eigenständigen Datensatz vortäuschen.
+    throw new Error('Für die Zweitschrift einer übernommenen Rechnung ist nur ein PDF möglich, keine E-Rechnung.');
+  }
+  if (isLegacyReprint && invoice.documentSnapshot?.version !== 1) {
+    throw new Error('Für den Neudruck fehlt der historische Firmen- und Empfänger-Snapshot. Bitte verwenden Sie das Originaldokument.');
+  }
   if (invoice.documentSnapshot?.version === 1) {
-    options = { ...options, company: invoice.documentSnapshot.company, customer: invoice.documentSnapshot.customer };
+    const snapshotCompany = invoice.documentSnapshot.company;
+    options = {
+      ...options,
+      company: isLegacyReprint ? mergeCurrentInvoiceLayout(snapshotCompany, options.company) : snapshotCompany,
+      customer: invoice.documentSnapshot.customer,
+    };
   }
   // For XRechnung format, generate XML instead of PDF
   if (options.format === 'xrechnung') {
@@ -174,6 +237,29 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   yPosition = await addInvoiceHeader();
   resetFont(pdf, darkText);
 
+  // Kennzeichnung der Zweitschrift unmittelbar unter dem Kopf: Sie darf nicht
+  // zu überlesen sein und steht deshalb vor dem Einleitungstext.
+  if (isLegacyReprint) {
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    const noticeLines = pdf.splitTextToSize(LEGACY_REPRINT_NOTICE, pageWidth - margins.left - margins.right - 8);
+    const noticeHeight = noticeLines.length * 3.8 + 10;
+    pdf.setFillColor(243, 244, 246);
+    pdf.setDrawColor(148, 163, 184);
+    pdf.setLineWidth(0.4);
+    pdf.rect(margins.left, yPosition - 4, pageWidth - margins.left - margins.right, noticeHeight, 'FD');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(darkText);
+    pdf.text(LEGACY_REPRINT_TITLE, margins.left + 4, yPosition + 1.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(grayText);
+    pdf.text(noticeLines, margins.left + 4, yPosition + 6.5);
+    yPosition += noticeHeight + 4;
+    resetFont(pdf, darkText);
+  }
+
   if (template.introText?.trim()) {
     const introLines = pdf.splitTextToSize(template.introText.trim(), pageWidth - 40);
     pdf.setFont('helvetica', 'normal');
@@ -216,6 +302,13 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   for (let index = 0; index < sortedItems.length; index++) {
     const item = sortedItems[index];
     let description = item.description;
+
+    // Der Importplan legt bei Datensätzen ohne Einzelpositionen eine
+    // Sammelposition an. Im Neudruck muss erkennbar bleiben, dass dies keine
+    // überlieferte Einzelposition ist.
+    if (isLegacyReprint && description.toLocaleLowerCase().startsWith(`rechnung ${invoice.invoiceNumber}`.toLocaleLowerCase())) {
+      description = 'Importierter Gesamtbetrag – keine Einzelpositionen überliefert';
+    }
     
     // Add job number if available
     if (item.jobNumber) {
@@ -262,7 +355,9 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
       pdf.text(`${item.taxRate}%`, 150, yPosition);
     }
     
-    const itemTotal = (item.quantity * item.unitPrice) - discountAmount;
+    const itemTotal = isLegacyReprint && Number.isFinite(item.total)
+      ? item.total
+      : (item.quantity * item.unitPrice) - discountAmount;
     pdf.text(formatCurrency(itemTotal, locale, options.company.numberFormat, options.company.currency), 170, yPosition);
     
     yPosition += 4.5;
@@ -282,9 +377,9 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   yPosition += 10;
 
   // === TOTALS SECTION ===
-  const taxBreakdownData = calculateTaxBreakdown(invoice.items, invoice);
+  const taxBreakdownData = isLegacyReprint ? {} : calculateTaxBreakdown(invoice.items, invoice);
   const numberOfTaxRates = Object.keys(taxBreakdownData).filter(rate => Number(rate) > 0).length;
-  const showTotalTaxLine = numberOfTaxRates > 1;
+  const showTotalTaxLine = !isLegacyReprint && numberOfTaxRates > 1;
   
   const itemDiscountAmount = invoice.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0;
   const globalDiscountAmount = invoice.globalDiscountAmount || 0;
@@ -295,8 +390,9 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   if (globalDiscountAmount !== 0) discountLines++;
   if (hasDiscountData) discountLines++;
   
-  const totalsBoxHeight = 18 + (discountLines * 7) + (numberOfTaxRates * 7) + (showTotalTaxLine ? 7 : 0);
-  const reverseChargeHeight = hasOnlyZeroTaxRate(invoice.items) ? 20 : 0;
+  const importedTaxLineCount = isLegacyReprint && Number(invoice.taxAmount) !== 0 ? 1 : 0;
+  const totalsBoxHeight = 18 + (discountLines * 7) + (isLegacyReprint ? importedTaxLineCount * 7 : numberOfTaxRates * 7) + (showTotalTaxLine ? 7 : 0);
+  const reverseChargeHeight = !isLegacyReprint && hasOnlyZeroTaxRate(invoice.items) ? 20 : 0;
   const totalTotalsSpace = totalsBoxHeight + reverseChargeHeight + 5;
   
   // Check if page break needed for totals
@@ -351,7 +447,17 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
     yPosition += 7;
   }
   
-  // Tax breakdown
+  // Für eine Zweitschrift werden keine Steuerbeträge aus Positionen
+  // nachgerechnet: ausgewiesen wird ausschließlich der gespeicherte Importwert.
+  if (isLegacyReprint && Number(invoice.taxAmount) !== 0) {
+    pdf.setTextColor(secondaryRgb.r, secondaryRgb.g, secondaryRgb.b);
+    pdf.text('Steuerbetrag:', totalsLabelX, yPosition);
+    pdf.setTextColor(darkText);
+    pdf.text(formatCurrency(invoice.taxAmount, locale, options.company.numberFormat, options.company.currency), totalsStartX, yPosition);
+    yPosition += 7;
+  }
+
+  // Tax breakdown for invoices created in SoloOffice.
   const taxRates = Object.keys(taxBreakdownData)
     .filter(rate => Number(rate) > 0)
     .sort((a, b) => Number(a) - Number(b));
@@ -385,7 +491,7 @@ export async function generateInvoicePDF(invoice: Invoice, options: PDFOptions):
   yPosition = totalsNotesStartY + totalsBoxHeight;
 
   // === REVERSE CHARGE / SMALL BUSINESS CLAUSE ===
-  if (hasOnlyZeroTaxRate(invoice.items)) {
+  if (!isLegacyReprint && hasOnlyZeroTaxRate(invoice.items)) {
     if (await handlePageBreak(12, 20)) {
       // Clause moved to new page
     }
