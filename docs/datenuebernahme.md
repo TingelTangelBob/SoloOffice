@@ -1,6 +1,6 @@
 # Datenübernahme
 
-**Stand:** 2026-09-23
+**Stand:** 2026-10-08
 **Status:** umgesetzt; Staging-Stack und Migration 044 technisch geprüft,
 fachlicher Import-Smoke gegen PostgreSQL noch offen
 
@@ -23,8 +23,9 @@ Programm nach SoloOffice. Sie richtet sich an drei Fälle:
   entsteht beim Import auch keine. Die Einnahme wird mit Datum, Betrag und
   (optional) Kunde gebucht.
 - **Übernommene Rechnungen bleiben Fremddokumente.** Sie behalten Nummer, Datum
-  und Zahlungsstand. SoloOffice erzeugt für sie nie ein eigenes PDF; maßgeblich
-  ist das Original, das an der Rechnung hinterlegt werden kann.
+  und Zahlungsstand. Maßgeblich ist das Original, das an der Rechnung hinterlegt
+  werden kann. Ein zusätzlicher PDF-Neudruck im aktuellen Layout ist ausdrücklich
+  als „Kopie / Neudruck“ gekennzeichnet und ersetzt das Original nicht.
 - **Erst prüfen, dann speichern.** Jede Datei durchläuft eine serverseitige
   Vorschau mit Zeilenstatus und Summenkontrolle. Gespeichert wird erst nach
   ausdrücklicher Übernahme, in einer Transaktion.
@@ -34,15 +35,28 @@ Programm nach SoloOffice. Sie richtet sich an drei Fälle:
 ## Ablauf für Anwender
 
 Einstieg: **Einstellungen → E-Mail & Backup → Datenübernahme** (Hash
-`#data-import`). Die Seite zeigt die empfohlene Reihenfolge; jede Karte öffnet
-den Import-Assistenten und bietet eine CSV-Vorlage zum Herunterladen.
+`#data-import`). Der Einstieg ist **Datei hochladen**. Aus den erkannten Kategorien
+entsteht ein geführtes Formular; jeder Schritt öffnet die Zuordnung und Vorschau
+für die passenden Datei-Zeilen. Firmendaten werden vorher in den Einstellungen
+geprüft. Ein gemeinsamer Bereich zeigt Umzugsstatus und Stichtag.
 
 1. Kunden bzw. Schüler/Mandanten
 2. Leistungen und Preise (nur Administratoren)
 3. Rechnungen (Altbestand)
-4. Einnahmen und Ausgaben
-5. Zahlungseingänge
+4. Zahlungseingänge
+5. Einnahmen und Ausgaben
 6. Aufträge/Kurse und Angebote (nur wenn das Modul aktiv ist)
+
+Unabhängige Kategorien lassen sich vor- und zurückschieben; eine verletzte
+Voraussetzung wird mit dem konkreten Grund abgewiesen. „Überspringen“ ist eine
+eigene Aktion. Fehlende Kunden aus Folgedaten erscheinen vorab als Vorschlag und
+werden erst bei der ausdrücklich bestätigten Kategorieübernahme angelegt.
+
+Unter dem Formular stehen aufklappbare Vorlagen mit gesuchten Spalten,
+Pflichtangaben, Formaten und Beispielen. Die **Komplettvorlage** enthält Kunden
+und Rechnungen in einer CSV-Datei; sie werden in zwei getrennten Schritten
+übernommen. Weitere Tabellenblätter können geprüft werden; pro Umzugssitzung
+ist jede Kategorie einmal freigebbar. Teilfehler daher vor der Freigabe beheben.
 
 Die bisherigen Import-Knöpfe auf den Fachseiten bleiben erhalten. Auf den
 Belegseiten ist die Art fest auf „Ausgabe“ gesetzt; die EÜR-Seite bietet unter
@@ -55,6 +69,13 @@ EÜR sollte das laufende Jahr bis zum Stichtag übernommen werden.
 
 **Umzug abschließen:** schließt alle offenen Importläufe ab. Danach ist kein
 Rückgängigmachen mehr möglich; die Daten bleiben unverändert.
+
+**Workspace zurücksetzen:** Fachdaten und Importläufe werden immer entfernt.
+Firmendaten und Einstellungen (einschließlich eigenen Stunden-/Materialvorlagen,
+Nummernkreisen und SMTP) sowie Umzugsstatus und Stichtag sind getrennt wählbar.
+Standardmäßig werden beide zurückgesetzt, sodass ein neuer Umzug möglich ist.
+Eine offene Umzugssitzung muss entweder mit zurückgesetzt oder vorher geschlossen
+werden. Mitglieder und Workspace-Identität bleiben erhalten.
 
 ### Beispiel: Nachhilfe-Tabelle
 
@@ -187,6 +208,13 @@ automatische Rechnungszuordnung, Stichtag).
 - Vorschau, Download und Mahnungsanhang verwenden das Original
   (`loadImportedInvoiceOriginal` in `src/utils/pdfGenerator.ts`). Ohne Original
   zeigt die App einen Hinweis statt eines neu erzeugten Dokuments.
+- Zusätzlich bietet das Rechnungsmenü **Kopie / Neudruck im neuen Layout**.
+  Der historische Firmen-/Empfänger-Snapshot, Nummer, Datum und gespeicherte
+  Summen bleiben erhalten; lediglich die Layoutfelder der aktuellen Vorlage
+  werden übernommen. Fehlende Snapshots werden abgewiesen. Rekonstruierte
+  Sammelpositionen sind kenntlich; aktuelle Steuerhinweise werden nicht ergänzt.
+  Dieser Download erzeugt weder eine neue Rechnung noch eine E-Rechnung und
+  verändert weder Rechnung noch archiviertes Original.
 - Nummernkreis: Die eigenen Nummern laufen weiter. Fremde Nummern zählen nur
   plausibel mit (`legacyCounter` in `backend/utils/invoiceNumberPattern.js`):
   „R20250042“ und „17/2025“ ergeben 42 bzw. 17, unplausibel große Werte werden
@@ -272,7 +300,14 @@ Import, Zellen bis 100.000 Zeichen). Weitere Optionen im Rumpf:
 
 ## Nachweise
 
-Stand 2026-09-23:
+Aktuelle Schnellprüfung 2026-10-08: TypeScript, ESLint (keine Fehler, eine
+bestehende Fast-Refresh-Warnung), 56 Frontend- und 122 Backend-Unit-Tests bestanden.
+Ein isolierter Demo-Build bestand ebenfalls. Docker/PostgreSQL und manuelle
+Sichtprüfung des aktuellen Umbaus stehen noch aus; Browserzugriff wurde in der
+Arbeitsumgebung nicht freigegeben. Neue Tests decken Reset-Optionen und Demo-Parität,
+Kategoriezeilen, Reihenfolge sowie historische Daten beim PDF-Neudruck ab.
+
+Frühere Nachweise vom 2026-09-23 (gelten nicht als Sichtprüfung des Umbaus):
 
 - **Automatisiert (lokal ausgeführt):** `backend/test/importValues.test.js`,
   `backend/test/importPlanner.test.js`, `backend/test/invoiceNumberPattern.test.js`

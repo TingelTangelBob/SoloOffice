@@ -6,6 +6,7 @@ import {
   detectImportResources,
   getImportDefinition,
   mapImportRows,
+  mapImportCandidateRows,
   parseImportFile,
 } from '../../.test-dist/utils/importParser.js';
 
@@ -101,6 +102,26 @@ test('Gematchte Quellspalten werden unter den erwarteten Zielfeldern an den Serv
   assert.deepEqual(result, [{ _rowNumber: 2, name: 'Muster GmbH', email: 'mail@example.test' }]);
 });
 
+test('Abhängigkeitsplan verwendet nur passende Kategoriezeilen und ihre Quellzeilennummern', () => {
+  const parsed = {
+    fileName: 'gemischt.csv', format: 'csv',
+    headers: ['Kundenname', 'Rechnungsnummer', 'Rechnungsdatum', 'Bruttobetrag'],
+    rows: [
+      { Kundenname: 'Mia', Rechnungsnummer: '', Rechnungsdatum: '', Bruttobetrag: '' },
+      { Kundenname: 'Mia', Rechnungsnummer: 'ALT-1', Rechnungsdatum: '01.08.2026', Bruttobetrag: '12,00' },
+    ],
+    rowNumbers: [4, 9], warnings: [],
+  };
+  const candidate = detectImportResources(parsed).find(item => item.resource === 'invoices');
+  assert.ok(candidate);
+  const rows = mapImportCandidateRows(parsed, candidate);
+  assert.equal(rows.length, 1, 'die reine Kundenzeile darf Rechnungen nicht blockieren');
+  assert.equal(rows[0]._rowNumber, 9);
+  assert.equal(rows[0].invoiceNumber, 'ALT-1');
+  assert.equal(rows[0].total, 12);
+  assert.equal(rows[0].issueDate, '2026-08-01');
+});
+
 test('Eine Quellspalte kann für Name und Titel zugleich verwendet werden', () => {
   const parsedFile = {
     fileName: 'unterricht.csv',
@@ -148,7 +169,7 @@ test('Leere und unbenannte CSV-Spalten werden nicht als Quellspalten übernommen
 // ---------------------------------------------------------------------------
 
 import { deflateRawSync } from 'node:zlib';
-import { buildIssueList, buildImportTemplate } from '../../.test-dist/utils/importParser.js';
+import { buildIssueList, buildImportTemplate, buildCombinedImportTemplate, describeCombinedImportTemplate } from '../../.test-dist/utils/importParser.js';
 
 function zip(files) {
   const encoder = new TextEncoder();
@@ -292,4 +313,56 @@ test('Vorlage und Fehlerliste enthalten die erwarteten Spalten', () => {
   assert.equal(lines[0], 'Zeile;Status;Hinweis;Datum;Betrag');
   assert.equal(lines[1], '2;Fehler;Datum „x“ ist ungültig.;x;1');
   assert.equal(lines.length, 2);
+});
+
+test('Die Komplettvorlage wird als Kunden und Rechnungen erkannt', async () => {
+  const parsed = await parseImportFile(new File([buildCombinedImportTemplate()], 'komplettvorlage.csv', { type: 'text/csv' }));
+  assert.equal(parsed.rows.length, 2, 'die Vorlage enthält zwei Beispielzeilen');
+
+  const candidates = detectImportResources(parsed);
+  const resources = candidates.map(candidate => candidate.resource);
+  assert.ok(resources.includes('customers'), 'Kunden werden erkannt');
+  assert.ok(resources.includes('invoices'), 'Rechnungen werden erkannt');
+  for (const resource of ['customers', 'invoices']) {
+    assert.equal(candidates.find(candidate => candidate.resource === resource).confidence, 'high', `${resource} wird sicher erkannt`);
+  }
+
+  const invoiceMapping = analyseHeaderMapping(parsed.headers, getImportDefinition('invoices')).mapping;
+  assert.equal(invoiceMapping.invoiceNumber, 'Rechnungsnummer');
+  assert.equal(invoiceMapping.issueDate, 'Rechnungsdatum');
+  assert.equal(invoiceMapping.customerName, 'Kundenname');
+  const customerMapping = analyseHeaderMapping(parsed.headers, getImportDefinition('customers')).mapping;
+  assert.equal(customerMapping.name, 'Kundenname');
+  assert.equal(customerMapping.postalCode, 'PLZ');
+});
+
+test('Eine breite Datei schlägt nur fachlich passende Kategorien vor', async () => {
+  const parsed = await parseImportFile(new File([buildCombinedImportTemplate()], 'komplettvorlage.csv', { type: 'text/csv' }));
+  const resources = detectImportResources(parsed).map(candidate => candidate.resource);
+
+  assert.deepEqual([...resources].sort(), ['customers', 'invoices'], 'schwache Teiltreffer erzeugen keine zusätzlichen Kategorien');
+});
+
+test('Kategorien mit unsicher erkannter Pflichtspalte werden nicht vorgeschlagen', () => {
+  const parsedFile = {
+    fileName: 'rechnungen.csv',
+    format: 'csv',
+    headers: ['Rechnungsnummer', 'Rechnungsdatum', 'Kundenname', 'Rechnungsbetrag'],
+    rows: [{ Rechnungsnummer: '2024-1', Rechnungsdatum: '01.03.2024', Kundenname: 'Anna Muster', Rechnungsbetrag: '119,00' }],
+    rowNumbers: [2],
+    warnings: [],
+  };
+
+  const resources = detectImportResources(parsedFile).map(candidate => candidate.resource);
+  assert.ok(resources.includes('invoices'));
+  assert.ok(!resources.includes('euerEntries'), '„Rechnungsdatum“ ist keine zuverlässige Buchungsdatumsspalte');
+  assert.ok(!resources.includes('invoicePayments'), 'ohne Zahlungsdatum und Zahlungsbetrag keine Zahlungskategorie');
+  assert.ok(!resources.includes('quotes'), 'ohne Angebotsnummer keine Angebotskategorie');
+});
+
+test('Die Beschreibung der Komplettvorlage nennt je Spalte die Zielkategorie', () => {
+  const columns = describeCombinedImportTemplate();
+  assert.equal(columns.length, 16);
+  assert.deepEqual(columns[0], { header: 'Kundennummer', resourceLabel: 'Kunden', example: '1001' });
+  assert.ok(columns.some(column => column.header === 'Rechnungsnummer' && column.resourceLabel === 'Rechnungen (Altbestand)'));
 });

@@ -9,6 +9,7 @@ interface LocalizedDateInputProps {
   dateFormat?: DateFormat;
   min?: string;
   required?: boolean;
+  disabled?: boolean;
   id?: string;
   className?: string;
   placeholder?: string;
@@ -114,6 +115,7 @@ export function LocalizedDateInput({
   dateFormat = defaultDateFormat,
   min,
   required,
+  disabled = false,
   id,
   className = '',
   placeholder,
@@ -121,6 +123,10 @@ export function LocalizedDateInput({
 }: LocalizedDateInputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const effectiveFormat = dateFormat || defaultDateFormat;
+  // Rahmen und Innenabstand gehören zum Eingabefeld. Eine von außen
+  // mitgegebene Feldklasse würde einen zweiten Rahmen um das Feld zeichnen und
+  // das Kalendersymbol an den äußeren Rand drücken.
+  const wrapperClassName = className.split(/\s+/).filter(token => token && token !== 'form-input' && token !== 'form-input-compact').join(' ');
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(() => formatDateValue(value, effectiveFormat));
   const [viewDate, setViewDate] = useState(() => toLocalDate(value) || new Date());
@@ -200,7 +206,7 @@ export function LocalizedDateInput({
   };
 
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <div ref={containerRef} className={`relative ${wrapperClassName}`}>
       <input
         id={id}
         type="text"
@@ -213,27 +219,29 @@ export function LocalizedDateInput({
         onChange={event => handleInputChange(event.target.value)}
         onBlur={handleBlur}
         required={required}
+        disabled={disabled}
         placeholder={placeholder || formatDatePlaceholder(effectiveFormat)}
         aria-label={ariaLabel}
         aria-invalid={Boolean(inputValue && !parseDateValue(inputValue, effectiveFormat))}
-        className="form-input form-input-compact pr-10"
+        className="form-input form-input-compact pr-12 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <button
         type="button"
+        disabled={disabled}
         onMouseDown={event => event.preventDefault()}
         onClick={() => {
           const selected = toLocalDate(value);
           if (selected) setViewDate(selected);
           setIsOpen(previous => !previous);
         }}
-        className="absolute right-0 top-0 inline-flex h-full min-h-0 w-10 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 hover:text-primary-custom"
+        className="absolute right-1 top-0 inline-flex h-full min-h-0 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-50 hover:text-primary-custom disabled:cursor-not-allowed disabled:opacity-50"
         aria-label="Kalender öffnen"
         aria-expanded={isOpen}
       >
         <Calendar className="h-4 w-4" />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute left-0 top-full z-30 mt-2 w-[min(19rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between gap-2">
             <button

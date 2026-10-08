@@ -9,6 +9,25 @@ const labels = {
 };
 
 /**
+ * Fachliche Grundreihenfolge der Übernahme: Stammdaten vor Belegen, Belege vor
+ * Zahlungen und Buchungen. Sie entscheidet, welche von mehreren gleichzeitig
+ * möglichen Kategorien zuerst vorgeschlagen wird – unabhängig davon, in
+ * welcher Reihenfolge die Erkennung sie geliefert hat.
+ */
+export const TAKEOVER_CATEGORY_ORDER = [
+  'customers', 'hourlyRates', 'materials', 'positions',
+  'invoices', 'invoicePayments', 'euerEntries', 'jobs', 'quotes',
+];
+
+function categoryRank(node) {
+  // Vorgeschlagene Kunden gehören unmittelbar hinter die Kundenliste: erst die
+  // benannten Kunden, dann die aus Folgedaten abgeleiteten Namen.
+  if (node.id === 'suggestedCustomers') return 0.5;
+  const index = TAKEOVER_CATEGORY_ORDER.indexOf(node.resource);
+  return index < 0 ? TAKEOVER_CATEGORY_ORDER.length : index;
+}
+
+/**
  * Erstellt Abhängigkeiten für erkannte Importkategorien. Die Kundenauflösung
  * bleibt im planImport; diese Funktion ergänzt nur die Beziehungen zwischen
  * Kategorien und dem bereits vorhandenen Workspace-Bestand.
@@ -21,7 +40,6 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
   const blockers = new Map();
   const dependencies = new Map(categories.map(category => [category.resource, new Set()]));
   const customerCategory = byResource.get('customers');
-  const plannedCustomerIds = new Set();
   const plannedCustomers = [];
 
   if (customerCategory && !skippedSet.has('customers')) {
@@ -29,9 +47,7 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
     plans.set('customers', customerPlan);
     customerPlan.entries.forEach((item, index) => {
       if (!['valid', 'warning'].includes(item.status) || !item.data?.name) return;
-      const id = `takeover-customer-${index}`;
-      plannedCustomerIds.add(id);
-      plannedCustomers.push({ id, name: item.data.name, customerNumber: item.data.customerNumber || '', email: item.data.email || '' });
+      plannedCustomers.push({ id: `takeover-customer-${index}`, name: item.data.name, customerNumber: item.data.customerNumber || '', email: item.data.email || '' });
     });
   }
   const planningContext = plannedCustomers.length
@@ -45,7 +61,11 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
       plans.set(category.resource, plan);
       const missingReference = plan.entries.find(item => item.status === 'error' && /Bezug fehlt|Kundenbezug fehlt|Kundenbezug ist erforderlich|passen zu .*Bitte Nummer oder E-Mail ergänzen/i.test(item.message));
       if (missingReference) blockers.set(category.resource, missingReference.message);
-      if (plan.entries.some(item => item.data?.customerId && plannedCustomerIds.has(item.data.customerId))) {
+      // Eine mitgelieferte Kundenliste ist fachliche Voraussetzung jeder
+      // kundenbezogenen Kategorie – auch dann, wenn die Zeilen zufällig schon
+      // zu vorhandenen Kunden passen. Sonst käme „Kunden“ in der Reihenfolge
+      // hinter Rechnungen oder Aufträgen.
+      if (customerCategory && !skippedSet.has('customers')) {
         dependencies.get(category.resource)?.add('customers');
       }
       for (const customer of plan.newCustomers) {
@@ -77,8 +97,12 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
   const proposedInvoiceNumbers = new Map();
   const invoiceCategory = byResource.get('invoices');
   if (invoiceCategory && !skippedSet.has('invoices')) {
-    for (const row of invoiceCategory.rows || []) {
-      const number = normaliseKey(row.invoiceNumber || row.invoice_number || row.rechnungsnummer || row.rechnungsnr || row.belegnummer);
+    // Der Importplan gruppiert Positionszeilen und lässt bereits vorhandene
+    // Rechnungen aus. Quellzeilen zu zählen würde eine Rechnung mehrfach
+    // zählen und nach ihrer Übernahme fälschlich als mehrdeutig sperren.
+    for (const item of plans.get('invoices')?.entries || []) {
+      if (!['valid', 'warning'].includes(item.status)) continue;
+      const number = normaliseKey(item.data?.invoiceNumber);
       if (number) proposedInvoiceNumbers.set(number, (proposedInvoiceNumbers.get(number) || 0) + 1);
     }
   }
@@ -117,6 +141,15 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
     }
   }
 
+  // Zahlungen und Geldbuchungen setzen den Rechnungsbestand voraus: beide
+  // können Beträge einer übernommenen Rechnung zuordnen. Liegt eine
+  // Rechnungskategorie in derselben Datei, gehört sie davor.
+  if (invoiceCategory && !skippedSet.has('invoices')) {
+    for (const resource of ['invoicePayments', 'euerEntries']) {
+      if (byResource.has(resource) && !skippedSet.has(resource)) dependencies.get(resource)?.add('invoices');
+    }
+  }
+
   const nodes = categories.map(category => ({
     id: category.resource,
     resource: category.resource,
@@ -128,7 +161,10 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
   if (needsCustomerCategory) {
     nodes.push({
       id: 'suggestedCustomers', resource: 'customers', label: 'Vorgeschlagene Kunden',
-      dependencies: [], blockedReason: null, skipped: false, synthetic: true,
+      // Eine mitgelieferte Kundenliste wird zuerst übernommen; erst danach
+      // bleiben die wirklich unbekannten Namen als Vorschlag übrig.
+      dependencies: customerCategory && !skippedSet.has('customers') ? ['customers'] : [],
+      blockedReason: null, skipped: false, synthetic: true,
     });
   }
   for (const node of nodes) {
@@ -148,22 +184,48 @@ export function planTakeoverDependencies(categories, context = {}, skipped = [])
   };
 }
 
+/**
+ * Topologische Reihenfolge mit fachlicher Vorentscheidung: Sind mehrere
+ * Kategorien gleichzeitig möglich, gewinnt die mit dem kleineren Rang aus
+ * `TAKEOVER_CATEGORY_ORDER`. Damit stehen Kunden und Preise vor Belegen,
+ * unabhängig von der Erkennungsreihenfolge der Datei.
+ */
 function topologicalOrder(nodes) {
   const remaining = new Set(nodes.map(node => node.id));
   const ordered = [];
   while (remaining.size) {
-    const next = nodes.find(node => remaining.has(node.id) && node.dependencies.every(dep => !remaining.has(dep)));
-    if (!next) return [...ordered, ...remaining];
+    const ready = nodes.filter(node => remaining.has(node.id) && node.dependencies.every(dep => !remaining.has(dep)));
+    if (ready.length === 0) return [...ordered, ...remaining];
+    const next = ready.reduce((best, node) => (categoryRank(node) < categoryRank(best) ? node : best));
     ordered.push(next.id);
     remaining.delete(next.id);
   }
   return ordered;
 }
 
+/**
+ * Benennt die erste verletzte Voraussetzung einer Nutzer-Reihenfolge, damit die
+ * Oberfläche eine verständliche Rückmeldung geben kann. `null` heißt gültig.
+ */
+export function takeoverOrderConflict(nodes, order) {
+  if (order.length !== nodes.length || new Set(order).size !== nodes.length
+    || order.some(id => !nodes.some(node => node.id === id))) {
+    return 'Die Reihenfolge enthält nicht alle Kategorien genau einmal.';
+  }
+  const positions = new Map(order.map((id, index) => [id, index]));
+  const labelOf = id => nodes.find(node => node.id === id)?.label || id;
+  for (const id of order) {
+    const node = nodes.find(item => item.id === id);
+    for (const dependency of node?.dependencies || []) {
+      if (!positions.has(dependency) || positions.get(dependency) > positions.get(node.id)) {
+        return `„${node.label}“ braucht „${labelOf(dependency)}“ davor.`;
+      }
+    }
+  }
+  return null;
+}
+
 /** Tauscht Nutzer-Reihenfolge nur dann durch, wenn alle Kanten gültig bleiben. */
 export function isValidTakeoverOrder(nodes, order) {
-  if (order.length !== nodes.length || new Set(order).size !== nodes.length) return false;
-  const positions = new Map(order.map((id, index) => [id, index]));
-  return nodes.every(node => node.dependencies.every(dependency =>
-    positions.has(dependency) && positions.get(dependency) < positions.get(node.id)));
+  return takeoverOrderConflict(nodes, order) === null;
 }

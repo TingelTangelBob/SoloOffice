@@ -27,3 +27,7 @@ export function planTakeoverDependencies(
 };
 
 export function isValidTakeoverOrder(nodes: TakeoverDependencyNode[], order: string[]): boolean;
+
+export function takeoverOrderConflict(nodes: TakeoverDependencyNode[], order: string[]): string | null;
+
+export const TAKEOVER_CATEGORY_ORDER: PlannerResource[];

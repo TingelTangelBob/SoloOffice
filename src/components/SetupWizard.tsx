@@ -126,9 +126,9 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
     setError('');
     try {
       if (Object.keys(draft).length) await updateCompany(draft);
-      // „Keine Altdaten“ bleibt eine Setup-Entscheidung und verbraucht den
-      // späteren Start nicht. Nur der ausdrückliche Übernahme-Start claimt ihn.
-      if (complete && choice === 'takeover' && !takeover?.takeoverUsed) setTakeover(await apiService.startTakeover());
+      // Die Einrichtung hält nur die Entscheidung fest. Den einmaligen
+      // Umzug-Start verbraucht erst die Datenübernahme selbst – mit der ersten
+      // Datei oder über „Umzug jetzt starten“.
       const updated = await apiService.updateWorkspaceSetup({
         currentStep: nextStep,
         ...(complete ? { migrationChoice: choice, complete: true } : {}),
@@ -136,7 +136,7 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
       setSetup(updated);
       setDraft({});
       setStep(updated.currentStep);
-      if (complete && choice === 'takeover') onNavigate('data-import');
+      if (complete && choice === 'takeover' && takeover?.session?.status !== 'completed') onNavigate('data-import');
       else if (complete) onNavigate('dashboard');
       return true;
     } catch (reason) {
@@ -166,13 +166,13 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
   const accentColor = (currentCompany.terminologyColorSource || 'profile') === 'profile'
     ? terminologyColor.preview.accent
     : String(currentCompany.primaryColor ?? '#15803d');
-  const finalActionLabel = choice !== 'takeover'
+  // Der Text benennt das Ziel, das auch nach dem Speichern geöffnet wird.
+  const shouldContinueToTakeover = choice === 'takeover' && takeover?.session?.status !== 'completed';
+  const finalActionLabel = !shouldContinueToTakeover
     ? 'Einrichtung abschließen'
     : takeover?.session?.status === 'open'
       ? 'Datenübernahme fortsetzen'
-      : takeover?.session?.status === 'completed'
-        ? 'Einrichtung abschließen'
-        : 'Datenübernahme starten';
+      : 'Weiter zur Datenübernahme';
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
@@ -293,9 +293,9 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
           </div>
         </div>}
         {step === 5 && <div className="mt-5 space-y-3">
-          <p className="text-sm text-gray-600">Entscheidung zur Datenübernahme. „Keine Altdaten“ lässt einen späteren einmaligen Umzug-Start weiterhin zu.</p>
+          <p className="text-sm text-gray-600">Entscheidung zur Datenübernahme. Der einmalige Umzug-Start wird erst dort mit Ihrer ersten Datei verbraucht; „Keine Altdaten“ lässt ihn ebenfalls offen.</p>
           <button type="button" aria-pressed={choice === 'takeover'} onClick={() => setChoice('takeover')} className={`${selectionCardClass(choice === 'takeover')} w-full`}>
-            <span className="block font-semibold text-gray-900">Datenübernahme starten</span><span className="mt-1 block text-sm text-gray-600">Zur bestehenden Datenübernahme wechseln.</span>
+            <span className="block font-semibold text-gray-900">Daten übernehmen</span><span className="mt-1 block text-sm text-gray-600">Nach dem Abschluss geht es direkt zur Datenübernahme: Datei hochladen und Schritt für Schritt prüfen.</span>
           </button>
           <button type="button" aria-pressed={choice === 'no_legacy_data'} onClick={() => setChoice('no_legacy_data')} className={`${selectionCardClass(choice === 'no_legacy_data')} w-full`}>
             <span className="block font-semibold text-gray-900">Keine Altdaten</span><span className="mt-1 block text-sm text-gray-600">Ich beginne ohne Übernahme aus einem anderen System.</span>

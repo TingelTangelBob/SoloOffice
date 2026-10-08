@@ -874,7 +874,8 @@ function ConstantInput({ field, value, onChange, locale, dateFormat }: { field: 
     );
   }
   if (field.type === 'date') {
-    return <LocalizedDateInput aria-label={`Fester Wert für ${field.label}`} value={value} onChange={onChange} locale={locale} dateFormat={dateFormat} className={className} />;
+    // Das Datumsfeld bringt Rahmen und Kalendersymbol selbst mit.
+    return <LocalizedDateInput aria-label={`Fester Wert für ${field.label}`} value={value} onChange={onChange} locale={locale} dateFormat={dateFormat} className="w-full" />;
   }
   return (
     <input

@@ -262,7 +262,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   /* Zwei bewusst sichtbare Seitenraster: datenreiche Ansichten nutzen die
      gesamte verfügbare Breite, Verwaltungs- und Accountseiten bleiben auf
      großen Monitoren mit 1140px lesbar begrenzt. */
-  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace', 'support'];
+  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace', 'support', 'data-import'];
   const contentWidthClass = compactWidthPages.includes(currentPage) ? 'max-w-[1140px]' : 'max-w-none';
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);

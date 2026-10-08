@@ -48,6 +48,12 @@ export interface ImportDefinition {
   description: string;
   fields: ImportFieldDefinition[];
   requiredGroups?: Array<{ label: string; fields: string[] }>;
+  /**
+   * Kennzeichnende Felder für Kategorien ohne einzelne Pflichtspalte.
+   * Mindestens eines davon muss zuverlässig erkannt sein, damit die Kategorie
+   * überhaupt vorgeschlagen wird.
+   */
+  signatureFields?: string[];
   /** Import kann fehlende Kunden anlegen. */
   canCreateCustomers?: boolean;
   /** Import kann Einnahmen offenen Rechnungen zuordnen. */
@@ -269,6 +275,10 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     label: 'Angebote',
     description: 'Angebote importieren. Mehrere Zeilen mit derselben Angebotsnummer werden zu einem Angebot mit mehreren Positionen gruppiert.',
     requiredGroups: [{ label: 'Kundenbezug', fields: ['customerId', 'customerNumber', 'customerName', 'customerEmail'] }],
+    // Angebote haben keine einzelne Pflichtspalte. Ohne Angebotsnummer oder
+    // Gültigkeitsdatum ist eine Datei keine Angebotsliste, sondern meist eine
+    // Rechnungs- oder Auftragsliste.
+    signatureFields: ['quoteNumber', 'validUntil'],
     canCreateCustomers: true,
     fields: [
       { key: 'quoteNumber', label: 'Angebotsnummer', aliases: ['quoteNumber', 'quote_number', 'offerNumber', 'offer_number', 'angebotsnummer', 'angebotsnr'], example: 'AN-2025-001', template: true },
@@ -403,6 +413,13 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
 };
 
 const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Untergrenze für eine zuverlässige Spaltenerkennung. Exakte Aliastreffer
+ * liegen bei 100, Teiltreffer bei 60 plus Alias-Länge; kurze Teiltreffer wie
+ * „…datum“ oder „…betrag“ bleiben damit unter der Grenze.
+ */
+const RELIABLE_MATCH_SCORE = 70;
 
 function normaliseHeader(value: string): string {
   return normaliseKey(value);
@@ -672,7 +689,14 @@ export function detectImportResources(parsed: ParsedImportFile): ImportResourceC
     const eligibleRows = parsed.rows.filter(row => !paymentLinkedRow(row));
     const excludedPaymentRows = parsed.rows.length - eligibleRows.length;
     const requiredGroups = definition.requiredGroups || [];
-    const requiredGroupHit = requiredGroups.length === 0 || requiredGroups.some(group => group.fields.some(key => analysis.mapping[key]));
+    // Eine Spalte gilt als zuverlässig erkannt, wenn sie einem Alias entspricht
+    // oder ihn vollständig enthält. Kurze Teiltreffer wie „Rechnungsdatum“ für
+    // ein allgemeines „Datum“ reichen nicht: sonst passt eine breite Datei auf
+    // nahezu jede Kategorie.
+    const reliable = (key: string) => Boolean(analysis.mapping[key]) && (analysis.fields[key]?.score || 0) >= RELIABLE_MATCH_SCORE;
+    const requiredGroupHit = requiredGroups.every(group => group.fields.some(reliable));
+    const requiredFieldsReliable = definition.fields.filter(field => field.required).every(field => reliable(field.key));
+    const signatureHit = !definition.signatureFields || definition.signatureFields.some(reliable);
     const rowEvidence = matches.filter(({ key }) => /date|amount|price|number|name|description|email|category|type|status|quantity|invoice|customer|title|rate|unit|address|city/i.test(key));
     const coherentRowIndexes = parsed.rows.map((row, index) => ({ row, index })).filter(({ row }) => !paymentLinkedRow(row) && rowEvidence.filter(({ header }) => String(row[header] ?? '').trim() !== '').length >= Math.min(2, Math.max(1, rowEvidence.length))).map(({ index }) => index);
     const coherentRows = coherentRowIndexes.map(index => parsed.rows[index]).filter(Boolean);
@@ -689,7 +713,8 @@ export function detectImportResources(parsed: ParsedImportFile): ImportResourceC
       ? `${matchedColumns.length} passende Spalten aus den Felddefinitionen; ${Math.round(coverage * 100)} % der relevanten Datenzeilen enthalten dazu passende Werte${typedTotal ? `, ${Math.round(typedQuality * 100)} % der Datums- und Zahlenwerte sind lesbar` : ''}${excludedPaymentRows ? ` ${excludedPaymentRows} mit Rechnungsbezug und Zahlungsdatum verknüpfte Zeilen sind hier ausgeschlossen.` : ''}.`
       : 'Keine passende Spaltenstruktur erkannt.';
 
-    const accepted = matchedColumns.length >= 2 && requiredGroupHit && coverage >= 0.35 && score >= 45;
+    const accepted = matchedColumns.length >= 2 && requiredGroupHit && requiredFieldsReliable && signatureHit
+      && coverage >= 0.35 && score >= 45;
     return {
       resource, label: definition.label, confidence: score >= 75 ? 'high' as const : score >= 58 ? 'medium' as const : 'low' as const,
       score, reason, matchedColumns, unclearColumns, accepted,
@@ -826,6 +851,15 @@ export function mapImportRows(parsedFile: ParsedImportFile, mapping: Record<stri
     }
     return mappedRow;
   });
+}
+
+/** Dieselben Kategoriezeilen und Feldformate für Abhängigkeitsplan und Assistent. */
+export function mapImportCandidateRows(parsedFile: ParsedImportFile, candidate: ImportResourceCandidate): Array<Record<string, unknown>> {
+  const definition = getImportDefinition(candidate.resource);
+  const mapping = analyseHeaderMapping(parsedFile.headers, definition).mapping;
+  const selected = new Set(candidate.matchedRowNumbers);
+  return mapImportRows(parsedFile, mapping, { definition })
+    .filter(row => selected.has(Number(row._rowNumber)));
 }
 
 // ---------------------------------------------------------------------------
@@ -969,6 +1003,67 @@ export function buildImportTemplate(definition: ImportDefinition): string {
   const fields = definition.fields.filter(field => field.required || field.template);
   const example = Object.fromEntries(fields.map(field => [field.key, field.example ?? '']));
   return buildCsv([example], fields.map(field => ({ header: field.label, value: (row: Record<string, string>) => row[field.key] })));
+}
+
+interface CombinedTemplateColumn {
+  resource: ImportResource;
+  field: string;
+  /** Beispielwerte der beiden Vorlagenzeilen, sonst das Beispiel der Felddefinition. */
+  examples?: [string, string];
+}
+
+/**
+ * Komplettvorlage für den Umzug aus einer einzigen Datei: Kundenangaben und
+ * Rechnungen stehen in denselben Zeilen und werden anschließend in mehreren
+ * Schritten übernommen (zuerst Kunden, dann Rechnungen). Die Spaltennamen
+ * stammen aus den Felddefinitionen und bleiben damit automatisch gültig.
+ */
+export const COMBINED_IMPORT_TEMPLATE: { resources: ImportResource[]; columns: CombinedTemplateColumn[] } = {
+  resources: ['customers', 'invoices'],
+  columns: [
+    { resource: 'customers', field: 'customerNumber', examples: ['1001', '1002'] },
+    { resource: 'invoices', field: 'customerName', examples: ['Anna Muster', 'Bruno Beispiel'] },
+    { resource: 'customers', field: 'email', examples: ['anna@example.org', 'bruno@example.org'] },
+    { resource: 'customers', field: 'address', examples: ['Musterweg 1', 'Beispielallee 7'] },
+    { resource: 'customers', field: 'postalCode', examples: ['50667', '10115'] },
+    { resource: 'customers', field: 'city', examples: ['Köln', 'Berlin'] },
+    { resource: 'customers', field: 'phone', examples: ['0221 123456', '030 654321'] },
+    { resource: 'invoices', field: 'invoiceNumber', examples: ['2024-017', '2024-018'] },
+    { resource: 'invoices', field: 'issueDate', examples: ['01.03.2024', '15.03.2024'] },
+    { resource: 'invoices', field: 'itemDescription', examples: ['Beratung', 'Schulung'] },
+    { resource: 'invoices', field: 'itemQuantity', examples: ['2', '1'] },
+    { resource: 'invoices', field: 'itemUnitPrice', examples: ['50,00', '200,00'] },
+    { resource: 'invoices', field: 'taxRate', examples: ['19', '19'] },
+    { resource: 'invoices', field: 'total', examples: ['119,00', '238,00'] },
+    { resource: 'invoices', field: 'status', examples: ['bezahlt', 'offen'] },
+    { resource: 'invoices', field: 'paidDate', examples: ['10.03.2024', ''] },
+  ],
+};
+
+/** Beschreibt eine Spalte der Komplettvorlage für die Oberfläche. */
+export function describeCombinedImportTemplate(): Array<{ header: string; resourceLabel: string; example: string }> {
+  return COMBINED_IMPORT_TEMPLATE.columns.map(column => {
+    const definition = getImportDefinition(column.resource);
+    const field = definition.fields.find(item => item.key === column.field);
+    return {
+      header: field?.label || column.field,
+      resourceLabel: definition.label,
+      example: column.examples?.[0] ?? field?.example ?? '',
+    };
+  });
+}
+
+/** CSV der Komplettvorlage mit zwei Beispielzeilen. */
+export function buildCombinedImportTemplate(): string {
+  const columns = COMBINED_IMPORT_TEMPLATE.columns.map(column => {
+    const field = getImportDefinition(column.resource).fields.find(item => item.key === column.field);
+    return {
+      header: field?.label || column.field,
+      examples: column.examples ?? [field?.example ?? '', field?.example ?? ''] as [string, string],
+    };
+  });
+  const rows = [0, 1].map(index => Object.fromEntries(columns.map(column => [column.header, column.examples[index]])));
+  return buildCsv(rows, columns.map(column => ({ header: column.header, value: (row: Record<string, string>) => row[column.header] })));
 }
 
 /**
