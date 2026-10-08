@@ -5,6 +5,7 @@ import type {
   RegistrationResponse,
   WorkspaceInvitation,
   WorkspaceMember,
+  WorkspaceResetOptions,
   WorkspaceRole,
   WorkspaceSummary,
 } from '../types';
@@ -26,7 +27,7 @@ export interface AuthContextValue {
   acceptInvitation: (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => Promise<void>;
   createWorkspace: (name: string) => Promise<WorkspaceSummary>;
   updateWorkspace: (name: string) => Promise<void>;
-  resetWorkspace: (currentPassword: string, workspaceName: string) => Promise<void>;
+  resetWorkspace: (currentPassword: string, workspaceName: string, resetOptions: WorkspaceResetOptions) => Promise<void>;
   deleteWorkspace: (currentPassword: string, workspaceName: string) => Promise<void>;
   can: (permission: string) => boolean;
   canManageWorkspace: boolean;

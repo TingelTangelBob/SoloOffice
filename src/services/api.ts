@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 
@@ -255,7 +255,7 @@ class ApiService {
     return this.request<WorkspaceSummary>(`/workspaces/${workspaceId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
   }
 
-  async resetWorkspace(workspaceId: string, payload: { currentPassword: string; workspaceName: string }): Promise<void> {
+  async resetWorkspace(workspaceId: string, payload: { currentPassword: string; workspaceName: string; resetOptions: WorkspaceResetOptions }): Promise<void> {
     await this.request(`/workspaces/${workspaceId}/reset`, { method: 'POST', body: JSON.stringify(payload) });
   }
 

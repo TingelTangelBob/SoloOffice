@@ -777,6 +777,17 @@ export interface AuthUser {
   createdAt?: string;
 }
 
+/**
+ * Umfang eines Workspace-Resets. Fachdaten werden immer entfernt; Firmendaten
+ * und der Zustand der Datenübernahme sind wählbar.
+ */
+export interface WorkspaceResetOptions {
+  /** Betriebsdaten, Logo, Vorlagen, Nummernkreise und E-Mail-Versand. */
+  companyProfile: boolean;
+  /** Einmaliger Umzug-Start, Kategoriefortschritt und Stichtag. */
+  takeover: boolean;
+}
+
 export interface WorkspaceSummary {
   id: UUID;
   name: string;

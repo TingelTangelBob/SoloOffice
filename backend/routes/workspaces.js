@@ -132,7 +132,25 @@ router.patch('/:workspaceId', requireWorkspaceFromParam('workspaceId'), requireR
   });
 });
 
+/**
+ * Reset-Umfang aus der Anfrage. Fachdaten werden immer entfernt; Firmendaten
+ * und der Umzugszustand sind ausdrücklich wählbar. Fehlende Angaben setzen
+ * zurück, damit ein Reset ohne Optionen wirklich alles leert.
+ */
+function readResetOptions(body) {
+  const raw = body?.resetOptions;
+  if (raw === undefined || raw === null) return { companyProfile: true, takeover: true };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const known = ['companyProfile', 'takeover'];
+  if (Object.keys(raw).some(key => !known.includes(key) || (raw[key] !== undefined && typeof raw[key] !== 'boolean'))) return null;
+  return { companyProfile: raw.companyProfile !== false, takeover: raw.takeover !== false };
+}
+
 router.post('/:workspaceId/reset', requireWorkspaceFromParam('workspaceId'), requireRole('owner'), async (req, res) => {
+  const resetOptions = readResetOptions(req.body);
+  if (!resetOptions) {
+    return res.status(400).json({ error: 'Die Auswahl zum Zurücksetzen ist ungültig.', code: 'RESET_OPTIONS_INVALID' });
+  }
   if (!(await verifyDestructiveAction(req, res))) return;
   const workspaceId = req.params.workspaceId;
   const client = await pool.connect();
@@ -148,37 +166,57 @@ router.post('/:workspaceId/reset', requireWorkspaceFromParam('workspaceId'), req
       return res.status(400).json({ error: 'Der Workspace-Name stimmt nicht überein.', code: 'WORKSPACE_NAME_MISMATCH' });
     }
     const sessionResult = await client.query('SELECT id, status FROM migration_sessions WHERE workspace_id = $1 FOR UPDATE', [workspaceId]);
-    if (sessionResult.rows[0]?.status === 'open') {
+    // Ein offener Umzug darf nur dann bestehen bleiben, wenn der Umzugszustand
+    // ausdrücklich erhalten werden soll. Sonst würde die Sitzung ohne ihre
+    // Importläufe weiterlaufen.
+    if (sessionResult.rows[0]?.status === 'open' && !resetOptions.takeover) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: 'Der Workspace kann erst zurückgesetzt werden, wenn die offene Umzugssitzung unter „Datenübernahme“ abgeschlossen oder der historische Marker dort geschlossen wurde.',
+        error: 'Es läuft noch eine Umzugssitzung. Schließen Sie sie unter „Datenübernahme“ ab oder setzen Sie beim Zurücksetzen auch den Umzugsstatus zurück.',
         code: 'TAKEOVER_OPEN',
       });
     }
-    await runWithRequestContext({ userId: req.auth.userId, workspaceId }, async () => {
-      await clearWorkspaceBusinessData(client, workspaceId);
+    const plan = await runWithRequestContext({ userId: req.auth.userId, workspaceId }, async () => {
+      const keptCutover = !resetOptions.takeover && resetOptions.companyProfile
+        ? (await client.query('SELECT import_cutover_date FROM company WHERE workspace_id = $1', [workspaceId])).rows[0]?.import_cutover_date
+        : null;
+      const result = await clearWorkspaceBusinessData(client, workspaceId, resetOptions);
       await client.query('DELETE FROM workspace_invitations WHERE workspace_id = $1', [workspaceId]);
       await client.query('DELETE FROM user_notification_settings WHERE workspace_id = $1', [workspaceId]);
       await client.query("UPDATE sessions SET revoked_at = NOW() WHERE workspace_id = $1 AND id <> $2 AND revoked_at IS NULL", [workspaceId, req.auth.sessionId]);
       // Ein zurückgesetzter Workspace bleibt direkt benutzbar und erhält die
       // gleichen neutralen Startwerte wie ein neu angelegter Workspace.
-      await client.query(`
-        INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id, invoice_start_number, workspace_id)
-        VALUES ($1, '', '', '', 'Deutschland', '', '', '', 1, $2)
-      `, [lockedWorkspace.rows[0].name, workspaceId]);
-      await client.query(`
-        INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
-        VALUES ('Standard', 'Normale Arbeitszeit', 75, 19, TRUE)
-      `);
-      await client.query(`
-        INSERT INTO material_templates (name, description, unit_price, unit, tax_rate, is_default)
-        VALUES ('Kleinmaterial', 'Diverses Kleinmaterial', 15, 'Pauschale', 19, TRUE)
-      `);
-      await client.query(`
-        UPDATE workspace_setup SET current_step = 1, completed_at = NULL,
-          migration_choice = 'undecided', setup_required = TRUE, updated_at = NOW()
-        WHERE workspace_id = $1
-      `, [workspaceId]);
+      if (resetOptions.companyProfile) {
+        await client.query(`
+          INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id, invoice_start_number, workspace_id, import_cutover_date)
+          VALUES ($1, '', '', '', 'Deutschland', '', '', '', 1, $2, $3)
+        `, [lockedWorkspace.rows[0].name, workspaceId, keptCutover || null]);
+        await client.query(`
+          INSERT INTO hourly_rates (name, description, rate, tax_rate, is_default)
+          VALUES ('Standard', 'Normale Arbeitszeit', 75, 19, TRUE)
+        `);
+        await client.query(`
+          INSERT INTO material_templates (name, description, unit_price, unit, tax_rate, is_default)
+          VALUES ('Kleinmaterial', 'Diverses Kleinmaterial', 15, 'Pauschale', 19, TRUE)
+        `);
+      }
+      if (resetOptions.companyProfile) {
+        await client.query(`
+          UPDATE workspace_setup SET current_step = 1, completed_at = NULL,
+            migration_choice = CASE WHEN $2 THEN 'undecided' ELSE migration_choice END,
+            setup_required = TRUE, updated_at = NOW()
+          WHERE workspace_id = $1
+        `, [workspaceId, resetOptions.takeover]);
+      } else if (resetOptions.takeover) {
+        // Firmendaten bleiben, der Umzug beginnt von vorn: Stichtag und
+        // Übernahmeentscheidung gehören zum Umzug, nicht zu den Firmendaten.
+        await client.query(`UPDATE company SET import_cutover_date = NULL WHERE workspace_id = $1`, [workspaceId]);
+        await client.query(`
+          UPDATE workspace_setup SET migration_choice = 'undecided', updated_at = NOW()
+          WHERE workspace_id = $1
+        `, [workspaceId]);
+      }
+      return result;
     });
     await client.query('COMMIT');
     try {
@@ -186,7 +224,7 @@ router.post('/:workspaceId/reset', requireWorkspaceFromParam('workspaceId'), req
     } catch (error) {
       logger.error('Workspace-Sicherungen konnten nach dem Reset nicht entfernt werden', { workspaceId, error: error.message });
     }
-    return res.json({ success: true });
+    return res.json({ success: true, resetOptions: { companyProfile: plan.companyProfile, takeover: plan.takeover } });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     logger.error('Workspace-Reset fehlgeschlagen', { workspaceId, error: error.message });

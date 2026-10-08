@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { apiService, WORKSPACE_SUSPENDED_EVENT } from '../services/api';
 import { DEMO_DEFAULT_WORKSPACE_ID, deleteDemoWorkspaceData, getDemoActiveWorkspaceId, isDemoMode, resetDemoWorkspaceData, setDemoActiveWorkspaceId } from '../services/demoApi';
 import { generateUUID } from '../utils/uuid';
-import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceRole, WorkspaceSummary } from '../types';
+import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceResetOptions, WorkspaceRole, WorkspaceSummary } from '../types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
 import { trackTelemetry } from '../services/telemetry';
 
@@ -220,13 +220,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setWorkspaces(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
   }, [workspace]);
 
-  const resetWorkspace = useCallback(async (currentPassword: string, workspaceName: string) => {
+  const resetWorkspace = useCallback(async (currentPassword: string, workspaceName: string, resetOptions: WorkspaceResetOptions) => {
     if (!workspace) return;
     if (isDemoMode) {
-      resetDemoWorkspaceData();
+      resetDemoWorkspaceData(resetOptions);
       return;
     }
-    await apiService.resetWorkspace(workspace.id, { currentPassword, workspaceName });
+    await apiService.resetWorkspace(workspace.id, { currentPassword, workspaceName, resetOptions });
   }, [workspace]);
 
   const deleteWorkspace = useCallback(async (currentPassword: string, workspaceName: string) => {

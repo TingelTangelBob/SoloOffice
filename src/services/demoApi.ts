@@ -1,5 +1,5 @@
 import { generateUUID } from '../utils/uuid';
-import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile } from '../types';
+import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile, WorkspaceResetOptions } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { getTerminology } from '../utils/terminology';
@@ -2927,14 +2927,19 @@ export function resetDemoData() {
   demoDataStale = false;
 }
 
-export function resetDemoWorkspaceData() {
+export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { companyProfile: true, takeover: true }) {
+  const previous = readState();
   const state = createInitialState();
   state.customers = [];
   state.invoices = [];
   state.recurringInvoices = [];
   state.quotes = [];
   state.jobs = [];
-  state.yearlyInvoiceStartNumbers = [];
+  if (!options.companyProfile) {
+    state.hourlyRates = previous.hourlyRates;
+    state.materialTemplates = previous.materialTemplates;
+  }
+  state.yearlyInvoiceStartNumbers = options.companyProfile ? [] : (previous.yearlyInvoiceStartNumbers || []);
   state.calendarEvents = [];
   state.euerEntries = [];
   state.euerEntryHistory = [];
@@ -2944,18 +2949,36 @@ export function resetDemoWorkspaceData() {
   state.incomingEInvoices = [];
   state.importRuns = [];
   state.invoiceOriginals = {};
-  state.company = {
-    ...state.company,
-    name: 'Demo Workspace', address: '', city: '', postalCode: '', country: 'Deutschland',
-    email: '', phone: '', website: '', taxId: '', bankAccount: '', bic: '',
-  };
-  state.workspaceSetup = {
-    id: 'workspace-setup',
-    currentStep: 1, completedAt: null, migrationChoice: 'undecided', setupRequired: true,
-    createdAt: isoDate(), updatedAt: isoDate(),
-  };
+  state.company = options.companyProfile
+    ? {
+      ...state.company,
+      name: 'Demo Workspace', address: '', city: '', postalCode: '', country: 'Deutschland',
+      email: '', phone: '', website: '', taxId: '', bankAccount: '', bic: '',
+      importCutoverDate: options.takeover ? null : (previous.company.importCutoverDate || null),
+    }
+    // Firmendaten bleiben; nur der Stichtag gehört zum Umzug.
+    : { ...previous.company, ...(options.takeover ? { importCutoverDate: null } : {}) };
+  state.workspaceSetup = options.companyProfile
+    ? {
+      id: 'workspace-setup',
+      currentStep: 1, completedAt: null,
+      migrationChoice: options.takeover ? 'undecided' : (previous.workspaceSetup?.migrationChoice || 'undecided'),
+      setupRequired: true,
+      createdAt: isoDate(), updatedAt: isoDate(),
+    }
+    : {
+      ...(previous.workspaceSetup || { id: 'workspace-setup', currentStep: 1, completedAt: null, setupRequired: true, createdAt: isoDate() }),
+      ...(options.takeover ? { migrationChoice: 'undecided' } : {}),
+      updatedAt: isoDate(),
+    };
   localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(state));
   localStorage.removeItem(DEMO_NOTIFICATIONS_STORAGE_KEY);
+  // Der Umzugsstatus liegt in der Browser-Sitzung und muss beim Zurücksetzen
+  // mitgehen, sonst bliebe der einmalige Start verbraucht.
+  if (options.takeover && typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(demoTakeoverStorageKey());
+    sessionStorage.removeItem(demoTakeoverCategoriesKey());
+  }
   demoDataStale = false;
 }
 

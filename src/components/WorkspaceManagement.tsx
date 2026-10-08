@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Check, Copy, Plus, RotateCcw, Save, Trash2, Users, X } from 'lucide-react';
+import { Check, Copy, Plus, RotateCcw, Save, Trash2, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import type { WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '../types';
+import type { WorkspaceInvitation, WorkspaceMember, WorkspaceResetOptions, WorkspaceRole } from '../types';
 import { PageHeader } from './PageHeader';
 import { formatCountLabel } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
+import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
 
 const roleLabels: Record<WorkspaceRole, string> = {
@@ -13,6 +14,19 @@ const roleLabels: Record<WorkspaceRole, string> = {
   member: 'Mitarbeiter',
   viewer: 'Nur lesen',
 };
+
+const RESET_SCOPE_OPTIONS: Array<{ key: keyof WorkspaceResetOptions; title: string; description: string }> = [
+  {
+    key: 'companyProfile',
+    title: 'Firmendaten und Einstellungen',
+    description: 'Betriebsdaten, Logo, Vorlagen, Nummernkreise, E-Mail-Versand und die Ersteinrichtung werden auf den Startzustand gesetzt.',
+  },
+  {
+    key: 'takeover',
+    title: 'Umzugsstatus der Datenübernahme',
+    description: 'Der einmalige Umzug-Start, der Fortschritt der Kategorien und der Stichtag werden frei. Danach ist eine neue Datenübernahme möglich.',
+  },
+];
 
 export function WorkspaceManagement() {
   const {
@@ -45,6 +59,7 @@ export function WorkspaceManagement() {
   const [dangerStep, setDangerStep] = useState<1 | 2>(1);
   const [dangerPassword, setDangerPassword] = useState('');
   const [dangerName, setDangerName] = useState('');
+  const [resetOptions, setResetOptions] = useState<WorkspaceResetOptions>({ companyProfile: true, takeover: true });
 
   useEffect(() => {
     setWorkspaceName(workspace?.name || '');
@@ -124,15 +139,22 @@ export function WorkspaceManagement() {
     setDangerStep(1);
     setDangerPassword('');
     setDangerName('');
+    if (action === 'reset') setResetOptions({ companyProfile: true, takeover: true });
   };
+
+  const resetScopeSummary = [
+    'Fachdaten',
+    resetOptions.companyProfile ? 'Firmendaten' : null,
+    resetOptions.takeover ? 'Umzugsstatus' : null,
+  ].filter(Boolean).join(', ');
 
   const finishDangerAction = async () => {
     if (!dangerAction || !workspace) return;
     setError('');
     try {
       if (dangerAction === 'reset') {
-        await resetWorkspace(dangerPassword, dangerName);
-        setMessage('Workspace zurückgesetzt. Team und Umzugs-Claim bleiben erhalten.');
+        await resetWorkspace(dangerPassword, dangerName, resetOptions);
+        setMessage(`Workspace zurückgesetzt (${resetScopeSummary}). Mitglieder und Workspace-Identität bleiben erhalten.`);
         window.setTimeout(() => window.location.reload(), 750);
       } else {
         await deleteWorkspace(dangerPassword, dangerName);
@@ -275,20 +297,48 @@ export function WorkspaceManagement() {
         <h2 className="font-semibold text-red-900">Workspace zurücksetzen oder löschen</h2>
         <p className="mt-1 text-sm text-gray-600">Beide Aktionen verlangen dein Passwort, den exakten Workspace-Namen und eine zweite Bestätigung.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="font-medium text-gray-900">Workspace zurücksetzen</h3><p className="mt-1 text-sm text-gray-600">Löscht Fachdaten, Einstellungen, SMTP, Belege, Sicherungen und offene Einladungen. Team, Workspace-Identität und verbrauchter Umzugs-Claim bleiben. Eine offene Umzugssitzung muss zuerst abgeschlossen werden.</p><button type="button" onClick={() => beginDangerAction('reset')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500 px-3 py-2 text-sm font-medium text-amber-900"><RotateCcw className="h-4 w-4" />Zurücksetzen</button></div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="font-medium text-gray-900">Workspace zurücksetzen</h3><p className="mt-1 text-sm text-gray-600">Löscht Fachdaten, Belege, Importläufe, Sicherungen und offene Einladungen. Im nächsten Schritt wählen Sie, ob Firmendaten und der Umzugsstatus der Datenübernahme mit zurückgesetzt werden. Team und Workspace-Identität bleiben.</p><button type="button" onClick={() => beginDangerAction('reset')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500 px-3 py-2 text-sm font-medium text-amber-900"><RotateCcw className="h-4 w-4" />Zurücksetzen</button></div>
           <div className="rounded-lg border border-red-200 bg-red-50 p-4"><h3 className="font-medium text-gray-900">Workspace löschen</h3><p className="mt-1 text-sm text-gray-600">Löscht Daten, Team, Einladungen, Umzugs-/Setup-Zustand und Sicherungsdateien dauerhaft. Bei weiteren Mitgliedern ist die Löschung gesperrt. Lege zuerst einen Ersatz-Workspace an, wenn dies dein letzter ist; danach wirst du dorthin gewechselt.</p><button type="button" onClick={() => beginDangerAction('delete')} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white"><Trash2 className="h-4 w-4" />Workspace löschen</button></div>
         </div>
       </section>}
 
-      {dangerAction && dangerStep === 1 && <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setDangerAction(null); }}>
-        <form role="dialog" aria-modal="true" aria-labelledby="workspace-danger-title" onSubmit={event => { event.preventDefault(); setDangerStep(2); }} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:p-6">
-          <div className="flex items-start justify-between gap-3"><div><h2 id="workspace-danger-title" className="text-lg font-semibold text-gray-900">{dangerAction === 'reset' ? 'Workspace zurücksetzen' : 'Workspace löschen'}</h2><p className="mt-2 text-sm text-gray-600">Gib dein aktuelles Passwort und zur Bestätigung exakt „{workspace?.name}“ ein.</p></div><button type="button" aria-label="Schließen" onClick={() => setDangerAction(null)} className="rounded p-1 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
+      {dangerAction && dangerStep === 1 && <DialogShell
+        title={dangerAction === 'reset' ? 'Workspace zurücksetzen' : 'Workspace löschen'}
+        description={`Gib dein aktuelles Passwort und zur Bestätigung exakt „${workspace?.name}“ ein.`}
+        titleId="workspace-danger-title"
+        onClose={() => setDangerAction(null)}
+        onSubmit={event => { event.preventDefault(); setDangerStep(2); }}
+        size="md"
+        fitContent
+        zIndexClassName="z-[1200]"
+        footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setDangerAction(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">Abbrechen</button><button type="submit" disabled={dangerName.trim() !== workspace?.name} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Weiter zur zweiten Bestätigung</button></div>}
+      >
           {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+          {dangerAction === 'reset' && (
+            <fieldset className="mt-5 rounded-lg border border-gray-200 p-3">
+              <legend className="px-1 text-sm font-medium text-gray-700">Umfang</legend>
+              <p className="text-sm text-gray-600">Fachdaten werden immer entfernt: Kunden, Rechnungen, Angebote, Aufträge, Buchungen, Belege, Importläufe und Sicherungen.</p>
+              <div className="mt-3 space-y-2">
+                {RESET_SCOPE_OPTIONS.map(option => (
+                  <label key={option.key} className="flex items-start gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      className="custom-checkbox mt-0.5 shrink-0"
+                      checked={resetOptions[option.key]}
+                      onChange={event => setResetOptions(previous => ({ ...previous, [option.key]: event.target.checked }))}
+                    />
+                    <span>
+                      <span className="block font-medium text-gray-900">{option.title}</span>
+                      <span className="block text-gray-600">{option.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <div className="form-consistent-fields mt-5 space-y-3"><label className="block text-sm font-medium text-gray-700">Aktuelles Passwort<input type="password" autoFocus autoComplete="current-password" required value={dangerPassword} onChange={event => setDangerPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label><label className="block text-sm font-medium text-gray-700">Workspace-Name<input autoComplete="off" required value={dangerName} onChange={event => setDangerName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label></div>
-          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end"><button type="button" onClick={() => setDangerAction(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">Abbrechen</button><button type="submit" disabled={dangerName.trim() !== workspace?.name} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Weiter zur zweiten Bestätigung</button></div>
-        </form>
-      </div>}
-      <ConfirmationModal isOpen={Boolean(dangerAction && dangerStep === 2)} onClose={() => setDangerAction(null)} onConfirm={() => void finishDangerAction()} title={dangerAction === 'reset' ? 'Zurücksetzen endgültig bestätigen' : 'Löschen endgültig bestätigen'} message={dangerAction === 'reset' ? `Alle Fach- und Konfigurationsdaten in „${workspace?.name}“ werden gelöscht. Mitglieder, Workspace-Identität und der Umzugs-Claim bleiben erhalten.` : `„${workspace?.name}“ und seine Daten werden dauerhaft gelöscht. Bei weiteren Mitgliedern oder ohne Ersatz-Workspace wird die Aktion abgewiesen.`} confirmText="Jetzt endgültig bestätigen" cancelText="Zurück" isDestructive />
+      </DialogShell>}
+      <ConfirmationModal isOpen={Boolean(dangerAction && dangerStep === 2)} onClose={() => setDangerAction(null)} onConfirm={() => void finishDangerAction()} title={dangerAction === 'reset' ? 'Zurücksetzen endgültig bestätigen' : 'Löschen endgültig bestätigen'} message={dangerAction === 'reset' ? `In „${workspace?.name}“ werden zurückgesetzt: ${resetScopeSummary}. Mitglieder und Workspace-Identität bleiben erhalten.` : `„${workspace?.name}“ und seine Daten werden dauerhaft gelöscht. Bei weiteren Mitgliedern oder ohne Ersatz-Workspace wird die Aktion abgewiesen.`} confirmText="Jetzt endgültig bestätigen" cancelText="Zurück" isDestructive />
     </div>
   );
 }
