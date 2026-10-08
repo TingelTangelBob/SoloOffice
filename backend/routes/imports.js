@@ -1078,8 +1078,10 @@ router.post('/:resource', async (req, res) => {
   const client = await pool.connect();
   try {
     if (takeover || !dryRun) {
-      await client.query('BEGIN');
-      if (takeover?.phase === 'execute') await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+      // Die Isolationsstufe gehört direkt in BEGIN: Der Datenbank-Wrapper kann
+      // vor der ersten Abfrage noch den Workspace-Kontext setzen, und danach
+      // wäre ein separates SET TRANSACTION nicht mehr zulässig.
+      await client.query(takeover?.phase === 'execute' ? 'BEGIN ISOLATION LEVEL SERIALIZABLE' : 'BEGIN');
     }
     if (takeover) {
       const sessionResult = await client.query(`

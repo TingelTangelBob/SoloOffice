@@ -83,7 +83,7 @@ const originalPoolConnect = pool.connect.bind(pool);
 const contextAwareClients = new WeakSet();
 const clientContextKeys = new WeakMap();
 
-function instrumentClient(client) {
+export function instrumentClient(client) {
   if (contextAwareClients.has(client)) return client;
 
   const originalQuery = client.query.bind(client);
@@ -93,6 +93,10 @@ function instrumentClient(client) {
     // transaction and prevent the required ROLLBACK from succeeding.
     const queryText = typeof args[0] === 'string' ? args[0].trim().toUpperCase() : '';
     if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/.test(queryText)) {
+      // set_config() innerhalb einer zurückgerollten Transaktion bzw. eines
+      // Savepoints wird von PostgreSQL verworfen. Der gemerkte Kontext wäre
+      // dann falsch und muss bei der nächsten Abfrage neu gesetzt werden.
+      if (queryText.startsWith('ROLLBACK')) clientContextKeys.delete(client);
       return originalQuery(...args);
     }
     const context = getRequestContext();

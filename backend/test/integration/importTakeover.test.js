@@ -39,6 +39,24 @@ function invoke(resource, body, requestAuth = auth) {
   });
 }
 
+// In Produktion nutzt requireAuth eine Pool-Verbindung zuerst ohne
+// Workspace-Kontext. Der Wrapper setzt den Kontext dann erst nach BEGIN –
+// eine Kategorieübernahme muss das vertragen.
+async function withForeignContextConnection(callback) {
+  const originalConnect = pool.connect;
+  pool.connect = async (...args) => {
+    pool.connect = originalConnect;
+    const client = await originalConnect(...args);
+    await runWithRequestContext({ workspaceId: '', userId: '' }, () => client.query('SELECT 1'));
+    return client;
+  };
+  try {
+    return await callback();
+  } finally {
+    pool.connect = originalConnect;
+  }
+}
+
 const warningRows = [{
   _rowNumber: 2,
   entryDate: '2099-02-01',
@@ -155,7 +173,7 @@ test('führt eine geprüfte Kategorie aus und liefert bei Wiederholung denselben
       idempotencyKey: randomUUID(),
     },
   };
-  const execute = await inWorkspace(workspaceId, () => invoke('euerEntries', executeBody));
+  const execute = await withForeignContextConnection(() => inWorkspace(workspaceId, () => invoke('euerEntries', executeBody)));
   assert.equal(execute.statusCode, 200, JSON.stringify(execute.payload));
   assert.ok(execute.payload.runId);
   assert.equal(execute.payload.idempotentReplay, undefined);
