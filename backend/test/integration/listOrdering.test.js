@@ -60,6 +60,7 @@ after(async () => {
       try {
         await client.query('BEGIN');
         await client.query("SELECT set_config('app.audit_disabled','true',true), set_config('app.allow_history_purge','true',true)");
+        await client.query('DELETE FROM invoice_history WHERE workspace_id = $1', [workspaceId]);
         await client.query('DELETE FROM quotes WHERE quote_number IN ($1, $2)', [`AN-${suffix}-ALT`, `AN-${suffix}-NEU`]);
         await client.query('DELETE FROM invoices WHERE invoice_number IN ($1, $2, $3, $4)', [
           `RE-${suffix}-ALT`, `RE-${suffix}-NEU`, `GS-${suffix}-ALT`, `GS-${suffix}-NEU`,
@@ -81,11 +82,11 @@ after(async () => {
 
 test('Rechnungen und Gutschriften kommen nach Belegdatum absteigend zurück', async () => {
   const [invoices, creditNotes] = await inWorkspace(() => Promise.all([findAllInvoices(), findAllCreditNotes()]));
-  assert.deepEqual(invoices.filter(item => item.invoiceNumber.startsWith(`RE-${suffix}`)).map(item => item.issueDate), ['2026-01-01', '2020-01-01']);
-  assert.deepEqual(creditNotes.filter(item => item.invoiceNumber.startsWith(`GS-${suffix}`)).map(item => item.issueDate), ['2026-01-01', '2020-01-01']);
+  assert.deepEqual(invoices.filter(item => item.invoiceNumber.startsWith(`RE-${suffix}`)).map(item => item.invoiceNumber), [`RE-${suffix}-NEU`, `RE-${suffix}-ALT`]);
+  assert.deepEqual(creditNotes.filter(item => item.invoiceNumber.startsWith(`GS-${suffix}`)).map(item => item.invoiceNumber), [`GS-${suffix}-NEU`, `GS-${suffix}-ALT`]);
 });
 
 test('Angebote kommen nach Angebotsdatum absteigend zurück', async () => {
   const quotes = await inWorkspace(() => findAllQuotes());
-  assert.deepEqual(quotes.filter(item => item.quoteNumber.startsWith(`AN-${suffix}`)).map(item => item.issueDate), ['2026-01-01', '2020-01-01']);
+  assert.deepEqual(quotes.filter(item => item.quoteNumber.startsWith(`AN-${suffix}`)).map(item => item.quoteNumber), [`AN-${suffix}-NEU`, `AN-${suffix}-ALT`]);
 });
