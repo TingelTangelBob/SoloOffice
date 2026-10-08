@@ -1295,10 +1295,7 @@ router.post('/:resource', async (req, res) => {
       await client.query('UPDATE migration_categories SET preview_digest = $2, updated_at = NOW() WHERE id = $1', [categoryId, previewDigest]);
     }
     if (!dryRun) {
-      if (summary.records === 0) throw httpError(400, 'Es gibt keine Zeile, die übernommen werden kann.');
-      const items = await applyPlan(client, resource, plan, company, { fileName: text(req.body?.file?.name).slice(0, 200) });
-      summary.imported = summary.records;
-      if (takeover) {
+      if (takeover?.phase === 'execute') {
         const category = await client.query(`
           SELECT id, status, preview_digest FROM migration_categories
           WHERE id = $1 AND session_id = $2 AND ${workspaceCondition} AND resource = $3
@@ -1311,6 +1308,9 @@ router.post('/:resource', async (req, res) => {
         }
         categoryId = category.rows[0].id;
       }
+      if (summary.records === 0) throw httpError(400, 'Es gibt keine Zeile, die übernommen werden kann.');
+      const items = await applyPlan(client, resource, plan, company, { fileName: text(req.body?.file?.name).slice(0, 200) });
+      summary.imported = summary.records;
       runId = await saveRun(client, {
         resource,
         file: req.body?.file,

@@ -58,7 +58,7 @@ test('Importoption erstellt Kurse und Rückgängigmachen löscht Verknüpfungen 
     params: { resource: 'invoices' },
     body: { dryRun: false, createInvoiceCourses: true, rows: [{ invoiceNumber: `ALT-${suffix}`, issueDate: '2025-02-03', customerId, customerName: 'Kurskunde', taxRate: 0, items: [{ description: 'Matheunterricht', quantity: 2, unitPrice: 40, unit: 'Stunde' }] }] },
   }));
-  assert.equal(result.statusCode, 200);
+  assert.equal(result.statusCode, 200, JSON.stringify(result.payload));
   assert.deepEqual(result.payload.courseSummary, { created: 1, assigned: 0 });
   const imported = await own(() => query(`SELECT i.id AS invoice_id, j.id AS job_id, j.status, j.hours_worked, j.hourly_rate, ii.unit FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id JOIN invoice_job_sources ijs ON ijs.invoice_id = i.id JOIN job_entries j ON j.id = ijs.job_id WHERE i.invoice_number = $1`, [`ALT-${suffix}`]));
   assert.equal(imported.rows.length, 1);
@@ -66,7 +66,7 @@ test('Importoption erstellt Kurse und Rückgängigmachen löscht Verknüpfungen 
   assert.equal(imported.rows[0].unit, 'Stunde');
   assert.equal(Number(imported.rows[0].hours_worked), 2);
   const reverted = await own(() => invoke('/runs/:id/revert', 'post', { params: { id: result.payload.runId } }));
-  assert.equal(reverted.statusCode, 200);
+  assert.equal(reverted.statusCode, 200, JSON.stringify(reverted.payload));
   assert.equal((await own(() => query('SELECT COUNT(*)::int AS count FROM invoice_job_sources'))).rows[0].count, 0);
   assert.equal((await own(() => query('SELECT COUNT(*)::int AS count FROM job_entries'))).rows[0].count, 0);
 });
@@ -85,7 +85,7 @@ test('Nachschritt zeigt Vorschau, führt idempotent aus und bleibt workspaceisol
   assert.equal(preview.payload.summary.created, 1);
   assert.equal((await own(() => query('SELECT COUNT(*)::int AS count FROM job_entries'))).rows[0].count, 0);
   const executed = await own(() => invoke('/invoice-courses', 'post', { body: { dryRun: false } }));
-  assert.equal(executed.statusCode, 200);
+  assert.equal(executed.statusCode, 200, JSON.stringify(executed.payload));
   assert.equal(executed.payload.summary.created, 1);
   const again = await own(() => invoke('/invoice-courses', 'post', { body: { dryRun: false } }));
   assert.deepEqual(again.payload.summary, { invoices: 0, created: 0, assigned: 0 });
@@ -95,7 +95,7 @@ test('Nachschritt zeigt Vorschau, führt idempotent aus und bleibt workspaceisol
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await clearWorkspaceBusinessData(client, workspaceId);
+      await clearWorkspaceBusinessData(client, workspaceId, { companyProfile: false });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
@@ -111,20 +111,20 @@ test('Umzugsassistent übernimmt Kurse mit geprüfter Option und Reset löscht V
     params: { resource: 'invoices' },
     body: { rows, dryRun: true, createInvoiceCourses: true, takeover: { sessionId, phase: 'preview' } },
   }));
-  assert.equal(preview.statusCode, 200);
+  assert.equal(preview.statusCode, 200, JSON.stringify(preview.payload));
   assert.deepEqual(preview.payload.courseSummary, { created: 1, assigned: 0 });
   const stale = await own(() => invoke('/:resource', 'post', {
     params: { resource: 'invoices' },
     body: { rows, dryRun: false, createInvoiceCourses: false, takeover: { sessionId, phase: 'execute', categoryId: preview.payload.categoryId, previewDigest: preview.payload.previewDigest, idempotencyKey: randomUUID() } },
   }));
-  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.statusCode, 409, JSON.stringify(stale.payload));
   assert.equal((await own(() => query('SELECT status FROM migration_categories WHERE id = $1', [preview.payload.categoryId]))).rows[0].status, 'open');
 
   const executed = await own(() => invoke('/:resource', 'post', {
     params: { resource: 'invoices' },
     body: { rows, dryRun: false, createInvoiceCourses: true, takeover: { sessionId, phase: 'execute', categoryId: preview.payload.categoryId, previewDigest: preview.payload.previewDigest, idempotencyKey: randomUUID() } },
   }));
-  assert.equal(executed.statusCode, 200);
+  assert.equal(executed.statusCode, 200, JSON.stringify(executed.payload));
   assert.deepEqual(executed.payload.courseSummary, { created: 1, assigned: 0 });
   const linked = await own(() => query(`SELECT j.date, j.hours_worked, ijs.id AS link_id FROM job_entries j JOIN invoice_job_sources ijs ON ijs.job_id = j.id`));
   assert.equal(linked.rows.length, 1);
@@ -138,7 +138,7 @@ test('Umzugsassistent übernimmt Kurse mit geprüfter Option und Reset löscht V
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await clearWorkspaceBusinessData(client, workspaceId);
+      await clearWorkspaceBusinessData(client, workspaceId, { companyProfile: false });
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
