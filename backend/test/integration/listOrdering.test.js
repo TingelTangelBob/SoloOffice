@@ -55,7 +55,24 @@ before(async () => {
 
 after(async () => {
   try {
-    await inWorkspace(() => query('DELETE FROM customers WHERE id = $1', [customerId]));
+    await inWorkspace(async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.audit_disabled','true',true), set_config('app.allow_history_purge','true',true)");
+        await client.query('DELETE FROM quotes WHERE quote_number IN ($1, $2)', [`AN-${suffix}-ALT`, `AN-${suffix}-NEU`]);
+        await client.query('DELETE FROM invoices WHERE invoice_number IN ($1, $2, $3, $4)', [
+          `RE-${suffix}-ALT`, `RE-${suffix}-NEU`, `GS-${suffix}-ALT`, `GS-${suffix}-NEU`,
+        ]);
+        await client.query('DELETE FROM customers WHERE id = $1', [customerId]);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
     await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
   } finally {
     await pool.end();

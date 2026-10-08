@@ -16,10 +16,13 @@ if (!/(?:^|[_-])(integration|test)(?:$|[_-])/i.test(String(process.env.DB_NAME |
 // Rückgängigmachen in umgekehrter Reihenfolge einschließlich Trigger-Ausnahme.
 const workspaceId = randomUUID();
 const foreignWorkspaceId = randomUUID();
+const originalsWorkspaceId = randomUUID();
 const suffix = randomUUID().slice(0, 8);
 const auth = { role: 'owner', workspaceId };
+const originalsAuth = { role: 'owner', workspaceId: originalsWorkspaceId };
 const inWorkspace = callback => runWithRequestContext({ workspaceId, userId: randomUUID() }, callback);
 const inForeignWorkspace = callback => runWithRequestContext({ workspaceId: foreignWorkspaceId, userId: randomUUID() }, callback);
+const inOriginalsWorkspace = callback => runWithRequestContext({ workspaceId: originalsWorkspaceId, userId: randomUUID() }, callback);
 
 function handler(path, method) {
   const layer = importsRouter.stack.find(item => item.route?.path === path && item.route.methods[method]);
@@ -47,18 +50,21 @@ const revert = runId => inWorkspace(() => invoke('/runs/:id/revert', 'post', { p
 before(async () => {
   await query('INSERT INTO workspaces (id, name, slug) VALUES ($1, $2, $3)', [workspaceId, 'Datenübernahme', `data-import-${suffix}`]);
   await query('INSERT INTO workspaces (id, name, slug) VALUES ($1, $2, $3)', [foreignWorkspaceId, 'Fremder Workspace', `data-import-other-${suffix}`]);
+  await query('INSERT INTO workspaces (id, name, slug) VALUES ($1, $2, $3)', [originalsWorkspaceId, 'Originaldokumente', `data-import-originals-${suffix}`]);
   await inWorkspace(() => query(`INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id)
     VALUES ('Nachhilfe Test', 'Weg 1', 'Köln', '50667', 'Deutschland', '02211234567', 'test@example.invalid', 'DE123456789')`));
+  await inOriginalsWorkspace(() => query(`INSERT INTO company (name, address, city, postal_code, country, phone, email, tax_id)
+    VALUES ('Originale Test', 'Weg 2', 'Bonn', '53111', 'Deutschland', '02281234567', 'originale@example.invalid', 'DE987654321')`));
 });
 
 after(async () => {
   try {
-    await inWorkspace(async () => {
+    const cleanupWorkspace = workspaceContext => workspaceContext(async () => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         await client.query("SELECT set_config('app.audit_disabled','true',true), set_config('app.allow_history_purge','true',true)");
-        for (const table of ['import_run_items', 'import_runs', 'migration_categories', 'migration_sessions', 'euer_entry_history', 'euer_entries', 'invoice_history', 'invoices', 'job_entries', 'customers', 'company']) {
+        for (const table of ['import_run_items', 'import_runs', 'migration_categories', 'migration_sessions', 'invoice_original_documents', 'euer_entry_history', 'euer_entries', 'invoice_history', 'invoices', 'job_entries', 'customers', 'company']) {
           await client.query(`DELETE FROM ${table}`);
         }
         await client.query('COMMIT');
@@ -69,8 +75,11 @@ after(async () => {
         client.release();
       }
     });
+    await cleanupWorkspace(inWorkspace);
+    await cleanupWorkspace(inOriginalsWorkspace);
     await query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
     await query('DELETE FROM workspaces WHERE id = $1', [foreignWorkspaceId]);
+    await query('DELETE FROM workspaces WHERE id = $1', [originalsWorkspaceId]);
   } finally {
     await pool.end();
   }
@@ -156,33 +165,42 @@ test('übernommene Rechnungen werden ausgestellt, bezahlt bzw. offen angelegt un
 });
 
 test('Originale lassen sich bei offener Umzugssitzung ersetzen und entfernen, nach Abschluss nicht mehr; Workspace-Zugriff bleibt isoliert', async () => {
-  const imported = await importRows('invoices', [
+  const importOriginals = (resource, rows, extra = {}) => inOriginalsWorkspace(() => invoke('/:resource', 'post', {
+    auth: originalsAuth,
+    params: { resource },
+    body: { rows, dryRun: false, ...extra },
+  }));
+  const invokeOriginals = (path, method, req) => inOriginalsWorkspace(() => invoke(path, method, { auth: originalsAuth, ...req }));
+  const invokeForeign = (path, method, req) => inForeignWorkspace(() => invoke(path, method, {
+    auth: { role: 'owner', workspaceId: foreignWorkspaceId }, ...req,
+  }));
+  const imported = await importOriginals('invoices', [
     { _rowNumber: 2, invoiceNumber: 'ALT-2024-077', issueDate: '2024-03-03', customerName: 'Anna', total: 25, taxRate: 0 },
-  ]);
+  ], { createMissingCustomers: true });
   assert.equal(imported.statusCode, 200);
-  const invoiceId = (await inWorkspace(() => query("SELECT id FROM invoices WHERE invoice_number = 'ALT-2024-077'"))).rows[0].id;
-  assert.equal((await inWorkspace(() => invoke('/runs/:id/confirm', 'post', { params: { id: imported.payload.runId } }))).statusCode, 200);
-  const sessionId = (await inWorkspace(() => query(
-    'INSERT INTO migration_sessions (workspace_id, started_by) VALUES ($1, $2) RETURNING id', [workspaceId, null],
+  const invoiceId = (await inOriginalsWorkspace(() => query("SELECT id FROM invoices WHERE invoice_number = 'ALT-2024-077'"))).rows[0].id;
+  assert.equal((await invokeOriginals('/runs/:id/confirm', 'post', { params: { id: imported.payload.runId } })).statusCode, 200);
+  const sessionId = (await inOriginalsWorkspace(() => query(
+    'INSERT INTO migration_sessions (workspace_id, started_by) VALUES ($1, $2) RETURNING id', [originalsWorkspaceId, null],
   ))).rows[0].id;
   const firstPdf = Buffer.from('%PDF-1.4\nOriginal A\n%%EOF').toString('base64');
   const secondPdf = Buffer.from('%PDF-1.4\nOriginal B\n%%EOF').toString('base64');
-  const upload = data => inWorkspace(() => invoke('/original-documents/:invoiceId', 'put', {
+  const upload = data => invokeOriginals('/original-documents/:invoiceId', 'put', {
     params: { invoiceId }, body: { name: 'original.pdf', contentType: 'application/pdf', content: data },
-  }));
-  const remove = () => inWorkspace(() => invoke('/original-documents/:invoiceId', 'delete', { params: { invoiceId } }));
+  });
+  const remove = () => invokeOriginals('/original-documents/:invoiceId', 'delete', { params: { invoiceId } });
 
   assert.equal((await upload(firstPdf)).statusCode, 200);
   assert.equal((await upload(secondPdf)).statusCode, 200, 'offene Sitzung erlaubt Ersetzen auch nach Bestätigung des Importlaufs');
-  const foreignRead = await inForeignWorkspace(() => invoke('/original-documents/:invoiceId', 'get', { params: { invoiceId } }));
+  const foreignRead = await invokeForeign('/original-documents/:invoiceId', 'get', { params: { invoiceId } });
   assert.equal(foreignRead.statusCode, 404, 'fremder Workspace sieht das Original nicht');
-  const foreignDelete = await inForeignWorkspace(() => invoke('/original-documents/:invoiceId', 'delete', { params: { invoiceId } }));
+  const foreignDelete = await invokeForeign('/original-documents/:invoiceId', 'delete', { params: { invoiceId } });
   assert.equal(foreignDelete.statusCode, 404, 'fremder Workspace kann das Original nicht ändern');
   assert.equal((await remove()).statusCode, 200);
   assert.equal((await upload(secondPdf)).statusCode, 200);
 
-  await inWorkspace(() => query("UPDATE migration_sessions SET status = 'completed', completed_at = NOW() WHERE id = $1", [sessionId]));
-  assert.equal((await inWorkspace(() => findInvoiceById(invoiceId))).canReplaceOriginal, false);
+  await inOriginalsWorkspace(() => query("UPDATE migration_sessions SET status = 'completed', completed_at = NOW() WHERE id = $1", [sessionId]));
+  assert.equal((await inOriginalsWorkspace(() => findInvoiceById(invoiceId))).canReplaceOriginal, false);
   assert.equal((await upload(firstPdf)).statusCode, 409, 'vorhandenes Original bleibt nach Abschluss gesperrt');
   assert.equal((await remove()).statusCode, 409, 'Entfernen bleibt nach Abschluss gesperrt');
 });
