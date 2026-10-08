@@ -2,310 +2,138 @@
 
 [![CI](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/ci.yml/badge.svg)](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/ci.yml)
 [![Qualität](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/quality.yml/badge.svg)](https://github.com/TingelTangelBob/SoloOffice/actions/workflows/quality.yml)
-[![Lizenz: AGPL v3](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
+[![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 
-**Links:** [Website](https://solooffice.de) · [Demo](https://demo.solooffice.de) · [Landingpage](https://github.com/TingelTangelBob/solooffice-landingpage) · [Selbst hosten](docs/self-hosting.md)
+**Links:** [Website](https://solooffice.de) · [Demo](https://demo.solooffice.de) · [Änderungsprotokoll](CHANGELOG.md) · [Releases](https://github.com/TingelTangelBob/SoloOffice/releases) · [Selbst hosten](docs/self-hosting.md)
 
-SoloOffice ist eine deutschsprachige, selbst hostbare Webanwendung für Rechnungen, Angebote, Aufträge und vorbereitende Buchhaltung. Die Anwendung verbindet Kundenverwaltung, Dokumente, E-Rechnungen, lokale Belegerkennung, EÜR, Auswertungen und Workspace-Verwaltung in einer Oberfläche.
+SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Sie richtet sich an Selbstständige und kleine Betriebe, die ihre Geschäftsabläufe und Belege in einem eigenen Workspace verwalten möchten. SoloOffice kann selbst gehostet werden; eine öffentliche SaaS-Freigabe ist derzeit nicht erteilt.
 
-Der aktuelle Stand ist **v0.9.4** (geprüfte Codebasis `73b1756`) und ein Beta-/Testrelease. Die
-Anwendung ist für Tests und Feedback gedacht und ersetzt keine Steuer-, Rechts-
-oder Datenschutzberatung. Die Versionsnummer folgt SemVer; **1.0.0** wird
-vergeben, sobald das Self-Hosting praktisch nachgewiesen ist — Migrationen,
-Mandantentrennung und Restore gegen eine echte Datenbank.
+Der aktuelle Versionsstand ist **v0.9.5**, ein Beta-/Testrelease für Tests und Feedback. Die Anwendung ersetzt keine Steuer-, Rechts- oder Datenschutzberatung und ist nicht als uneingeschränkt produktiver Steuerabschluss freigegeben. Steuerliche Auswertungen und Abschreibungen sind vorbereitende Arbeitsunterlagen. OCR-Ergebnisse müssen vor der Übernahme geprüft werden. Eine ELSTER-Übertragung ist nicht enthalten. Die Versionsnummer folgt SemVer; v1.0.0 ist an einen praktisch nachgewiesenen Self-Hosting-Betrieb einschließlich Migrationen, Mandantentrennung und Wiederherstellung gebunden.
 
-## Launch-Status
+## Funktionen
 
-Ein öffentlicher Hosted-/SaaS-Launch ist mit diesem Stand **nicht freigegeben**.
-Control Plane, Stripe-/Tarifabläufe, Export und Löschung, rechtliche Freigaben,
-die vollständige manuelle Fachabnahme sowie der Produktionsbetrieb sind noch
-offen. Die vollständige Must-Liste mit Ownern und Nachweisen steht in
-[docs/launch-must.md](docs/launch-must.md).
+### Rechnungen und Geschäftsabläufe
 
-Für einen begrenzten Self-Hosting-Test ist die Anwendung mit Einschränkungen
-geeignet. Der Staging-Stand v0.9.4 / `b6c6bb279dcd1c9807f237812c59c57de58135a3`
-bestand am 23.09.2026 den technischen Instanznachweis für Healthchecks,
-Migration 044, RLS und Image-Commit. Ein fachlicher Import-Smoke-Test, echte
-SMTP-Zustellung und die manuelle Release-Abnahme sind dadurch nicht ersetzt.
+- Kundenverwaltung mit Kontaktangaben, kundenspezifischen Stundensätzen und Vorlagen für Leistungen und Material
+- Angebote mit Status und Umwandlung in Rechnungen
+- Rechnungen mit Positionen, Rabatten, Steuerprofilen, Zahlungsinformationen, PDF-Ausgabe und E-Mail-Versand
+- Gutschriften mit Bezug zur Ursprungsrechnung
+- Wiederkehrende Rechnungen und Mahnungen
+- Aufträge und Termine mit Zeiterfassung, Auftragsstatus und Kalender in Tages-, Wochen- und Monatsansicht
+- Übernommene Altrechnungen behalten Nummer, Datum und Zahlungsstand. Ein Neudruck im aktuellen Layout wird deutlich als „Kopie / Neudruck“ markiert; das Original bleibt maßgeblich.
 
-> Die Screenshots in dieser README wurden am 07.08.2026 im lokalen Demo-Modus unter [http://localhost:5173/](http://localhost:5173/) aufgenommen. Sie zeigen Demo-Daten und keine echten Unternehmensdaten.
+### E-Rechnungen und Belege
 
-## Funktionsumfang
+- XRechnung als strukturierte XML-Datei und ZUGFeRD als PDF mit eingebettetem `factur-x.xml`
+- Erfassung eingehender E-Rechnungen mit lokaler Ablage, struktureller Prüfung und Zuordnung
+- Belegverwaltung mit lokaler OCR für PDF, JPG, PNG und WEBP. Die Verarbeitung läuft im Backend-Container; erkannte Werte sind Vorschläge und werden erst nach Prüfung übernommen.
+- Verknüpfung geprüfter Belege mit EÜR-Buchungen
 
-### Geschäftsabläufe
+Die lokale Prüfung von E-Rechnungen ersetzt keine Validierung mit den offiziellen KOSIT- bzw. FeRD-/Factur-X-Werkzeugen. Einzelheiten und Prüffälle stehen in [E-Rechnungsvalidierung](docs/e-rechnung-validation.md).
 
-- Kundenverwaltung mit Archivierung, mehreren Kontaktadressen, kundenspezifischen Stundensätzen und Materialvorlagen
-- Datenübernahme aus Excel (.xlsx), CSV und JSON mit Vorschau, Feldzuordnung, festen Werten, Summenkontrolle, Duplikaterkennung und Rückgängig bis zum Abschluss des Umzugs
-- Angebote mit Vorlagen, Statusverwaltung, PDF-Vorschau, E-Mail-Versand und Umwandlung in Rechnungen
-- Rechnungen mit Positionen, Rabatten, Steuerprofilen, Zahlungsinformationen, PDF-Download und E-Mail-Versand
-- Rechnungen aus Aufträgen/Kursen mit gemeinsamem Rechnungs- und Fälligkeitsdatum sowie optionaler eigener Rechnungsnummer
-- Gutschriften mit Ursprungsrechnung und Begründung
-- Wiederkehrende Rechnungen mit Ausführungen und Verlauf
-- Aufträge, Zeiterfassung, wiederkehrende Aufträge, Entwürfe, Standorte und digitale Signatur
-- Kalender mit Tages-, Wochen- und Monatsansicht sowie Auftragsstatus
-- Mahnwesen mit Fälligkeitsermittlung, Mahnstufen, Versand und Verlauf
-
-### Datenübernahme und Umzug
-
-Unter **Einstellungen → E-Mail & Backup → Datenübernahme** führt SoloOffice durch den Umzug aus Excel oder einem anderen Programm: zuerst Kunden, dann Rechnungen (Altbestand) mit ursprünglicher Nummer und Zahlungsstand, dann Einnahmen und Ausgaben, Zahlungseingänge und Aufträge/Kurse. Einnahmen zu vorhandenen Rechnungen werden als deren Zahlung gebucht, alle übrigen als Einnahme ohne Rechnung – so zählt kein Geldeingang doppelt. Jeder Import lässt sich bis zum Abschluss des Umzugs vollständig rückgängig machen. Einzelheiten stehen in [docs/datenuebernahme.md](docs/datenuebernahme.md).
-
-Rechnungen, die erst jetzt in SoloOffice geschrieben werden, können weiterhin rückwirkend aus Aufträgen/Kursen mit gewünschtem Rechnungsdatum und – falls erforderlich – einer freien, noch nicht vergebenen Rechnungsnummer erzeugt werden. Leere Nummernfelder nutzen den automatischen Nummernkreis.
-
-### E-Rechnung und Dokumente
-
-- Erzeugung von XRechnung-XML und ZUGFeRD-XML als eingebettete factur-x.xml
-- Eingang elektronischer Rechnungen mit lokaler Archivierung, struktureller Prüfung und Kundenzuordnung
-- Gemeinsame Dokumentenansicht für sonstige Belege und E-Rechnungen
-- Lokale OCR für PDF, JPG, PNG und WEBP mit Tesseract im Backend-Container
-- Erkannte Aussteller, Datums- und Betragsfelder als prüfbare Vorschläge
-- Übernahme geprüfter Belege in die EÜR und nachvollziehbare Dokumentenverknüpfungen
-
-### Geplante Funktionen
-
-Diese Punkte sind bewusst später geplant und nicht launch-blockierend:
-
-- DATEV-Buchungsstapel, CAMT/MT940 und Gutschriftenimport
-- Zuordnungsprofile für konkrete Programme auf Basis echter, anonymisierter
-  Beispielexporte
-- ELSTER-Übertragung; sie ist aktuell ausdrücklich nicht enthalten
-- Vollständige SaaS-Telemetrie und Admin-Auswertung nach Datenschutz- und
-  Betreiberfreigabe
-- Externer Belegspeicher sowie serverseitige Sammelerstellung bzw.
-  Hintergrundwarteschlange für sehr große Rechnungsläufe
-
-### Vorbereitende Buchhaltung und Auswertungen
+### EÜR, Steuern und Auswertungen
 
 - Einnahmenüberschussrechnung mit Einnahmen, Ausgaben, Teilzahlungen, Korrekturen, Stornierungen und Änderungshistorie
-- Automatische Übernahme bezahlter Rechnungen und Gutschriften in die EÜR
-- Verknüpfung von Belegen mit EÜR-Buchungen
 - Anlagenverzeichnis mit vorbereitender linearer Abschreibungsübersicht
-- Rechnungsjournal, Jahresstatistiken, Umsatzübersichten, Top-Kunden und PDF-Export
-- Steuerprofil, Nummernkreise, Vorlagen, Farbthemen und konfigurierbare Terminologieprofile
+- Steuerprofil und Rechnungsjournal sowie Umsatz-, Jahres- und Kundenübersichten mit Exportmöglichkeiten
+- Keine ELSTER-Übertragung
 
-### Konten, Workspaces und Betrieb
+Diese Bereiche erstellen Arbeitsunterlagen. Die steuerliche Einordnung und Prüfung bleibt den Nutzern und ihren fachlichen Beratern vorbehalten.
 
-- Lokale Benutzerkonten, serverseitige Sessions, Registrierung, E-Mail-Verifizierung und Passwort-Reset
-- Mehrere Workspaces mit Wechsel, Einladungen und Rollen für Besitzer, Administratoren, Mitarbeiter und Nur-Lesen-Nutzer
-- Serverseitige Datenisolation mit PostgreSQL Row-Level Security
-- Workspacebezogene JSON- und ZIP-Backups mit Download, Restore und Verwaltung
-- SMTP-Konfiguration, E-Mail-Historie, Diagnose- und Testfunktionen
-- Lokaler Demo-Modus für UI- und Fachablauftests ohne Backend
+### Einrichtung, Datenübernahme und Workspace-Verwaltung
 
-## Aktuelle Oberfläche
+- Geführte Ersteinrichtung für Firmendaten, Rechnungseinstellungen und Module
+- Datenübernahme aus Excel, CSV, TSV, Text- und JSON-Dateien: Datei-Upload, Vorlagen und Komplettvorlage, automatische Spaltenzuordnung, Vorschau, Zeilenhinweise und Summenkontrolle
+- Geführte Importkategorien und Schritte für Kunden, Leistungen und Preise, Rechnungen, Zahlungseingänge, Einnahmen und Ausgaben, Aufträge und Angebote
+- Importläufe lassen sich bis zum Abschluss des Umzugs rückgängig machen. Die Komplettvorlage für Kunden und Rechnungen wird in getrennten Schritten verarbeitet.
+- Workspace-Reset mit wählbaren Optionen für Firmendaten/Einstellungen und Umzugsstatus/Stichtag; Team und Workspace-Identität bleiben bestehen
+- Mehrere Workspaces mit Einladungen und Rollen für Besitzer, Administratoren, Mitarbeiter und Nutzer mit Leserechten
+- Serverseitige Workspace-Trennung durch PostgreSQL Row-Level Security
+- Workspacebezogene JSON- und ZIP-Backups sowie Wiederherstellung
 
-### Dashboard
+Der fachliche Import-Smoke-Test mit echten Importdateien und PostgreSQL ist noch offen. Die [Datenübernahme-Dokumentation](docs/datenuebernahme.md) erläutert Ablauf, Voraussetzungen und Grenzen.
 
-Der Überblick bündelt Rechnungsstatus, Kalendertermine und aktuelle Rechnungen.
+### Oberfläche
 
-![SoloOffice Dashboard mit Rechnungsstatus, Terminen und aktuellen Rechnungen](demo/SoloOffice-Dashboard.png)
+- Demo-Modus mit Beispieldaten für UI- und Ablaufprüfungen. Er speichert Änderungen im Browser; Authentifizierung, Rollen und Workspace-Isolation sind dort simuliert und kein Ersatz für den Backend-Betrieb.
+- Helles und dunkles Farbschema
+- Responsive Oberfläche für Desktop und Mobilgeräte
 
-### Kunden und Aufträge
+## Einblicke
 
-Kunden und Aufträge sind als durchsuchbare, responsive Arbeitslisten mit Import- und Folgeaktionen angelegt.
+Die folgenden Aufnahmen zeigen den Demo-Modus mit Beispieldaten.
 
-![SoloOffice Kundenverwaltung](demo/SoloOffice-Kunden.png)
-
-![SoloOffice Auftragsmanagement mit Statuskarten, Filtern und Zeiterfassung](demo/SoloOffice-Auftraege.png)
-
-### Belege und lokale OCR
-
-Belege werden lokal verarbeitet. OCR-Ergebnisse bleiben Vorschläge und müssen vor der Übernahme in die EÜR geprüft werden.
-
-![SoloOffice Belegverwaltung mit lokaler OCR und EÜR-Verknüpfung](demo/SoloOffice-Belege.png)
-
-### EÜR und Auswertungen
-
-Die EÜR zeigt Einnahmen, Ausgaben, Überschuss und Monatswerte; die Auswertungen ergänzen Rechnungsjournal, Jahresstatistik, Filter und PDF-Export.
-
-![SoloOffice Einnahmenüberschussrechnung](demo/SoloOffice-EUER.png)
-
-![SoloOffice Auswertungen mit Rechnungsjournal und Jahresstatistik](demo/SoloOffice-Auswertungen.png)
-
-### Einstellungen
-
-Terminologieprofile, Farbthemen, Unternehmensdaten, Rechnungseinstellungen, Darstellung, E-Mail und Backups werden zentral verwaltet.
-
-![SoloOffice Einstellungen mit Terminologieprofilen und Farbthemen](demo/SoloOffice-Einstellungen.png)
-
-## Schnellstart mit Docker
-
-Für eine öffentliche Instanz mit TLS, Reverse Proxy, Geheimnisverwaltung,
-Backups, Updates und Wiederherstellung ist die [Betriebsanleitung für
-Selbsthoster](docs/self-hosting.md) maßgeblich.
-
-### Voraussetzungen
-
-- Docker Desktop oder Docker Engine mit Docker Compose v2
-- Bash-Umgebung für die mitgelieferten Shell-Skripte, zum Beispiel Linux, macOS, WSL oder Git Bash
-- OpenSSL für die automatische Erzeugung sicherer Instanzschlüssel
-
-### Neue Instanz anlegen
-
-Das interaktive Deployment prüft freie Ports, erzeugt zufällige Datenbank- und Verschlüsselungsschlüssel, legt die Instanzdateien an und startet Datenbank, Backend und Frontend.
-
-~~~bash
-git clone https://github.com/TingelTangelBob/SoloOffice.git
-cd SoloOffice
-chmod +x deploy-instance.sh manage-instances.sh
-./deploy-instance.sh
-~~~
-
-Das Skript fragt unter anderem Instanzname, Datenbank-, Backend- und Frontend-Port ab. Danach ist die Anwendung unter dem ausgegebenen Frontend-Port erreichbar, standardmäßig zum Beispiel unter http://localhost:8080.
-
-Die erzeugten Dateien .env.<instanz> und .env.backend.<instanz> enthalten Zugangsdaten und Schlüssel. Sie gehören nicht in ein Repository und werden durch .gitignore ausgeschlossen.
-
-### Bestehende Instanz starten oder prüfen
-
-~~~bash
-./manage-instances.sh list
-./manage-instances.sh start <instanz>
-./manage-instances.sh logs <instanz> [database|backend|frontend]
-./manage-instances.sh backup <instanz>
-~~~
-
-Das normale Compose-Setup veröffentlicht nur das Frontend. Für eine ausdrücklich gewünschte lokale Diagnose können Backend und PostgreSQL über den Debug-Override veröffentlicht werden:
-
-~~~bash
-docker compose --env-file .env.<instanz> -f docker-compose.yml -f docker-compose.debug.yml up --build
-~~~
-
-Das Entfernen einer Instanz löscht Datenbank-Volumes und Konfiguration. Den dafür vorgesehenen Befehl nur nach eigener Sicherung verwenden:
-
-~~~bash
-./manage-instances.sh remove <instanz>
-~~~
-
-### Lokaler Demo-Modus
-
-Für UI- und Ablaufprüfungen kann das Frontend ohne Backend betrieben werden. In .env.local wird dafür gesetzt:
-
-~~~dotenv
-VITE_DEMO_MODE=true
-~~~
-
-Die Demo meldet den Browser automatisch als Demo-Benutzer an, stellt Beispieldaten bereit und speichert Änderungen sowie zusätzliche Workspaces in localStorage. Authentifizierung, Rollen und Workspace-Isolation sind dort nur simuliert. Für den realistischen Multiuser-Test muss VITE_DEMO_MODE=false gesetzt und die Docker-Instanz verwendet werden.
-
-Die aktuell laufende lokale Demo ist unter [http://localhost:5173/](http://localhost:5173/) erreichbar.
-
-## Konfiguration und Sicherheit
-
-Wichtige Betriebsvariablen werden pro Instanz gesetzt:
-
-| Variable | Zweck |
+| Übersicht | Übersicht im Dunkelmodus |
 | --- | --- |
-| POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD | Datenbank und Zugangsdaten |
-| ENCRYPTION_KEY | Verschlüsselung sensibler Werte, insbesondere SMTP-Passwörter |
-| CORS_ORIGIN | Erlaubte Frontend-Ursprünge, kommasepariert |
-| COOKIE_SECURE, COOKIE_SAME_SITE | Session-Cookie-Verhalten, abhängig von HTTP/HTTPS und Proxy |
-| REGISTRATION_MODE | Öffnung bzw. Begrenzung der Registrierung |
-| REQUIRE_EMAIL_VERIFICATION | Optionale E-Mail-Bestätigung |
-| SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM | E-Mail-Versand |
-| OCR_CONCURRENCY_LIMIT | Höchstzahl gleichzeitig laufender lokaler OCR-Vorgänge (Standard: 2) |
-| OCR_TIMEOUT_MS | Zeitlimit je OCR-Hilfsprozess in Millisekunden (Standard: 120000) |
+| <img src="docs/screenshots/uebersicht.png" alt="SoloOffice-Übersicht mit Schnellaktionen, Umsatz, Top-Kunden und Terminen" width="680"> | <img src="docs/screenshots/uebersicht-dunkel.png" alt="SoloOffice-Übersicht mit Umsatz und Terminen im Dunkelmodus" width="680"> |
 
-Für einen produktiven Betrieb müssen insbesondere ENCRYPTION_KEY, Datenbankpasswort und Session-/Proxy-Einstellungen dauerhaft und geheim verwahrt werden. Hinter HTTPS ist COOKIE_SECURE=true zu verwenden; CORS_ORIGIN muss auf die tatsächliche Frontend-Adresse zeigen.
+| Rechnungen | Neue Rechnung |
+| --- | --- |
+| <img src="docs/screenshots/rechnungen.png" alt="Rechnungsliste mit Status- und Zeitraumfiltern" width="680"> | <img src="docs/screenshots/rechnung-erstellen.png" alt="Dialog zum Erstellen einer neuen Rechnung" width="680"> |
 
-SoloOffice bringt mehrere Schutzschichten mit:
+| Aufträge | Kalender |
+| --- | --- |
+| <img src="docs/screenshots/auftraege.png" alt="Auftragsmanagement mit Statuskarten und erfassten Stunden" width="680"> | <img src="docs/screenshots/kalender.png" alt="Monatsansicht des SoloOffice-Kalenders mit Terminen" width="680"> |
 
-- HttpOnly-Session-Cookies mit zufälligem Token; in der Datenbank liegt nur dessen Hash
-- Passwort-Hashes mit scrypt und individuellem Salt
-- PostgreSQL Row-Level Security für die Trennung aktiver Workspaces
-- Rate-Limiting, Security-Header und serverseitige Rollenprüfung
-- Backend-Container als unprivilegierter Benutzer
-- Lokale OCR ohne Übertragung hochgeladener Dokumente an einen externen OCR-Dienst
-- Backups und Restores auf den aktiven Workspace begrenzt; ein Backup aus einem anderen Workspace wird nur nach ausdrücklicher Bestätigung übernommen
+| Belege | EÜR |
+| --- | --- |
+| <img src="docs/screenshots/belege.png" alt="Belegübersicht mit lokaler Belegerkennung und E-Rechnungen" width="680"> | <img src="docs/screenshots/euer.png" alt="Einnahmenüberschussrechnung mit Monatsübersicht" width="680"> |
 
-Diese Mechanismen ersetzen kein individuelles Hardening des Hostings, keine Offsite-Backup-Strategie und keine fachliche Prüfung des Betriebsprozesses.
+| Datenübernahme | Workspace zurücksetzen |
+| --- | --- |
+| <img src="docs/screenshots/datenuebernahme.png" alt="Geführte Datenübernahme nach Upload der Komplettvorlage mit erkannten Kunden- und Rechnungskategorien" width="680"> | <img src="docs/screenshots/workspace-reset.png" alt="Dialog zum Workspace-Reset mit getrennten Optionen für Firmendaten und Umzugsstatus" width="680"> |
 
-## E-Rechnung: Abgrenzung
+| Ersteinrichtung |
+| --- |
+| <img src="docs/screenshots/ersteinrichtung.png" alt="Geführte Ersteinrichtung mit fünf Einrichtungsschritten" width="680"> |
 
-Die lokalen Generatoren und die Eingangserfassung prüfen Wohlgeformtheit und zentrale Pflichtfelder. Vor einer produktiven Freigabe müssen erzeugte Dokumente zusätzlich mit den offiziellen KOSIT-/XRechnung- bzw. FeRD-/Factur-X-Validatoren geprüft werden. Insbesondere PDF/A-3-Vollständigkeit, ICC-OutputIntent, eingebettete Schriften und eingehende ZUGFeRD-PDFs sind nicht durch die lokale Strukturprüfung abschließend bestätigt.
+**Mobilansicht**
 
-Eine ELSTER-Übertragung ist aktuell nicht enthalten.
+<img src="docs/screenshots/mobil-uebersicht.png" alt="SoloOffice-Übersicht in der Mobilansicht" width="320"> <img src="docs/screenshots/mobil-rechnungen.png" alt="Rechnungsliste in der Mobilansicht" width="320">
 
 ## Architektur
 
 | Bereich | Technologie |
 | --- | --- |
-| Frontend | React 18, TypeScript, Vite 8, Tailwind CSS 3, Context API |
-| Navigation | Hash-Routing über window.location.hash |
-| Backend | Node.js 22, Express, ES Modules |
-| Datenbank | PostgreSQL 15 mit sequenziellen Migrationen und Row-Level Security |
-| Dokumente | jsPDF, pdf-lib, PDFKit, XML-Generatoren für XRechnung/ZUGFeRD |
-| OCR | Tesseract mit deutschen und englischen Sprachdaten im Backend-Container |
-| E-Mail | Nodemailer mit verschlüsselter SMTP-Konfiguration |
-| Deployment | Docker Compose mit database, backend und frontend |
+| Frontend | React 18, TypeScript, Vite 8, Tailwind CSS 3 |
+| Backend | Node.js 22, Express, ES-Module |
+| Datenbank | PostgreSQL 15 mit Migrationen und Row-Level Security |
+| Dokumente | jsPDF, pdf-lib, PDFKit sowie Generatoren für XRechnung und ZUGFeRD |
+| Belegerkennung | Tesseract im Backend-Container, ohne externen OCR-Dienst |
+| Betrieb | Docker Compose mit Datenbank, Backend und Frontend |
 
-Wichtige Bereiche im Repository:
+Die genaue Abgrenzung der optionalen SaaS-Control-Plane-Integration und der noch offenen Hosted-Betriebsabläufe beschreibt [SaaS-Control-Plane](docs/saas-control-plane.md). Diese technischen Grundlagen bedeuten keine Freigabe eines öffentlichen SaaS-Angebots.
 
-~~~text
-src/components/       Seiten, Formulare, Dialoge und Fachmodule
-src/context/          globale Frontend-Zustände
-src/services/api.ts   produktiver API-Client
-src/services/demoApi.ts Demo-/Local-Testing-API
-src/types/             zentrale TypeScript-Typen
-backend/routes/        Express-Routen und Berechtigungsgrenzen
-backend/services/      OCR, E-Mail, Sessions und Workspace-Dienste
-backend/migrations/    fortlaufende Datenbankmigrationen
-docs/                  Fach-, Test- und Betriebsdokumentation
-demo/                  aktuelle README-Screenshots
-~~~
+## Lokale Entwicklung und Demo
 
-## Entwicklung und Verifikation
+Entwicklungs- und Build-Schritte laufen in Docker; `npm` wird nicht direkt auf dem Host ausgeführt. Voraussetzungen, Instanzkonfiguration, Ports und Betrieb sind in [Selbst hosten](docs/self-hosting.md) beschrieben.
 
-Entwicklungs- und Build-Schritte werden innerhalb von Docker ausgeführt. Der Frontend-Build führt automatisch ESLint, TypeScript-Prüfung und Vite-Build aus:
+```bash
+git clone https://github.com/TingelTangelBob/SoloOffice.git
+cd SoloOffice
+chmod +x deploy-instance.sh manage-instances.sh
+./deploy-instance.sh
+```
 
-~~~bash
-docker compose --env-file .env.<instanz> -f docker-compose.yml build frontend
-docker build -f backend/Dockerfile backend
-npm run audit:dependencies
-npm --prefix backend run audit:dependencies
-git diff --check
-node scripts/verify-audit-contracts.mjs
-~~~
+Das Deployment richtet eine Docker-Compose-Instanz ein. Für bestehende Instanzen stehen unter anderem diese Befehle bereit:
 
-Die CI baut Frontend- und Backend-Images. Beide Builds führen ihre
-Regressionssuite aus; anschließend prüft ein kurzlebiger PostgreSQL-15-Dienst
-alle Migrationen, die RLS-Rolle und die Isolation zweier Workspaces. Umfang und
-Grenzen stehen in [docs/automated-tests.md](docs/automated-tests.md). Die
-Abhängigkeitsstrategie und die aktuellen Audit-Grenzen sind in
-[docs/dependency-security.md](docs/dependency-security.md) dokumentiert.
-Am 25.09.2026 wurden 43 Frontend-, 106 Backend- und 36 PostgreSQL-
-Testdeklarationen gezählt; das ist kein Nachweis eines erfolgreichen Testlaufs.
-Der CI-Status der Codebasis `73b1756` konnte bei dieser Prüfung nicht live
-abgerufen werden.
-Laufende Instanzen lassen sich mit `manage-instances.sh verify` ohne Anmeldung
-auf Health, Migrationen, RLS und den exakten Image-Commit prüfen; der gesicherte
-Updatepfad steht in
-[docs/operations-verification.md](docs/operations-verification.md).
+```bash
+./manage-instances.sh list
+./manage-instances.sh start <name>
+./manage-instances.sh verify <name>
+./manage-instances.sh update <name>
+```
 
-Vor einem Release müssen technische Checks und manuelle Prüfung getrennt
-betrachtet werden. Der aktuelle Stand wird dauerhaft in der
-[manuellen Release-Checkliste](docs/manual-release-checklist.md) geführt. Zu den
-wichtigsten manuellen Abläufen gehören:
+`update` führt den dokumentierten Sicherungs-, Build-, Aktualisierungs- und Laufzeitprüfungsablauf aus. Für eine öffentlich erreichbare Instanz sind zusätzlich TLS-Reverse-Proxy, sichere Geheimnisverwaltung, externe Backups, Wiederherstellung und die Betreiberpflichten aus der [Self-Hosting-Anleitung](docs/self-hosting.md) erforderlich. Keine Zugangsdaten oder Schlüssel in Git einchecken.
 
-1. Registrierung, Login, Logout, E-Mail-Verifizierung und Passwort-Reset
-2. Workspace-Wechsel, Einladung und Rollenrechte mit mindestens zwei Konten
-3. Datenübernahme mit Vorschau, Summenkontrolle, Duplikaten, Warnungen, Teilfehlern und Rückgängig
-4. Angebot, Rechnung, E-Mail-Versand, wiederkehrende Rechnung und Mahnung
-5. Beleg-Upload, OCR-Prüfung, EÜR-Verknüpfung und Stornierung
-6. EÜR, Anlagenverzeichnis, Reporting und PDF-Export
-7. Backup/Restore ohne Vermischung zweier Workspaces
+Die öffentliche [Demo](https://demo.solooffice.de) und der lokal aktivierbare Demo-Modus eignen sich zum Ausprobieren der Oberfläche. Der Demo-Modus speichert seine Beispieldaten lokal im Browser und simuliert Sicherheits- und Mehrbenutzerfunktionen.
 
-## Bekannte Grenzen des aktuellen Betastands
+## Tests und Qualität
 
-- Der Release ist für Tests und Feedback vorgesehen, nicht als uneingeschränkt produktiver Steuerabschluss.
-- OCR-Ergebnisse sind Vorschläge und müssen vor der Übernahme geprüft werden.
-- EÜR, Steuerprofile, Reports und Abschreibungen sind vorbereitende Arbeitsunterlagen und ersetzen keine steuerliche Prüfung.
-- ELSTER-Übertragung ist noch nicht enthalten.
-- Multiuser-/RLS-Isolation und workspacebezogener Backup/Restore sind auf dem getrennten TestDocker technisch und manuell nachgewiesen; die E-Mail-Zustellung bleibt offen.
-- Die Bezeichnung des Belegbereichs kann workspacebezogen angepasst werden und erscheint konsistent in Einstellungen, Navigation und Dokumentenansicht.
-- Die lokalen E-Rechnungsprüfungen ersetzen keine offiziellen Schema- und Schematron-Validatoren.
+Der Frontend- und Backend-Image-Build führt die jeweiligen Regressionsprüfungen aus. Der Qualitätsworkflow in GitHub Actions ergänzt statische Sicherheits- und Betriebsprüfungen, Abhängigkeitsprüfungen, Compose-Laufzeitprüfung sowie Migrationen und Workspace-RLS gegen PostgreSQL 15. Die Details und Grenzen stehen in [Automatisierte Tests](docs/automated-tests.md). Automatisierte Prüfungen ersetzen keine manuelle Browser- und Fachabnahme, SMTP-Zustellung, OCR-Qualitätsprüfung oder Validierung mit offiziellen E-Rechnungswerkzeugen.
 
-Weitere technische Entscheidungen und Testabläufe stehen in [Self-Hosting](docs/self-hosting.md), [automatisierten Tests](docs/automated-tests.md), [Betriebsnachweisen](docs/operations-verification.md), [Abhängigkeitssicherheit](docs/dependency-security.md), [E-Rechnungsvalidierung](docs/e-rechnung-validation.md) und [lokalen Identitäts- und Workspace-Tests](docs/identity-workspace-local-testing.md).
+## Lizenz, Mitwirken und Support
 
-## Lizenz und Beiträge
+SoloOffice steht unter der [GNU Affero General Public License v3.0](LICENSE). Hinweise zur Herkunft und zu den Copyright-Vermerken stehen in [NOTICE.md](NOTICE.md). Eigene Beiträge zu dieser Weiterentwicklung werden ebenfalls unter AGPL v3 veröffentlicht.
 
-SoloOffice steht unter der [GNU Affero General Public License v3](LICENSE). Copyright-Vermerke, Fork-Historie und Hinweise zur ursprünglichen Codebasis sind in [NOTICE.md](NOTICE.md) dokumentiert. Beiträge zu dieser Fork werden ebenfalls unter AGPL v3 veröffentlicht.
-
-Copyright © 2026 SoloOffice Contributors für eigene Beiträge.
+Fehlerberichte und technische Fragen können im [GitHub-Repository](https://github.com/TingelTangelBob/SoloOffice) eingebracht werden. Es wird keine externe Support- oder Verkaufsadresse zugesichert.
