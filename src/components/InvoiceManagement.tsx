@@ -402,6 +402,27 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   };
 
+  const requestOriginalRemoval = (invoice: Invoice) => {
+    if (!canWrite || !invoice.canReplaceOriginal) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Original entfernen?',
+      message: `Das hinterlegte Original zu Rechnung ${invoice.invoiceNumber} wird entfernt. Die Rechnung bleibt bestehen.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await apiService.deleteInvoiceOriginalDocument(invoice.id);
+          await refreshInvoices();
+          notify({ variant: 'success', message: `Das Original zu Rechnung ${invoice.invoiceNumber} wurde entfernt.` });
+        } catch (removeError) {
+          notify({ variant: 'error', message: removeError instanceof Error ? removeError.message : 'Das Original konnte nicht entfernt werden.' });
+        }
+      },
+    });
+  };
+
+  const originalLockedHint = 'Nach Abschluss des Umzugs ist das Original unveränderbar.';
+
   const downloadImportedOriginal = async (invoice: Invoice) => {
     if (!invoice.hasOriginalDocument) {
       notify({ variant: 'warning', message: `Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original hinterlegt. Über „Original hinterlegen“ können Sie es ergänzen.` });
@@ -465,6 +486,22 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const handlePreview = (invoice: Invoice) => {
     if (invoice.origin === 'imported' && !invoice.hasOriginalDocument) {
       notify({ variant: 'warning', message: `Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original hinterlegt. Über „Original hinterlegen“ können Sie es ergänzen.` });
+      return;
+    }
+    if (invoice.origin === 'imported') {
+      setIsExporting(invoice.id);
+      void loadImportedInvoiceOriginal(invoice)
+        .then(async ({ blob, name }) => {
+          setDocumentPreview({
+            isOpen: true,
+            documents: [{ id: `original-${invoice.id}`, name, type: 'attachment', content: await blobToBase64(blob), contentType: blob.type, size: blob.size }],
+            initialIndex: 0,
+          });
+        })
+        .catch(previewError => {
+          notify({ variant: 'error', message: previewError instanceof Error ? previewError.message : 'Das Original konnte nicht geladen werden.' });
+        })
+        .finally(() => setIsExporting(null));
       return;
     }
     // Create preview documents for the invoice
@@ -1511,20 +1548,23 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                           <Banknote className="h-4 w-4" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditor(invoice)}
-                        className="action-icon-button action-icon-indigo"
-                        title={invoice.status === 'draft' ? 'Bearbeiten' : 'Ausgestellte Rechnung ist gesperrt'}
-                        disabled={invoice.status !== 'draft'}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
+                      {invoice.origin !== 'imported' && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditor(invoice)}
+                          className="action-icon-button action-icon-indigo"
+                          title={invoice.status === 'draft' ? 'Bearbeiten' : 'Ausgestellte Rechnung ist gesperrt'}
+                          disabled={invoice.status !== 'draft'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handlePreview(invoice)}
+                        disabled={isExporting === invoice.id}
                         className="action-icon-button action-icon-blue"
-                        title="Vorschau anzeigen"
+                        title={invoice.origin === 'imported' ? 'Vorschau (Original)' : 'Vorschau anzeigen'}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
@@ -1533,7 +1573,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         onClick={() => handleExport(invoice)}
                         disabled={isExporting === invoice.id}
                         className="action-icon-button action-icon-green"
-                        title="Herunterladen"
+                        title={invoice.origin === 'imported' ? 'Original herunterladen' : 'Herunterladen'}
                       >
                         {isExporting === invoice.id ? (
                           <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
@@ -1541,14 +1581,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                           <Download className="h-4 w-4" />
                         )}
                       </button>
-                      {invoice.origin === 'imported' && !invoice.hasOriginalDocument && (
+                      {invoice.origin === 'imported' && (
                         <button
                           type="button"
                           onClick={() => requestOriginalUpload(invoice)}
-                          disabled={isExporting === invoice.id}
+                          disabled={!canWrite || !invoice.canReplaceOriginal || isExporting === invoice.id}
                           className="action-icon-button action-icon-indigo"
-                          title="Original hinterlegen"
-                          aria-label={`Original zu Rechnung ${invoice.invoiceNumber} hinterlegen`}
+                          title={invoice.hasOriginalDocument ? (invoice.canReplaceOriginal ? 'Original ersetzen' : originalLockedHint) : 'Original hinterlegen'}
+                          aria-label={`Original zu Rechnung ${invoice.invoiceNumber} ${invoice.hasOriginalDocument ? 'ersetzen' : 'hinterlegen'}`}
                         >
                           <FileUp className="h-4 w-4" />
                         </button>
@@ -1567,10 +1607,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         {invoice.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>}
                         {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => handleOpenPaymentDialog(invoice)}>Zahlungseingang erfassen</ActionMenuItem>}
                         <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
-                        <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
-                        <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
+                        <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Vorschau (Original)' : 'Vorschau anzeigen'}</ActionMenuItem>
+                        <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Original herunterladen' : 'Herunterladen'}</ActionMenuItem>
                         {invoice.origin === 'imported' && <ActionMenuItem icon={<Printer className="h-4 w-4" />} tone="gray" onClick={() => void downloadLegacyReprint(invoice)} disabled={isExporting === invoice.id}>Kopie / Neudruck im aktuellen Layout</ActionMenuItem>}
-                        {invoice.origin === 'imported' && !invoice.hasOriginalDocument && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={isExporting === invoice.id}>Original hinterlegen</ActionMenuItem>}
+                        {invoice.origin === 'imported' && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal || isExporting === invoice.id} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>{invoice.hasOriginalDocument ? 'Original ersetzen' : 'Original hinterlegen'}</ActionMenuItem>}
+                        {invoice.origin === 'imported' && invoice.hasOriginalDocument && <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => requestOriginalRemoval(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>Original entfernen</ActionMenuItem>}
                         <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </ActionMenu>
@@ -1643,10 +1684,12 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                     <>
                       <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                       
-                      <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)}>Vorschau anzeigen</ActionMenuItem>
+                      <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Vorschau (Original)' : 'Vorschau anzeigen'}</ActionMenuItem>
                       
-                      <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>Herunterladen</ActionMenuItem>
-                      {invoice.origin === 'imported' && !invoice.hasOriginalDocument && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={isExporting === invoice.id}>Original hinterlegen</ActionMenuItem>}
+                      <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Original herunterladen' : 'Herunterladen'}</ActionMenuItem>
+                      {invoice.origin === 'imported' && <ActionMenuItem icon={<Printer className="h-4 w-4" />} tone="gray" onClick={() => void downloadLegacyReprint(invoice)} disabled={isExporting === invoice.id}>Kopie / Neudruck im aktuellen Layout</ActionMenuItem>}
+                      {invoice.origin === 'imported' && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal || isExporting === invoice.id} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>{invoice.hasOriginalDocument ? 'Original ersetzen' : 'Original hinterlegen'}</ActionMenuItem>}
+                      {invoice.origin === 'imported' && invoice.hasOriginalDocument && <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => requestOriginalRemoval(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>Original entfernen</ActionMenuItem>}
                       <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
                         <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </>

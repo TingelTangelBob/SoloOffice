@@ -140,6 +140,8 @@ export interface Invoice extends Timestamps, GlobalDiscount {
   origin?: 'solooffice' | 'imported';
   /** Für übernommene Rechnungen ist das Originaldokument hinterlegt. */
   hasOriginalDocument?: boolean;
+  /** Original darf bis zum Abschluss des Umzugs ersetzt oder entfernt werden. */
+  canReplaceOriginal?: boolean;
 }
 
 export type CreditNote = Invoice & { documentType: 'credit_note' };

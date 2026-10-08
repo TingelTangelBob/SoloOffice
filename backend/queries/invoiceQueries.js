@@ -7,6 +7,7 @@ function mapInvoice(row) {
     documentType: row.document_type || 'invoice',
     origin: row.origin || 'solooffice',
     hasOriginalDocument: row.has_original_document === true,
+    canReplaceOriginal: row.can_replace_original === true,
     documentSnapshot: row.document_snapshot || undefined,
     referenceInvoiceId: row.reference_invoice_id,
     referenceInvoiceNumber: row.reference_invoice_number,
@@ -70,6 +71,11 @@ const itemSelect = `
       WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'
     ) AS payment_received_at
   , EXISTS (SELECT 1 FROM invoice_original_documents od WHERE od.invoice_id = i.id) AS has_original_document
+  , (i.origin = 'imported' AND (
+      EXISTS (SELECT 1 FROM import_run_items item JOIN import_runs run ON run.id = item.run_id
+        WHERE item.table_name = 'invoices' AND item.record_id = i.id::text AND run.status = 'pending')
+      OR EXISTS (SELECT 1 FROM migration_sessions session WHERE session.workspace_id = i.workspace_id AND session.status = 'open')
+    )) AS can_replace_original
 `;
 
 export async function findAllInvoices() {

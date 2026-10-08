@@ -116,7 +116,7 @@ function demoDigest(value: unknown): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 8;
+const DEMO_SEED_VERSION = 9;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -451,6 +451,18 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       status: index === 0 ? 'draft' : index === 1 ? 'sent' : 'paid', notes: '', createdAt: isoDate(-index * 7),
     };
   });
+  const importedWithOriginalId = generateUUID();
+  const importedWithoutOriginalId = generateUUID();
+  const demoOriginalContent = btoa('%PDF-1.4\n% SoloOffice Demo-Original\n%%EOF');
+  const importedInvoice = (id: string, invoiceNumber: string, index: number): DemoRecord => ({
+    id, invoiceNumber, documentType: 'invoice', origin: 'imported', hasOriginalDocument: false, canReplaceOriginal: true,
+    customerId: customer(index).id, customerName: customer(index).name, issueDate: isoDate(-35 - index), dueDate: isoDate(-5 - index),
+    items: [item('Übernommene Beratungsleistung', 280 + index * 50)], subtotal: 280 + index * 50,
+    taxAmount: 0, total: 280 + index * 50, status: 'paid', notes: 'Beispiel einer übernommenen Rechnung', createdAt: isoDate(-35 - index),
+  });
+  invoices.push(importedInvoice(importedWithOriginalId, `ALT-${yearOf(-35)}-001`, 0));
+  invoices.push(importedInvoice(importedWithoutOriginalId, `ALT-${yearOf(-42)}-002`, 1));
+  invoices[invoices.length - 2].hasOriginalDocument = true;
 
   const jobs: DemoRecord[] = [0, 1, 2].map((index) => ({
     id: generateUUID(), jobNumber: `AU-${yearOf(index - 1)}-${String(index + 1).padStart(3, '0')}`, customerId: customer(index).id,
@@ -464,6 +476,12 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
 
   const state: DemoState = {
     customers, invoices, recurringInvoices: [], jobs, quotes: [], materialTemplates: [],
+    invoiceOriginals: {
+      [importedWithOriginalId]: {
+        id: importedWithOriginalId, name: 'ALT-Rechnung-001.pdf', content: demoOriginalContent,
+        contentType: 'application/pdf', size: atob(demoOriginalContent).length, uploadedAt: isoDate(-35),
+      },
+    },
     hourlyRates: [{ id: generateUUID(), name: 'Standard', description: 'Lokaler Demo-Stundensatz', rate: 75, isDefault: true, createdAt: isoDate() }],
     yearlyInvoiceStartNumbers: [],
     calendarEvents: [],
@@ -772,7 +790,7 @@ const DEMO_WORK_TITLES: Record<string, string> = {
   customers: 'Auftrag', mandants: 'Mandat', patients: 'Behandlung', students: 'Unterricht', clients: 'Beratung',
 };
 
-const DEMO_MAX_ORIGINAL_BYTES = 1024 * 1024;
+const DEMO_MAX_ORIGINAL_BYTES = 10 * 1024 * 1024;
 
 function demoImportRuns(state: DemoState): DemoRecord[] {
   if (!Array.isArray(state.importRuns)) state.importRuns = [];
@@ -1028,6 +1046,7 @@ function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, f
         documentType: 'invoice',
         origin: 'imported',
         hasOriginalDocument: false,
+        canReplaceOriginal: true,
         customerId,
         customerName: customerName(customerId),
         issueDate: data.issueDate,
@@ -1296,6 +1315,8 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
     const originals = demoInvoiceOriginals(state);
     const pending = runs.some(run => run.status === 'pending' && Array.isArray(run.items)
       && (run.items as unknown as DemoImportRunItem[]).some(item => item.tableName === 'invoices' && item.recordId === invoice.id));
+    const takeover = readDemoTakeover(state);
+    const canChange = pending || takeover?.status === 'open' || invoice.canReplaceOriginal === true;
     if (method === 'GET') {
       const original = originals[invoice.id];
       if (!original) throw new Error('Für diese Rechnung ist kein Original hinterlegt.');
@@ -1303,18 +1324,21 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
     }
     if (invoice.origin !== 'imported') throw new Error('Originaldokumente können nur für übernommene Rechnungen hinterlegt werden.');
     if (method === 'DELETE') {
-      if (!pending) throw new Error('Nach Abschluss des Umzugs kann das Original nicht mehr entfernt werden.');
+      if (!canChange) throw new Error('Nach Abschluss des Umzugs kann das Original nicht mehr entfernt werden.');
       delete originals[invoice.id];
       invoice.hasOriginalDocument = false;
       saveState(state);
       return { success: true } as unknown as T;
     }
-    if (originals[invoice.id] && !pending) throw new Error('Für diese Rechnung ist bereits ein Original hinterlegt. Es kann nach Abschluss des Umzugs nicht mehr ersetzt werden.');
+    if (originals[invoice.id] && !canChange) throw new Error('Für diese Rechnung ist bereits ein Original hinterlegt. Es kann nach Abschluss des Umzugs nicht mehr ersetzt werden.');
     const content = String(data.content || '');
     const size = Math.floor(content.length * 3 / 4);
-    if (!content || size > DEMO_MAX_ORIGINAL_BYTES) throw new Error('Im Demo-Modus sind Originale bis 1 MB möglich.');
-    originals[invoice.id] = { id: invoice.id, name: String(data.name || 'Original'), content, contentType: String(data.contentType || 'application/pdf'), size, uploadedAt: new Date().toISOString() };
+    const contentType = String(data.contentType || '').toLowerCase();
+    if (!['application/pdf', 'application/xml', 'text/xml', 'image/png', 'image/jpeg'].includes(contentType)) throw new Error('Erlaubt sind PDF, XML, PNG und JPEG.');
+    if (!content || size > DEMO_MAX_ORIGINAL_BYTES) throw new Error('Das Original darf höchstens 10 MB groß sein.');
+    originals[invoice.id] = { id: invoice.id, name: String(data.name || 'Original'), content, contentType, size, uploadedAt: new Date().toISOString() };
     invoice.hasOriginalDocument = true;
+    invoice.canReplaceOriginal = invoice.canReplaceOriginal === true || pending || takeover?.status === 'open';
     saveState(state);
     return { name: originals[invoice.id].name, contentType: originals[invoice.id].contentType, size } as unknown as T;
   }
@@ -1652,6 +1676,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         });
       }
       session = { ...session, status: 'completed', completedBy: 'demo-user', completedAt: new Date().toISOString(), progressRevision: Number(session.progressRevision) + 1 };
+      state.invoices.forEach(invoice => { if (invoice.origin === 'imported') invoice.canReplaceOriginal = false; });
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(demoTakeoverStorageKey(), JSON.stringify(session));
       saveState(state);
       return { takeoverUsed: true, session, demoMode: true } as unknown as T;

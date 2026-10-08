@@ -954,7 +954,7 @@ router.put('/settings', async (req, res) => {
 
 async function findImportedInvoice(client, invoiceId) {
   const result = await client.query(`
-    SELECT i.id, i.invoice_number, i.origin,
+    SELECT i.id, i.invoice_number, i.origin, i.workspace_id,
       EXISTS (
         SELECT 1 FROM import_run_items item JOIN import_runs run ON run.id = item.run_id
         WHERE item.table_name = 'invoices' AND item.record_id = i.id::text AND run.status = 'pending'
@@ -995,14 +995,16 @@ function validateOriginalDocument(body) {
 
 router.put('/original-documents/:invoiceId', async (req, res) => {
   if (!UUID_PATTERN.test(req.params.invoiceId)) return res.status(400).json({ error: 'Ungültige Rechnungs-ID.' });
+  if (!hasPermission(req.auth, 'data.write')) return res.status(403).json({ error: 'Für diese Aktion fehlt die Schreibberechtigung.', code: 'FORBIDDEN' });
   const client = await pool.connect();
   try {
     const document = validateOriginalDocument(req.body);
     await client.query('BEGIN');
     const invoice = await findImportedInvoice(client, req.params.invoiceId);
+    const openSession = await client.query('SELECT id FROM migration_sessions WHERE workspace_id = $1 AND status = \'open\' FOR UPDATE', [invoice.workspace_id]);
     const existing = await client.query('SELECT id FROM invoice_original_documents WHERE invoice_id = $1 FOR UPDATE', [invoice.id]);
     // Nach Abschluss des Umzugs ist ein hinterlegtes Original unveränderbar.
-    if (existing.rows.length > 0 && !invoice.import_pending) {
+    if (existing.rows.length > 0 && !invoice.import_pending && openSession.rows.length === 0) {
       throw httpError(409, 'Für diese Rechnung ist bereits ein Original hinterlegt. Es kann nach Abschluss des Umzugs nicht mehr ersetzt werden.');
     }
     if (existing.rows.length > 0) await client.query('DELETE FROM invoice_original_documents WHERE invoice_id = $1', [invoice.id]);
@@ -1022,11 +1024,13 @@ router.put('/original-documents/:invoiceId', async (req, res) => {
 
 router.delete('/original-documents/:invoiceId', async (req, res) => {
   if (!UUID_PATTERN.test(req.params.invoiceId)) return res.status(400).json({ error: 'Ungültige Rechnungs-ID.' });
+  if (!hasPermission(req.auth, 'data.write')) return res.status(403).json({ error: 'Für diese Aktion fehlt die Schreibberechtigung.', code: 'FORBIDDEN' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const invoice = await findImportedInvoice(client, req.params.invoiceId);
-    if (!invoice.import_pending) throw httpError(409, 'Nach Abschluss des Umzugs kann das Original nicht mehr entfernt werden.');
+    const openSession = await client.query('SELECT id FROM migration_sessions WHERE workspace_id = $1 AND status = \'open\' FOR UPDATE', [invoice.workspace_id]);
+    if (!invoice.import_pending && openSession.rows.length === 0) throw httpError(409, 'Nach Abschluss des Umzugs kann das Original nicht mehr entfernt werden.');
     await client.query('DELETE FROM invoice_original_documents WHERE invoice_id = $1', [invoice.id]);
     await client.query('COMMIT');
     res.json({ success: true });
