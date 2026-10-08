@@ -44,6 +44,31 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
   technischer Prüfung. Die Betriebsunterlagen dokumentieren die Auslastung
   großer Rechnungsläufe und den nächsten sinnvollen Skalierungsschritt.
 
+## v0.9.5 – Geführte Datenübernahme und Workspace-Verwaltung
+
+- Die Datenübernahme führt durch erkannte Kategorien und passende Importzeilen.
+  Eine Komplettvorlage deckt Kunden und Rechnungen ab; Vorlagen erläutern
+  Pflichtangaben, Formate und Beispiele. Schritte lassen sich überspringen,
+  wieder aufnehmen und innerhalb ihrer Voraussetzungen neu ordnen.
+- Importabhängigkeiten berücksichtigen Kunden, Vorlagen, Rechnungen, Zahlungen
+  und EÜR. Vorschau und Freigabe beziehen sich auf die tatsächlich importierbaren
+  Zeilen; neue Kundenvorschläge können nachfolgende Rechnungsimporte vorbereiten.
+- Workspace-Reset kann Firmeneinstellungen und Umzugsstatus getrennt behandeln.
+  Der Standard-Reset entfernt auch Kategorien, Sitzung und Stichtag; Rechte,
+  Bestätigungen und Demo-Modus folgen demselben Umfang.
+- Übernommene Rechnungen können als deutlich gekennzeichnete Kopie im aktuellen
+  Layout neu gedruckt werden. Gespeicherte Nummer, Datum, Summen sowie Firmen-
+  und Empfängerdaten bleiben erhalten; das Original bleibt verfügbar.
+- Die Ersteinrichtung führt nach Abschluss direkt zur Datenübernahme und kann
+  einen begonnenen Ablauf fortsetzen. Einstellungen-Tabs bleiben in der URL
+  erhalten; die Datenübernahme nutzt dieselbe Inhaltsbreite wie Einstellungen.
+- Mobile Suche, Hinweisglocke und Overlay-Scrollverhalten wurden verbessert.
+  Eine persönliche Einstellung berücksichtigt reduzierte Animationen.
+- Abhängigkeiten und CI wurden gehärtet: Nodemailer wurde aktualisiert, eine
+  Sicherheitskorrektur für braces wird direkt eingebunden und vor der
+  Installation in CI bereitgestellt. Migrations-, RLS-, Import-, Reset- und
+  Neudruckregressionen ergänzen die automatisierten Prüfungen.
+
 ## v0.9.4 – Datenübernahme und Plattformwechsel
 
 - Neue Seite **Datenübernahme** (Einstellungen → E-Mail & Backup): geführte
@@ -85,10 +110,6 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 - Auswertungen und EÜR bieten zehn Jahre zur Auswahl.
 - Der Abschluss aller offenen Importläufe berücksichtigt die Rechte für
   Stammdaten-Importe und ist für normale Datenbearbeiter gesperrt.
-
-## Unreleased
-
-- Platzhalter für die nächste Version.
 
 ## v0.9.2b – E-Mail-Verwaltung zusammengeführt
 
