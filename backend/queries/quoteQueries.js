@@ -40,7 +40,7 @@ export async function findAllQuotes() {
         FROM quote_attachments
         GROUP BY quote_id
       ) attachments_subquery ON q.id = attachments_subquery.quote_id
-      ORDER BY q.created_at DESC
+      ORDER BY q.issue_date DESC, q.quote_number DESC, q.created_at DESC
     `);
 
   return result.rows.map(row => ({

@@ -5,6 +5,9 @@ export interface SortState {
   direction: SortDirection;
 }
 
+export const DEFAULT_INVOICE_SORT: SortState = { key: 'date', direction: 'desc' };
+export const DEFAULT_JOB_SORT: SortState = { key: 'date', direction: 'desc' };
+
 /** Vergleich für Tabellenwerte mit deutscher, numerischer Sortierung. */
 export function compareTableValues(left: unknown, right: unknown, locale = 'de-DE'): number {
   if (left === right) return 0;
@@ -24,7 +27,17 @@ export function compareTableValues(left: unknown, right: unknown, locale = 'de-D
   return new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }).compare(String(left), String(right));
 }
 
-export function sortByTableState<T>(items: T[], state: SortState, getValue: (item: T, key: string) => unknown, locale = 'de-DE'): T[] {
+export function sortByTableState<T>(
+  items: T[],
+  state: SortState,
+  getValue: (item: T, key: string) => unknown,
+  locale = 'de-DE',
+  compareTie?: (left: T, right: T) => number,
+): T[] {
   const multiplier = state.direction === 'asc' ? 1 : -1;
-  return [...items].sort((left, right) => multiplier * compareTableValues(getValue(left, state.key), getValue(right, state.key), locale));
+  return [...items].sort((left, right) => (
+    multiplier * compareTableValues(getValue(left, state.key), getValue(right, state.key), locale)
+    || compareTie?.(left, right)
+    || 0
+  ));
 }

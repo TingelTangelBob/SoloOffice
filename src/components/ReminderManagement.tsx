@@ -19,7 +19,7 @@ import { ThemeTabBar } from './ThemeTabBar';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { useFeedback } from '../context/FeedbackContext';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 
 export function ReminderManagement() {
@@ -526,7 +526,7 @@ function EligibleRemindersTab({
   company
 }: EligibleRemindersTabProps) {
   const terminology = getTerminology(company.terminologyProfile);
-  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'dueDate', direction: 'desc' });
   const handleSort = (key: string) => setSortState(previous => previous.key === key
     ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
     : { key, direction: 'asc' });
@@ -538,7 +538,7 @@ function EligibleRemindersTab({
     if (key === 'status') return reminder.currentStatus;
     if (key === 'nextStage') return reminder.nextStage;
     return reminder.invoiceNumber;
-  }, company?.locale || 'de-DE');
+  }, company?.locale || 'de-DE', (left, right) => compareTableValues(right.invoiceNumber, left.invoiceNumber, company?.locale || 'de-DE'));
   if (reminders.length === 0) {
     return (
       <div className="text-center py-12">

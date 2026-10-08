@@ -15,7 +15,7 @@ import { PageHeader } from './PageHeader';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 
 interface CustomerDetailProps {
@@ -104,7 +104,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   const [notes, setNotes] = useState(customer?.notes || '');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [creditNotesLoading, setCreditNotesLoading] = useState(true);
-  const [documentSort, setDocumentSort] = useState<SortState>({ key: 'number', direction: 'asc' });
+  const [documentSort, setDocumentSort] = useState<SortState>({ key: 'date', direction: 'desc' });
 
   useEffect(() => {
     setActiveTab(tabFromValue(initialTab));
@@ -219,7 +219,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
       return <EmptyRelation message={`Noch keine ${tabs.find(tab => tab.id === kind)?.label.toLocaleLowerCase('de-DE') || 'Einträge'} für diesen ${terminology.entity.singular}.`} actionLabel={actionLabel} onAction={action} />;
     }
 
-    const sortedItems = compact ? items : sortByTableState(items, documentSort, (item, key) => {
+    const getDocumentSortValue = (item: Invoice | CreditNote | Quote | JobEntry, key: string) => {
       if (key === 'date') return 'jobNumber' in item ? item.date : 'issueDate' in item ? item.issueDate : '';
       if (key === 'dueDate') return 'dueDate' in item ? item.dueDate : '';
       if (key === 'validUntil') return 'validUntil' in item ? item.validUntil : '';
@@ -230,7 +230,10 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
       if ('invoiceNumber' in item) return item.invoiceNumber;
       if ('quoteNumber' in item) return item.quoteNumber;
       return 'jobNumber' in item ? item.jobNumber : '';
-    });
+    };
+    const sortedItems = compact ? items : sortByTableState(items, documentSort, getDocumentSortValue, company?.locale || 'de-DE', (left, right) => (
+      compareTableValues(getDocumentSortValue(right, 'number'), getDocumentSortValue(left, 'number'), company?.locale || 'de-DE')
+    ));
 
     // Die Kurzlisten der Übersicht teilen sich eine Spalte mit dem Nachbarn:
     // dort zählen Nummer, Datum, Betrag/Stunden und Status – ohne Mindestbreite

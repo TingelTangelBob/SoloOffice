@@ -27,7 +27,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 
 interface QuoteManagementProps {
@@ -61,7 +61,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [quoteLoadError, setQuoteLoadError] = useState<string | null>(null);
   const { query: searchTerm } = usePageSearch({ placeholder: 'Angebote suchen …' });
   const [filterStatus, setFilterStatus] = useState('all');
-  const [sortState, setSortState] = useState<SortState>({ key: 'quoteNumber', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'date', direction: 'desc' });
   const [selectedQuoteIds, setSelectedQuoteIds] = useState<string[]>([]);
   const [isBulkOperation, setIsBulkOperation] = useState(false);
   const [emailModal, setEmailModal] = useState<{
@@ -182,7 +182,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       if (key === 'customer') return quote.customerName;
       if (key === 'status') return quote.status;
       return quote.quoteNumber;
-    }, locale);
+    }, locale, (left, right) => compareTableValues(right.quoteNumber, left.quoteNumber, locale)
+      || compareTableValues(right.createdAt, left.createdAt, locale));
   }, [filterStatus, locale, quotes, searchTerm, sortState]);
 
   const handleOpenEditor = (quote?: Quote) => {

@@ -33,6 +33,24 @@ import { calculateTotalHours } from '../../.test-dist/utils/jobUtils.js';
 import { getEffectivePaymentInformation } from '../../.test-dist/utils/paymentInformation.js';
 import { buildServiceDatePdfField, resolveServiceDate } from '../../.test-dist/utils/serviceDate.js';
 import { DEFAULT_TIME_ZONE, getTimeZoneLabel } from '../../.test-dist/utils/timeZones.js';
+import { DEFAULT_INVOICE_SORT, DEFAULT_JOB_SORT, sortByTableState } from '../../.test-dist/utils/tableSort.js';
+
+test('Rechnungen und Aufträge starten mit dem neuesten Datum oben', () => {
+  const invoices = [
+    { id: 'alt', issueDate: '2024-02-01', invoiceNumber: 'ALT-1' },
+    { id: 'neu', issueDate: '2026-02-01', invoiceNumber: 'RE-2' },
+    { id: 'gleiches-datum', issueDate: '2026-02-01', invoiceNumber: 'RE-10' },
+  ];
+  const jobs = [
+    { id: 'gestern', date: '2026-10-07', jobNumber: 'AB-1' },
+    { id: 'heute', date: '2026-10-08', jobNumber: 'AB-2' },
+  ];
+
+  assert.deepEqual(DEFAULT_INVOICE_SORT, { key: 'date', direction: 'desc' });
+  assert.deepEqual(DEFAULT_JOB_SORT, { key: 'date', direction: 'desc' });
+  assert.deepEqual(sortByTableState(invoices, DEFAULT_INVOICE_SORT, invoice => invoice.issueDate, 'de-DE', (a, b) => b.invoiceNumber.localeCompare(a.invoiceNumber, 'de-DE', { numeric: true } )).map(invoice => invoice.id), ['gleiches-datum', 'neu', 'alt']);
+  assert.deepEqual(sortByTableState(jobs, DEFAULT_JOB_SORT, job => job.date).map(job => job.id), ['heute', 'gestern']);
+});
 
 test('Rechnungsnummernmuster akzeptieren genau einen Zähler', () => {
   assert.equal(validateInvoiceNumberPattern('RE-{YYYY}-{NNNN}'), null);

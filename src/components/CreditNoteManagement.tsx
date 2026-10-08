@@ -19,7 +19,7 @@ import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
@@ -55,7 +55,7 @@ export function CreditNoteManagement() {
   const [editingNote, setEditingNote] = useState<CreditNote | null>(null);
   const [form, setForm] = useState<FormDraft>(emptyForm());
   const [busy, setBusy] = useState<string | null>(null);
-  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'date', direction: 'desc' });
   const [previewDocument, setPreviewDocument] = useState<PreviewDocument | null>(null);
   const locale = company?.locale || 'de-DE';
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
@@ -80,7 +80,8 @@ export function CreditNoteManagement() {
     if (key === 'status') return creditNoteStatusLabel(note.status);
     if (key === 'reference') return referenceNumber(note);
     return note.invoiceNumber;
-  });
+  }, 'de-DE', (left, right) => compareTableValues(right.invoiceNumber, left.invoiceNumber, 'de-DE')
+    || compareTableValues(right.createdAt, left.createdAt, 'de-DE'));
   const openNew = () => { setEditingNote(null); setForm(emptyForm()); setOpen(true); };
   const openEdit = (note: CreditNote) => {
     setEditingNote(note);

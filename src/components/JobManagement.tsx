@@ -54,7 +54,7 @@ import { ImportWizard } from './ImportWizard';
 import { generateUUID } from '../utils/uuid';
 import { useFeedback } from '../context/FeedbackContext';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, DEFAULT_JOB_SORT, sortByTableState, type SortState } from '../utils/tableSort';
 
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -114,7 +114,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   const [statusFilter, setStatusFilter] = useState<string>('not-invoiced');
   const [customerFilter, setCustomerFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
-  const [sortState, setSortState] = useState<SortState>({ key: 'jobNumber', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>(DEFAULT_JOB_SORT);
   const [jobPage, setJobPage] = useState(1);
   const [showAllStats, setShowAllStats] = useState(false);
   const [expandedRecurringGroups, setExpandedRecurringGroups] = useState<Set<string>>(new Set());
@@ -258,7 +258,8 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       if (key === 'hours') return calculateTotalHours(job);
       if (key === 'status') return job.status;
       return job.jobNumber;
-    }, locale);
+    }, locale, (left, right) => compareTableValues(right.jobNumber, left.jobNumber, locale)
+      || compareTableValues(right.createdAt, left.createdAt, locale));
   }, [customerFilter, dateFilter, jobEntries, locale, searchTerm, sortState, statusFilter]);
 
   const recurringGroups = useMemo(() => {
@@ -271,10 +272,11 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       groups.set(key, group);
     });
     groups.forEach((group) => {
-      group.jobs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      group.jobs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        || compareTableValues(b.jobNumber, a.jobNumber, locale));
     });
     return groups;
-  }, [filteredJobs]);
+  }, [filteredJobs, locale]);
 
   const displayedJobs = useMemo<DisplayedJob[]>(() => {
     const rows: DisplayedJob[] = [];

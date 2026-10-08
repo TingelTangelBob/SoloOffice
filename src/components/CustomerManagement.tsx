@@ -971,7 +971,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
             <thead className="bg-gray-50">
               <tr>
                 <SortableTableHeader label="Name" sortKey="name" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-5 py-3" />
-                <SortableTableHeader label="Kunden-Nr." sortKey="customerNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-4 py-3" />
+                  <SortableTableHeader label="Kunden-Nr." sortKey="customerNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-36 px-3 py-3" />
                 <SortableTableHeader label="E-Mail" sortKey="email" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
                 <SortableTableHeader label="Telefon" sortKey="phone" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
                 {showAddressColumn && <SortableTableHeader label="Adresse" sortKey="address" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />}

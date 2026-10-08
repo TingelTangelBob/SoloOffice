@@ -97,8 +97,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
 
   const filteredReceipts = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase(locale);
-    if (!query) return receipts;
-    return receipts.filter(receipt => {
+    const filtered = !query ? receipts : receipts.filter(receipt => {
       const data = receipt.extractedData || {};
       return [
         receipt.name,
@@ -109,6 +108,11 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
         receipt.ocrStatus,
       ].some(value => value?.toLocaleLowerCase(locale).includes(query));
     });
+    return filtered.slice().sort((left, right) => (
+      String(right.extractedData?.documentDate || right.createdAt || '').localeCompare(String(left.extractedData?.documentDate || left.createdAt || ''))
+      || String(right.createdAt || '').localeCompare(String(left.createdAt || ''))
+      || left.name.localeCompare(right.name, locale, { numeric: true, sensitivity: 'base' })
+    ));
   }, [locale, receipts, searchQuery]);
 
   const updateReceiptInState = (updated: Receipt) => {

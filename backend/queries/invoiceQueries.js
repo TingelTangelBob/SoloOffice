@@ -79,12 +79,12 @@ const itemSelect = `
 `;
 
 export async function findAllInvoices() {
-  const result = await query(`SELECT i.*, referenced.invoice_number AS reference_invoice_number, source_quote.quote_number AS source_quote_number, ${itemSelect} FROM invoices i LEFT JOIN invoices referenced ON referenced.id = i.reference_invoice_id LEFT JOIN quotes source_quote ON source_quote.id = i.source_quote_id WHERE COALESCE(i.document_type, 'invoice') = 'invoice' ORDER BY i.created_at DESC`);
+  const result = await query(`SELECT i.*, referenced.invoice_number AS reference_invoice_number, source_quote.quote_number AS source_quote_number, ${itemSelect} FROM invoices i LEFT JOIN invoices referenced ON referenced.id = i.reference_invoice_id LEFT JOIN quotes source_quote ON source_quote.id = i.source_quote_id WHERE COALESCE(i.document_type, 'invoice') = 'invoice' ORDER BY i.issue_date DESC, i.invoice_number DESC, i.created_at DESC`);
   return result.rows.map(mapInvoice);
 }
 
 export async function findAllCreditNotes() {
-  const result = await query(`SELECT i.*, referenced.invoice_number AS reference_invoice_number, source_quote.quote_number AS source_quote_number, ${itemSelect} FROM invoices i LEFT JOIN invoices referenced ON referenced.id = i.reference_invoice_id LEFT JOIN quotes source_quote ON source_quote.id = i.source_quote_id WHERE i.document_type = 'credit_note' ORDER BY i.created_at DESC`);
+  const result = await query(`SELECT i.*, referenced.invoice_number AS reference_invoice_number, source_quote.quote_number AS source_quote_number, ${itemSelect} FROM invoices i LEFT JOIN invoices referenced ON referenced.id = i.reference_invoice_id LEFT JOIN quotes source_quote ON source_quote.id = i.source_quote_id WHERE i.document_type = 'credit_note' ORDER BY i.issue_date DESC, i.invoice_number DESC, i.created_at DESC`);
   return result.rows.map(mapInvoice);
 }
 

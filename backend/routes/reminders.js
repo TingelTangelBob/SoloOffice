@@ -41,7 +41,7 @@ router.get('/eligible', async (req, res) => {
         AND i.status IN ('sent', 'overdue', 'reminded_1x', 'reminded_2x')
         AND i.total > COALESCE((SELECT SUM(ee.amount) FROM euer_entries ee
           WHERE ee.source_type = 'invoice_payment' AND ee.source_id = i.id AND ee.status = 'active'), 0)
-      ORDER BY i.due_date ASC
+      ORDER BY i.due_date DESC, i.invoice_number DESC, i.created_at DESC
     `);
     
     const today = new Date();

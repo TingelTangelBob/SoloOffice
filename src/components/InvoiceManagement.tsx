@@ -37,7 +37,7 @@ import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
-import { sortByTableState, type SortState } from '../utils/tableSort';
+import { compareTableValues, DEFAULT_INVOICE_SORT, sortByTableState, type SortState } from '../utils/tableSort';
 import { trackTelemetry } from '../services/telemetry';
 import { ImportWizard } from './ImportWizard';
 
@@ -85,7 +85,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const openedInitialNewInvoice = useRef(false);
   const { query: searchTerm } = usePageSearch({ placeholder: 'Rechnungen suchen …', initialQuery: initialSearchTerm });
   const [filterStatus, setFilterStatus] = useState(initialFilter || 'not-paid');
-  const [sortState, setSortState] = useState<SortState>({ key: 'invoiceNumber', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>(DEFAULT_INVOICE_SORT);
   const [invoiceStartDate, setInvoiceStartDate] = useState('');
   const [invoiceEndDate, setInvoiceEndDate] = useState('');
   const [isExporting, setIsExporting] = useState<string | null>(null);
@@ -243,8 +243,10 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       if (key === 'amount') return invoice.total;
       if (key === 'customer') return invoice.customerName;
       if (key === 'status') return invoice.status;
+      if (key === 'invoiceNumber') return invoice.invoiceNumber;
       return invoice.invoiceNumber;
-    }, locale);
+    }, locale, (left, right) => compareTableValues(right.invoiceNumber, left.invoiceNumber, locale)
+      || compareTableValues(right.createdAt, left.createdAt, locale));
   }, [filterStatus, invoiceEndDate, invoiceRecords, invoiceStartDate, locale, searchTerm, sortState]);
   const hasInvalidInvoiceDateRange = Boolean(invoiceStartDate && invoiceEndDate && invoiceStartDate > invoiceEndDate);
 

@@ -606,11 +606,11 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <table className="w-full min-w-[760px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="text-left py-3 px-2 font-medium text-gray-700">Datum</th>
-                      <th className="text-left py-3 px-2 font-medium text-gray-700">Rechnung</th>
-                      <th className="text-left py-3 px-2 font-medium text-gray-700">{terminology.entity.singular}</th>
-                      <th className="text-right py-3 px-2 font-medium text-gray-700">Betrag</th>
-                      <th className="text-center py-3 px-2 font-medium text-gray-700">Status</th>
+                      <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">Datum</th>
+                      <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">Rechnung</th>
+                      <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">{terminology.entity.singular}</th>
+                      <th className="whitespace-nowrap py-3 px-2 text-right font-medium text-gray-700">Betrag</th>
+                      <th className="whitespace-nowrap py-3 px-2 text-center font-medium text-gray-700">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">

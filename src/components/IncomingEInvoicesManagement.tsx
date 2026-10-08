@@ -44,8 +44,7 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
 
   const filteredInvoices = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase('de-DE');
-    if (!query) return invoices;
-    return invoices.filter(invoice => [
+    const filtered = !query ? invoices : invoices.filter(invoice => [
       invoice.filename,
       invoice.format,
       invoice.supplierName,
@@ -53,6 +52,10 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
       invoice.validationStatus,
       customerNames.get(invoice.linkedCustomerId || ''),
     ].some(value => value?.toLocaleLowerCase('de-DE').includes(query)));
+    return filtered.slice().sort((left, right) => (
+      String(right.receivedAt || '').localeCompare(String(left.receivedAt || ''))
+      || left.filename.localeCompare(right.filename, 'de-DE', { numeric: true, sensitivity: 'base' })
+    ));
   }, [customerNames, invoices, searchQuery]);
 
   useEffect(() => {

@@ -333,9 +333,14 @@ export function RecurringInvoiceManagement() {
   const frequency = (entry: RecurringInvoice) => frequencyLabels[entry.frequency]
     || `Alle ${entry.intervalValue} ${intervalUnitLabels[entry.intervalUnit] || 'Perioden'}`;
   const ordered = useMemo(
-    () => [...entries].sort((a, b) => String(a.nextRunDate || '').localeCompare(String(b.nextRunDate || ''))),
+    () => [...entries].sort((a, b) => String(b.nextRunDate || '').localeCompare(String(a.nextRunDate || ''))
+      || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))),
     [entries],
   );
+  const orderedRuns = (entryId: string) => [...(runs[entryId] || [])].sort((a, b) => (
+    String(b.scheduledDate || '').localeCompare(String(a.scheduledDate || ''))
+    || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  ));
   const draftTotal = form.items.reduce((sum, item) => sum + itemTotal(item), 0);
 
   return (
@@ -455,7 +460,7 @@ export function RecurringInvoiceManagement() {
 
               {expanded === entry.id && (
                 <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-                  {busy === `runs-${entry.id}` ? 'Laufprotokoll wird geladen …' : (runs[entry.id] || []).length === 0 ? 'Noch keine Läufe protokolliert.' : runs[entry.id].map(run => (
+                  {busy === `runs-${entry.id}` ? 'Laufprotokoll wird geladen …' : orderedRuns(entry.id).length === 0 ? 'Noch keine Läufe protokolliert.' : orderedRuns(entry.id).map(run => (
                     <div key={run.id} className="space-y-1 border-b border-gray-200 py-2 last:border-0">
                       <div className="flex justify-between">
                         <span>{formatDate(run.scheduledDate, locale, company?.dateFormat)}</span>

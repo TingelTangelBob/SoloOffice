@@ -8,6 +8,7 @@ import { useCompany } from '../context/CompanyContext';
 import { useLoading } from '../context/LoadingContext';
 import { calculateTotalHours } from '../utils/jobUtils';
 import { formatCurrency, formatDate, formatNumber, formatTime } from '../utils/formatters';
+import { compareTableValues } from '../utils/tableSort';
 import { blobToBase64 } from '../utils/blobUtils';
 import { EmailSendModal } from './EmailSendModal';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
@@ -556,7 +557,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const topCustomerMax = topCustomers.reduce((max, entry) => Math.max(max, entry.revenue), 0);
 
   const recentInvoices = [...invoices]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => compareTableValues(b.issueDate, a.issueDate, locale)
+      || compareTableValues(b.invoiceNumber, a.invoiceNumber, locale)
+      || compareTableValues(b.createdAt, a.createdAt, locale))
     .slice(0, 5);
 
   const jobActivityTimestamp = (job: JobEntry): number => {
@@ -850,7 +853,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardHeader>
             <div className="min-w-0">
               <MetricCardTitle>Aktuelle Rechnungen</MetricCardTitle>
-              <MetricCardDescription className="mt-1">Die fünf zuletzt angelegten Rechnungen</MetricCardDescription>
+              <MetricCardDescription className="mt-1">Die fünf neuesten Rechnungen nach Rechnungsdatum</MetricCardDescription>
             </div>
           </MetricCardHeader>
 
@@ -861,10 +864,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <table className="w-full min-w-[700px] border-t border-gray-200">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th scope="col" className="px-3 py-2 pl-4 text-left text-xs font-medium text-gray-500 lg:pl-6">Datum</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500">Rechnung</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500">{terminology.entity.singular}</th>
-                      <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500">Betrag</th>
+                      <th scope="col" className="whitespace-nowrap px-3 py-2 pl-4 text-left text-xs font-medium text-gray-500 lg:pl-6">Datum</th>
+                      <th scope="col" className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-gray-500">Rechnung</th>
+                      <th scope="col" className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-gray-500">{terminology.entity.singular}</th>
+                      <th scope="col" className="whitespace-nowrap px-3 py-2 text-right text-xs font-medium text-gray-500">Betrag</th>
                       <th scope="col" className="sticky right-0 z-20 w-14 bg-white px-2 py-2 text-left text-xs font-medium text-gray-500 2xl:w-44 2xl:px-3">
                         <span className="sr-only">Aktionen</span>
                       </th>
