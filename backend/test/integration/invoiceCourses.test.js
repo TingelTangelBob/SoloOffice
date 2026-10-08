@@ -75,8 +75,9 @@ test('Nachschritt zeigt Vorschau, führt idempotent aus und bleibt workspaceisol
   const customerId = (await own(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Nachkunde', $1, 'person', 'Weg 1', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`N-${suffix}`]))).rows[0].id;
   const foreignCustomerId = (await foreign(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Fremdkunde', $1, 'person', 'Weg 2', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`F-${suffix}`]))).rows[0].id;
   const createInvoice = workspace => workspace(async () => {
-    const inserted = await query(`INSERT INTO invoices (invoice_number, document_type, origin, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status) VALUES ($1, 'invoice', 'imported', $2, 'Kunde', '2025-03-04', '2025-03-18', 50, 0, 50, 'paid') RETURNING id`, [`ALT-N-${workspace === own ? 'own' : 'foreign'}-${suffix}`, workspace === own ? customerId : foreignCustomerId]);
+    const inserted = await query(`INSERT INTO invoices (invoice_number, document_type, origin, customer_id, customer_name, issue_date, due_date, subtotal, tax_amount, total, status) VALUES ($1, 'invoice', 'imported', $2, 'Kunde', '2025-03-04', '2025-03-18', 50, 0, 50, 'draft') RETURNING id`, [`ALT-N-${workspace === own ? 'own' : 'foreign'}-${suffix}`, workspace === own ? customerId : foreignCustomerId]);
     await query('INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order) VALUES ($1, $2, 1, 50, 0, 50, 1)', [inserted.rows[0].id, 'Beratung']);
+    await query("UPDATE invoices SET status = 'paid' WHERE id = $1", [inserted.rows[0].id]);
   });
   await createInvoice(own);
   await createInvoice(foreign);
