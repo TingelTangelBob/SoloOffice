@@ -57,7 +57,7 @@ import * as migration048 from './048_user_motion_preference.js';
 import * as migration049 from './049_invoice_item_units.js';
 
 // List of all migrations in execution order
-const migrations = [
+export const migrations = [
   migration001,
   migration002,
   migration003,
