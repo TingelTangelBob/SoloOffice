@@ -54,10 +54,10 @@ export function DocumentOrigin({ invoice, onNavigate }: DocumentOriginProps) {
   if (links.length === 0 && !imported) return null;
 
   return (
-    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <span className="mt-0.5 flex min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5">
       {imported && (
         <span
-          className="text-xs font-normal text-gray-500"
+          className="block min-w-0 max-w-full whitespace-normal text-xs font-normal text-gray-500"
           title={invoice.hasOriginalDocument ? 'Aus einem anderen Programm übernommen; das hinterlegte Original ist maßgeblich.' : 'Aus einem anderen Programm übernommen; das Original ist noch nicht hinterlegt.'}
         >
           {invoice.hasOriginalDocument ? 'übernommen' : 'übernommen · ohne Original'}
@@ -72,7 +72,7 @@ export function DocumentOrigin({ invoice, onNavigate }: DocumentOriginProps) {
             onNavigate?.(link.page, undefined, link.searchTerm);
           }}
           disabled={!onNavigate}
-          className="inline-flex min-h-0 items-center gap-0.5 rounded-sm text-xs font-normal text-gray-500 transition-colors hover:text-primary-custom disabled:cursor-default disabled:hover:text-gray-500"
+          className="inline-flex min-h-0 max-w-full items-center gap-0.5 truncate rounded-sm text-xs font-normal text-gray-500 transition-colors hover:text-primary-custom disabled:cursor-default disabled:hover:text-gray-500"
           title={onNavigate ? 'Herkunftsdokument öffnen' : undefined}
         >
           {link.label}

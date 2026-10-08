@@ -10,6 +10,7 @@ interface SortableTableHeaderProps {
   className?: string;
   align?: 'left' | 'right';
   labelHidden?: boolean;
+  truncateLabel?: boolean;
 }
 
 export function SortableTableHeader({
@@ -21,6 +22,7 @@ export function SortableTableHeader({
   className = '',
   align = 'left',
   labelHidden = false,
+  truncateLabel = false,
 }: SortableTableHeaderProps) {
   const active = activeKey === sortKey;
 
@@ -29,11 +31,11 @@ export function SortableTableHeader({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex min-h-0 w-full items-center gap-1 text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom ${align === 'right' ? 'justify-end text-right' : 'justify-start text-left'}`}
+        className={`inline-flex min-h-0 w-full min-w-0 items-center gap-1 text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom ${align === 'right' ? 'justify-end text-right' : 'justify-start text-left'}`}
         aria-label={`${label} sortieren`}
         title={`${label} sortieren`}
       >
-        <span className={labelHidden ? 'sr-only' : undefined}>{label}</span>
+        <span className={labelHidden ? 'sr-only' : `${truncateLabel ? 'min-w-0 truncate ' : ''}whitespace-nowrap`}>{label}</span>
         {/* Ein Pfeil, der sich dreht, statt zwei Symbole zu tauschen: So ist
             der Richtungswechsel als Bewegung nachvollziehbar. */}
         {active

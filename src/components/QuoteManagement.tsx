@@ -35,13 +35,13 @@ interface QuoteManagementProps {
 }
 
 /**
- * Spaltenmaße der Angebotstabelle: Auswahl 64, Datum 96, Angebotsnummer 144,
- * Gültig bis 96 und Betrag 96 Pixel. Eine Zeile zeigt höchstens sechs
+ * Spaltenmaße der Angebotstabelle: Auswahl 64, Datum 96, Angebotsnummer 176,
+ * Gültig bis 112 und Betrag 96 Pixel. Eine Zeile zeigt höchstens sechs
  * Icon-Aktionen (Versendet-Status: annehmen, ablehnen, bearbeiten, Vorschau,
  * herunterladen, löschen).
  */
 const QUOTE_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 64 + 96 + 144 + 96 + 96,
+  baseColumnsWidth: 64 + 96 + 176 + 112 + 96,
   flexibleColumnMinWidth: 176,
   maxActions: 6,
   statusLabelWidth: 128,
@@ -844,9 +844,9 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   <span className="sr-only">Auswahl</span>
                 </th>
                 <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
-                <SortableTableHeader label="Angebotsnummer" sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-36 px-3 py-3" />
+                <SortableTableHeader label="Angebotsnummer" sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-44 px-3 py-3" />
                 <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
-                <SortableTableHeader label="Gültig bis" sortKey="validUntil" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Gültig bis" sortKey="validUntil" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
                 <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
                 <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th

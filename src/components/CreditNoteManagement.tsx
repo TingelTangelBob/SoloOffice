@@ -28,12 +28,12 @@ const emptyItem = (): ItemDraft => ({ description: '', quantity: '1', unitPrice:
 const emptyForm = (): FormDraft => ({ customerId: '', invoiceId: '', reason: '', issueDate: new Date().toISOString().slice(0, 10), items: [emptyItem()] });
 
 /**
- * Spaltenmaße der Gutschriftentabelle: Nummer 128, Datum 96, Betrag 112,
- * Status 112 und Ursprungsrechnung 176 Pixel. Ein Entwurf zeigt höchstens fünf
+ * Spaltenmaße der Gutschriftentabelle: Nummer 128, Datum 112, Betrag 112,
+ * Status 112 und Ursprungsrechnung 192 Pixel. Ein Entwurf zeigt höchstens fünf
  * Icon-Aktionen.
  */
 const CREDIT_NOTE_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 128 + 96 + 112 + 112 + 176,
+  baseColumnsWidth: 128 + 112 + 112 + 112 + 192,
   flexibleColumnMinWidth: 176,
   maxActions: 5,
 });
@@ -175,10 +175,10 @@ export function CreditNoteManagement() {
                 <tr>
                   <SortableTableHeader label="Nummer" sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-4 py-3" />
                   <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
-                  <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-4 py-3" />
+                  <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-4 py-3" />
                   <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-4 py-3" align="right" />
                   <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-4 py-3" />
-                  <SortableTableHeader label="Ursprungsrechnung" sortKey="reference" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-44 px-4 py-3" />
+                  <SortableTableHeader label="Ursprungsrechnung" sortKey="reference" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-48 px-4 py-3" />
                   <th
                     style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
                     className={`sticky right-0 z-20 bg-gray-50 py-3 text-left font-medium text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}
@@ -192,10 +192,10 @@ export function CreditNoteManagement() {
                   <tr key={note.id} className="group hover:bg-gray-50">
                     <td className="w-32 truncate px-4 py-3 font-medium">{note.invoiceNumber || '–'}</td>
                     <td className="max-w-0 px-4 py-3"><span className="block truncate">{customerName(note.customerId)}</span></td>
-                    <td className="w-24 whitespace-nowrap px-4 py-3">{formatDate(note.issueDate, locale, company?.dateFormat)}</td>
+                    <td className="w-28 whitespace-nowrap px-4 py-3">{formatDate(note.issueDate, locale, company?.dateFormat)}</td>
                     <td className="w-28 whitespace-nowrap px-4 py-3 text-right font-medium">{amount(note)}</td>
                     <td className="w-28 px-4 py-3"><span className="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs">{creditNoteStatusLabel(note.status)}</span></td>
-                    <td className="w-44 max-w-0 px-4 py-3"><span className="block truncate">{referenceNumber(note)}</span></td>
+                    <td className="w-48 max-w-0 px-4 py-3"><span className="block truncate">{referenceNumber(note)}</span></td>
                     <td
                       style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
                       className={`sticky right-0 z-10 bg-white py-3 transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}

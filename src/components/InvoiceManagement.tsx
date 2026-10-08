@@ -50,13 +50,13 @@ interface InvoiceManagementProps {
 }
 
 /**
- * Spaltenmaße der Rechnungstabelle: Auswahl 64, Datum 96, Rechnungsnr. 128,
- * Fällig am 96 und Betrag 96 Pixel. Eine Zeile zeigt höchstens fünf
+ * Spaltenmaße der Rechnungstabelle: Auswahl 64, Datum 96, Rechnungsnr. 160,
+ * Fällig am 112 und Betrag 96 Pixel. Eine Zeile zeigt höchstens fünf
  * Icon-Aktionen (versenden oder bezahlt melden plus bearbeiten, Vorschau,
  * herunterladen, löschen).
  */
 const INVOICE_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 64 + 96 + 128 + 96 + 96,
+  baseColumnsWidth: 64 + 96 + 160 + 112 + 96,
   flexibleColumnMinWidth: 176,
   maxActions: 5,
   statusLabelWidth: 128,
@@ -1410,9 +1410,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <span className="sr-only">Auswahl</span>
                 </th>
                 <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
-                <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-3 py-3" />
+                <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-40 px-3 py-3" />
                 <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
-                <SortableTableHeader label="Fällig am" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Fällig am" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
                 <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
                 <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
@@ -1448,11 +1448,11 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(invoice.issueDate, locale, company?.dateFormat)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="min-w-0 px-3 py-4 text-sm font-medium">
                     <button
                       type="button"
                       onClick={() => handlePreview(invoice)}
-                      className="link-primary rounded-sm text-left font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
+                      className="link-primary block max-w-full truncate rounded-sm text-left font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom"
                       aria-label={`Rechnung ${invoice.invoiceNumber} als Vorschau öffnen`}
                     >
                       {invoice.invoiceNumber}
