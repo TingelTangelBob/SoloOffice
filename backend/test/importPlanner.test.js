@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCustomerDirectory, planImport, summariseImport } from '../utils/importPlanner.js';
+import { createCustomerDirectory, planImport, reportRows, summariseImport } from '../utils/importPlanner.js';
 
 const context = (overrides = {}) => ({
   entityLabel: 'Schüler',
@@ -198,4 +198,32 @@ test('Erneut importierte Zahlungen werden unabhängig von Notizen als vorhanden 
     { _rowNumber: 3, invoiceNumber: 'RE-2025-001', entryDate: '20.01.2025', amount: '40,00' },
   ], context({ invoices, euerEntries }), {});
   assert.deepEqual(plan.entries.map(item => item.status), ['duplicate', 'valid']);
+});
+
+test('Reportwerte zeigen die normalisierten bzw. gemappten Daten für alle Importkategorien', () => {
+  const customers = [{ id: 'c1', name: 'Anna Müller', email: 'anna@example.org', city: 'Köln' }];
+  const invoices = [{ id: 'i1', invoiceNumber: 'RE-1', customerId: 'c1', customerName: 'Anna Müller', issueDate: '2025-01-01', status: 'sent', total: 100, taxAmount: 0 }];
+  const cases = [
+    ['customers', { name: 'Berta', city: 'Bonn', email: 'berta@example.org', customerType: 'company' }, {}, ['name', 'city', 'email', 'type']],
+    ['jobs', { date: '2025-02-01', title: 'Beratung', customerName: 'Anna Müller', hoursWorked: 2, hourlyRate: 45 }, { customers }, ['date', 'title', 'customer', 'hours', 'rate']],
+    ['quotes', { quoteNumber: 'AN-1', issueDate: '2025-02-01', customerName: 'Anna Müller', items: [{ description: 'Leistung', quantity: 1, unitPrice: 50, taxRate: 0 }] }, { customers }, ['number', 'date', 'customer', 'amount', 'itemCount']],
+    ['positions', { name: 'Beratung', unitPrice: 50, taxRate: 19, unit: 'Stunde', isDefault: true }, {}, ['name', 'price', 'taxRate', 'unit', 'isDefault']],
+    ['hourlyRates', { name: 'Einzelstunde', rate: 26, taxRate: 0 }, {}, ['name', 'price', 'taxRate']],
+    ['materials', { name: 'Papier', unitPrice: 4.5, taxRate: 19, unit: 'Packung' }, {}, ['name', 'price', 'taxRate', 'unit']],
+    ['euerEntries', { entryDate: '2025-02-01', entryType: 'expense', amount: 12.5, description: 'Büromaterial' }, {}, ['date', 'type', 'amount', 'description']],
+    ['invoicePayments', { invoiceNumber: 'RE-1', entryDate: '2025-02-02', amount: 25 }, { invoices }, ['date', 'amount', 'invoice']],
+    ['invoices', { invoiceNumber: 'ALT-1', issueDate: '2025-02-03', customerName: 'Anna Müller', total: 50, taxRate: 0 }, { customers }, ['number', 'date', 'customer', 'amount', 'itemCount']],
+  ];
+  for (const [resource, row, extra, expectedKeys] of cases) {
+    const plan = planImport(resource, [{ _rowNumber: 2, ...row }], context(extra), { createMissingCustomers: resource === 'invoices' });
+    const report = reportRows(plan)[0];
+    for (const key of expectedKeys) assert.ok(report.values[key] !== undefined, `${resource}: ${key} fehlt`);
+  }
+  const position = reportRows(planImport('positions', [{ _rowNumber: 2, name: 'Einzelstunde', unitPrice: 26, taxRate: 19 }], context({ positionTemplates: [{ id: 'p1', name: 'Einzelstunde', unitPrice: 26 }] })))[0];
+  assert.equal(position.conflict.kind, 'existing');
+  assert.match(position.conflict.label, /Einzelstunde 26,00 €/);
+  const repeated = reportRows(planImport('materials', [
+    { _rowNumber: 2, name: 'Papier', unitPrice: 4 }, { _rowNumber: 4, name: 'Papier', unitPrice: 4 },
+  ], context()))[1];
+  assert.deepEqual(repeated.conflict, { kind: 'file', rowNumber: 2, label: 'doppelt in Datei, Zeile 2' });
 });

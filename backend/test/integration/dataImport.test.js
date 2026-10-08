@@ -91,6 +91,9 @@ test('Unterrichtsstunden werden als Einnahmen mit neuem Schüler übernommen und
   assert.equal(preview.statusCode, 200);
   assert.equal(preview.payload.dryRun, true);
   assert.equal(preview.payload.totals.income, 45);
+  assert.equal(preview.payload.rows[0].values.date, '2021-09-15');
+  assert.equal(preview.payload.rows[0].values.amount, 5);
+  assert.equal(preview.payload.rows[0].values.description, 'Unterricht');
   assert.equal((await inWorkspace(() => query('SELECT COUNT(*)::int AS count FROM euer_entries'))).rows[0].count, 0, 'die Vorschau schreibt nichts');
 
   const result = await importRows('euerEntries', lessons, { createMissingCustomers: true, file: { name: 'Unterricht 2021.xlsx', headers: ['Datum', 'Schüler'] } });

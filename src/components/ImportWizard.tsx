@@ -690,7 +690,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   </button>
                 </div>
               )}
-              <ImportResultTable rows={preview.rows} />
+              <ImportResultTable rows={preview.rows} resource={resource} />
             </div>
           )}
 
@@ -722,7 +722,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   <Download className="h-4 w-4" /> Nicht übernommene Zeilen herunterladen
                 </button>
               )}
-              <ImportResultTable rows={result.rows} />
+              <ImportResultTable rows={result.rows} resource={resource} />
             </div>
           )}
         </div>
@@ -952,7 +952,19 @@ function SummaryCard({ label, value, tone = 'gray' }: { label: string; value: nu
   return <div className={`rounded-xl border p-3 ${tones[tone]}`}><p className="text-xs uppercase tracking-wide opacity-70">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>;
 }
 
-export function ImportResultTable({ rows }: { rows: ImportRowResult[] }) {
+const previewColumns: Record<ImportResource, Array<{ key: string; label: string; kind?: 'money' | 'date' | 'boolean' | 'percent' }>> = {
+  customers: [{ key: 'name', label: 'Name' }, { key: 'city', label: 'Ort' }, { key: 'email', label: 'E-Mail' }, { key: 'type', label: 'Art' }],
+  jobs: [{ key: 'date', label: 'Datum', kind: 'date' }, { key: 'title', label: 'Titel' }, { key: 'customer', label: 'Kunde' }, { key: 'hours', label: 'Stunden' }, { key: 'rate', label: 'Satz', kind: 'money' }],
+  quotes: [{ key: 'number', label: 'Angebot' }, { key: 'date', label: 'Datum', kind: 'date' }, { key: 'customer', label: 'Kunde' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'itemCount', label: 'Positionen' }],
+  positions: [{ key: 'name', label: 'Name' }, { key: 'price', label: 'Preis', kind: 'money' }, { key: 'taxRate', label: 'Steuer', kind: 'percent' }, { key: 'unit', label: 'Einheit' }, { key: 'isDefault', label: 'Standard', kind: 'boolean' }],
+  hourlyRates: [{ key: 'name', label: 'Name' }, { key: 'price', label: 'Satz', kind: 'money' }, { key: 'taxRate', label: 'Steuer', kind: 'percent' }, { key: 'isDefault', label: 'Standard', kind: 'boolean' }],
+  materials: [{ key: 'name', label: 'Name' }, { key: 'price', label: 'Preis', kind: 'money' }, { key: 'taxRate', label: 'Steuer', kind: 'percent' }, { key: 'unit', label: 'Einheit' }, { key: 'isDefault', label: 'Standard', kind: 'boolean' }],
+  euerEntries: [{ key: 'date', label: 'Datum', kind: 'date' }, { key: 'type', label: 'Art' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'description', label: 'Beschreibung' }],
+  invoicePayments: [{ key: 'date', label: 'Datum', kind: 'date' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'invoice', label: 'Rechnung' }],
+  invoices: [{ key: 'number', label: 'Rechnung' }, { key: 'date', label: 'Datum', kind: 'date' }, { key: 'customer', label: 'Kunde' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'itemCount', label: 'Positionen' }],
+};
+
+export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[]; resource: ImportResource }) {
   const counts = useMemo(() => rows.reduce<Record<string, number>>((result, row) => {
     result[row.status] = (result[row.status] || 0) + 1;
     return result;
@@ -984,12 +996,22 @@ export function ImportResultTable({ rows }: { rows: ImportRowResult[] }) {
           </button>
         ))}
       </div>
-      <div className="max-h-72 overflow-y-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-4 py-2">Zeile</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Hinweis</th></tr></thead>
+      <div className="max-h-72 overflow-auto">
+        <table className="min-w-[760px] w-full text-left text-sm">
+          <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-3 py-2">Zeile</th>{previewColumns[resource].map(column => <th key={column.key} className="px-3 py-2">{column.label}</th>)}<th className="px-3 py-2">Status</th><th className="min-w-64 px-3 py-2">Hinweis</th></tr></thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.slice(0, visible).map(row => <tr key={`${row.rowNumber}-${row.status}`}><td className="px-4 py-2 align-top text-gray-500">{row.rowNumber}</td><td className="px-4 py-2 align-top"><span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-xs font-medium ${statusClasses[row.status] || statusClasses.error}`}>{statusLabels[row.status] || row.status}</span></td><td className="px-4 py-2 text-gray-700">{row.message}</td></tr>)}
-            {filtered.length === 0 && <tr><td colSpan={3} className="px-4 py-4 text-center text-gray-500">Keine Zeilen in dieser Auswahl.</td></tr>}
+            {filtered.slice(0, visible).map(row => <tr key={`${row.rowNumber}-${row.status}`}><td className="px-3 py-2 align-top text-gray-500">{row.rowNumber}</td>{previewColumns[resource].map(column => {
+              const value = row.values?.[column.key];
+              const normalizedValue = String(value ?? '').toLocaleLowerCase('de-DE');
+              const localizedType = column.key === 'type' && resource === 'customers'
+                ? (normalizedValue === 'organization' || normalizedValue === 'company' ? 'Unternehmen' : normalizedValue === 'person' ? 'Privatperson' : value)
+                : column.key === 'type' && resource === 'euerEntries'
+                  ? (normalizedValue === 'income' ? 'Einnahme' : normalizedValue === 'expense' ? 'Ausgabe' : value)
+                  : value;
+              const display = value === undefined ? '–' : column.kind === 'money' && typeof value === 'number' ? `${value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : column.kind === 'date' ? formatIsoDate(value) : column.kind === 'boolean' ? (value ? 'Ja' : 'Nein') : column.kind === 'percent' ? `${String(value).replace('.', ',')} %` : String(localizedType);
+              return <td key={column.key} className="max-w-56 px-3 py-2 align-top text-gray-700"><span className="block truncate" title={display}>{display}</span></td>;
+            })}<td className="px-3 py-2 align-top"><span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-xs font-medium ${statusClasses[row.status] || statusClasses.error}`}>{statusLabels[row.status] || row.status}</span></td><td className="min-w-64 px-3 py-2 align-top text-gray-700">{row.message}{row.conflict?.label && <span className="mt-1 block text-xs text-gray-500">Kollision: {row.conflict.label}</span>}</td></tr>)}
+            {filtered.length === 0 && <tr><td colSpan={previewColumns[resource].length + 3} className="px-4 py-4 text-center text-gray-500">Keine Zeilen in dieser Auswahl.</td></tr>}
           </tbody>
         </table>
         {filtered.length > visible && (

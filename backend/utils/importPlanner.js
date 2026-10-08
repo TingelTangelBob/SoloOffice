@@ -281,7 +281,7 @@ function sameValue(left, right) {
 function planCustomers(rows, context, options) {
   const entityLabel = context.entityLabel;
   const existing = (context.customers || []).map(customer => ({ ...customer }));
-  const seen = new Set();
+  const seen = new Map();
   const entries = [];
   rows.forEach((row, index) => {
     const currentRow = rowNumber(row, index);
@@ -295,10 +295,11 @@ function planCustomers(rows, context, options) {
       : data.email ? `email:${normaliseKey(data.email)}`
         : `name:${normaliseKey(data.name)}`;
     if (seen.has(identity)) {
-      entries.push(entry([currentRow], 'duplicate', 'Doppelte Zeile in der Importdatei'));
+      const duplicateOf = seen.get(identity);
+      entries.push(entry([currentRow], 'duplicate', `Doppelte Zeile in der Importdatei (Zeile ${duplicateOf})`, null, { conflict: { kind: 'file', rowNumber: duplicateOf, label: `doppelt in Datei, Zeile ${duplicateOf}` } }));
       return;
     }
-    seen.add(identity);
+    seen.set(identity, currentRow);
     const match = existing.find(customer =>
       (customerId && customer.id === customerId)
       || (data.customerNumber && normaliseKey(customer.customerNumber) === normaliseKey(data.customerNumber))
@@ -306,7 +307,7 @@ function planCustomers(rows, context, options) {
       || (!data.customerNumber && !data.email && normaliseKey(customer.name) === normaliseKey(data.name)));
     if (match) {
       if (options.duplicateMode !== 'update') {
-        entries.push(entry([currentRow], 'duplicate', `${entityLabel} bereits vorhanden (${match.name})`));
+        entries.push(entry([currentRow], 'duplicate', `${entityLabel} bereits vorhanden (${match.name})`, null, { conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
         return;
       }
       // Nur zugeordnete und befüllte Spalten ändern den Bestand. Leere oder
@@ -315,7 +316,7 @@ function planCustomers(rows, context, options) {
         .filter(key => key !== 'customerNumber' && CUSTOMER_FIELD_LABELS[key])
         .filter(key => !sameValue(data[key], match[key]));
       if (changedFields.length === 0) {
-        entries.push(entry([currentRow], 'duplicate', `${entityLabel} ist bereits aktuell (${match.name})`));
+        entries.push(entry([currentRow], 'duplicate', `${entityLabel} ist bereits aktuell (${match.name})`, null, { conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
         return;
       }
       const changes = Object.fromEntries(changedFields.map(key => [key, data[key]]));
@@ -340,7 +341,7 @@ function planCustomers(rows, context, options) {
 
 function planNamedPrices(rows, existingItems, options, config) {
   const existing = existingItems.map(item => ({ ...item }));
-  const seen = new Set();
+  const seen = new Map();
   const entries = [];
   rows.forEach((row, index) => {
     const currentRow = rowNumber(row, index);
@@ -356,10 +357,11 @@ function planNamedPrices(rows, existingItems, options, config) {
     }
     const identity = normaliseKey(name);
     if (seen.has(identity)) {
-      entries.push(entry([currentRow], 'duplicate', 'Doppelte Zeile in der Importdatei'));
+      const duplicateOf = seen.get(identity);
+      entries.push(entry([currentRow], 'duplicate', `Doppelte Zeile in der Importdatei (Zeile ${duplicateOf})`, null, { conflict: { kind: 'file', rowNumber: duplicateOf, label: `doppelt in Datei, Zeile ${duplicateOf}` } }));
       return;
     }
-    seen.add(identity);
+    seen.set(identity, currentRow);
     const match = existing.find(item => normaliseKey(item.name) === identity);
     const taxRate = amountValue(row, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz']);
     const data = {
@@ -373,7 +375,7 @@ function planNamedPrices(rows, existingItems, options, config) {
     if (match && options.duplicateMode === 'update') {
       entries.push(entry([currentRow], 'update', config.updateMessage, data, { existingId: match.id }));
     } else if (match) {
-      entries.push(entry([currentRow], 'duplicate', config.duplicateMessage));
+      entries.push(entry([currentRow], 'duplicate', `${config.duplicateMessage} („${match.name}“)` , null, { conflict: { kind: 'existing', label: `${match.name} ${euro(price)} €` } }));
     } else {
       existing.push({ id: `new-${currentRow}`, name });
       entries.push(entry([currentRow], 'valid', config.validMessage, data));
@@ -539,7 +541,8 @@ function planJobs(rows, context, options) {
     const jobNumber = text(pick(row, ['jobNumber', 'job_number', 'orderNumber', 'order_number', 'auftragsnummer', 'auftragsnr']));
     const externalJobNumber = text(pick(row, ['externalJobNumber', 'external_job_number', 'externalNumber', 'extern', 'externeAuftragsnummer']));
     if ((jobNumber && jobNumbers.has(normaliseKey(jobNumber))) || (externalJobNumber && externalNumbers.has(normaliseKey(externalJobNumber)))) {
-      entries.push(entry([currentRow], 'duplicate', `Bereits vorhanden (${jobNumber || externalJobNumber})`));
+      const reference = jobNumber || externalJobNumber;
+      entries.push(entry([currentRow], 'duplicate', `Bereits vorhanden (${reference})`, null, { conflict: { kind: 'existing', label: `Auftrag „${reference}“` } }));
       return;
     }
     const startTime = parseTime(pick(row, ['startTime', 'start_time', 'start', 'beginn', 'von', 'uhrzeit']));
@@ -555,7 +558,8 @@ function planJobs(rows, context, options) {
       const available = existingIdentities.get(identity) || 0;
       if (available > 0) {
         existingIdentities.set(identity, available - 1);
-        entries.push(entry([currentRow], 'duplicate', `Am ${formatDateDe(date.value)} gibt es bereits „${title}“ für ${resolution.customer?.name || resolution.newCustomer?.name}`));
+        const label = `${title} · ${resolution.customer?.name || resolution.newCustomer?.name} · ${formatDateDe(date.value)}`;
+        entries.push(entry([currentRow], 'duplicate', `Am ${formatDateDe(date.value)} gibt es bereits „${title}“ für ${resolution.customer?.name || resolution.newCustomer?.name}`, null, { conflict: { kind: 'existing', label } }));
         return;
       }
       const inFile = fileIdentities.get(identity) || 0;
@@ -680,7 +684,7 @@ function planQuotes(rows, context, options) {
       continue;
     }
     if (group.number && existingNumbers.has(normaliseKey(group.number))) {
-      entries.push(entry(rowNumbers, 'duplicate', `Angebot bereits vorhanden (${group.number})`));
+      entries.push(entry(rowNumbers, 'duplicate', `Angebot bereits vorhanden (${group.number})`, null, { conflict: { kind: 'existing', label: `Angebot „${group.number}“` } }));
       continue;
     }
     const itemResult = documentItems(group.rows.map(item => item.row));
@@ -1151,7 +1155,7 @@ function planEuerEntries(rows, context, options) {
     const available = existingIdentities.get(identity) || 0;
     if (available > 0) {
       existingIdentities.set(identity, available - 1);
-      entries.push(entry([currentRow], 'duplicate', `${entryType === 'income' ? 'Einnahme' : 'Ausgabe'} ist bereits vorhanden`));
+      entries.push(entry([currentRow], 'duplicate', `${entryType === 'income' ? 'Einnahme' : 'Ausgabe'} ist bereits vorhanden`, null, { conflict: { kind: 'existing', label: `${formatDateDe(date.value)} · ${description} · ${euro(amount)} €` } }));
       return;
     }
     const inFile = fileIdentities.get(identity) || 0;
@@ -1225,7 +1229,7 @@ function planInvoices(rows, context, options) {
       continue;
     }
     if (reserved.has(normaliseKey(group.number))) {
-      entries.push(entry(rowNumbers, 'duplicate', `Rechnung ${group.number} ist bereits vorhanden`));
+      entries.push(entry(rowNumbers, 'duplicate', `Rechnung ${group.number} ist bereits vorhanden`, null, { conflict: { kind: 'existing', label: `Rechnung „${group.number}“` } }));
       continue;
     }
     const issue = dateValue(firstRow, ['issueDate', 'issue_date', 'rechnungsdatum', 'ausstellungsdatum', 'belegdatum', 'datum', 'date']);
@@ -1384,6 +1388,10 @@ export function planImport(resource, rows, context, options = {}) {
     default: throw new Error('Nicht unterstütztes Importziel.');
   }
   const newCustomers = plan.newCustomers || [];
+  const sourceByRow = new Map(rows.map((row, index) => [rowNumber(row, index), row]));
+  for (const item of plan.entries) {
+    item.previewValues = importPreviewValues(resource, item, item.rowNumbers.map(number => sourceByRow.get(number)).filter(Boolean));
+  }
   // Nur Neukunden anlegen, die eine tatsächlich übernommene Zeile braucht.
   const usedKeys = new Set(plan.entries.filter(item => APPLICABLE.has(item.status) && item.data?.customerKey).map(item => item.data.customerKey));
   return {
@@ -1393,6 +1401,60 @@ export function planImport(resource, rows, context, options = {}) {
     newCustomers: newCustomers.filter(customer => usedKeys.has(customer.key)),
     totals: importTotals(resource, plan.entries),
   };
+}
+
+const compactText = value => text(value).slice(0, 160);
+const firstValue = (data, row, key, aliases) => {
+  const value = data?.[key] ?? pick(row || {}, aliases);
+  return value === undefined || value === null || value === '' ? undefined : value;
+};
+
+// Vorschauwerte sind ausschließlich für die Anzeige bestimmt und bleiben aus
+// den ausführungsrelevanten Importdaten heraus.
+function importPreviewValues(resource, item, sourceRows) {
+  const data = item.data || {};
+  const row = sourceRows[0] || {};
+  const customer = data.customerName || pick(row, CUSTOMER_NAME_ALIASES) || pick(row, ['name']);
+  const rowItemCount = sourceRows.reduce((sum, source) => sum + parseStructuredArray(pick(source, ['items', 'positionen', 'positions', 'lineItems', 'line_items'])).length, 0);
+  const result = {};
+  const add = (key, value) => {
+    if (value === undefined || value === null || value === '') return;
+    result[key] = typeof value === 'number' || typeof value === 'boolean' ? value : compactText(value);
+  };
+  if (resource === 'customers') {
+    add('name', firstValue(data, row, 'name', CUSTOMER_NAME_ALIASES));
+    add('city', firstValue(data, row, 'city', ['city', 'ort', 'wohnort']));
+    add('email', firstValue(data, row, 'email', ['email', 'eMail', 'mail', 'emailAddress', 'email_address']));
+    add('type', firstValue(data, row, 'customerType', ['customerType', 'customer_type', 'type', 'typ', 'art']));
+  } else if (['hourlyRates', 'positions', 'materials'].includes(resource)) {
+    add('name', firstValue(data, row, 'name', PRICE_CONFIG[resource].nameAliases));
+    add('price', data[PRICE_CONFIG[resource].priceKey] ?? amountValue(row, PRICE_CONFIG[resource].priceAliases));
+    add('taxRate', data.taxRate ?? amountValue(row, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz']));
+    add('unit', firstValue(data, row, 'unit', ['unit', 'einheit', 'unitName']) || PRICE_CONFIG[resource].defaultUnit || undefined);
+    add('isDefault', firstValue(data, row, 'isDefault', ['isDefault', 'is_default', 'default', 'standard']));
+  } else if (resource === 'jobs') {
+    add('date', firstValue(data, row, 'date', ['date', 'jobDate', 'job_date', 'datum', 'auftragsdatum', 'termin', 'kursdatum', 'unterrichtsdatum']));
+    add('title', firstValue(data, row, 'title', ['title', 'jobTitle', 'job_title', 'auftrag', 'auftragtitel', 'bezeichnung', 'kurs', 'kursname', 'fach']));
+    add('customer', customer);
+    add('hours', data.hoursWorked ?? amountValue(row, ['hoursWorked', 'hours_worked', 'hours', 'stunden', 'arbeitszeit', 'dauer', 'std']));
+    add('rate', data.hourlyRate ?? amountValue(row, ['hourlyRate', 'hourly_rate', 'rate', 'stundensatz', 'proStunde', 'preisProStunde', 'honorar', 'satz']));
+  } else if (resource === 'quotes' || resource === 'invoices') {
+    add('number', firstValue(data, row, resource === 'quotes' ? 'quoteNumber' : 'invoiceNumber', resource === 'quotes' ? ['quoteNumber', 'quote_number', 'offerNumber', 'offer_number', 'angebotsnummer', 'angebotsnr'] : INVOICE_NUMBER_ALIASES));
+    add('date', firstValue(data, row, 'issueDate', ['issueDate', 'issue_date', 'rechnungsdatum', 'angebotsdatum', 'ausstellungsdatum', 'belegdatum', 'datum', 'date']));
+    add('customer', customer);
+    add('amount', data.total ?? amountValue(row, ['total', 'grossAmount', 'gross_amount', 'brutto', 'gesamtbetrag', 'endbetrag', 'betrag', 'amount']));
+    add('itemCount', data.items?.length || rowItemCount || sourceRows.length || undefined);
+  } else if (resource === 'invoicePayments') {
+    add('date', firstValue(data, row, 'entryDate', ['entryDate', 'entry_date', 'paymentDate', 'payment_date', 'zahlungsdatum', 'datum', 'date']));
+    add('amount', data.amount ?? amountValue(row, ['amount', 'betrag', 'paymentAmount', 'payment_amount', 'zahlungsbetrag']));
+    add('invoice', firstValue(data, row, 'invoiceNumber', INVOICE_NUMBER_ALIASES));
+  } else if (resource === 'euerEntries') {
+    add('date', firstValue(data, row, 'entryDate', ['entryDate', 'entry_date', 'date', 'datum', 'buchungsdatum']));
+    add('type', firstValue(data, row, 'entryType', ['entryType', 'entry_type', 'type', 'art', 'typ']) || (data.kind === 'payment' ? 'Einnahme' : undefined));
+    add('amount', data.amount ?? amountValue(row, ['amount', 'betrag', 'incomeAmount', 'expenseAmount', 'einnahme', 'ausgabe']));
+    add('description', firstValue(data, row, 'description', ['description', 'beschreibung', 'bezeichnung', 'text', 'verwendungszweck', 'zweck', 'buchungstext', 'leistung']));
+  }
+  return result;
 }
 
 export function isApplicable(entryItem) {
@@ -1423,6 +1485,8 @@ export function reportRows(plan, imported = false) {
       rowNumber: row,
       status: imported && isApplicable(item) ? 'imported' : item.status,
       message: item.message,
+      values: item.previewValues || {},
+      ...(item.conflict ? { conflict: { ...item.conflict, label: compactText(item.conflict.label) } } : {}),
     })))
     .sort((left, right) => left.rowNumber - right.rowNumber);
 }

@@ -104,7 +104,20 @@ function stableDemoValue(value: unknown): unknown {
 }
 
 function demoDigest(value: unknown): string {
-  const source = JSON.stringify(stableDemoValue(value));
+  const withoutDisplayValues = value && typeof value === 'object' ? { ...(value as DemoRecord) } : value;
+  const plan = withoutDisplayValues && typeof withoutDisplayValues === 'object' ? (withoutDisplayValues as DemoRecord).plan as DemoRecord | undefined : undefined;
+  if (plan && Array.isArray(plan.entries)) {
+    (withoutDisplayValues as DemoRecord).plan = {
+      ...plan,
+      entries: plan.entries.map(entry => {
+        const executionEntry = { ...(entry as DemoRecord) };
+        delete executionEntry.previewValues;
+        delete executionEntry.conflict;
+        return executionEntry;
+      }),
+    };
+  }
+  const source = JSON.stringify(stableDemoValue(withoutDisplayValues));
   let first = 0x811c9dc5;
   let second = 0x9e3779b9;
   for (let index = 0; index < source.length; index += 1) {

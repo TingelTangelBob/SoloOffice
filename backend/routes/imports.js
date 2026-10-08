@@ -62,8 +62,17 @@ function stableValue(value) {
 }
 
 function takeoverDigest({ resource, rows, options, settings, file, context, plan }) {
+  const executionPlan = {
+    ...plan,
+    entries: plan.entries.map(entry => {
+      const executionEntry = { ...entry };
+      delete executionEntry.previewValues;
+      delete executionEntry.conflict;
+      return executionEntry;
+    }),
+  };
   return createHash('sha256').update(JSON.stringify(stableValue({
-    resource, rows, options, settings, file: { hash: file?.hash || null, headers: file?.headers || [], sheet: settings?.sheet || null }, context, plan,
+    resource, rows, options, settings, file: { hash: file?.hash || null, headers: file?.headers || [], sheet: settings?.sheet || null }, context, plan: executionPlan,
   }))).digest('hex');
 }
 

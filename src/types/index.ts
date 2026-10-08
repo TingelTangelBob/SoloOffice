@@ -653,6 +653,8 @@ export interface ImportRowResult {
   rowNumber: number;
   status: ImportRowStatus;
   message: string;
+  values?: Record<string, string | number | boolean>;
+  conflict?: { kind: 'file' | 'existing'; rowNumber?: number; label: string };
 }
 
 export interface ImportSummary {

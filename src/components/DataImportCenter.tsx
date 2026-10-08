@@ -884,7 +884,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           fitContent
           footer={<div className="flex justify-end"><button type="button" onClick={() => setProtocolRun(null)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">Schließen</button></div>}
         >
-          <ImportResultTable rows={protocolRun.report || []} />
+          <ImportResultTable rows={protocolRun.report || []} resource={protocolRun.resource} />
         </DialogShell>
       )}
     </div>
