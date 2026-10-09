@@ -1,12 +1,17 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import { useCompany } from '../context/CompanyContext';
+import { useLoading } from '../context/LoadingContext';
 import { terminologyProfiles } from '../utils/terminology';
 
 const THEME_PREPAINT_STORAGE_KEY = 'solooffice-theme-prepaint-v1';
 
 export function DynamicColors() {
   const { company } = useCompany();
-  
+  // Solange die Firmendaten laden, ist `company` nur der Standard (blau). Dann
+  // dürfen weder Farben auf die App-Hülle noch der Vorab-Snapshot geschrieben
+  // werden – sonst blitzt die Grundfarbe beim Neuladen kurz auf.
+  const { loading } = useLoading();
+
   // Default colors if not set
   const terminologyProfile = terminologyProfiles.find(profile => profile.id === company.terminologyProfile) || terminologyProfiles[0];
   const useTerminologyColors = (company.terminologyColorSource || 'profile') === 'profile';
@@ -131,9 +136,11 @@ export function DynamicColors() {
   const primaryOnLightSurface = accessibleOn(primaryColor, '#ffffff');
   const primaryOnDarkSurface = accessibleOn(primaryColor, '#232326');
 
-  useEffect(() => {
+  // useLayoutEffect: Die Farben werden gesetzt, bevor der Browser die Seite malt.
+  // Mit useEffect käme ein Frame mit der Farbe aus dem Snapshot davor.
+  useLayoutEffect(() => {
     const appShell = document.getElementById('app-shell');
-    if (!appShell) return undefined;
+    if (!appShell || loading) return undefined;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
@@ -189,7 +196,7 @@ export function DynamicColors() {
     return () => {
       mediaQuery.removeEventListener('change', applyTheme);
     };
-  }, [company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, primaryOnDarkSurface, primaryOnLightSurface, secondaryColor, secondaryLight, secondaryTextColor]);
+  }, [loading, company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, primaryOnDarkSurface, primaryOnLightSurface, secondaryColor, secondaryLight, secondaryTextColor]);
 
   return (
     <style>

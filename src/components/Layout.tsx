@@ -21,6 +21,7 @@ import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
 import { useSupportAvailability } from '../hooks/useSupportAvailability';
 import { useFeedback } from '../context/FeedbackContext';
+import { useLoading } from '../context/LoadingContext';
 import { apiService } from '../services/api';
 import type { TakeoverStatus } from '../types';
 import { useExtensions } from '../hooks/useExtensions';
@@ -88,6 +89,10 @@ function initialsOf(name: string): string {
 
 export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { company } = useCompany();
+  // Solange die Firmendaten laden, ist die Akzentfarbe noch unbekannt (ggf. aus
+  // dem Snapshot eines anderen Workspace). Dann wird keine Hervorhebung gezeigt,
+  // statt sie in einer falschen Farbe zu zeigen und umzufärben.
+  const { loading: dataLoading } = useLoading();
   const terminology = getTerminology(company.terminologyProfile);
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const { customers } = useCustomers();
@@ -647,7 +652,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     <li key={item.id}>
                       <div
                         className={`nav-row flex items-center transition-colors ${
-                          isParentActive ? 'nav-active' : 'nav-row-muted'
+                          isParentActive && !dataLoading ? 'nav-active' : 'nav-row-muted'
                         }`}
                       >
                         <button
@@ -686,7 +691,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                                 onClick={() => handlePageChange(child.id)}
                                 aria-current={currentPage === child.id ? 'page' : undefined}
                                 className={`nav-subrow w-full rounded-md px-2.5 py-1 text-left text-[13px] transition-colors ${
-                                  currentPage === child.id ? 'nav-subrow-active' : 'nav-row-muted'
+                                  currentPage === child.id && !dataLoading ? 'nav-subrow-active' : 'nav-row-muted'
                                 }`}
                               >
                                 {child.label}
@@ -764,7 +769,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                           aria-current={isActive ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
                           className={`nav-row flex w-full items-center py-1 text-left transition-colors ${isSidebarCompact ? 'justify-center px-2' : 'px-2.5'} ${
-                            isActive ? 'nav-active' : 'nav-row-muted'
+                            isActive && !dataLoading ? 'nav-active' : 'nav-row-muted'
                           }`}
                         >
                           <Icon className={`h-4 w-4 flex-shrink-0 ${isSidebarCompact ? '' : 'mr-2.5'}`} />

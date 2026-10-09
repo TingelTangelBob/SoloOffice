@@ -48,7 +48,11 @@ function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
   return (
     <div className={`flex items-center justify-center ${fullScreen ? 'h-screen' : 'h-64'}`}>
       <div className="text-center">
-        <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        {/* Inline statt Klasse: der Spinner läuft auch vor #app-shell, wo die Akzent-Regeln noch nicht greifen. */}
+        <div
+          className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2"
+          style={{ borderBottomColor: 'var(--primary-color, #2563eb)' }}
+        />
         <p className="mt-4 text-gray-600">Lade Ansicht...</p>
       </div>
     </div>
