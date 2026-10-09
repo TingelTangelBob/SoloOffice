@@ -18,7 +18,7 @@ import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
-import { upcomingJobs } from '../utils/dashboardMetrics';
+import { calculateCustomerInvoiceMetrics, upcomingCustomerJobs } from '../utils/customerDetailMetrics';
 
 interface CustomerDetailProps {
   customerId?: string;
@@ -142,15 +142,11 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
   );
   const customerQuotes = useMemo(() => quotes.filter(quote => quote.customerId === customerId), [customerId, quotes]);
   const customerJobs = useMemo(() => jobEntries.filter(job => job.customerId === customerId), [customerId, jobEntries]);
-  const issuedCustomerInvoices = useMemo(() => customerInvoices.filter(invoice => invoice.status !== 'draft'), [customerInvoices]);
   const currentYear = new Date().getFullYear();
-  const currentYearInvoices = issuedCustomerInvoices.filter(invoice => new Date(invoice.issueDate).getFullYear() === currentYear);
-  const customerRevenue = issuedCustomerInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-  const customerRevenueThisYear = currentYearInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-  const customerOpenAmount = issuedCustomerInvoices.reduce((sum, invoice) => sum + (invoice.status === 'paid' ? 0 : Math.max(0, Number(invoice.outstandingAmount ?? (invoice.total - Number(invoice.paidAmount || 0))) || 0)), 0);
+  const invoiceMetrics = useMemo(() => calculateCustomerInvoiceMetrics(customerInvoices, customerId, currentYear), [customerInvoices, customerId, currentYear]);
+  const { revenue: customerRevenue, revenueThisYear: customerRevenueThisYear, openAmount: customerOpenAmount, lastInvoice: lastCustomerInvoice } = invoiceMetrics;
   const customerHours = customerJobs.reduce((sum, job) => sum + Number(job.hoursWorked || 0), 0);
-  const lastCustomerInvoice = [...issuedCustomerInvoices].sort((left, right) => activityTimestamp(right.issueDate) - activityTimestamp(left.issueDate))[0];
-  const upcomingCustomerJobs = upcomingJobs(customerJobs.filter(job => !['completed', 'invoiced'].includes(job.status)), new Date(), 5);
+  const upcomingJobsForCustomer = upcomingCustomerJobs(jobEntries, customerId, new Date(), 5);
   const customerActivities = useMemo(() => {
     if (!customer) return [];
     const actor = user?.displayName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Workspace';
@@ -427,13 +423,13 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
                     </dl>}
                   </section>
 
-                  {upcomingCustomerJobs.length > 0 && <section className="rounded-lg border border-gray-200 bg-white p-5">
+                  {upcomingJobsForCustomer.length > 0 && <section className="rounded-lg border border-gray-200 bg-white p-5">
                     <div className="flex items-center justify-between gap-3">
                       <div><h2 className="text-base font-semibold text-gray-900">Nächste Termine</h2><p className="mt-1 text-xs text-gray-500">Anstehende {terminology.work.plural.toLocaleLowerCase('de-DE')} dieses Kunden.</p></div>
                       <button type="button" onClick={() => onNavigate('calendar')} className="shrink-0 text-sm font-medium text-primary-custom hover:underline">Kalender öffnen</button>
                     </div>
                     <ul className="mt-3 divide-y divide-gray-100">
-                      {upcomingCustomerJobs.map(({ job }) => <li key={job.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
+                      {upcomingJobsForCustomer.map(job => <li key={job.id} className="flex min-w-0 items-center justify-between gap-3 py-2">
                         <span className="min-w-0"><span className="block truncate text-sm font-medium text-gray-900">{job.title || terminology.work.singular}</span><span className="block text-xs text-gray-500">{formatDate(job.date, company.locale, company.dateFormat)}{job.startTime ? ` · ${job.startTime}` : ''}</span></span>
                         <button type="button" onClick={() => onNavigate('calendar')} className="shrink-0 text-xs font-medium text-primary-custom hover:underline">Termin ansehen</button>
                       </li>)}

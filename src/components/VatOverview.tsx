@@ -4,7 +4,8 @@ import type { VatOverview as VatOverviewData, VatPayment, VatPaymentPayload, Vat
 import { financeApi } from '../services/financeApi';
 import { useAuth } from '../context/AuthContext';
 import { useExtensions } from '../hooks/useExtensions';
-import { euerKennzahlRows, vatAmountLabel, vatDateLabel, vatKennzahlRows, vatPaymentKindLabel, vatPaymentStatusLabel, vatPeriodAmountLabel, vatPeriodLabel, vatPeriodPaymentIds } from '../utils/vatDisplay';
+import { euerKennzahlRows, vatAmountLabel, vatDateLabel, vatKennzahlRows, vatPaymentKindLabel, vatPaymentStatusLabel, vatPeriodAmountLabel, vatPeriodKeyLabel, vatPeriodLabel, vatPeriodPaymentIds } from '../utils/vatDisplay';
+import { defaultVatPeriod } from '../utils/vatCardDisplay';
 import { PageHeader } from './PageHeader';
 import { Notice } from './Notice';
 import { TableSkeleton } from './TableSkeleton';
@@ -50,7 +51,7 @@ export function VatOverview({ onNavigate }: Props) {
       const result = await financeApi.getVatOverview(year);
       if (requestVersion.current !== version || activeWorkspace.current !== workspaceId) return;
       setOverview(result);
-      setSelectedKey(current => result.periods.some(period => period.key === current) ? current : result.periods[0]?.key ?? '');
+      setSelectedKey(current => result.periods.some(period => period.key === current) ? current : defaultVatPeriod(result.periods, result.nextDue)?.key ?? '');
     } catch (loadError) {
       if (requestVersion.current === version && activeWorkspace.current === workspaceId) {
         const message = loadError instanceof Error ? loadError.message : 'Umsatzsteuer-Übersicht konnte nicht geladen werden.';
@@ -181,7 +182,7 @@ function PaymentRow({ payment, busy, writable, onEdit, onDelete, onBook, tenDayR
   payment: VatPayment; busy: boolean; writable: boolean; onEdit: () => void; onDelete: () => void; onBook: () => void;
   tenDayRule: boolean; euerYear?: number;
 }) {
-  const periodLabel = payment.periodKey ?? (payment.kind === 'special_prepayment' ? 'Sondervorauszahlung' : `${payment.taxYear}`);
+  const periodLabel = payment.periodKey ? vatPeriodKeyLabel(payment.periodKey) : payment.kind === 'special_prepayment' ? 'Sondervorauszahlung' : `${payment.taxYear}`;
   return <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
     <div className="min-w-0"><p className="font-medium text-gray-900 dark:text-gray-100">{vatPaymentKindLabel(payment.kind)} · {periodLabel} <span className="font-semibold">{vatAmountLabel(payment.amount)}</span></p><p className="text-xs text-gray-500">{payment.paidOn ? `Bezahlt am ${vatDateLabel(payment.paidOn)}` : 'Noch nicht bezahlt'}{payment.dueDate ? ` · fällig ${vatDateLabel(payment.dueDate)}` : ''}{payment.source === 'legacy_levy' ? ' · Altbestand' : ''}{tenDayRule && euerYear ? ` · zählt zur EÜR ${euerYear} (§ 11 EStG)` : ''}</p>{payment.notes && <p className="mt-1 text-xs text-gray-500">{payment.notes}</p>}</div>
     {writable && <div className="flex flex-wrap gap-2">{payment.paidOn && !payment.euerEntryId && <button type="button" disabled={busy} onClick={onBook} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"><ArrowDownToLine className="h-3.5 w-3.5" />In EÜR übernehmen</button>}<button type="button" disabled={busy} onClick={onEdit} className="rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50">Bearbeiten</button><button type="button" disabled={busy} onClick={onDelete} className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">Löschen</button></div>}

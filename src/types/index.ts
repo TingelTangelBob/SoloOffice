@@ -341,6 +341,7 @@ export interface JobEntry extends Timestamps {
   timeEntries?: JobTimeEntry[];
   materials?: JobMaterial[];
   status: JobStatus;
+  invoiceId?: UUID | null;
   notes?: string;
   attachments?: JobAttachment[];
   signature?: JobSignature;

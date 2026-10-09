@@ -386,8 +386,8 @@ function planNamedPrices(rows, existingItems, options, config) {
 
 const PRICE_CONFIG = {
   hourlyRates: {
-    nameAliases: ['name', 'title', 'bezeichnung', 'stundensatz', 'rateName'],
-    priceAliases: ['rate', 'hourlyRate', 'hourly_rate', 'preis', 'price', 'betrag', 'proStunde', 'honorar'],
+    nameAliases: ['name', 'title', 'bezeichnung', 'rateName'],
+    priceAliases: ['rate', 'hourlyRate', 'hourly_rate', 'stundensatz', 'preis', 'price', 'betrag', 'proStunde', 'honorar'],
     priceKey: 'rate', priceLabel: 'Stundensatz', defaultUnit: null,
     nameMissing: 'Name fehlt', updateMessage: 'Bestehender Eintrag wird aktualisiert',
     duplicateMessage: 'Eintrag mit diesem Namen bereits vorhanden', validMessage: 'Eintrag kann angelegt werden',
@@ -401,7 +401,7 @@ const PRICE_CONFIG = {
   },
   positions: {
     nameAliases: ['name', 'title', 'bezeichnung', 'position', 'beschreibung'],
-    priceAliases: ['unitPrice', 'unit_price', 'price', 'preis', 'einzelpreis', 'betrag'],
+    priceAliases: ['unitPrice', 'unit_price', 'price', 'preis', 'einzelpreis', 'betrag', 'stundensatz', 'hourlyRate', 'hourly_rate', 'rate'],
     priceKey: 'unitPrice', priceLabel: 'Preis der Positionsvorlage', defaultUnit: 'Stunde',
     nameMissing: 'Name der Positionsvorlage fehlt', updateMessage: 'Bestehende Positionsvorlage wird aktualisiert',
     duplicateMessage: 'Positionsvorlage mit diesem Namen bereits vorhanden', validMessage: 'Positionsvorlage kann angelegt werden',

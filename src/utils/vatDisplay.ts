@@ -35,6 +35,22 @@ export function vatPeriodLabel(period: Pick<VatPeriodResult, 'label'>): string {
   return period.label;
 }
 
+export function vatPeriodKeyLabel(periodKey?: string | null): string {
+  if (!periodKey) return '–';
+  const quarter = /^(\d{4})-Q([1-4])$/i.exec(periodKey);
+  if (quarter) {
+    const months = [['Jan', 'Mär'], ['Apr', 'Jun'], ['Jul', 'Sep'], ['Okt', 'Dez']][Number(quarter[2]) - 1];
+    return `Q${quarter[2]} ${quarter[1]} (${months[0]}–${months[1]})`;
+  }
+  const month = /^(\d{4})-(\d{2})$/.exec(periodKey);
+  if (month && Number(month[2]) >= 1 && Number(month[2]) <= 12) {
+    const date = new Date(Date.UTC(Number(month[1]), Number(month[2]) - 1, 1, 12));
+    const label = new Intl.DateTimeFormat('de-DE', { month: 'short', timeZone: 'UTC' }).format(date).replace('.', '');
+    return `${label} ${month[1]}`;
+  }
+  return periodKey;
+}
+
 export function vatPeriodAmountLabel(period: Pick<VatPeriodResult, 'liability' | 'estimatedLiability' | 'complete'>): string {
   const amount = period.complete ? period.liability : period.estimatedLiability;
   const prefix = period.complete ? '' : 'Schätzung · ';

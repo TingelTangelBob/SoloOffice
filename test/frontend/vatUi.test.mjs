@@ -51,4 +51,21 @@ test('USt-Anzeigehelfer formatieren Kennzahlen, Status, Beträge, Zahlarten und 
   assert.equal(module.vatPaymentKindLabel('special_prepayment'), 'Sondervorauszahlung');
   assert.equal(module.vatDateLabel('2026-10-09'), '09.10.2026');
   assert.equal(module.vatDateLabel(null), '–');
+  assert.equal(module.vatPeriodKeyLabel('2026-Q1'), 'Q1 2026 (Jan–Mär)');
+  assert.equal(module.vatPeriodKeyLabel('2026-10'), 'Okt 2026');
+  assert.equal(module.vatPeriodKeyLabel(null), '–');
+});
+
+test('USt-Standardzeitraum folgt der nächsten Fälligkeit, sonst dem laufenden Zeitraum', async t => {
+  const { module, temp } = await loadUtility('src/utils/vatCardDisplay.ts');
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const periods = [
+    { key: '2026-Q1', state: 'closed' },
+    { key: '2026-Q2', state: 'closed' },
+    { key: '2026-Q3', state: 'running' },
+    { key: '2026-Q4', state: 'future' },
+  ];
+  assert.equal(module.defaultVatPeriod(periods, { periodKey: '2026-Q4' }).key, '2026-Q4');
+  assert.equal(module.defaultVatPeriod(periods, null).key, '2026-Q3');
+  assert.equal(module.defaultVatPeriod([{ key: '2026-10', state: 'running' }], null).key, '2026-10');
 });

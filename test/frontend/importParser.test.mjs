@@ -31,6 +31,14 @@ test('Zahlungsimport ordnet die Rechnungsnummer automatisch zu', () => {
   assert.equal(result.mapping.amount, 'Zahlungsbetrag');
 });
 
+test('Stundensatzspalten werden im Import als Preis und nie als Name zugeordnet', () => {
+  for (const resource of ['hourlyRates', 'positions']) {
+    const result = analyseHeaderMapping(['Bezeichnung', 'Stundensatz'], getImportDefinition(resource));
+    assert.equal(result.mapping.name, 'Bezeichnung');
+    assert.equal(result.mapping[resource === 'hourlyRates' ? 'rate' : 'unitPrice'], 'Stundensatz');
+  }
+});
+
 test('Kundenimport ordnet deutsche und englische Spalten automatisch zu', () => {
   const result = analyseHeaderMapping(
     ['Kundenname', 'E-Mail', 'PLZ', 'steuerId'],

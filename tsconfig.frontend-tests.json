@@ -17,6 +17,7 @@
     "src/utils/pdf/xmlUtils.ts",
     "src/utils/customerUtils.ts",
     "src/utils/customerSearch.ts",
+    "src/utils/customerDetailMetrics.ts",
     "src/utils/formatters.ts",
     "src/utils/invoiceNumberPattern.ts",
     "src/utils/invoicePeriod.ts",

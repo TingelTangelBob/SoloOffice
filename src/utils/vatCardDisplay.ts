@@ -2,6 +2,17 @@ import type { VatOverview, VatPaymentStatus, VatPeriodResult } from '../types/va
 
 export type VatCardTone = 'positive' | 'negative' | 'warning' | 'info' | 'neutral';
 
+export function defaultVatPeriod(periods: VatOverview['periods'], nextDue: VatOverview['nextDue']): VatPeriodResult | null {
+  if (nextDue) {
+    const due = periods.find(item => item.key === nextDue.periodKey);
+    if (due) return due;
+  }
+  return periods.find(item => item.state === 'running')
+    ?? periods.find(item => item.state === 'future')
+    ?? periods.filter(item => item.state === 'closed').at(-1)
+    ?? null;
+}
+
 const PAYMENT_BADGE: Record<VatPaymentStatus, { label: string; tone: VatCardTone }> = {
   open: { label: 'offen', tone: 'warning' },
   partial: { label: 'teilweise bezahlt', tone: 'warning' },
@@ -15,14 +26,7 @@ const PAYMENT_BADGE: Record<VatPaymentStatus, { label: string; tone: VatCardTone
 
 /** Zeitraum der Kachel: nächste Fälligkeit, sonst letzter abgeschlossener, sonst laufender Zeitraum. */
 export function relevantVatPeriod(overview: Pick<VatOverview, 'periods' | 'nextDue'>): VatPeriodResult | null {
-  const { periods, nextDue } = overview;
-  if (nextDue) {
-    const due = periods.find(item => item.key === nextDue.periodKey);
-    if (due) return due;
-  }
-  const closed = periods.filter(item => item.state === 'closed');
-  if (closed.length) return closed[closed.length - 1];
-  return periods.find(item => item.state === 'running') ?? null;
+  return defaultVatPeriod(overview.periods, overview.nextDue);
 }
 
 export function vatPaymentBadge(period: Pick<VatPeriodResult, 'paymentStatus' | 'overdue'>): { label: string; tone: VatCardTone } {

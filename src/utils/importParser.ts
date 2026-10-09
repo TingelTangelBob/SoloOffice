@@ -303,7 +303,7 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     fields: [
       { key: 'name', label: 'Name', aliases: ['name', 'title', 'bezeichnung', 'position', 'beschreibung'], required: true, example: 'Beratung', template: true },
       { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibung', 'beschreibungstext', 'leistungstext'], example: 'Beratung je Stunde', template: true },
-      { key: 'unitPrice', label: 'Preis', aliases: ['unitPrice', 'unit_price', 'price', 'preis', 'einzelpreis', 'betrag'], required: true, type: 'number', example: '80,00', template: true },
+      { key: 'unitPrice', label: 'Preis', aliases: ['unitPrice', 'unit_price', 'price', 'preis', 'einzelpreis', 'betrag', 'stundensatz', 'hourlyRate', 'hourly_rate', 'rate'], required: true, type: 'number', example: '80,00', template: true },
       { key: 'unit', label: 'Einheit', aliases: ['unit', 'einheit', 'unitName'], example: 'Stunde', template: true, constant: true },
       { key: 'taxRate', label: 'MwSt.-Satz', aliases: ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'], type: 'number', example: '19', template: true, constant: true },
       { key: 'isDefault', label: 'Standard', aliases: ['isDefault', 'is_default', 'default', 'standard'] },
@@ -314,9 +314,9 @@ export const importDefinitions: Record<ImportResource, ImportDefinition> = {
     label: 'Stundensätze',
     description: 'Allgemeine Stundensätze mit Preis, Steuersatz und optionalem Standardkennzeichen übernehmen.',
     fields: [
-      { key: 'name', label: 'Name', aliases: ['name', 'title', 'bezeichnung', 'stundensatz', 'rateName'], required: true, example: 'Einzelunterricht', template: true },
+      { key: 'name', label: 'Name', aliases: ['name', 'title', 'bezeichnung', 'rateName'], required: true, example: 'Einzelunterricht', template: true },
       { key: 'description', label: 'Beschreibung', aliases: ['description', 'details', 'beschreibung'] },
-      { key: 'rate', label: 'Stundensatz', aliases: ['rate', 'hourlyRate', 'hourly_rate', 'preis', 'price', 'betrag', 'proStunde', 'honorar'], required: true, type: 'number', example: '25,00', template: true },
+      { key: 'rate', label: 'Stundensatz', aliases: ['rate', 'hourlyRate', 'hourly_rate', 'stundensatz', 'preis', 'price', 'betrag', 'proStunde', 'honorar'], required: true, type: 'number', example: '25,00', template: true },
       { key: 'taxRate', label: 'MwSt.-Satz', aliases: ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'], type: 'number', example: '0', template: true, constant: true },
       { key: 'isDefault', label: 'Standard', aliases: ['isDefault', 'is_default', 'default', 'standard'] },
     ],

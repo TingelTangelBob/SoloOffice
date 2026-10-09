@@ -1232,7 +1232,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     ? customers.find((customer) => customer.id === previewingJob.customerId)?.name || previewingJob.customerName || 'Nicht hinterlegt'
     : '';
   const previewInvoice = previewingJob
-    ? invoices.find((invoice) => invoice.sourceJobs?.some((sourceJob) => sourceJob.jobId === previewingJob.id))
+    ? invoices.find((invoice) => invoice.id === previewingJob.invoiceId || invoice.sourceJobs?.some((sourceJob) => sourceJob.jobId === previewingJob.id))
     : undefined;
   const previewHasJobTitle = previewingJob ? hasCalendarJobTitle(previewingJob) : false;
   const previewLocation = previewingJob?.location?.trim() || 'Nicht hinterlegt';

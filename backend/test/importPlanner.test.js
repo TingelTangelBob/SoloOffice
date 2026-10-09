@@ -228,6 +228,19 @@ test('Reportwerte zeigen die normalisierten bzw. gemappten Daten für alle Impor
   assert.deepEqual(repeated.conflict, { kind: 'file', rowNumber: 2, label: 'doppelt in Datei, Zeile 2' });
 });
 
+test('Importplan übernimmt die Spalte „Stundensatz“ in den Preis von Stundensätzen und Positionsvorlagen', () => {
+  const hourlyRate = planImport('hourlyRates', [{ _rowNumber: 2, Bezeichnung: 'Einzelunterricht', Stundensatz: '42,50' }], context());
+  assert.equal(hourlyRate.entries[0].status, 'valid');
+  assert.equal(hourlyRate.entries[0].data.name, 'Einzelunterricht');
+  assert.equal(hourlyRate.entries[0].data.rate, 42.5);
+
+  const position = planImport('positions', [{ _rowNumber: 2, Bezeichnung: 'Einzelunterricht', Stundensatz: '42,50' }], context());
+  assert.equal(position.entries[0].status, 'valid');
+  assert.equal(position.entries[0].data.name, 'Einzelunterricht');
+  assert.equal(position.entries[0].data.unitPrice, 42.5);
+  assert.equal(position.entries[0].data.unit, 'Stunde');
+});
+
 test('Rechnungsimport plant Kurse aus Stundenpositionen und ordnet nur eindeutige offene Kurse zu', () => {
   const customers = [{ id: 'c1', name: 'Anna Müller' }];
   const jobs = [

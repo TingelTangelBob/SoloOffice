@@ -524,6 +524,30 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     };
   });
 
+  const firstCustomer = customers[0];
+  const issuedPastInvoice = invoices.find(invoice => invoice.customerId === firstCustomer.id) as DemoRecord;
+  issuedPastInvoice.status = 'paid';
+  const pastBilledJobId = generateUUID();
+  jobs.push({
+    id: pastBilledJobId, jobNumber: `AU-2026-090`, customerId: firstCustomer.id, customerName: firstCustomer.name,
+    title: `Rechnung ${String(issuedPastInvoice.invoiceNumber || 'RE-2026-001')}`, description: fixture.workDescription,
+    date: '2026-10-06T09:00:00.000Z', startTime: '09:00', endTime: '10:00', hoursWorked: 1, hourlyRate: 75,
+    status: 'invoiced', invoiceId: issuedPastInvoice.id, priority: 'medium', timeEntries: [], materials: [], createdAt: '2026-10-06T09:00:00.000Z',
+  });
+  issuedPastInvoice.sourceJobs = [...(Array.isArray(issuedPastInvoice.sourceJobs) ? issuedPastInvoice.sourceJobs : []), {
+    jobId: pastBilledJobId, jobNumber: 'AU-2026-090', title: `Rechnung ${String(issuedPastInvoice.invoiceNumber || 'RE-2026-001')}`, jobDate: '2026-10-06',
+  }];
+  if (profile === 'customers') {
+    const ninthInvoice = invoices.find(invoice => invoice.invoiceNumber === `RE-${yearOf(0)}-009`);
+    if (ninthInvoice?.customerId === firstCustomer.id) ninthInvoice.status = 'paid';
+    jobs.push({
+      id: generateUUID(), jobNumber: 'AU-2026-091', customerId: firstCustomer.id, customerName: firstCustomer.name,
+      title: 'Jahresbetreuung', description: fixture.workDescription, date: '2026-10-13T09:00:00.000Z',
+      startTime: '09:00', endTime: '11:00', hoursWorked: 2, hourlyRate: 75, status: 'in-progress',
+      priority: 'medium', timeEntries: [], materials: [], createdAt: '2026-10-07T09:00:00.000Z',
+    });
+  }
+
   const hourlyRates: DemoRecord[] = [
     { name: 'Standard', description: fixture.workTitles[0], rate: 75 },
     { name: 'Beratung', description: fixture.workTitles[1], rate: 95 },

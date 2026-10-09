@@ -16,7 +16,7 @@ interface VatDashboardCardProps {
 
 type CardBodyProps = VatDashboardCardProps;
 
-const TITLE = 'Umsatzsteuer-Voranmeldung';
+const TITLE = 'USt-Voranmeldung';
 const SETUP_LABEL = 'Steuern & Abgaben einrichten';
 
 const money = (amount: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amount);
