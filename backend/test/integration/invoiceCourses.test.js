@@ -85,6 +85,9 @@ test('Gemappter Kursname bleibt im bestätigten Nachschritt nach Rechnungsimport
   const invoice = preview.payload.preview.find(item => item.invoiceNumber === `ALT-M-${suffix}`);
   assert.equal(invoice?.actions[0]?.title, 'Ausgewählter Kursname');
   assert.equal(invoice?.actions[0]?.description, 'Positionsbeschreibung');
+  // Aufräumen, damit nachfolgende Nachschritt-Tests nur ihre eigenen Rechnungen sehen.
+  const reverted = await own(() => invoke('/runs/:id/revert', 'post', { params: { id: imported.payload.runId } }));
+  assert.equal(reverted.statusCode, 200, JSON.stringify(reverted.payload));
 });
 
 test('Nachschritt zeigt Vorschau, führt idempotent aus und bleibt workspaceisoliert', async () => {

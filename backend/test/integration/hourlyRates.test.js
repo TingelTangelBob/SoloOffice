@@ -25,8 +25,8 @@ async function invoke(method, body = {}) {
 
 before(async () => {
   await pool.query('INSERT INTO workspaces (id,name,slug) VALUES ($1,$2,$3)', [workspaceId, 'Stundensatztest', `rate-${suffix}`]);
-  await runWithRequestContext({ workspaceId, userId }, () => query(`INSERT INTO company (workspace_id,id,name,address,city,postal_code,country,email)
-    VALUES ($1,nextval('company_id_seq'),$2,'Testweg 1','Berlin','10115','Deutschland',$3)`, [workspaceId, `Firma ${suffix}`, `rate-${suffix}@example.invalid`]));
+  await runWithRequestContext({ workspaceId, userId }, () => query(`INSERT INTO company (workspace_id,id,name,address,city,postal_code,country,phone,email,tax_id)
+    VALUES ($1,nextval('company_id_seq'),$2,'Testweg 1','Berlin','10115','Deutschland','0301234567',$3,'DE123456789')`, [workspaceId, `Firma ${suffix}`, `rate-${suffix}@example.invalid`]));
 });
 
 after(() => cleanupFinanceWorkspaces([workspaceId]));
