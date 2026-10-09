@@ -34,6 +34,7 @@ interface MenuPosition {
 export type ActionMenuTone = 'blue' | 'green' | 'indigo' | 'orange' | 'red' | 'gray';
 
 interface ActionMenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  accessory?: ReactNode;
   children: ReactNode;
   icon: ReactNode;
   multiline?: boolean;
@@ -55,6 +56,7 @@ const actionMenuToneClasses: Record<ActionMenuTone, { icon: string; item: string
 };
 
 export function ActionMenuItem({
+  accessory,
   children,
   className = '',
   icon,
@@ -65,15 +67,22 @@ export function ActionMenuItem({
 }: ActionMenuItemProps) {
   const colors = actionMenuToneClasses[tone];
 
-  return (
+  const item = (
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex min-h-0 w-full ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
+      className={`action-menu-item flex min-h-0 ${accessory ? 'min-w-0 flex-1' : 'w-full'} ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
     >
       <span className={`shrink-0 ${colors.icon}`}>{icon}</span>
       <span className={`min-w-0 flex-1 ${multiline ? '' : 'truncate'}`}>{children}</span>
     </button>
+  );
+  if (!accessory) return item;
+  return (
+    <div className="flex items-center gap-1" role="none">
+      {item}
+      <span className="shrink-0" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{accessory}</span>
+    </div>
   );
 }
 

@@ -168,6 +168,6 @@ export function TaxDashboardCards({ id, forecast, year, month, compareMonth, com
       <MetricBadge tone="warning" className="max-w-[9rem] whitespace-normal text-center">{TAX_TEXTS.badge}</MetricBadge>
     </MetricCardHeader>
     {yearWarning && <div className="px-4 pt-3">{yearWarning}</div>}
-    <MetricCardContent className="flex flex-1 flex-col justify-center pt-4">{body}</MetricCardContent>
+    <MetricCardContent className="flex flex-1 flex-col">{body}</MetricCardContent>
   </MetricCard>;
 }

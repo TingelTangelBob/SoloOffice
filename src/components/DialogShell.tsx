@@ -1,4 +1,4 @@
-import type { FormEventHandler, ReactNode } from 'react';
+import { useEffect, useRef, type FormEventHandler, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { X } from 'lucide-react';
 
@@ -26,6 +26,16 @@ const sizeClasses: Record<NonNullable<DialogShellProps['size']>, string> = {
   xl: 'max-w-6xl',
 };
 
+const openDialogs: Array<{ id: symbol; close: () => void }> = [];
+let escapeListenerAttached = false;
+const handleDialogEscape = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || event.defaultPrevented) return;
+  const closeTopDialog = openDialogs.at(-1)?.close;
+  if (!closeTopDialog) return;
+  event.preventDefault();
+  closeTopDialog();
+};
+
 export function DialogShell({
   title,
   description,
@@ -41,6 +51,26 @@ export function DialogShell({
   fitContent = false,
   zIndexClassName = 'z-50',
 }: DialogShellProps) {
+  const dialogId = useRef(Symbol('dialog'));
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const entry = { id: dialogId.current, close: () => closeRef.current() };
+    openDialogs.push(entry);
+    if (!escapeListenerAttached) {
+      document.addEventListener('keydown', handleDialogEscape);
+      escapeListenerAttached = true;
+    }
+    return () => {
+      const dialogIndex = openDialogs.findIndex(dialog => dialog.id === entry.id);
+      if (dialogIndex !== -1) openDialogs.splice(dialogIndex, 1);
+      if (!openDialogs.length && escapeListenerAttached) {
+        document.removeEventListener('keydown', handleDialogEscape);
+        escapeListenerAttached = false;
+      }
+    };
+  }, []);
+
   const dialogHeightClass = fitContent
     ? 'h-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),42rem)]'
     : 'h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2.5rem)] sm:max-h-[calc(100dvh-2.5rem)]';

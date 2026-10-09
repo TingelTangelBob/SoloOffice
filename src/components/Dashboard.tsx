@@ -1653,10 +1653,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               {REVENUE_CHART_SERIES.filter(series => series.group === 'levies' && (!series.private || preferences.showPrivateLevies)).map(series => {
                 const reason = unavailableSeries.get(series.id) ?? null;
                 const active = !reason && series.isActive(preferences);
-                return <ActionMenuItem key={series.id} icon={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
+                return <ActionMenuItem key={series.id} accessory={<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} />} icon={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
                   disabled={Boolean(reason)} title={reason ?? undefined} multiline
                   onClick={event => { event.preventDefault(); if (!reason) savePreferences(series.toggle(preferences)); }}>
-                  <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[10px] text-gray-600">privat</span>}<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} /></span>
+                  <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[10px] text-gray-600">privat</span>}</span>
                 </ActionMenuItem>;
               })}
             </>}
