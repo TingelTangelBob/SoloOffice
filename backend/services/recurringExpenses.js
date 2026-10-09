@@ -1,4 +1,5 @@
 import { addDays, assertDateOnly, isRecurringExpenseDue, nextOccurrence, occurrenceAt, occurrenceOnOrAfter } from '../shared/recurrence.js';
+import { splitGross } from '../shared/vat/index.js';
 
 const expenseCategorySet = new Set(['rent','memberships','materials','office','software','telecommunications','insurance','bank_fees','travel','vehicle','marketing','professional_services','other_expense','kv','pv','rv','av','ksk','est_vz','gewst_vz','ust']);
 const levyCategorySet = new Set(['kv','pv','rv','av','ksk','est_vz','gewst_vz','ust']);
@@ -18,6 +19,7 @@ export function validateExpense(input, today = new Date().toISOString().slice(0,
     if (!name || name.length > 160) return 'Bitte geben Sie eine Bezeichnung mit höchstens 160 Zeichen ein.';
     if (!['business','private_levy'].includes(scope) || !expenseCategorySet.has(category)) return 'Ungültiger Bereich oder ungültige Kategorie.';
     if (scope === 'private_levy' && !levyCategorySet.has(category)) return 'Private Abgaben benötigen eine passende Abgabenart.';
+    if (scope === 'private_levy' && category === 'ust') return 'Umsatzsteuer ist keine private Abgabe und wird über Umsatzsteuer-Zahlungen erfasst.';
     if (scope === 'business' && levyCategorySet.has(category)) return 'Private Abgaben können nicht als betriebliche Fixkosten gespeichert werden.';
     const amount = Number(input.amountGross ?? input.amount);
     const taxRate = input.taxRate == null || input.taxRate === '' ? null : Number(input.taxRate);
@@ -244,10 +246,32 @@ export async function confirmRun(client, runId, paidOn, today = new Date().toISO
   }
   if (run.snapshot.scope === 'private_levy') {
     const type = run.snapshot.category;
+    if (type === 'ust') {
+      const taxYear = Number(dateOnly(run.due_date).slice(0, 4));
+      const vatPayment = await client.query(`INSERT INTO vat_payments (kind,tax_year,period_key,due_date,paid_on,amount,source,notes)
+        VALUES ('advance',$1,NULL,$2,$3,$4,'manual',$5) RETURNING id`,
+      [taxYear,dateOnly(run.due_date),paidOn,Number(run.snapshot.amount),run.snapshot.name]);
+      const updated = await client.query(`UPDATE recurring_expense_runs SET status='confirmed',paid_on=$1,confirmed_at=NOW() WHERE id=$2 RETURNING *`, [paidOn,run.id]);
+      return { run: mapRun(updated.rows[0]), vatPaymentId: vatPayment.rows[0].id };
+    }
     const payment = await client.query(`INSERT INTO levy_payments (levy_type,period_start,due_date,paid_on,amount,source,recurring_expense_run_id,notes)
       VALUES ($1,$2,$2,$3,$4,'recurring_expense',$5,$6) RETURNING id`, [type,dateOnly(run.due_date),paidOn,Number(run.snapshot.amount),run.id,run.snapshot.name]);
     const updated = await client.query(`UPDATE recurring_expense_runs SET status='confirmed',paid_on=$1,confirmed_at=NOW() WHERE id=$2 RETURNING *`, [paidOn,run.id]);
     return { run: mapRun({ ...updated.rows[0], levy_payment_id: payment.rows[0].id }), levyPaymentId: payment.rows[0].id };
+  }
+  const paymentYear = Number(paidOn.slice(0, 4));
+  const { getTaxProfile } = await import('./taxProfiles.js');
+  const taxProfile = await getTaxProfile(paymentYear, client.query.bind(client));
+  const profileVatStatus = taxProfile?.vatStatus || null;
+  const rate = run.snapshot.taxRate == null ? null : Number(run.snapshot.taxRate);
+  let vatFields = { vatTreatment: null, netAmount: null, vatAmount: null, inputTaxDeductible: null };
+  if (rate === 0) vatFields = { vatTreatment: 'no_vat', netAmount: null, vatAmount: 0, inputTaxDeductible: null };
+  else if (rate !== null && rate > 0) {
+    const split = splitGross(Number(run.snapshot.amount), rate);
+    vatFields = {
+      vatTreatment: 'taxable', netAmount: split.netAmount, vatAmount: split.vatAmount,
+      inputTaxDeductible: profileVatStatus === null ? null : profileVatStatus === 'regular',
+    };
   }
   let receiptToLink = run.snapshot.linkedReceiptId || null;
   if (receiptToLink) {
@@ -264,9 +288,11 @@ export async function confirmRun(client, runId, paidOn, today = new Date().toISO
     }
   }
   await client.query("SELECT set_config('app.recurring_expense_confirmation',$1,true)", [run.id]);
-  const entry = await client.query(`INSERT INTO euer_entries (entry_type,entry_date,description,category,amount,tax_rate,source_type,source_id)
-    VALUES ('expense',$1,$2,$3,$4,$5,'recurring_expense',$6) RETURNING id`,
-  [paidOn,run.snapshot.name,run.snapshot.category,Number(run.snapshot.amount),Number(run.snapshot.taxRate || 0),run.id]);
+  const entry = await client.query(`INSERT INTO euer_entries
+    (entry_type,entry_date,description,category,amount,tax_rate,source_type,source_id,vat_treatment,net_amount,vat_amount,input_tax_deductible)
+    VALUES ('expense',$1,$2,$3,$4,$5,'recurring_expense',$6,$7,$8,$9,$10) RETURNING id`,
+  [paidOn,run.snapshot.name,run.snapshot.category,Number(run.snapshot.amount),Number(rate || 0),run.id,
+    vatFields.vatTreatment,vatFields.netAmount,vatFields.vatAmount,vatFields.inputTaxDeductible]);
   if (receiptToLink) {
     await client.query('UPDATE receipts SET linked_euer_entry_id=$1,updated_at=NOW() WHERE id=$2', [entry.rows[0].id,receiptToLink]);
     await client.query('UPDATE recurring_expenses SET linked_receipt_id=NULL,updated_at=NOW() WHERE id=$1 AND linked_receipt_id=$2', [run.expense_id,receiptToLink]);

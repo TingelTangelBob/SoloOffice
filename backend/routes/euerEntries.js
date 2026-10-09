@@ -1,10 +1,10 @@
 import express from 'express';
 import { pool, query } from '../database.js';
+import { normalizeEuerVatFields } from '../utils/euerVatValidation.js';
+import { assertDateOnly } from '../shared/recurrence.js';
 
 // pg liefert DATE als lokale Mitternacht; String(Date) ergäbe kein ISO-Datum.
-const storedDateKey = value => value instanceof Date
-  ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-  : String(value).slice(0, 10);
+const storedDateKey = value => assertDateOnly(value);
 
 const router = express.Router();
 
@@ -21,11 +21,17 @@ function toEntry(row) {
   return {
     id: row.id,
     entryType: row.entry_type,
-    entryDate: row.entry_date,
+    entryDate: storedDateKey(row.entry_date),
+    documentDate: row.document_date == null ? null : storedDateKey(row.document_date),
     description: row.description,
     category: row.category,
     amount: Number(row.amount),
     taxRate: Number(row.tax_rate),
+    vatTreatment: row.vat_treatment || null,
+    netAmount: row.net_amount == null ? null : Number(row.net_amount),
+    vatAmount: row.vat_amount == null ? null : Number(row.vat_amount),
+    inputTaxDeductible: row.input_tax_deductible ?? null,
+    euerYear: row.euer_year == null ? null : Number(row.euer_year),
     notes: row.notes || undefined,
     sourceType: row.source_type || 'manual',
     sourceId: row.source_id || undefined,
@@ -80,6 +86,7 @@ function validateEntry(data, allowRecurringSource = false) {
   if (!entryTypes.has(entryType)) return 'Ungültiger Buchungstyp.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || Number.isNaN(Date.parse(`${entryDate}T00:00:00Z`))) return 'Ungültiges Datum.';
   if (!description || description.length > 255) return 'Eine Beschreibung ist erforderlich und darf höchstens 255 Zeichen enthalten.';
+  if (['vat_payment', 'vat_refund'].includes(category) || sourceType === 'vat_payment') return 'Umsatzsteuer-Zahlungen werden über Umsatzsteuer-Zahlungen bearbeitet.';
   if (!categories.has(category)) return 'Ungültige Kategorie.';
   if (!Number.isFinite(amount) || amount < 0) return 'Der Betrag muss eine positive Zahl sein.';
   if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.';
@@ -88,6 +95,8 @@ function validateEntry(data, allowRecurringSource = false) {
   if (externalReference.length > 255) return 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.';
   if (data.correctionReason && String(data.correctionReason).length > 500) return 'Der Korrekturgrund darf höchstens 500 Zeichen enthalten.';
   if (data.customerId && !uuidPattern.test(String(data.customerId))) return 'Ungültiger Kundenbezug.';
+  const vat = normalizeEuerVatFields(data, entryType, amount, taxRate);
+  if (vat.error) return vat.error;
 
   return null;
 }
@@ -162,7 +171,8 @@ async function validateSource(data, currentId = null, executor = query) {
   return null;
 }
 
-const entryColumns = `id, entry_type, entry_date, description, category, amount, tax_rate, notes,
+const entryColumns = `id, entry_type, entry_date, document_date, description, category, amount, tax_rate,
+  vat_treatment, net_amount, vat_amount, input_tax_deductible, euer_year, notes,
   source_type, source_id, external_reference, customer_id, status, correction_reason, created_at, updated_at`;
 
 // Ein Kundenbezug gilt nur für Einnahmen ohne Rechnung; Zahlungen zu
@@ -180,9 +190,9 @@ router.get('/', async (req, res, next) => {
     const params = [];
     const conditions = ["status = 'active'"];
     if (year) {
-      if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ error: 'Ungültiges Jahr.' });
+      if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error: 'Ungültiges Jahr.' });
       params.push(year);
-      conditions.push('entry_date >= make_date($1, 1, 1) AND entry_date < make_date($1 + 1, 1, 1)');
+      conditions.push('COALESCE(euer_year, EXTRACT(YEAR FROM entry_date)::smallint) = $1');
     }
 
     const result = await query(`
@@ -238,6 +248,7 @@ router.post('/', async (req, res, next) => {
     const {
       entryType, entryDate, description, category, amount, taxRate = 0, notes,
       sourceType = 'manual', sourceId, externalReference, correctionReason,
+      documentDate = null, vatTreatment = null, netAmount = null, vatAmount = null, inputTaxDeductible = null,
     } = req.body;
     const customer = await resolveCustomerId({ ...req.body, sourceType }, client.query.bind(client));
     if (customer.error) {
@@ -246,12 +257,14 @@ router.post('/', async (req, res, next) => {
     }
     const result = await client.query(`
       INSERT INTO euer_entries
-        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, external_reference, correction_reason, customer_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, external_reference, correction_reason, customer_id,
+         document_date, vat_treatment, net_amount, vat_amount, input_tax_deductible)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING ${entryColumns}
     `, [
       entryType, entryDate, String(description).trim(), category, Number(amount), Number(taxRate),
       notes || null, sourceType, sourceId || null, externalReference || null, correctionReason || null, customer.customerId,
+      documentDate || null, vatTreatment || null, netAmount ?? null, vatAmount ?? null, inputTaxDeductible ?? null,
     ]);
     if (sourceType === 'receipt') {
       const receiptResult = await client.query(`
@@ -290,6 +303,10 @@ router.put('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
     }
     const currentRow = currentResult.rows[0];
+    if (currentRow.source_type === 'vat_payment' || ['vat_payment', 'vat_refund'].includes(currentRow.category)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Bitte über Umsatzsteuer-Zahlungen bearbeiten.' });
+    }
     if (currentRow.status === 'voided') {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Eine stornierte Buchung kann nicht bearbeitet werden.' });
@@ -329,14 +346,17 @@ router.put('/:id', async (req, res, next) => {
       UPDATE euer_entries
       SET entry_type = $1, entry_date = $2, description = $3, category = $4, amount = $5,
           tax_rate = $6, notes = $7, source_type = $8, source_id = $9,
-          external_reference = $10, correction_reason = $11, customer_id = $12, updated_at = NOW()
-      WHERE id = $13 AND status = 'active'
+          external_reference = $10, correction_reason = $11, customer_id = $12,
+          document_date = $13, vat_treatment = $14, net_amount = $15, vat_amount = $16,
+          input_tax_deductible = $17, updated_at = NOW()
+      WHERE id = $18 AND status = 'active'
       RETURNING ${entryColumns}
     `, [
       merged.entryType, merged.entryDate, String(merged.description).trim(), merged.category,
       Number(merged.amount), Number(merged.taxRate || 0), merged.notes || null,
       merged.sourceType, merged.sourceId || null, merged.externalReference || null, merged.correctionReason || null,
-      customer.customerId, req.params.id,
+      customer.customerId, merged.documentDate || null, merged.vatTreatment || null, merged.netAmount ?? null,
+      merged.vatAmount ?? null, merged.inputTaxDeductible ?? null, req.params.id,
     ]);
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -381,10 +401,14 @@ router.delete('/:id', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const currentResult = await client.query('SELECT id, source_type, source_id, status FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const currentResult = await client.query('SELECT id, source_type, source_id, status, category FROM euer_entries WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (currentResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'EÜR-Buchung nicht gefunden.' });
+    }
+    if (currentResult.rows[0].source_type === 'vat_payment' || ['vat_payment', 'vat_refund'].includes(currentResult.rows[0].category)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Bitte über Umsatzsteuer-Zahlungen bearbeiten.' });
     }
     if (currentResult.rows[0].status === 'voided') {
       await client.query('ROLLBACK');

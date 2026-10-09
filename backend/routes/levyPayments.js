@@ -27,6 +27,7 @@ export function mapPayment(row) {
 export function validate(body) {
   const levyType = body.kind || body.levyType;
   if (!types.has(String(levyType))) return 'Ungültige Abgabenart.';
+  if (levyType === 'ust') return 'Umsatzsteuer-Zahlungen werden über den Bereich Umsatzsteuer erfasst.';
   if (body.source === 'recurring_expense') return 'Fixkostenläufe werden ausschließlich über die Laufbestätigung verknüpft.';
   if (body.source !== undefined && !['notice','manual'].includes(body.source)) return 'Ungültige Zahlungsquelle.';
   const amount = Number(body.amount);
@@ -90,8 +91,9 @@ router.put('/:id', async (req, res, next) => {
     if (!uuidPattern.test(String(req.params.id || ''))) return res.status(400).json({ error: 'Ungültige Abgaben-ID.' });
     const current = await query('SELECT * FROM levy_payments WHERE id=$1', [req.params.id]);
     if (!current.rows.length) return res.status(404).json({ error: 'Abgabenzahlung nicht gefunden.' });
-    if (current.rows[0].recurring_expense_run_id) return res.status(409).json({ error: 'Zahlungen aus Fixkostenläufen werden an der Vorlage verwaltet.' });
     const old = current.rows[0];
+    if (old.levy_type === 'ust') return res.status(400).json({ error: 'Umsatzsteuer-Zahlungen werden über den Bereich Umsatzsteuer bearbeitet.' });
+    if (old.recurring_expense_run_id) return res.status(409).json({ error: 'Zahlungen aus Fixkostenläufen werden an der Vorlage verwaltet.' });
     const canonicalPeriodChanged = req.body?.period !== undefined || req.body?.year !== undefined;
     const oldPeriod = mapPayment(old);
     const value = validate({ kind: req.body?.kind ?? old.levy_type,

@@ -1,7 +1,7 @@
 // Gemeinsame, FK-sichere Löschreihenfolge für Workspace-Fachdaten.
 // Workspace-Identität und Mitgliedschaften stehen bewusst nicht in dieser Liste.
 export const WORKSPACE_BUSINESS_DATA_DELETE_ORDER = [
-  'levy_payments', 'recurring_expense_runs', 'recurring_expenses', 'tax_profiles', 'workspace_extensions',
+  'vat_payments', 'levy_payments', 'recurring_expense_runs', 'recurring_expenses', 'tax_profiles', 'workspace_extensions',
   'import_run_items',
   'import_runs',
   'migration_categories',

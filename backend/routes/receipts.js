@@ -2,6 +2,8 @@ import express from 'express';
 import { pool, query } from '../database.js';
 import { decodeBase64Content, isOcrQueueOverloaded, runLocalOcr } from '../services/ocrService.js';
 import { createInvoice } from '../services/invoiceService.js';
+import { normalizeEuerVatFields } from '../utils/euerVatValidation.js';
+import { assertDateOnly } from '../shared/recurrence.js';
 
 const router = express.Router();
 const MAX_RECEIPT_SIZE = 25 * 1024 * 1024;
@@ -261,6 +263,7 @@ router.post('/:id/create-euer', async (req, res, next) => {
     const category = String(req.body?.category || 'other_expense');
     const amount = Number(req.body?.amount);
     const taxRate = req.body?.taxRate === undefined || req.body?.taxRate === null || req.body?.taxRate === '' ? 0 : Number(req.body.taxRate);
+    const vatFields = normalizeEuerVatFields(req.body || {}, entryType, amount, taxRate);
     const validCategories = new Set([
       'other_income', 'materials', 'office', 'software', 'telecommunications',
       'travel', 'vehicle', 'marketing', 'professional_services', 'insurance',
@@ -270,16 +273,18 @@ router.post('/:id/create-euer', async (req, res, next) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Ungültige EÜR-Buchungsdaten.' });
     }
-    if (!description || description.length > 255 || !validCategories.has(category) || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+    if (!description || description.length > 255 || !validCategories.has(category) || ['vat_payment', 'vat_refund'].includes(category) || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100 || vatFields.error) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Bitte Beschreibung, Kategorie, Betrag und MwSt.-Satz prüfen.' });
+      return res.status(400).json({ error: vatFields.error || 'Bitte Beschreibung, Kategorie, Betrag und MwSt.-Satz prüfen.' });
     }
 
     const entryResult = await client.query(`
       INSERT INTO euer_entries
-        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, correction_reason)
-      VALUES ('expense', $1, $2, $3, $4, $5, $6, 'receipt', $7, NULL)
-      RETURNING id, entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, status, correction_reason, created_at, updated_at
+        (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, correction_reason,
+         document_date, vat_treatment, net_amount, vat_amount, input_tax_deductible)
+      VALUES ('expense', $1, $2, $3, $4, $5, $6, 'receipt', $7, NULL, $8, $9, $10, $11, $12)
+      RETURNING id, entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id, status, correction_reason, created_at, updated_at,
+        document_date, vat_treatment, net_amount, vat_amount, input_tax_deductible, euer_year
     `, [
       entryDate,
       description,
@@ -288,6 +293,11 @@ router.post('/:id/create-euer', async (req, res, next) => {
       taxRate,
       req.body?.notes ? String(req.body.notes).slice(0, 2000) : null,
       req.params.id,
+      vatFields.values.documentDate,
+      vatFields.values.vatTreatment,
+      vatFields.values.netAmount,
+      vatFields.values.vatAmount,
+      vatFields.values.inputTaxDeductible,
     ]);
     const entry = entryResult.rows[0];
     const linkedReceiptResult = await client.query(`
@@ -302,11 +312,17 @@ router.post('/:id/create-euer', async (req, res, next) => {
       entry: {
         id: entry.id,
         entryType: entry.entry_type,
-        entryDate: entry.entry_date,
+        entryDate: assertDateOnly(entry.entry_date, 'Zahlungsdatum'),
+        documentDate: entry.document_date == null ? null : assertDateOnly(entry.document_date, 'Belegdatum'),
         description: entry.description,
         category: entry.category,
         amount: Number(entry.amount),
         taxRate: Number(entry.tax_rate),
+        vatTreatment: entry.vat_treatment,
+        netAmount: entry.net_amount == null ? null : Number(entry.net_amount),
+        vatAmount: entry.vat_amount == null ? null : Number(entry.vat_amount),
+        inputTaxDeductible: entry.input_tax_deductible,
+        euerYear: entry.euer_year == null ? null : Number(entry.euer_year),
         notes: entry.notes || undefined,
         sourceType: entry.source_type,
         sourceId: entry.source_id || undefined,

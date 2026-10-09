@@ -37,6 +37,7 @@ import taxProfilesRouter from './routes/taxProfiles.js';
 import recurringExpensesRouter from './routes/recurringExpenses.js';
 import levyPaymentsRouter from './routes/levyPayments.js';
 import forecastRouter from './routes/forecast.js';
+import vatRouter from './routes/vat.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 import { workspaceSuspensionGuard } from './middleware/workspaceSuspension.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
@@ -171,6 +172,7 @@ app.use('/api/tax-profile', taxProfilesRouter);
 app.use('/api/recurring-expenses', recurringExpensesRouter);
 app.use('/api/levy-payments', levyPaymentsRouter);
 app.use('/api/forecast', forecastRouter);
+app.use('/api/vat', vatRouter);
 
 app.get('/metrics', (req, res) => {
   const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));
