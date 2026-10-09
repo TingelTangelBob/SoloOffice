@@ -17,7 +17,7 @@ async function access(req, res) {
 }
 
 export function mapPayment(row) {
-  const date = value => value == null ? null : value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const date = value => value == null ? null : value instanceof Date ? assertDateOnly(value) : String(value).slice(0, 10);
   const periodStart = date(row.period_start);
   return { id: row.id, kind: row.levy_type, year: Number(periodStart.slice(0, 4)), period: periodStart.slice(0, 7),
     dueDate: date(row.due_date) || '', paidOn: date(row.paid_on), amount: Number(row.amount), source: row.source,
@@ -36,7 +36,7 @@ export function validate(body) {
     const period = String(body.period || '');
     let periodStartValue = body.periodStart;
     if (!periodStartValue) {
-      if (!Number.isInteger(year) || year < 2000 || year > 2100) return 'Ungültiges Jahr.';
+      if (!Number.isInteger(year) || year < 2000 || year > 2200) return 'Ungültiges Jahr.';
       const periodMatch = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(period);
       if (periodMatch && Number(periodMatch[1]) !== year) return 'Jahr und Zeitraum passen nicht zusammen.';
       if (periodMatch?.[3]) assertDateOnly(period, 'Zeitraum');
@@ -66,7 +66,7 @@ router.get('/', async (req, res, next) => {
     let where = '';
     if (req.query.year !== undefined) {
       const year = Number(req.query.year);
-      if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ error: 'Ungültiges Jahr.' });
+      if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error: 'Ungültiges Jahr.' });
       values.push(year);
       where = 'WHERE period_start >= make_date($1,1,1) AND period_start < make_date($1+1,1,1)';
     }

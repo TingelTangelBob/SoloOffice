@@ -7,7 +7,8 @@ export type DashboardQuickItemId =
 export type DashboardCardItemId =
   | 'revenue' | 'top-customers' | 'week-calendar' | 'recent-jobs' | 'recent-invoices' | 'course-series'
   | 'open-invoices' | 'income-expense' | 'upcoming-jobs' | 'open-quotes' | 'unbilled-jobs'
-  | 'average-invoice' | 'active-customers' | 'recent-receipts';
+  | 'average-invoice' | 'active-customers' | 'recent-receipts'
+  | 'taxes' | 'tax-reserve' | 'tax-position' | 'small-business' | 'fixed-costs' | 'tax-advances' | 'health-backpayment';
 
 export type DashboardItemId = DashboardQuickItemId | DashboardCardItemId;
 
@@ -17,6 +18,7 @@ export interface DashboardItemDefinition {
   defaultVisible: boolean;
   defaultSize?: DashboardSize;
   sizes?: readonly DashboardSize[];
+  requiredExtension?: 'taxes';
 }
 
 export interface DashboardItemPreference {
@@ -31,6 +33,15 @@ export interface DashboardPreferences {
   includeUnpaidInvoices: boolean;
   comparePrevious: boolean;
   year: number | 'all' | null;
+  showPrivateLevies: boolean;
+  showFixedCosts: boolean;
+  showSocialContributions: boolean;
+  showTaxReserve: boolean;
+  showVatReserve: boolean;
+  showAvailable: boolean;
+  monthView: boolean;
+  month: string | null;
+  compareMonth: string | null;
 }
 
 export const DASHBOARD_PREFERENCES_VERSION: number;

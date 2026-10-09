@@ -145,6 +145,25 @@ test('die Datenbank lässt eine private Abgabenart nicht als betriebliche Vorlag
   });
 });
 
+test('private Kategorien werden auch bei manueller Quelle und Restore-Kontext abgewiesen', async () => {
+  await inWorkspace(workspaceA, userA, async () => {
+    for (const category of ['kv', 'pv', 'rv', 'av', 'ksk', 'est_vz', 'gewst_vz', 'ust']) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.audit_disabled','true',true)");
+        await assert.rejects(client.query(`INSERT INTO euer_entries
+          (entry_type,entry_date,description,category,amount,tax_rate,source_type)
+          VALUES ('expense','2026-01-31','Private Kategorie',$1,100,0,'manual')`, [category]),
+        error => error?.code === '23514' && error?.constraint === 'euer_private_category_guard');
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+    }
+  });
+});
+
 test('EÜR erlaubt nur unveränderte bestätigte betriebliche Quelle bei PUT', async () => {
   const edited = await invoke(euerEntriesRouter, 'put', '/:id', workspaceA, userA, {
     params: { id: fixtures.entryId }, body: { description: 'Miete angepasst', amount: 525 },

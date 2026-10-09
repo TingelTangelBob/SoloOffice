@@ -28,7 +28,7 @@ before(async () => {
   await pool.query('INSERT INTO workspaces (id,name,slug) VALUES ($1,$2,$3),($4,$5,$6)', [workspaceId, 'Forecast Test', `forecast-${suffix}`, otherWorkspaceId, 'Forecast Fremd', `forecast-other-${suffix}`]);
   await inWorkspace(workspaceId, () => query("INSERT INTO workspace_extensions (extension_id,enabled,accepted_at) VALUES ('taxes',TRUE,NOW())"));
   await inWorkspace(workspaceId, () => query(`INSERT INTO euer_entries (entry_type,entry_date,description,category,amount,tax_rate)
-    VALUES ('income',$1,$2,'other_income',3200,0)`, [`${forecastYear}-01-15`, seededDescription]));
+    VALUES ('income',$1,$2,'other_income',3200,0)`, [`${forecastYear}-01-01`, seededDescription]));
 });
 after(() => cleanupFinanceWorkspaces([workspaceId, otherWorkspaceId]));
 
@@ -60,6 +60,7 @@ test('RLS beschränkt EÜR-Daten auf den Workspace und der GET-Endpunkt verände
   assert.equal(result.statusCode, 200);
   assert.equal(result.payload.monthly.length, 12);
   assert.equal(result.payload.revenueYtd, 3200);
+  assert.equal(result.payload.monthly[0].revenue, 3200);
   const ownAfter = await inWorkspace(workspaceId, () => query('SELECT id FROM euer_entries WHERE description=$1', [seededDescription]));
   assert.deepEqual(ownAfter.rows, ownBefore.rows);
 });

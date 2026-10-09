@@ -9,7 +9,7 @@ export function validateDemoLevy(input, today = new Date().toISOString().slice(0
   if (!['notice', 'manual'].includes(input.source ?? 'manual')) return 'Ungültige Zahlungsquelle.';
   const year = Number(input.year);
   const amount = Number(input.amount);
-  if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isFinite(amount) || amount < 0) return 'Jahr oder Betrag ist ungültig.';
+  if (!Number.isInteger(year) || year < 2000 || year > 2200 || !Number.isFinite(amount) || amount < 0) return 'Jahr oder Betrag ist ungültig.';
   try {
     const period = String(input.period || '');
     let periodStartValue = input.periodStart;

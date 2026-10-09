@@ -286,3 +286,46 @@ test('Einzelfixkosten werden im Zahlungsmonat gezeigt, Vorauszahlungen schreibfr
   assert.equal(result.upcomingLevies.at(-1).dueDate, '2026-12-10');
   assert.equal(result.paidLevies, 200);
 });
+
+ test('bewahrt lokale PostgreSQL-DATE-Werte am Jahres- und Monatsanfang', () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'Europe/Berlin';
+  try {
+    const result = buildForecast({ year: 2026, profile: baseProfile(2026), now: '2026-03-01',
+      entries: [income(new Date(2026, 0, 1), 100), income(new Date(2026, 1, 1), 200)] });
+    assert.equal(result.revenueYtd, 300);
+    assert.equal(result.monthly[0].revenue, 100);
+    assert.equal(result.monthly[1].revenue, 200);
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
+});
+
+test('Kachelvertrag trennt bezahlte Vorauszahlungen von Sozialbeiträgen und liefert echte Nenner', () => {
+  const result = buildForecast({ year: 2026, profile: { ...baseProfile(2026), previousYearRevenue: 0 }, now: '2026-10-09',
+    entries: [income('2026-09-01', 10000)], levyPayments: [
+      { kind: 'kv', year: 2026, paidOn: '2026-09-01', amount: 400 },
+      { kind: 'est_vz', year: 2026, paidOn: '2026-09-10', amount: 300 },
+      { kind: 'ust', year: 2026, paidOn: '2026-08-10', amount: 100 },
+    ] });
+  assert.deepEqual(result.paidAdvances, { est_vz: 300, gewst_vz: 0, ust: 100 });
+  assert.equal(result.paidNonVatLevies, 700);
+  assert.equal(result.paidAdvanceMonths.find(item => item.month === '2026-09').est_vz, 300);
+  assert.equal(result.paidAdvanceMonths.find(item => item.month === '2026-08').ust, 100);
+  assert.equal(result.previousYearRevenueKnown, true);
+  assert.equal(result.vatStatus, 'regular');
+  assert.equal(result.expectedRemainingInflows, result.revenueAnnual - result.revenueYtd);
+});
+
+test('Dashboard-Fälligkeiten enthalten offene Vergangenheit und nächste Termine ohne zusätzliche Gewinnabzüge', () => {
+  const recurring = { id: 'due-business', name: 'Miete', scope: 'business', status: 'active', amountGross: 100,
+    startDate: '2026-01-01', intervalCount: 1, intervalUnit: 'months', endDate: '2026-12-01',
+    noticePeriodDays: 30, priceChanges: [], pauses: [] };
+  const result = buildForecast({ year: 2026, profile: baseProfile(2026), now: '2026-10-09', expenses: [recurring],
+    runs: [{ id: 'confirmed', expenseId: recurring.id, dueDate: '2026-01-01', status: 'confirmed', amountGross: 100 }] });
+  assert.equal(result.dueExpenses[0].dueDate, '2026-02-01');
+  assert.equal(result.dueExpenses.at(-1).dueDate, '2026-11-01');
+  assert.equal(result.fixedCostsAnnual, 100, 'nur künftige Fälligkeit ist geplante Ausgabe; offene Vergangenheit bleibt Datenhinweis');
+  assert.equal(result.expenseNotices[0].noticeDeadline, '2026-11-01');
+});

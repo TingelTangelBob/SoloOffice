@@ -5,6 +5,7 @@ import { pool, query } from '../../database.js';
 import { runWithRequestContext } from '../../utils/requestContext.js';
 import { confirmRun, createExpense, generateRuns, listExpenses, updateExpense } from '../../services/recurringExpenses.js';
 import recurringExpensesRouter from '../../routes/recurringExpenses.js';
+import { assertDateOnly } from '../../shared/recurrence.js';
 import { cleanupFinanceWorkspaces } from './financeTestCleanup.js';
 
 if (!/(?:^|[_-])(integration|test)(?:$|[_-])/i.test(String(process.env.DB_NAME || ''))) {
@@ -21,7 +22,7 @@ let privateExpenseId;
 let confirmedRunId;
 
 const inWorkspace = (workspaceId, userId, callback) => runWithRequestContext({ workspaceId, userId }, callback);
-const dateKey = value => value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10);
+const dateKey = value => assertDateOnly(value);
 const routeHandler = (method, path) => recurringExpensesRouter.stack
   .find(layer => layer.route?.path === path && layer.route.methods[method])?.route.stack.at(-1)?.handle;
 

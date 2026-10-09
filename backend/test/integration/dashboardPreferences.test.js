@@ -34,10 +34,25 @@ test('GET/PUT Dashboard-Einstellungen bleiben auf den jeweiligen Benutzer begren
 
   const changed = await request('put', '/dashboard', users[0], { preferences: {
     year: 'all', includeUnpaidInvoices: true, comparePrevious: true,
+    showPrivateLevies: true, monthView: true, month: '2026-09', compareMonth: '2026-06',
+    showFixedCosts: true, showSocialContributions: true, showTaxReserve: true, showVatReserve: true, showAvailable: true,
     items: [{ id: 'revenue', visible: false }],
   } });
   assert.equal(changed.statusCode, 200);
   assert.equal(changed.payload.preferences.comparePrevious, false);
+  for (const key of ['showFixedCosts', 'showSocialContributions', 'showTaxReserve', 'showVatReserve', 'showAvailable']) {
+    assert.equal(changed.payload.preferences[key], true);
+    assert.equal((await request('get', '/dashboard', users[0])).payload.preferences[key], true);
+    assert.equal((await request('get', '/dashboard', users[1])).payload.preferences[key], false);
+  }
+  for (const id of ['taxes', 'tax-reserve', 'tax-position', 'small-business', 'fixed-costs', 'tax-advances', 'health-backpayment']) {
+    assert.equal(changed.payload.preferences.items.find(item => item.id === id).visible, false);
+  }
+  for (const [key, expected] of Object.entries({ showPrivateLevies: true, monthView: true, month: '2026-09', compareMonth: '2026-06' })) {
+    assert.equal(changed.payload.preferences[key], expected);
+    assert.equal((await request('get', '/dashboard', users[0])).payload.preferences[key], expected);
+    assert.equal((await request('get', '/dashboard', users[1])).payload.preferences[key], key === 'month' || key === 'compareMonth' ? null : false);
+  }
   assert.equal(changed.payload.preferences.items[0].id, 'revenue');
   assert.equal(changed.payload.preferences.version, 2);
   // Neue Kacheln werden nicht ungefragt sichtbar.

@@ -2,11 +2,12 @@ import { resolveTaxParams } from '../taxParams/index.js';
 import { calculateSocial, chamberContribution } from './social.js';
 import { calculateTaxes } from './tax.js';
 import { calculateThresholds } from './thresholds.js';
-import { nextOccurrence, occurrenceOnOrAfter, isRecurringExpenseDue } from '../recurrence.js';
+import { addDays, assertDateOnly, nextOccurrence, occurrenceOnOrAfter, isRecurringExpenseDue } from '../recurrence.js';
 
 const round = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const amount = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-const datePart = value => value instanceof Date ? value.toISOString().slice(0, 10) : String(value || '').slice(0, 10);
+// PostgreSQL DATE ist lokale Mitternacht und darf nicht über UTC den Kalendertag wechseln.
+const datePart = value => value instanceof Date ? assertDateOnly(value) : String(value || '').slice(0, 10);
 const validYear = date => /^\d{4}-\d{2}-\d{2}$/.test(date) ? Number(date.slice(0, 4)) : null;
 const monthOf = date => Number(date.slice(5, 7));
 const monthKey = (year, month) => `${year}-${String(month).padStart(2, '0')}`;
@@ -60,6 +61,7 @@ function dueDates(expense, year, fromDate) {
 
 function fixedSchedule(expenses, runs, year, nowDate, warnings) {
   const planned = [];
+  const due = [];
   const monthly = Array(12).fill(0);
   for (const expense of expenses || []) {
     const business = (expense.scope || 'business') === 'business';
@@ -68,7 +70,12 @@ function fixedSchedule(expenses, runs, year, nowDate, warnings) {
       if (run?.status === 'skipped') continue;
       if (run?.status === 'confirmed') continue; // Betrag und EÜR-Istwert stammen aus dem bestätigten Snapshot.
       if (dueDate <= nowDate) {
-        if (!run || run.status === 'planned') warnings.push(`Vergangene Fixkostenfälligkeit am ${dueDate} ist noch nicht als bezahlt gebucht.`);
+        if (!run || run.status === 'planned') {
+          warnings.push(`Vergangene Fixkostenfälligkeit am ${dueDate} ist noch nicht als bezahlt gebucht.`);
+          if (business) due.push({ ...run, id: run?.id || `${expense.id}:${dueDate}`, expenseId: expense.id, dueDate,
+            amountGross: run?.amountGross ?? expensePrice(expense, dueDate).amount, status: 'planned',
+            paidOn: null, euerEntryId: null, levyPaymentId: null, name: expense.name, scope: 'business' });
+        }
         continue;
       }
       {
@@ -81,7 +88,7 @@ function fixedSchedule(expenses, runs, year, nowDate, warnings) {
   }
   // Veraltete geplante Runs werden absichtlich nicht als Fallback addiert: sie
   // können nach Intervall-, Enddatum- oder Pausenänderungen ungültig sein.
-  return { monthly: monthly.map(round), planned };
+  return { monthly: monthly.map(round), planned, due };
 }
 
 function profileMissing(profile) {
@@ -256,7 +263,8 @@ function findProfileMissing(profile, legalForm, complete) {
 /** Pure annual forecast over canonical camelCase finance data. */
 export function buildForecast({ year, profile = {}, entries = [], expenses = [], runs = [], levyPayments = [], previousEntries = [], now = new Date() } = {}) {
   if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new RangeError('Ungültiges Prognosejahr.');
-  const nowDate = datePart(now);
+  // Der Stichtag ist ein Zeitpunkt, keine PostgreSQL-DATE-Spalte.
+  const nowDate = now instanceof Date ? now.toISOString().slice(0, 10) : datePart(now);
   const { params, parameterYear, warning: paramsWarning } = resolveTaxParams(year);
   const warnings = [];
   if (paramsWarning) warnings.push(paramsWarning);
@@ -314,6 +322,27 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   const paidUst = round(paid.filter(item => item.kind === 'ust').reduce((sum, item) => sum + amount(item.amount), 0));
   const vatRemainingReserve = round(vatAnnual - paidUst);
   if (paidUst > 0 && vatRemainingReserve < 0) warnings.push('Erfasste Umsatzsteuerzahlungen übersteigen den Jahresrichtwert; daraus wird keine Erstattung zugesagt.');
+  const paidAdvances = { est_vz: 0, gewst_vz: 0, ust: 0 };
+  const paidAdvanceMonths = Array.from({ length: params.forecast.monthsPerYear }, (_, index) => ({
+    month: monthKey(year, index + 1), est_vz: 0, gewst_vz: 0, ust: 0,
+  }));
+  for (const payment of paid) {
+    if (!Object.hasOwn(paidAdvances, payment.kind)) continue;
+    paidAdvances[payment.kind] = round(paidAdvances[payment.kind] + amount(payment.amount));
+    const paidDate = datePart(payment.paidOn);
+    if (validYear(paidDate) === year) {
+      const month = paidAdvanceMonths[monthOf(paidDate) - 1];
+      month[payment.kind] = round(month[payment.kind] + amount(payment.amount));
+    }
+  }
+  const expenseNotices = expenses.filter(item => (item.scope || 'business') === 'business').map(item => {
+    const endDate = item.endDate ? datePart(item.endDate) : null;
+    const noticePeriodDays = Math.max(0, amount(item.noticePeriodDays));
+    return { id: item.id, name: item.name, noticePeriodDays, endDate,
+      noticeDeadline: endDate ? addDays(endDate, -noticePeriodDays) : null };
+  });
+  const dueExpenses = [...schedule.due, ...schedule.planned.filter(item => item.scope === 'business')]
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const annualBurden = round(social.total + taxes.total);
   const expectedLevies = round(paid.filter(item => item.kind !== 'ust').reduce((sum, item) => sum + Math.max(0, amount(item.amount)), 0));
   const remainingReserve = round(Math.max(0, annualBurden - expectedLevies));
@@ -413,7 +442,9 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     profileComplete: companyProfile.complete, missingFields: companyProfile.fields, warnings: [...new Set(warnings)], method: annual.method,
     profitYtd, profitAnnual, profitBand: { low: Math.min(round(profitAnnual * (1 - params.forecast.defaultBandRatio)), round(profitAnnual * (1 + params.forecast.defaultBandRatio))), high: Math.max(round(profitAnnual * (1 - params.forecast.defaultBandRatio)), round(profitAnnual * (1 + params.forecast.defaultBandRatio))) },
     revenueYtd: actual.revenue, revenueAnnual, social, taxes, annualBurden, paidLevies, paidUst, remainingReserve,
-    reserveRatio, combinedMarginalRate, vatReserveGrossEstimate: vatAnnual, vatRemainingReserve,
+    reserveRatio, expectedRemainingInflows, vatStatus: profile.vatStatus ?? null,
+    previousYearRevenueKnown: inferredPreviousRevenue !== null, paidNonVatLevies: expectedLevies,
+    paidAdvances, paidAdvanceMonths, dueExpenses, expenseNotices, combinedMarginalRate, vatReserveGrossEstimate: vatAnnual, vatRemainingReserve,
     thresholds: thresholdData.thresholds, smallBusiness: thresholdData.smallBusiness, series, upcomingLevies,
     upcomingExpenses: schedule.planned, fixedCostsMonthly: round(fixedAnnual / params.forecast.monthsPerYear), fixedCostsAnnual: fixedAnnual, calculationSteps, monthly,
   };

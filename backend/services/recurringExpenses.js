@@ -290,7 +290,7 @@ export async function listRuns(executor, { year, dueOnly = false, today = new Da
   const values = [];
   const conditions = [];
   if (year !== undefined) {
-    if (!Number.isInteger(Number(year)) || Number(year) < 2000 || Number(year) > 2100) throw new TypeError('Ungültiges Jahr.');
+    if (!Number.isInteger(Number(year)) || Number(year) < 2000 || Number(year) > 2200) throw new TypeError('Ungültiges Jahr.');
     values.push(Number(year)); conditions.push(`r.due_date >= make_date($${values.length},1,1) AND r.due_date < make_date($${values.length}+1,1,1)`);
   }
   if (dueOnly) { values.push(today); conditions.push(`r.due_date <= $${values.length}`); }

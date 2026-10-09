@@ -247,3 +247,20 @@ test('Ausgangsbeleg wird nicht erneut verknüpft, wenn er zu einer früheren Zah
   assert.equal(result.run.euerEntryId, 'second');
   assert.equal(written.some(sql => sql.startsWith('UPDATE receipts')), false);
 });
+
+test('Abgaben behalten PostgreSQL-DATE-Kalendertage und ihr Bezugsjahr', () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'Europe/Berlin';
+  try {
+    const payment = mapPayment({ id: 'date-payment', levy_type: 'kv',
+      period_start: new Date(2026, 0, 1), due_date: new Date(2026, 1, 1),
+      paid_on: new Date(2026, 1, 1), amount: '100', source: 'manual' });
+    assert.equal(payment.year, 2026);
+    assert.equal(payment.period, '2026-01');
+    assert.equal(payment.dueDate, '2026-02-01');
+    assert.equal(payment.paidOn, '2026-02-01');
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
+});

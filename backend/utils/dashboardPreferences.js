@@ -62,6 +62,13 @@ export const DASHBOARD_ITEM_DEFINITIONS = Object.freeze([
   { id: 'average-invoice', group: 'card', defaultVisible: false, defaultSize: 'quarter', sizes: SMALL },
   { id: 'active-customers', group: 'card', defaultVisible: false, defaultSize: 'quarter', sizes: SMALL },
   { id: 'recent-receipts', group: 'card', defaultVisible: false, defaultSize: 'third', sizes: LIST },
+  { id: 'taxes', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
+  { id: 'tax-reserve', group: 'card', defaultVisible: false, defaultSize: 'third', sizes: SMALL, requiredExtension: 'taxes' },
+  { id: 'tax-position', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
+  { id: 'small-business', group: 'card', defaultVisible: false, defaultSize: 'third', sizes: SMALL, requiredExtension: 'taxes' },
+  { id: 'fixed-costs', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
+  { id: 'tax-advances', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
+  { id: 'health-backpayment', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
 ].map(definition => Object.freeze(definition)));
 
 export const DASHBOARD_PREFERENCE_IDS = Object.freeze(DASHBOARD_ITEM_DEFINITIONS.map(definition => definition.id));
@@ -84,6 +91,15 @@ export const DEFAULT_DASHBOARD_PREFERENCES = Object.freeze({
   includeUnpaidInvoices: false,
   comparePrevious: false,
   year: null,
+  showPrivateLevies: false,
+  showFixedCosts: false,
+  showSocialContributions: false,
+  showTaxReserve: false,
+  showVatReserve: false,
+  showAvailable: false,
+  monthView: false,
+  month: null,
+  compareMonth: null,
 });
 
 function byteLength(value) {
@@ -123,12 +139,22 @@ export function normalizeDashboardPreferences(value) {
 
   const year = value.year === 'all' ? 'all'
     : Number.isInteger(value.year) && value.year >= 2000 && value.year <= 2200 ? value.year : null;
+  const validMonth = month => typeof month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : null;
   const normalized = {
     version: DASHBOARD_PREFERENCES_VERSION,
     items,
     includeUnpaidInvoices: value.includeUnpaidInvoices === true,
     comparePrevious: value.comparePrevious === true && year !== 'all',
     year,
+    showPrivateLevies: value.showPrivateLevies === true,
+    showFixedCosts: value.showFixedCosts === true,
+    showSocialContributions: value.showSocialContributions === true,
+    showTaxReserve: value.showTaxReserve === true,
+    showVatReserve: value.showVatReserve === true,
+    showAvailable: value.showAvailable === true,
+    monthView: value.monthView === true,
+    month: validMonth(value.month),
+    compareMonth: validMonth(value.compareMonth),
   };
   if (byteLength(normalized) > DASHBOARD_PREFERENCES_MAX_BYTES) return cloneDefaults();
   return normalized;
