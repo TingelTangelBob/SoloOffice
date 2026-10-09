@@ -1,5 +1,5 @@
 import { addDays, assertDateOnly, isRecurringExpenseDue, nextOccurrence, occurrenceAt } from './recurrence.js';
-import { validateExpense } from '../services/recurringExpenses.js';
+import { validateExpense } from './recurringExpenseValidation.js';
 import { validateTaxProfilePayload } from '../utils/taxProfileValidation.js';
 
 /** Reine Demo-Helfer. Alle Daten bleiben im übergebenen Workspace-Zustand. */

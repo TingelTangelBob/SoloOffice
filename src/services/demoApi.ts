@@ -14,6 +14,7 @@ import { isRecurringExpenseDue, occurrenceOnOrAfter } from '../../backend/shared
 import type { ForecastResult, LevyPayment, RecurringExpense, RecurringExpenseRun, TaxProfile, WorkspaceExtension } from '../types/finance';
 import { buildForecast } from '../../backend/shared/forecast/index.js';
 import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../backend/shared/vat/periods.js';
+import { computeVat } from '../../backend/shared/vat/index.js';
 import { normalizeEuerVatFields } from '../../backend/utils/euerVatValidation.js';
 import { resolveTaxParams } from '../../backend/shared/taxParams/index.js';
 
@@ -2342,7 +2343,6 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       sourceType: typeof entry.sourceType === 'string' ? entry.sourceType : undefined,
       sourceId: typeof entry.sourceId === 'string' ? entry.sourceId : null, status: entry.status === 'voided' ? 'voided' as const : 'active' as const,
       euerYear: entry.euerYear == null ? null : Number(entry.euerYear) }));
-    const { computeVat } = await import('../../backend/shared/vat/index.js');
     const vat = computeVat({ year, profile: profile as TaxProfile, entries: vatEntries,
       invoices: state.invoices.filter(invoice => ['invoice', 'credit_note'].includes(String(invoice.documentType || 'invoice')))
         .map(invoice => ({ ...invoice, items: (Array.isArray(invoice.items) ? invoice.items : []) as unknown as MoneyItem[] })) as never,
@@ -3011,7 +3011,6 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const invoices = state.invoices.filter(invoice => ['invoice', 'credit_note'].includes(String(invoice.documentType || 'invoice')))
         .map(invoice => ({ ...invoice, items: (Array.isArray(invoice.items) ? invoice.items : []) as unknown as MoneyItem[] })) as never;
       const yearPayments = (state.vatPayments || []).filter(payment => Number(payment.taxYear) >= year - 1 && Number(payment.taxYear) <= year + 1);
-      const { computeVat } = await import('../../backend/shared/vat/index.js');
       const result = computeVat({ year, profile: profile as TaxProfile, entries, invoices, payments: yearPayments as never, now: todayLocal() });
       return { ...result, payments: yearPayments } as unknown as T;
     }
