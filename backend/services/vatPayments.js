@@ -142,6 +142,16 @@ async function transact(operation) {
   finally { client.release(); }
 }
 
+// Zahlungsdatum und EÜR-Verknüpfung müssen gemeinsam zurückgesetzt werden:
+// 057 verbietet eine Buchungsverknüpfung ohne paid_on.
+export async function updateVatPaymentRow(client, id, value) {
+  return client.query(`UPDATE vat_payments SET kind=$1,tax_year=$2,period_key=$3,due_date=$4,paid_on=$5,
+      euer_entry_id=CASE WHEN $5 IS NULL THEN NULL ELSE euer_entry_id END,
+      amount=$6,notes=$7,updated_at=NOW()
+    WHERE id=$8 RETURNING *`,
+  [value.kind,value.taxYear,value.periodKey,value.dueDate,value.paidOn,value.amount,value.notes,id]);
+}
+
 export async function createVatPayment(body) {
   return transact(async client => {
     const basicValidation = validateVatPayment(body);
@@ -179,8 +189,7 @@ export async function updateVatPayment(id, body) {
     const validation = validateVatPayment(merged, { profile });
     if (validation.error) return { error: validation.error };
     const value = validation.value;
-    const result = await client.query(`UPDATE vat_payments SET kind=$1,tax_year=$2,period_key=$3,due_date=$4,paid_on=$5,amount=$6,notes=$7,updated_at=NOW()
-      WHERE id=$8 RETURNING *`, [value.kind,value.taxYear,value.periodKey,value.dueDate,value.paidOn,value.amount,value.notes,id]);
+    const result = await updateVatPaymentRow(client, id, value);
     await syncEuerEntry(client, result.rows[0], profile);
     const fresh = await client.query(`${VAT_PAYMENT_SELECT} WHERE vp.id=$1`, [id]);
     return { payment: mapVatPayment(fresh.rows[0]), warnings: validation.warnings };

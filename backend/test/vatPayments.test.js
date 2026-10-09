@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapVatPayment, validateVatPayment } from '../services/vatPayments.js';
+import { mapVatPayment, updateVatPaymentRow, validateVatPayment } from '../services/vatPayments.js';
 
 test('USt-Zahlungen prüfen Art, Jahr, Betrag, Zeitraum und Notiz', () => {
   const profile = { vatPeriod: 'quarterly', vatPermanentExtension: true };
@@ -37,4 +37,27 @@ test('Zahlungs-Mapping liefert camelCase und ISO-DATUM', () => {
   assert.equal(mapped.dueDate, '2026-02-10');
   assert.equal(mapped.paidOn, '2026-02-12');
   assert.equal(mapped.euerEntryId, null);
+});
+
+test('Reset leert Zahlungsdatum und EÜR-Verknüpfung atomar im selben UPDATE', async () => {
+  let statement;
+  let values;
+  const fakeClient = {
+    async query(sql, params) {
+      statement = sql;
+      values = params;
+      return { rows: [{ id: 'payment-id', paid_on: null, euer_entry_id: null }] };
+    },
+  };
+
+  const result = await updateVatPaymentRow(fakeClient, 'payment-id', {
+    kind: 'advance', taxYear: 2026, periodKey: '2026-Q1', dueDate: null,
+    paidOn: null, amount: 420, notes: null,
+  });
+
+  assert.match(statement, /paid_on=\$5[\s\S]*euer_entry_id=CASE WHEN \$5 IS NULL THEN NULL ELSE euer_entry_id END/);
+  assert.match(statement, /WHERE id=\$8 RETURNING \*/);
+  assert.equal(values[4], null);
+  assert.equal(values[7], 'payment-id');
+  assert.equal(result.rows[0].euer_entry_id, null);
 });
