@@ -12,6 +12,7 @@ import { ReceiptsManagement, type ReceiptsManagementHandle } from './ReceiptsMan
 import { ThemeTabBar } from './ThemeTabBar';
 import { usePageSearch } from '../context/PageSearchContext';
 import { TableSkeleton } from './TableSkeleton';
+import { EmptyState } from './EmptyState';
 
 // Auf den Belegseiten werden ausschließlich Ausgaben importiert.
 const EXPENSE_IMPORT_CONSTANTS = { entryType: 'expense' };
@@ -296,15 +297,9 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
           </div>
 
           {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : documents.length === 0 ? (
-            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center">
-              <FileScan className="mx-auto h-8 w-8 text-gray-400" />
-              <p className="mt-3 font-medium text-gray-800">Noch keine {receiptLabel}</p>
-              <p className="mt-1 text-sm text-gray-500">Nutze oben die Upload-Aktionen oder wähle eine Belegart, um einen normalen Beleg oder eine E-Rechnung zu übernehmen.</p>
-            </div>
+            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState variant="receipts" title={`Noch keine ${receiptLabel}`} description="Nutze die Upload-Aktionen oben oder wähle eine Belegart aus." /></div>
           ) : filteredDocuments.length === 0 ? (
-            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
-              Keine passenden {receiptLabel} gefunden.
-            </div>
+            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState compact variant="metric" title={`Keine passenden ${receiptLabel} gefunden.`} description="Passen Sie den Suchbegriff oder Filter an." /></div>
           ) : (
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {filteredDocuments.map(document => {

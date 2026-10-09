@@ -20,9 +20,11 @@ import {
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
+import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { CalendarEvent, JobEntry } from '../types';
 import { JobEntryForm } from './JobEntryForm';
+import { EmptyState } from './EmptyState';
 import { ConfirmationModal } from './ConfirmationModal';
 import { useFeedback } from '../context/FeedbackContext';
 import { PageHeader } from './PageHeader';
@@ -33,10 +35,19 @@ import { apiService } from '../services/api';
 import { downloadCalendarIcs } from '../utils/icsExport';
 import { usePageSearch } from '../context/PageSearchContext';
 import { trackTelemetry } from '../services/telemetry';
+import { getCalendarJobTitle, hasCalendarJobTitle } from '../utils/calendarJobTitle';
 
 interface CalendarProps {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
 }
+
+const isPastCalendarJob = (job: JobEntry, today = new Date()) => {
+  const jobDate = new Date(job.date);
+  jobDate.setHours(0, 0, 0, 0);
+  const todayStart = new Date(today);
+  todayStart.setHours(0, 0, 0, 0);
+  return jobDate < todayStart;
+};
 
 const toDateInputValue = (date: Date) => {
   const year = date.getFullYear();
@@ -196,6 +207,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { confirm, notify } = useFeedback();
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { jobEntries, addJobEntry, updateJobEntry, refreshJobEntries } = useJobs();
+  const { invoices } = useInvoices();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -801,6 +813,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   };
 
   const handleDragStart = (e: React.DragEvent, job: JobEntry) => {
+    if (job.status === 'invoiced' || isPastCalendarJob(job)) {
+      e.preventDefault();
+      return;
+    }
     setDraggedJob(job);
     setTimeGridDragPreview(null);
     if (e.clientY > 0) {
@@ -1215,6 +1231,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const previewCustomerName = previewingJob
     ? customers.find((customer) => customer.id === previewingJob.customerId)?.name || previewingJob.customerName || 'Nicht hinterlegt'
     : '';
+  const previewInvoice = previewingJob
+    ? invoices.find((invoice) => invoice.sourceJobs?.some((sourceJob) => sourceJob.jobId === previewingJob.id))
+    : undefined;
+  const previewHasJobTitle = previewingJob ? hasCalendarJobTitle(previewingJob) : false;
   const previewLocation = previewingJob?.location?.trim() || 'Nicht hinterlegt';
   const previewIsOnline = /online|teams|zoom|meet/i.test(previewLocation);
   const previewType = previewIsOnline ? 'Online-Termin' : previewingJob?.location ? 'Vor-Ort-Termin' : 'Arbeitstermin';
@@ -1496,7 +1516,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 )}
                                 
                                 <div
-                                  draggable={job.status !== 'invoiced'}
+                                  draggable={job.status !== 'invoiced' && !isPastCalendarJob(job)}
                                   onDragStart={(e) => handleDragStart(e, job)}
                                   onDragEnd={handleDragEnd}
                                   onDoubleClick={(event) => {
@@ -1509,29 +1529,34 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                   }}
                                   onDrop={(e) => handleJobDrop(e, date, job.id)}
                                   onClick={(clickEvent) => {
+                                    if (isPastCalendarJob(job)) {
+                                      clickEvent.stopPropagation();
+                                      handleJobDoubleClick(job);
+                                      return;
+                                    }
                                     // Als Punkt ist der Eintrag nicht lesbar; der Klick
                                     // öffnet deshalb die Tagesvorschau statt nur den Tag
                                     // auszuwählen.
                                     if (!compactEntries && density === 'indicator') openDayPreview(date, clickEvent);
                                   }}
                                   className={`
-                                    calendar-event-enter cursor-move transition-all duration-150
+                                    calendar-event-enter transition-all duration-150 ${job.status === 'invoiced' || isPastCalendarJob(job) ? 'cursor-pointer' : 'cursor-move'}
                                     ${!compactEntries && density === 'indicator'
                                       ? `h-2 w-2 rounded-full ${getStatusIndicatorColor(job.status)}`
                                       : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
-                                    ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : (!compactEntries && density !== 'indicator') ? 'hover:shadow-sm' : ''}
+                                    ${job.status === 'invoiced' ? 'opacity-75' : (!compactEntries && density !== 'indicator') ? 'hover:shadow-sm' : ''}
                                     ${draggedJob && draggedJob.id !== job.id && 
                                       new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                       'border-blue-300 border-dashed' : ''}
                                   `}
-                                  title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
+                                  title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                                 >
                                 {(compactEntries || density !== 'indicator') && (
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center">
                                   <span className="truncate font-medium">
-                                    {job.title}
+                                    {getCalendarJobTitle(job, customer?.name || job.customerName)}
                                   </span>
                                 </div>
                                 {!compactEntries && density !== 'minimal' && <div className="flex items-center mt-1 text-xs opacity-75">
@@ -1711,11 +1736,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           return (
                             <div
                               key={job.id}
-                              draggable={job.status !== 'invoiced'}
+                              draggable={job.status !== 'invoiced' && !isPastCalendarJob(job)}
                               onMouseDown={handleDragPointerDown}
                               onDragStart={(event) => handleDragStart(event, job)}
                               onDragEnd={handleDragEnd}
                               onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                handleJobDoubleClick(job);
+                              }}
+                              onClick={(event) => {
+                                if (!isPastCalendarJob(job)) return;
                                 event.stopPropagation();
                                 handleJobDoubleClick(job);
                               }}
@@ -1724,9 +1754,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 top: `${((visibleStart - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
                                 height: `${Math.max(32, ((visibleEnd - visibleStart) / 60) * CALENDAR_HOUR_HEIGHT)}px`,
                               }}
-                              title={`${job.title} · ${customer?.name || job.customerName} · ${jobTimeLabel}`}
+                              title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} · ${customer?.name || job.customerName} · ${jobTimeLabel}`}
                             >
-                              <div className="truncate font-semibold">{job.title}</div>
+                              <div className="truncate font-semibold">{getCalendarJobTitle(job, customer?.name || job.customerName)}</div>
                               <div className="truncate opacity-80">{customer?.name || job.customerName}</div>
                               <div className="mt-0.5 truncate opacity-80">{jobTimeLabel}</div>
                             </div>
@@ -1845,31 +1875,34 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           )}
                           
                           <div
-                            draggable={job.status !== 'invoiced'}
+                            draggable={job.status !== 'invoiced' && !isPastCalendarJob(job)}
                             onDragStart={(e) => handleDragStart(e, job)}
                             onDragEnd={handleDragEnd}
                             onDoubleClick={() => handleJobDoubleClick(job)}
+                            onClick={() => {
+                              if (isPastCalendarJob(job)) handleJobDoubleClick(job);
+                            }}
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                             }}
                             onDrop={(e) => handleJobDrop(e, date, job.id)}
                             className={`
-                              calendar-event-enter p-3 rounded border cursor-move
+                              calendar-event-enter p-3 rounded border ${job.status === 'invoiced' || isPastCalendarJob(job) ? 'cursor-pointer' : 'cursor-move'}
                               ${getStatusColor(job.status)}
-                              ${job.status === 'invoiced' ? 'cursor-not-allowed opacity-75' : 'hover:shadow-sm'}
+                              ${job.status === 'invoiced' ? 'opacity-75' : 'hover:shadow-sm'}
                               ${draggedJob && draggedJob.id !== job.id && 
                                 new Date(draggedJob.date).toDateString() === date.toDateString() ? 
                                 'border-blue-300 border-dashed' : ''}
                               transition-all duration-150
                             `}
-                            title={`${job.title} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
+                            title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                           >
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center mb-1">
                                 <span className="font-medium truncate">
-                                  {job.title}
+                                  {getCalendarJobTitle(job, customer?.name || job.customerName)}
                                 </span>
                               </div>
                               <div className="flex items-center text-sm text-gray-600 mb-1">
@@ -2010,7 +2043,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         aria-hidden="true"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-gray-900">{job.title}</p>
+                        <p className="truncate text-sm font-medium text-gray-900">{getCalendarJobTitle(job, customer?.name || job.customerName)}</p>
                         <p className="truncate text-xs text-gray-500">{customer?.name || job.customerName}</p>
                         <p className="mt-0.5 text-xs text-gray-500">
                           {timeLabel ? `${timeLabel} · ` : ''}
@@ -2022,7 +2055,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 })}
 
                 {previewEvents.length === 0 && previewJobs.length === 0 && (
-                  <p className="py-2 text-sm text-gray-500">Keine Einträge an diesem Tag.</p>
+                  <EmptyState variant="calendar" title="Keine Einträge an diesem Tag." compact />
                 )}
               </div>
 
@@ -2060,11 +2093,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 <div className="min-w-0">
                   <p className="calendar-job-preview-eyebrow">Termin</p>
                   <h2 id="calendar-job-preview-title" className="calendar-job-preview-title">
-                    {previewingJob.title}
+                    {getCalendarJobTitle(previewingJob, previewCustomerName)}
                   </h2>
-                  <p className="calendar-job-preview-subtitle">
-                    Termin mit {previewCustomerName}
-                  </p>
+                  {previewHasJobTitle && <p className="calendar-job-preview-subtitle">Termin mit {previewCustomerName}</p>}
                 </div>
               </div>
               <button
@@ -2076,10 +2107,10 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 <X className="h-6 w-6" />
               </button>
               <div className="calendar-job-preview-header-meta">
-                <span className="calendar-job-preview-status">
+                {previewingJob.status !== 'invoiced' && <span className="calendar-job-preview-status">
                   <CalendarDays className="h-6 w-6" />
                   {previewStatus}
-                </span>
+                </span>}
                 <span className="calendar-job-preview-date">
                   <CalendarDays className="h-6 w-6" />
                   {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
@@ -2097,6 +2128,23 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       <p className="calendar-job-preview-detail-value truncate">{previewCustomerName}</p>
                     </div>
                   </div>
+                  {(previewInvoice || previewingJob.status === 'invoiced') && <div className="calendar-job-preview-detail-row">
+                    <span className="calendar-job-preview-icon"><FileText /></span>
+                    <div className="min-w-0">
+                      <p className="calendar-job-preview-detail-label">Rechnung</p>
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {previewInvoice ? <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewingJob(null);
+                            onNavigate?.('invoices', undefined, undefined, previewInvoice.id);
+                          }}
+                          className="truncate text-left text-sm font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                        >{previewInvoice.invoiceNumber}</button> : <span className="text-sm text-gray-500">Noch keine Rechnung</span>}
+                        {previewingJob.status === 'invoiced' && <span className="text-xs font-medium text-emerald-700">Abgerechnet</span>}
+                      </div>
+                    </div>
+                  </div>}
                   <div className="calendar-job-preview-detail-row">
                     <span className="calendar-job-preview-icon"><CalendarDays /></span>
                     <div className="min-w-0">

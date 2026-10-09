@@ -615,9 +615,9 @@ async function applyInvoices(client, entries, customerIdFor, tracker, source) {
     tracker.track('invoices', invoiceId, 'created');
     for (const item of data.items) {
       await client.query(`
-        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount, unit)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? 0, item.unit || null]);
+        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, tax_rate, total, item_order, discount_type, discount_value, discount_amount, unit, course_name)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [invoiceId, item.description, item.quantity, item.unitPrice, item.taxRate, item.total, item.order, item.discountType || null, item.discountValue ?? null, item.discountAmount ?? 0, item.unit || null, item.courseName || null]);
     }
     for (const action of data.courseActions || []) {
       let jobId = action.jobId;
@@ -772,7 +772,7 @@ router.post('/invoice-courses', async (req, res) => {
       await workspaceLock(client, 'imported-invoice-courses');
     }
     const invoiceResult = await client.query(`
-      SELECT i.id, i.invoice_number, i.customer_id, i.issue_date, i.service_date
+      SELECT i.id, i.invoice_number, i.customer_id, i.customer_name, i.issue_date, i.service_date
       FROM invoices i
       WHERE i.origin = 'imported' AND NOT EXISTS (SELECT 1 FROM invoice_job_sources ijs WHERE ijs.invoice_id = i.id)
       ORDER BY i.issue_date, i.invoice_number FOR UPDATE
@@ -785,11 +785,11 @@ router.post('/invoice-courses', async (req, res) => {
     const jobs = jobsResult.rows.map(row => ({ id: row.id, customerId: row.customer_id, title: row.title, date: isoDate(row.date), status: row.status, invoiceId: row.linked ? 'linked' : null }));
     const preview = [];
     for (const invoice of invoiceResult.rows) {
-      const itemResult = await client.query('SELECT description, quantity, unit_price, item_order, unit FROM invoice_items WHERE invoice_id = $1 ORDER BY item_order, id', [invoice.id]);
+      const itemResult = await client.query('SELECT description, course_name, quantity, unit_price, item_order, unit FROM invoice_items WHERE invoice_id = $1 ORDER BY item_order, id', [invoice.id]);
       const actions = planInvoiceCourses({
         customerId: invoice.customer_id,
         date: isoDate(invoice.service_date) || isoDate(invoice.issue_date),
-        items: itemResult.rows.map(item => ({ description: item.description, quantity: Number(item.quantity), unitPrice: Number(item.unit_price), order: item.item_order, unit: item.unit })),
+        items: itemResult.rows.map(item => ({ description: item.description, courseName: item.course_name, quantity: Number(item.quantity), unitPrice: Number(item.unit_price), order: item.item_order, unit: item.unit })),
       }, jobs);
       for (const action of actions) {
         if (action.action === 'assign') {
@@ -797,7 +797,7 @@ router.post('/invoice-courses', async (req, res) => {
           if (job) job.invoiceId = `planned:${invoice.id}`;
         }
       }
-      preview.push({ invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, actions });
+      preview.push({ invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, customerName: invoice.customer_name, actions });
     }
     const created = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'create').length, 0);
     const assigned = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'assign').length, 0);

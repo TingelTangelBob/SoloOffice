@@ -35,9 +35,11 @@ export type ActionMenuTone = 'blue' | 'green' | 'indigo' | 'orange' | 'red' | 'g
 
 interface ActionMenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   accessory?: ReactNode;
+  before?: ReactNode;
   children: ReactNode;
-  icon: ReactNode;
+  icon?: ReactNode;
   multiline?: boolean;
+  trailing?: ReactNode;
   tone?: ActionMenuTone;
 }
 
@@ -57,10 +59,12 @@ const actionMenuToneClasses: Record<ActionMenuTone, { icon: string; item: string
 
 export function ActionMenuItem({
   accessory,
+  before,
   children,
   className = '',
   icon,
   multiline = false,
+  trailing,
   tone = 'gray',
   type = 'button',
   ...buttonProps
@@ -71,17 +75,19 @@ export function ActionMenuItem({
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex min-h-0 ${accessory ? 'min-w-0 flex-1' : 'w-full'} ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
+      className={`action-menu-item flex min-h-0 ${(accessory || before) ? 'min-w-0 flex-1' : 'w-full'} ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
     >
-      <span className={`shrink-0 ${colors.icon}`}>{icon}</span>
+      {icon != null && <span className={`shrink-0 ${colors.icon}`}>{icon}</span>}
       <span className={`min-w-0 flex-1 ${multiline ? '' : 'truncate'}`}>{children}</span>
+      {trailing != null && <span className="shrink-0">{trailing}</span>}
     </button>
   );
-  if (!accessory) return item;
+  if (!accessory && !before) return item;
   return (
-    <div className="flex items-center gap-1" role="none">
+    <div className="flex w-full items-center gap-2" role="none">
+      {before != null && <span className="shrink-0" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{before}</span>}
       {item}
-      <span className="shrink-0" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{accessory}</span>
+      {accessory != null && <span className="shrink-0" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{accessory}</span>}
     </div>
   );
 }

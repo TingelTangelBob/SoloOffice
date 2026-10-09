@@ -919,10 +919,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCard>
             <MetricCardHeader>
               <div className="flex min-w-0 flex-col">
-                <MetricValue>{money(revenueWindowTotal)}</MetricValue>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <MetricValue className="max-w-full">{money(revenueWindowTotal)}</MetricValue>
+                  {!preferences.monthView && !allYears && preferences.comparePrevious && <MetricCardDescription className="mt-0 whitespace-nowrap">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
+                </div>
                 <MetricCardDescription>Gesamtumsatz {periodLabel} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
                 {preferences.monthView && <MetricCardDescription className="mt-1">Vergleichsmonat {comparisonMonthLabel}{comparisonMonthOngoing ? ' · bisher' : ''}: {money(previousWindowTotal)}</MetricCardDescription>}
-                {!preferences.monthView && !allYears && preferences.comparePrevious && <MetricCardDescription className="mt-1">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
               </div>
               {revenueDelta !== null && !selectedMonthOngoing && !comparisonMonthOngoing && (
                 <DeltaBadge
@@ -1635,13 +1637,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </button>
           <FloatingTooltipBubble id={customizeTooltip.id} anchorRef={customizeTooltip.anchorRef} open={customizeTooltip.open}>Dashboard anpassen</FloatingTooltipBubble>
           <ActionMenu fitViewport ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
-            menuClassName="w-[min(22rem,calc(100vw-1rem))] min-w-[18rem]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
+            menuClassName="w-max min-w-0 max-w-[calc(100vw-1rem)]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
             <div className="flex items-center justify-between gap-2 pl-3 pr-1.5 pt-1">
               <p className="text-xs font-medium text-gray-500">Auswertung</p>
               <FloatingInfoTooltip label="So wird gerechnet"
                 text="Bezahlte Rechnungen zählen nach Zahlungsdatum, offene nach Rechnungsdatum. Entwürfe und nicht bestätigte Aufträge fließen nicht ein." />
             </div>
-            <ActionMenuItem icon={<SwitchTrack checked={!includeUnpaidInvoices} />} role="menuitemcheckbox" aria-checked={!includeUnpaidInvoices}
+            <ActionMenuItem trailing={<SwitchTrack checked={!includeUnpaidInvoices} />} role="menuitemcheckbox" aria-checked={!includeUnpaidInvoices}
               onClick={event => { event.preventDefault(); savePreferences({ ...preferences, includeUnpaidInvoices: !includeUnpaidInvoices }); }}>
               Nur bezahlte Rechnungen
             </ActionMenuItem>
@@ -1649,7 +1651,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               const reason = series.unavailableReason(seriesContext);
               const active = !reason && series.isActive(preferences);
               return (
-                <ActionMenuItem key={series.id} icon={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
+                <ActionMenuItem key={series.id} trailing={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
                   disabled={Boolean(reason)} title={reason ?? undefined}
                   onClick={event => { event.preventDefault(); if (!reason) savePreferences(series.toggle(preferences)); }}>
                   {series.menuLabel}
@@ -1658,14 +1660,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             })}
             {taxesEnabled && <>
               <div className="mt-1 border-t border-gray-100 px-3 pt-2"><p className="text-xs font-medium text-gray-500">Kosten &amp; Abgaben einblenden</p></div>
-              <ActionMenuItem icon={<SwitchTrack checked={preferences.showPrivateLevies} />} role="menuitemcheckbox" aria-checked={preferences.showPrivateLevies}
+              <ActionMenuItem trailing={<SwitchTrack checked={preferences.showPrivateLevies} />} role="menuitemcheckbox" aria-checked={preferences.showPrivateLevies}
                 onClick={event => { event.preventDefault(); savePreferences({ ...preferences, showPrivateLevies: !preferences.showPrivateLevies }); }}>
                 Private Abgaben einblenden
               </ActionMenuItem>
               {REVENUE_CHART_SERIES.filter(series => series.group === 'levies' && (!series.private || preferences.showPrivateLevies)).map(series => {
                 const reason = unavailableSeries.get(series.id) ?? null;
                 const active = !reason && series.isActive(preferences);
-                return <ActionMenuItem key={series.id} accessory={<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} />} icon={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
+                return <ActionMenuItem key={series.id} before={<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} />} trailing={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
                   disabled={Boolean(reason)} title={reason ?? undefined} multiline
                   onClick={event => { event.preventDefault(); if (!reason) savePreferences(series.toggle(preferences)); }}>
                   <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[10px] text-gray-600">privat</span>}</span>
@@ -1673,11 +1675,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               })}
             </>}
             <div className="mt-1 border-t border-gray-100 px-3 pt-2"><p className="text-xs font-medium text-gray-500">Ansicht</p></div>
-            <ActionMenuItem icon={<SwitchTrack checked={preferences.monthView} />} role="menuitemcheckbox" aria-checked={preferences.monthView}
+            <ActionMenuItem trailing={<SwitchTrack checked={preferences.monthView} />} role="menuitemcheckbox" aria-checked={preferences.monthView}
               onClick={event => { event.preventDefault(); savePreferences({ ...preferences, monthView: !preferences.monthView, month: selectedMonth, compareMonth: comparisonMonth, year: Number(selectedMonth.slice(0, 4)) }); }}>
               Monatsansicht mit Vergleich
             </ActionMenuItem>
-            <ActionMenuItem icon={<SwitchTrack checked={allYears} />} role="menuitemcheckbox" aria-checked={allYears}
+            <ActionMenuItem trailing={<SwitchTrack checked={allYears} />} role="menuitemcheckbox" aria-checked={allYears}
               disabled={preferences.monthView}
               onClick={event => { event.preventDefault(); savePreferences({ ...preferences, year: allYears ? null : 'all', comparePrevious: allYears ? preferences.comparePrevious : false }); }}>
               Gesamter Zeitraum

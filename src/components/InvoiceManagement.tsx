@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Download, FileText, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight, FileUp, Printer } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, Send, Banknote, Eye, Receipt, History, Table2, ChevronLeft, ChevronRight, FileUp, Printer } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -33,6 +33,7 @@ import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout'
 import { useFeedback } from '../context/FeedbackContext';
 import { csvFileName, downloadCsv } from '../utils/csvExport';
 import type { CsvColumn } from '../utils/csvExport';
+import { EmptyState } from './EmptyState';
 import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '../utils/invoicePeriod';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
@@ -1720,16 +1721,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         )}
 
         {filteredInvoices.length === 0 && (
-          <div className="p-8 text-center">
-            <FileText className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-            <p className="text-gray-500">{invoiceRecords.length === 0 ? 'Noch keine Rechnungen vorhanden.' : 'Keine Rechnungen gefunden'}</p>
-            {invoiceRecords.length === 0 && canWrite && (
-              <button type="button" onClick={() => handleOpenEditor()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-                <Plus className="h-4 w-4" />
-                Neue Rechnung
-              </button>
-            )}
-          </div>
+          <EmptyState variant={invoiceRecords.length === 0 ? 'invoices' : 'metric'} title={invoiceRecords.length === 0 ? 'Noch keine Rechnungen vorhanden.' : 'Keine Rechnungen gefunden'} description={invoiceRecords.length > 0 ? 'Passen Sie Suche oder Filter an.' : undefined} action={invoiceRecords.length === 0 && canWrite ? { label: 'Neue Rechnung', onClick: () => handleOpenEditor() } : undefined} />
         )}
       </div>
       

@@ -73,6 +73,20 @@ test('Importoption erstellt Kurse und Rückgängigmachen löscht Verknüpfungen 
   assert.equal((await own(() => query('SELECT COUNT(*)::int AS count FROM job_entries'))).rows[0].count, 0);
 });
 
+test('Gemappter Kursname bleibt im bestätigten Nachschritt nach Rechnungsimport erhalten', async () => {
+  const customerId = (await own(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Mappingkunde', $1, 'person', 'Weg 1', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`M-${suffix}`]))).rows[0].id;
+  const imported = await own(() => invoke('/:resource', 'post', {
+    params: { resource: 'invoices' },
+    body: { dryRun: false, createInvoiceCourses: false, rows: [{ invoiceNumber: `ALT-M-${suffix}`, issueDate: '2025-02-03', customerId, customerName: 'Mappingkunde', taxRate: 0, itemDescription: 'Positionsbeschreibung', courseName: 'Ausgewählter Kursname', itemQuantity: 2, itemUnitPrice: 40, itemUnit: 'Stunde' }] },
+  }));
+  assert.equal(imported.statusCode, 200, JSON.stringify(imported.payload));
+  const preview = await own(() => invoke('/invoice-courses', 'post', { body: { dryRun: true } }));
+  assert.equal(preview.statusCode, 200, JSON.stringify(preview.payload));
+  const invoice = preview.payload.preview.find(item => item.invoiceNumber === `ALT-M-${suffix}`);
+  assert.equal(invoice?.actions[0]?.title, 'Ausgewählter Kursname');
+  assert.equal(invoice?.actions[0]?.description, 'Positionsbeschreibung');
+});
+
 test('Nachschritt zeigt Vorschau, führt idempotent aus und bleibt workspaceisoliert', async () => {
   const customerId = (await own(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Nachkunde', $1, 'person', 'Weg 1', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`N-${suffix}`]))).rows[0].id;
   const foreignCustomerId = (await foreign(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Fremdkunde', $1, 'person', 'Weg 2', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`F-${suffix}`]))).rows[0].id;

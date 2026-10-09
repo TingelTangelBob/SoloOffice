@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
 import { useCompany } from '../context/CompanyContext';
 import { useFeedback } from '../context/FeedbackContext';
+import { EmptyState } from './EmptyState';
 import { getTerminology } from '../utils/terminology';
 import { formatDate } from '../utils/formatters';
 import type { NotificationPreview, NotificationSettings, NotificationSettingsPayload } from '../types';
@@ -168,7 +169,7 @@ export function NotificationSettingsPanel() {
             <button type="button" onClick={() => setPreview(null)} className="text-xs text-gray-500 hover:underline">Schließen</button>
           </div>
           {preview.sections.length === 0 ? (
-            <p className="text-sm text-gray-600">Für die aktivierten Hinweise gibt es derzeit nichts zu melden – es würde keine E-Mail gesendet.</p>
+            <EmptyState compact variant="metric" title="Für die aktivierten Hinweise gibt es derzeit nichts zu melden." description="Es würde keine E-Mail gesendet." />
           ) : (
             <div className="space-y-3">
               {preview.sections.map(section => (

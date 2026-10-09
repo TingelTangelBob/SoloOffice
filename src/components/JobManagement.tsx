@@ -36,6 +36,7 @@ import { JobInvoiceGenerationType, JobInvoiceGenerator } from './JobInvoiceGener
 import { PageHeader } from './PageHeader';
 import { FilterSelect, ResponsiveFilterBar } from './ResponsiveFilterBar';
 import { usePageSearch } from '../context/PageSearchContext';
+import { EmptyState } from './EmptyState';
 import { ConfirmationModal } from './ConfirmationModal';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments, createJobAttachmentPreviewDocuments } from '../utils/previewDocuments';
@@ -1092,13 +1093,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {filteredJobs.length === 0 ? (
           <div className="p-8 lg:p-12 text-center">
-            <Briefcase className="h-12 w-12 lg:h-16 lg:w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg lg:text-xl font-medium text-gray-900 mb-2">{terminology.work.noResults}</h3>
-            <p className="text-gray-500 mb-6">
-              {searchTerm || statusFilter !== 'all' || customerFilter !== 'all' || dateFilter !== 'all'
-                ? `Versuchen Sie andere Filter oder erstellen Sie einen neuen ${terminology.work.singular}.`
-                : `Erstellen Sie Ihren ersten ${terminology.work.singular}, um loszulegen.`}
-            </p>
+            <EmptyState variant={jobEntries.length === 0 ? 'jobs' : 'metric'} title={jobEntries.length === 0 ? `Noch keine ${terminology.work.plural} erfasst.` : terminology.work.noResults} description={jobEntries.length === 0 ? `Erstellen Sie Ihren ersten ${terminology.work.singular}, um loszulegen.` : 'Passen Sie Suche oder Filter an.'} action={{ label: `${jobEntries.length === 0 ? 'Ersten' : 'Neuen'} ${terminology.work.singular} erstellen`, onClick: () => setShowForm(true) }} />
             
             {/* Info box für neue Benutzer */}
             {jobEntries.length === 0 && (
@@ -1114,12 +1109,6 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
               </div>
             )}
             
-            <button
-              onClick={() => setShowForm(true)}
-              className="bg-primary-custom text-white px-4 lg:px-6 py-2 lg:py-3 rounded-xl hover:bg-primary-custom/90 transition-all duration-300 hover:scale-105"
-            >
-              Ersten {terminology.work.singular} erstellen
-            </button>
           </div>
         ) : (
           <>

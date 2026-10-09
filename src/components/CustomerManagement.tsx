@@ -21,6 +21,7 @@ import { usePageSearch } from '../context/PageSearchContext';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
+import { EmptyState } from './EmptyState';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -1033,15 +1034,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
         </div>
 
         {filteredCustomers.length === 0 && (
-          <div className="p-8 text-center">
-            <p className="text-gray-500">{searchTerm ? terminology.entity.noResults : showArchived ? `Keine ${terminology.entity.plural} gefunden.` : `Noch keine ${terminology.entity.plural} vorhanden.`}</p>
-            {!searchTerm && canWrite && (
-              <button type="button" onClick={() => handleOpenModal()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-                <Plus className="h-4 w-4" />
-                {terminology.entity.newLabel}
-              </button>
-            )}
-          </div>
+          <EmptyState variant={searchTerm || showArchived ? 'metric' : 'customers'} title={searchTerm ? terminology.entity.noResults : showArchived ? `Keine ${terminology.entity.plural} gefunden.` : `Noch keine ${terminology.entity.plural} vorhanden.`} description={searchTerm ? 'Passen Sie den Suchbegriff an.' : undefined} action={!searchTerm && !showArchived && canWrite ? { label: terminology.entity.newLabel, onClick: () => handleOpenModal() } : undefined} />
         )}
       </div>
 

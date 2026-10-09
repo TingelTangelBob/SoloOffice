@@ -16,6 +16,7 @@
     "src/utils/pdf/taxCalculations.ts",
     "src/utils/pdf/xmlUtils.ts",
     "src/utils/customerUtils.ts",
+    "src/utils/customerSearch.ts",
     "src/utils/formatters.ts",
     "src/utils/invoiceNumberPattern.ts",
     "src/utils/invoicePeriod.ts",
@@ -35,6 +36,7 @@
     "src/utils/dashboardChartSeries.ts",
     "src/utils/recurringExpenseDisplay.ts",
     "src/utils/dashboardPeriod.ts",
+    "src/utils/calendarJobTitle.ts",
     "src/utils/taxDashboardDisplay.ts"
   ]
 }

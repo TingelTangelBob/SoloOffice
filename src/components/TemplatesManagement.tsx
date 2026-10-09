@@ -28,6 +28,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { TemplatePdfPreview } from './templates/TemplatePdfPreview';
 import { restoreDefaultTemplates } from '../utils/templateDefaults';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { EmptyState } from './EmptyState';
 
 type TemplateTab = 'text' | DocumentTemplateType;
 
@@ -1282,9 +1283,7 @@ export function TemplatesManagement() {
               </div>
 
               {templates.length === 0 && (
-                <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-                  Noch keine Vorlagen vorhanden. Legen Sie über „Vorlage hinzufügen“ die erste Layoutvorlage an.
-                </div>
+                <EmptyState variant={activeTab === 'quote' ? 'quotes' : activeTab === 'orderConfirmation' ? 'jobs' : 'invoices'} title="Noch keine Layoutvorlagen vorhanden." description="Legen Sie für diese Dokumentart eine Vorlage an." action={{ label: 'Vorlage hinzufügen', onClick: () => openCreate(activeTab) }} />
               )}
 
             </>

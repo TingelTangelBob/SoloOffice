@@ -709,7 +709,7 @@ export interface ImportResponse {
 export interface ImportedInvoiceCoursesResponse {
   dryRun: boolean;
   summary: { invoices: number; created: number; assigned: number };
-  preview: Array<{ invoiceId: UUID; invoiceNumber: string; actions: Array<{ action: 'create' | 'assign'; title: string; date: string; hoursWorked: number; hourlyRate: number; jobId?: UUID | null }> }>;
+  preview: Array<{ invoiceId: UUID; invoiceNumber: string; customerName: string; actions: Array<{ action: 'create' | 'assign'; title: string; date: string; hoursWorked: number; hourlyRate: number; jobId?: UUID | null }> }>;
   demoMode?: true;
 }
 

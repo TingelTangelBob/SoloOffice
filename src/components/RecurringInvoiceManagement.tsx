@@ -30,6 +30,7 @@ import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
+import { EmptyState } from './EmptyState';
 
 type ItemDraft = {
   description: string;
@@ -383,15 +384,7 @@ export function RecurringInvoiceManagement() {
       {loading ? (
         <TableSkeleton rows={4} columns={4} withHeader={false} label="Wiederkehrende Rechnungen werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" />
       ) : ordered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-          <CalendarClock className="mx-auto mb-3 h-10 w-10 text-gray-400" />
-          <p className="font-medium text-gray-700">Noch keine Vorlagen</p>
-          <p className="mt-1 text-sm text-gray-500">Legen Sie Ihre erste wiederkehrende Rechnung an.</p>
-          <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-            <Plus className="h-4 w-4" />
-            Vorlage anlegen
-          </button>
-        </div>
+        <EmptyState variant="invoices" title="Noch keine wiederkehrenden Rechnungen" description="Legen Sie Ihre erste Vorlage an." action={{ label: 'Vorlage anlegen', onClick: openNew }} />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {ordered.map(entry => (

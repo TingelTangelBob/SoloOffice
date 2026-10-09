@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { DialogShell } from './DialogShell';
 import { PageHeader } from './PageHeader';
 import { TableSkeleton } from './TableSkeleton';
+import { EmptyState } from './EmptyState';
 
 const MAX_XML_SIZE = 10 * 1024 * 1024;
 
@@ -163,15 +164,9 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
         </div>
 
         {loading ? <TableSkeleton rows={5} columns={5} label="Eingänge werden geladen …" className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : invoices.length === 0 ? (
-          <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
-            <Inbox className="mx-auto h-8 w-8 text-gray-400" />
-            <span className="mt-3 block font-medium text-gray-800">Noch keine E-Rechnung eingegangen</span>
-            <span className="mt-1 block text-sm text-gray-500">XRechnung- oder CII-XML auswählen</span>
-          </button>
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState variant="receipts" title="Noch keine E-Rechnung eingegangen" description="Wählen Sie eine XRechnung- oder CII-XML-Datei aus." action={{ label: 'XML übernehmen', onClick: openUpload, disabled: uploading }} /></div>
         ) : filteredInvoices.length === 0 ? (
-          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
-            Keine passenden E-Rechnungen gefunden.
-          </div>
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState compact variant="metric" title="Keine passenden E-Rechnungen gefunden." description="Passen Sie den Suchbegriff oder Filter an." /></div>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredInvoices.map(invoice => (

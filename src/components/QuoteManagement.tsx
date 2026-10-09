@@ -26,6 +26,7 @@ import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout'
 import { useFeedback } from '../context/FeedbackContext';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
+import { EmptyState } from './EmptyState';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
@@ -1084,16 +1085,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         )}
 
         {filteredQuotes.length === 0 && (
-          <div className="p-8 text-center">
-            <FileText className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-            <p className="text-gray-500">{quotes.length === 0 ? 'Noch keine Angebote vorhanden.' : 'Keine Angebote gefunden'}</p>
-            {quotes.length === 0 && canWrite && (
-              <button type="button" onClick={() => handleOpenEditor()} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-                <Plus className="h-4 w-4" />
-                Neues Angebot
-              </button>
-            )}
-          </div>
+          <EmptyState variant={quotes.length === 0 ? 'quotes' : 'metric'} title={quotes.length === 0 ? 'Noch keine Angebote vorhanden.' : 'Keine Angebote gefunden'} description={quotes.length > 0 ? 'Passen Sie Suche oder Filter an.' : undefined} action={quotes.length === 0 && canWrite ? { label: 'Neues Angebot', onClick: () => handleOpenEditor() } : undefined} />
         )}
         </>
         )}

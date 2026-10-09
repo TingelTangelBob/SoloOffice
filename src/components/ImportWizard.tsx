@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Download, FileUp, History, Link2, Loader2, PenLine, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import type { DateFormat, ImportDuplicateMode, ImportResource, ImportResponse, ImportRowResult, ImportRun, ImportTotals, NumberFormat } from '../types';
+import type { DateFormat, ImportDuplicateMode, ImportResource, ImportResponse, ImportRowResult, ImportRun, ImportTotals, ImportedInvoiceCoursesResponse, NumberFormat } from '../types';
 import {
   analyseColumnFormat,
   analyseHeaderMapping,
@@ -42,7 +42,7 @@ interface ImportWizardProps {
   nextCategory?: { label: string; onClick: () => void };
 }
 
-type ImportStep = 'file' | 'mapping' | 'preview' | 'result';
+type ImportStep = 'file' | 'mapping' | 'preview' | 'courses' | 'result';
 type RowFilter = 'problems' | 'all' | 'error' | 'warning' | 'duplicate' | 'ready';
 
 const CONSTANT_OPTION = '__constant__';
@@ -155,6 +155,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const [preview, setPreview] = useState<ImportResponse | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [result, setResult] = useState<ImportResponse | null>(null);
+  const [importedCourses, setImportedCourses] = useState<ImportedInvoiceCoursesResponse | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notices, setNotices] = useState<string[]>([]);
@@ -245,8 +246,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     setDuplicateMode('skip');
     setCreateMissingCustomers(false);
     setMatchOpenInvoices(true);
+    setCreateInvoiceCourses(false);
     setPreview(null);
     setResult(null);
+    setImportedCourses(null);
     setIsBusy(false);
     setError(null);
     setNotices([]);
@@ -373,7 +376,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     duplicateMode,
     createMissingCustomers,
     matchOpenInvoices,
-    createInvoiceCourses,
+    createInvoiceCourses: false,
     file: parsedFile ? { name: parsedFile.fileName, hash: parsedFile.hash ?? null, headers: parsedFile.headers } : undefined,
     settings: {
       mapping,
@@ -381,7 +384,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       valueMappings: Object.fromEntries(Object.entries(valueOverrides).filter(([key]) => mapping[key])),
       sheet: parsedFile?.sheet,
       selectedRows: mappedRows.map(row => Number(row._rowNumber)),
-      options: { duplicateMode, createMissingCustomers, matchOpenInvoices, createInvoiceCourses },
+      options: { duplicateMode, createMissingCustomers, matchOpenInvoices, createInvoiceCourses: false },
     },
     ...(takeoverSessionId ? {
       takeover: dryRun
@@ -423,10 +426,37 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     try {
       const response = await apiService.importData(resource, mappedRows, importOptions(false, 'execute'));
       setResult(response);
-      setStep('result');
       await onImported?.();
+      if (resource === 'invoices' && createInvoiceCourses && !response.demoMode) {
+        try {
+          setImportedCourses(await apiService.planImportedInvoiceCourses(true));
+          setStep('courses');
+        } catch (courseError) {
+          setError(courseError instanceof Error ? courseError.message : 'Die Kursvorschau konnte nicht erstellt werden.');
+          setStep('result');
+        }
+      } else {
+        setStep('result');
+      }
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : 'Der Import konnte nicht gespeichert werden.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const confirmImportedCourses = async () => {
+    if (!importedCourses || importedCourses.summary.created + importedCourses.summary.assigned === 0) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const response = await apiService.planImportedInvoiceCourses(false);
+      setImportedCourses(response);
+      setResult(current => current ? { ...current, courseSummary: { created: response.summary.created, assigned: response.summary.assigned } } : current);
+      await onImported?.();
+      setStep('result');
+    } catch (courseError) {
+      setError(courseError instanceof Error ? courseError.message : 'Die Kurse konnten nicht angelegt werden.');
     } finally {
       setIsBusy(false);
     }
@@ -438,7 +468,8 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     downloadText(`Hinweise-${fileSlug(parsedFile.fileName.replace(/\.[^.]+$/, ''))}.csv`, buildIssueList(parsedFile, rows));
   };
 
-  const stepIndex = { file: 1, mapping: 2, preview: 3, result: 4 }[step];
+  const stepIndex = { file: 1, mapping: 2, preview: 3, courses: 4, result: step === 'courses' ? 4 : createInvoiceCourses && result && !result.demoMode ? 5 : 4 }[step];
+  const stepCount = createInvoiceCourses && result && !result.demoMode ? 5 : 4;
   const usableRows = preview ? preview.summary.valid + preview.summary.updated : 0;
   const usableRecords = preview ? (preview.summary.records ?? usableRows) : 0;
   const mappedFieldCount = definition.fields.filter(field => isSatisfied(field.key)).length;
@@ -455,7 +486,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary-custom">
-              <Upload className="h-4 w-4" /> Importassistent · Schritt {stepIndex} von 4
+              <Upload className="h-4 w-4" /> Importassistent · Schritt {stepIndex} von {stepCount}
             </div>
             <h2 id="import-wizard-title" className="mt-1 truncate text-xl font-semibold text-gray-900">{definition.label} importieren</h2>
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">{definition.description}</p>
@@ -565,7 +596,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <div className="rounded-xl border border-gray-200 p-4 text-sm text-gray-700">
                   <label className="flex items-start gap-3">
                     <input type="checkbox" className="custom-checkbox mt-0.5 shrink-0" checked={createInvoiceCourses} onChange={event => { setCreateInvoiceCourses(event.target.checked); setPreview(null); }} />
-                    <span><span className="font-medium text-gray-900">Kurse zu den Rechnungspositionen anlegen</span><span className="block text-gray-500">Je geeignetem Kursnamen wird ein Kurs angelegt oder einem eindeutig passenden, noch nicht abgerechneten Kurs zugeordnet. Optional können Sie oben die Spalte „Kursname“ zuordnen; ohne Wert dient die Positionsbeschreibung als Kursname.</span></span>
+                    <span><span className="font-medium text-gray-900">Kurse nach dem Rechnungsimport prüfen und anlegen</span><span className="block text-gray-500">Nach dem Import erhalten Sie eine eigene Vorschau und bestätigen die Kursanlage separat. Optional können Sie oben die Spalte „Kursname“ zuordnen; ohne Wert dient die Positionsbeschreibung als Kursname.</span></span>
                   </label>
                 </div>
               )}
@@ -736,10 +767,40 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
               {result.courseSummary && <p className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">Kurse: {result.courseSummary.created} angelegt, {result.courseSummary.assigned} bestehenden Kursen zugeordnet.</p>}
             </div>
           )}
+
+          {step === 'courses' && importedCourses && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Kurse aus den importierten Rechnungen</h3>
+                <p className="mt-1 text-sm text-gray-600">Prüfen Sie die Zuordnung. Kurse werden erst angelegt oder zugeordnet, wenn Sie unten bestätigen.</p>
+              </div>
+              {importedCourses.demoMode && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Demo: Es werden keine Serverdaten geändert.</p>}
+              <div className="grid grid-cols-3 gap-3">
+                <SummaryCard label="Kurse neu" value={importedCourses.summary.created} tone="green" />
+                <SummaryCard label="Zuordnungen" value={importedCourses.summary.assigned} tone="gray" />
+                <SummaryCard label="Rechnungen" value={importedCourses.summary.invoices} />
+              </div>
+              {importedCourses.preview.length > 0 ? (
+                <ul className="max-h-[50vh] space-y-3 overflow-y-auto text-sm">
+                  {importedCourses.preview.flatMap(invoice => invoice.actions.map((action, index) => (
+                    <li key={`${invoice.invoiceId}-${index}`} className="rounded-xl border border-gray-200 p-4">
+                      <p className="font-semibold text-gray-900">{action.title}</p>
+                      <p className="mt-1 text-gray-600">{invoice.customerName} · {formatIsoDate(action.date)} · {action.hoursWorked} Std.</p>
+                      <p className="mt-1 text-xs font-medium text-primary-custom">{action.action === 'assign' ? 'Wird einem bestehenden Kurs zugeordnet' : 'Wird als neuer Kurs angelegt'}</p>
+                    </li>
+                  )))}</ul>
+              ) : <p className="rounded-xl border border-gray-200 p-4 text-sm text-gray-600">Keine importierten Rechnungen ohne Kursverknüpfung gefunden.</p>}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:px-6">
-          {step === 'result' ? (
+          {step === 'courses' ? (
+            <>
+              <button type="button" disabled={isBusy} onClick={() => setStep('result')} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Kurse überspringen</button>
+              <button type="button" onClick={() => void confirmImportedCourses()} disabled={!importedCourses || isBusy || importedCourses.summary.created + importedCourses.summary.assigned === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Kurse jetzt anlegen</button>
+            </>
+          ) : step === 'result' ? (
             <>
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 {result && result.summary.skipped > 0 && <button type="button" onClick={() => downloadIssues(result.rows)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 sm:w-auto"><Download className="h-4 w-4 shrink-0" /> Nicht übernommene Zeilen herunterladen</button>}

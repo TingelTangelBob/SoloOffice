@@ -50,6 +50,7 @@ import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
+import { EmptyState } from './EmptyState';
 import { ImportWizard } from './ImportWizard';
 import { getTerminology } from '../utils/terminology';
 import { DueRecurringExpensesNotice } from './DueRecurringExpensesNotice';
@@ -658,13 +659,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p></div><button type="button" onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
-      {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : rows.length === 0 ? <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
-        <p>Für {year} sind noch keine Buchungen vorhanden.</p>
-        <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-          <Plus className="h-4 w-4" />
-          Buchung erfassen
-        </button>
-      </div> : <>
+      {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : rows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>

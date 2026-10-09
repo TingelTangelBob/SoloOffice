@@ -8,12 +8,14 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useQuotes } from '../context/QuoteContext';
 import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
+import { contentWidthClassForPage } from '../utils/contentWidth';
 import { useAuth } from '../context/AuthContext';
 import { DemoNotice } from './DemoNotice';
 import { WorkspaceSuspendedNotice } from './WorkspaceSuspendedNotice';
 import { TopBar } from './TopBar';
 import type { TopBarNotice } from './TopBar';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { EmptyState } from './EmptyState';
 import { isDemoMode } from '../services/demoApi';
 import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
@@ -22,6 +24,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { apiService } from '../services/api';
 import type { TakeoverStatus } from '../types';
 import { useExtensions } from '../hooks/useExtensions';
+import { searchCustomers } from '../utils/customerSearch';
 
 interface LayoutProps {
   children: ReactNode;
@@ -34,6 +37,7 @@ interface SearchResult {
   title: string;
   subtitle: string;
   page: string;
+  filter?: string;
   icon: LucideIcon;
 }
 
@@ -289,11 +293,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const sidebarStyle = {
     '--sidebar-width': `${sidebarRenderWidth}px`,
   } as CSSProperties;
-  /* Zwei bewusst sichtbare Seitenraster: datenreiche Ansichten nutzen die
-     gesamte verfügbare Breite, Verwaltungs- und Accountseiten bleiben auf
-     großen Monitoren mit 1140px lesbar begrenzt. */
-  const compactWidthPages = ['customers', 'customer', 'positions', 'templates', 'settings', 'profile', 'workspace', 'support', 'data-import'];
-  const contentWidthClass = compactWidthPages.includes(currentPage) ? 'max-w-[1140px]' : 'max-w-none';
+  const contentWidthClass = contentWidthClassForPage(currentPage);
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);
   const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -434,9 +434,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
         ...allNavItems
           .filter((item) => item.label.toLocaleLowerCase('de-DE').includes(normalizedSearchQuery))
           .map((item) => ({ id: item.id, title: item.label, subtitle: 'Bereich öffnen', page: item.id, icon: item.icon })),
-        ...customers
-          .filter((customer) => [customer.name, customer.customerNumber, customer.email].some((value) => value?.toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
-          .map((customer) => ({ id: customer.id, title: customer.name, subtitle: `${terminology.entity.singular} ${customer.customerNumber}`, page: 'customers', icon: Users })),
+        ...searchCustomers(customers, normalizedSearchQuery, terminology.entity.singular)
+          .map((result) => ({ ...result, icon: Users })),
         ...invoices
           .filter((invoice) => [invoice.invoiceNumber, invoice.customerName, invoice.notes].some((value) => value?.toString().toLocaleLowerCase('de-DE').includes(normalizedSearchQuery)))
           .map((invoice) => ({ id: invoice.id, title: invoice.invoiceNumber || 'Rechnung', subtitle: `Rechnung · ${invoice.customerName}`, page: 'invoices', icon: FileText })),
@@ -512,7 +511,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               return;
             }
             if (!pageSearch && event.key === 'Enter' && searchResults[0]) {
-              handlePageChange(searchResults[0].page);
+              handlePageChange(searchResults[0].page, searchResults[0].filter);
               setSearchQuery('');
             }
           }}
@@ -538,7 +537,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 key={`${result.page}-${result.id}`}
                 type="button"
                 onClick={() => {
-                  handlePageChange(result.page);
+                  handlePageChange(result.page, result.filter);
                   setSearchQuery('');
                 }}
                 className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-gray-50"
@@ -552,7 +551,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                 </span>
               </button>
             )) : (
-              <div className="px-3 py-3 text-sm text-gray-500">Keine Treffer</div>
+              <EmptyState compact variant="metric" title="Keine Treffer" description="Passen Sie den Suchbegriff an." />
             )}
           </div>
         )}

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Building2, ChevronRight, LifeBuoy, Loader2, Plus, Send, UserRound } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { Notice } from './Notice';
+import { EmptyState } from './EmptyState';
 import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
 import { useFeedback } from '../context/FeedbackContext';
@@ -129,12 +130,7 @@ function TicketListView({ locale, navigate }: { locale: Formatting; navigate: (f
         {tickets === null ? (
           <div className="flex items-center gap-2 px-5 py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Lade Anfragen…</div>
         ) : tickets.length === 0 ? (
-          <div className="px-5 py-10 text-center">
-            <LifeBuoy className="mx-auto mb-3 h-8 w-8 text-gray-300" aria-hidden="true" />
-            <p className="text-sm font-medium text-gray-900">Noch keine Anfragen</p>
-            <p className="mt-1 text-sm text-gray-500">Fragen zur Bedienung, Fehler, Abrechnung oder Wünsche – wir helfen gern.</p>
-            <button type="button" onClick={() => navigate('neu')} className="btn-primary mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"><Plus className="h-4 w-4" />Erste Anfrage stellen</button>
-          </div>
+          <EmptyState variant="metric" title="Noch keine Anfragen" description="Fragen zur Bedienung, Fehler, Abrechnung oder Wünsche – wir helfen gern." action={{ label: 'Erste Anfrage stellen', onClick: () => navigate('neu') }} />
         ) : (
           <ul className="divide-y divide-gray-100">
             {tickets.map(ticket => (

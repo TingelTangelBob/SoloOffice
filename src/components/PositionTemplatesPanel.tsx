@@ -8,6 +8,7 @@ import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 import { apiService } from '../services/api';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { DialogShell } from './DialogShell';
+import { EmptyState } from './EmptyState';
 import { ImportWizard } from './ImportWizard';
 import type { HourlyRate, ImportResource, MaterialTemplate, NumberFormat } from '../types';
 
@@ -292,7 +293,7 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
           ))}
         </ul>
       ) : (
-        <p className="px-4 py-6 text-center text-sm text-gray-500 lg:px-6">{emptyText}</p>
+        <EmptyState compact variant="metric" title={emptyText} />
       )}
     </section>
   );

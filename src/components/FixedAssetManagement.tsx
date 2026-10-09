@@ -12,6 +12,7 @@ import { ACTION_MENU_COLUMN_WIDTH, actionColumnWidth } from '../utils/tableLayou
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
+import { EmptyState } from './EmptyState';
 
 type AssetDraft = {
   name: string;
@@ -190,13 +191,7 @@ export function FixedAssetManagement() {
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5"><div className="flex items-center gap-2"><Boxes className="h-5 w-5 text-primary-custom" /><h2 className="text-lg font-semibold text-gray-900">Erfasste Anlagegüter</h2></div></div>
       {loading ? <TableSkeleton rows={4} columns={6} label="Anlagen werden geladen …" className="border-t border-gray-100" /> : assets.length === 0 ? (
-        <div className="mx-5 mb-5 rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
-          <p>Noch keine Anlagegüter erfasst.</p>
-          <button type="button" onClick={openNew} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white">
-            <Plus className="h-4 w-4" />
-            Anlage erfassen
-          </button>
-        </div>
+        <EmptyState variant="bars" title="Noch keine Anlagegüter erfasst." action={{ label: 'Anlage erfassen', onClick: openNew }} />
       ) : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full min-w-[850px]">

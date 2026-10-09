@@ -1441,7 +1441,7 @@ export function planInvoiceCourses(invoice, jobs) {
     const title = String(item.courseName || item.description).trim().slice(0, 255);
     const key = courseKey(title);
     const existing = invoice.customerId && jobs.filter(job => job.customerId === invoice.customerId
-      && job.date === invoice.date && courseKey(job.title) === key
+      && courseKey(job.title) === key
       && job.status !== 'invoiced' && !job.invoiceId && availableJobs.has(String(job.id)));
     const assignedJob = existing?.length === 1 ? existing[0] : null;
     if (assignedJob) availableJobs.delete(String(assignedJob.id));

@@ -240,7 +240,7 @@ test('Rechnungsimport plant Kurse aus Stundenpositionen und ordnet nur eindeutig
     { description: 'Unterricht Mathe', quantity: 2, unitPrice: 45, unit: 'Std.' },
     { description: 'Material', quantity: 1, unitPrice: 8, unit: 'Pauschale' },
   ] }], context({ customers, jobs }), { createInvoiceCourses: true });
-  assert.deepEqual(plan.courseSummary, { created: 2, assigned: 0 }, 'Datumabweichung verhindert eine Zuordnung');
+  assert.deepEqual(plan.courseSummary, { created: 1, assigned: 1 }, 'gleicher Kundenkurs wird auch bei abweichendem Datum zugeordnet');
   assert.equal(plan.entries[0].data.courseActions[0].date, '2025-02-04');
   assert.equal(plan.entries[0].data.courseActions[0].hoursWorked, 2);
   assert.equal(plan.entries[0].data.courseActions[0].hourlyRate, 45);
@@ -275,4 +275,29 @@ test('Kursname-Spalte steuert Kursnamen, leerer Wert fällt auf Position zurück
   ], context({ customers, jobs: [{ id: 'j1', customerId: 'c1', title: 'Mathe', date: '2025-02-03', status: 'completed' }] }), { createInvoiceCourses: true });
   assert.equal(existing.entries[0].data.courseActions[0].action, 'assign');
   assert.equal(existing.entries[0].data.courseActions[0].jobId, 'j1');
+});
+
+test('Nachschritt ordnet gleichnamigen manuellen Kurs desselben Kunden auch bei abweichendem Datum zu', () => {
+  const plan = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'ALT-MANUELL', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Position A', courseName: '  Mathe  ', itemQuantity: 1, itemUnitPrice: 20 },
+  ], context({
+    customers: [{ id: 'c1', name: 'Anna Müller' }],
+    jobs: [{ id: 'j-manual', customerId: 'c1', title: 'mathe', date: '2025-01-31', status: 'completed' }],
+  }), { createInvoiceCourses: true });
+
+  assert.equal(plan.entries[0].data.courseActions[0].action, 'assign');
+  assert.equal(plan.entries[0].data.courseActions[0].jobId, 'j-manual');
+});
+
+test('erneuter Import derselben Altrechnung plant keine Kursanlage', () => {
+  const plan = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'ALT-REIMPORT', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Position A', courseName: 'Mathe', itemQuantity: 1, itemUnitPrice: 20 },
+  ], context({
+    customers: [{ id: 'c1', name: 'Anna Müller' }],
+    invoices: [{ id: 'i-existing', invoiceNumber: 'ALT-REIMPORT', customerId: 'c1', customerName: 'Anna Müller', issueDate: '2025-02-03', status: 'sent', total: 20, taxAmount: 0 }],
+  }), { createInvoiceCourses: true });
+
+  assert.equal(plan.entries[0].status, 'duplicate');
+  assert.equal(plan.entries[0].data, null);
+  assert.deepEqual(plan.courseSummary, { created: 0, assigned: 0 });
 });

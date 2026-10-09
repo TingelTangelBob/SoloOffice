@@ -102,6 +102,19 @@ test('Gematchte Quellspalten werden unter den erwarteten Zielfeldern an den Serv
   assert.deepEqual(result, [{ _rowNumber: 2, name: 'Muster GmbH', email: 'mail@example.test' }]);
 });
 
+test('Manuell zugeordnete Kursname-Spalte bleibt als courseName in der Requestzeile', () => {
+  const parsedFile = {
+    fileName: 'altrechnungen.csv', format: 'csv', headers: ['Nr.', 'Leistung', 'Kursbezeichnung'], warnings: [],
+    rows: [{ 'Nr.': 'ALT-17', 'Leistung': 'Einzelstunde', 'Kursbezeichnung': 'Mathe Klasse 8' }],
+  };
+  const mappedRows = mapImportRows(parsedFile, {
+    invoiceNumber: 'Nr.', itemDescription: 'Leistung', courseName: 'Kursbezeichnung',
+  }, { definition: getImportDefinition('invoices') });
+
+  assert.equal(mappedRows[0].courseName, 'Mathe Klasse 8');
+  assert.equal(mappedRows[0].invoiceNumber, 'ALT-17');
+});
+
 test('Abhängigkeitsplan verwendet nur passende Kategoriezeilen und ihre Quellzeilennummern', () => {
   const parsed = {
     fileName: 'gemischt.csv', format: 'csv',

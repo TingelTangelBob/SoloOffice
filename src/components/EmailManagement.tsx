@@ -27,6 +27,7 @@ import { getTerminology } from '../utils/terminology';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { ThemeTabBar } from './ThemeTabBar';
 import { NotificationSettingsPanel } from './NotificationSettingsPanel';
+import { EmptyState } from './EmptyState';
 
 interface EmailAttachment {
   filename: string;
@@ -536,10 +537,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                     <span className="ml-2 text-gray-600">Lade E-Mails...</span>
                   </div>
                 ) : emails.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64">
-                    <Mail className="h-12 w-12 text-gray-400 mb-4" />
-                    <p className="text-gray-500">Keine E-Mails gefunden</p>
-                  </div>
+                  <EmptyState variant="metric" title="Noch keine E-Mails vorhanden" description="Versendete E-Mails erscheinen hier im Verlauf." />
                 ) : (
                   <div className="divide-y divide-gray-200">
                     {emails.map((email) => (

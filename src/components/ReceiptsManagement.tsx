@@ -22,6 +22,7 @@ import { TableSkeleton } from './TableSkeleton';
 import { trackTelemetry } from '../services/telemetry';
 import { RecurringExpenseDialog } from './RecurringExpenseDialog';
 import { financeApi } from '../services/financeApi';
+import { EmptyState } from './EmptyState';
 import type { RecurringExpense, RecurringExpensePayload } from '../types/finance';
 
 // Auf den Belegseiten werden ausschließlich Ausgaben importiert.
@@ -469,15 +470,9 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
         </div>
 
         {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : receipts.length === 0 ? (
-          <button type="button" onClick={openUpload} className="mt-5 block w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center transition hover:border-primary-custom hover:bg-blue-50" disabled={uploading}>
-            <Upload className="mx-auto h-8 w-8 text-gray-400" />
-            <span className="mt-3 block font-medium text-gray-800">Noch keine {receiptLabel}</span>
-            <span className="mt-1 block text-sm text-gray-500">Datei auswählen oder direkt mit der Kamera aufnehmen</span>
-          </button>
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState variant="receipts" title={`Noch keine ${receiptLabel}`} description="Laden Sie eine Datei hoch oder nehmen Sie sie direkt mit der Kamera auf." action={{ label: 'Beleg hochladen', onClick: openUpload, disabled: uploading }} /></div>
         ) : filteredReceipts.length === 0 ? (
-          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-500">
-            Keine passenden {receiptLabel} gefunden.
-          </div>
+          <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState compact variant="metric" title={`Keine passenden ${receiptLabel} gefunden.`} description="Passen Sie den Suchbegriff oder Filter an." /></div>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredReceipts.map(receipt => {
