@@ -2,6 +2,7 @@ import { documentRequestBody } from '../utils/documentPayload';
 import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
+import type { DashboardPreferences } from '../utils/dashboardPreferences';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -225,6 +226,18 @@ class ApiService {
 
   async updateMotionPreference(animationsEnabled: boolean): Promise<void> {
     await this.request('/user-preferences/motion', { method: 'PUT', body: JSON.stringify({ animationsEnabled }) });
+  }
+
+  async getDashboardPreferences(): Promise<DashboardPreferences> {
+    const result = await this.request<{ preferences: DashboardPreferences }>('/user-preferences/dashboard');
+    return result.preferences;
+  }
+
+  async updateDashboardPreferences(preferences: DashboardPreferences): Promise<DashboardPreferences> {
+    const result = await this.request<{ preferences: DashboardPreferences }>('/user-preferences/dashboard', {
+      method: 'PUT', body: JSON.stringify({ preferences }),
+    });
+    return result.preferences;
   }
 
   async updateNotificationSettings(payload: NotificationSettingsPayload): Promise<{ settings: NotificationSettings; email: string }> {

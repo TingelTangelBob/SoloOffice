@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import logger from '../utils/logger';
-import { Banknote, Briefcase, CalendarDays, ChevronRight, FileText, GraduationCap, Home, Send, Upload, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, Banknote, Briefcase, CalendarDays, ChevronRight, FileText, GraduationCap, MoreHorizontal, Send, SlidersHorizontal, Upload, Users } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
@@ -15,7 +15,12 @@ import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
 import type { EuerEntry, Invoice, JobEntry, NumberFormat, TimeFormat } from '../types';
-import { PageHeader } from './PageHeader';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { DialogShell } from './DialogShell';
+import { SwitchTrack } from './ToggleSwitch';
+import { useAuth } from '../context/AuthContext';
+import { DEFAULT_DASHBOARD_PREFERENCES, normalizeDashboardPreferences, type DashboardItemId, type DashboardPreferences } from '../utils/dashboardPreferences';
+import { aggregateRevenue, buildRevenueRecords, compareRevenue, sumRevenue } from '../utils/dashboardMetrics';
 import {
   DeltaBadge,
   MetricBadge,
@@ -46,10 +51,14 @@ type DashboardCourseSeries = {
   jobs: JobEntry[];
 };
 
-type DashboardRevenueRecord = {
-  customerName: string;
-  date: Date;
-  amount: number;
+type DashboardRevenueRecord = { customerName: string; date: Date; amount: number };
+
+const DASHBOARD_ITEM_LABELS: Record<DashboardItemId, string> = {
+  'quick-invoice': 'Rechnung schreiben', 'quick-receipt': 'Beleg hochladen',
+  'quick-customer': 'Neuer Kunde / Träger', 'quick-course': 'Neuer Kurs',
+  revenue: 'Umsatzverlauf', 'top-customers': 'Umsatzstärkste Kunden / Träger',
+  'week-calendar': 'Termine der Kalenderwoche', 'recent-jobs': 'Aktuelle Kurse / Aufträge',
+  'recent-invoices': 'Aktuelle Rechnungen', 'course-series': 'Laufende Kursserien',
 };
 
 function parseLocalJobDate(value: Date | string | number): Date {
@@ -129,11 +138,29 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { invoices, updateInvoice } = useInvoices();
   const { jobEntries } = useJobs();
   const { company } = useCompany();
+  const { user } = useAuth();
   const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
-  const [dashboardYear, setDashboardYear] = useState(() => new Date().getFullYear());
-  const [includeUnpaidInvoices, setIncludeUnpaidInvoices] = useState(false);
+  const [preferences, setPreferences] = useState<DashboardPreferences>(DEFAULT_DASHBOARD_PREFERENCES);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [preferencesError, setPreferencesError] = useState(false);
   const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
+
+  const savePreferences = (next: DashboardPreferences) => {
+    const normalized = normalizeDashboardPreferences(next);
+    setPreferences(normalized);
+    setPreferencesError(false);
+    void apiService.updateDashboardPreferences(normalized).catch(() => setPreferencesError(true));
+  };
+
+  useEffect(() => {
+    let active = true;
+    void apiService.getDashboardPreferences().then(value => {
+      if (active) setPreferences(normalizeDashboardPreferences(value));
+    }).catch(() => undefined).finally(() => { if (active) setPreferencesLoaded(true); });
+    return () => { active = false; };
+  }, []);
 
   // Email modal state
   const [emailModal, setEmailModal] = useState<{
@@ -428,114 +455,42 @@ export function Dashboard({ onNavigate }: DashboardProps) {
    * Rechnungen können optional zugeschaltet werden und verwenden dann ihr
    * Rechnungsdatum.
    */
-  const monthKeyOf = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  const dashboardYear = preferences.year ?? today.getFullYear();
+  const allYears = preferences.year === 'all';
+  const includeUnpaidInvoices = preferences.includeUnpaidInvoices;
   const availableYears = Array.from(new Set([
     today.getFullYear(),
+    ...(typeof preferences.year === 'number' ? [preferences.year] : []),
     ...invoices.map(invoice => parseLocalJobDate(invoice.issueDate).getFullYear()),
     ...euerEntries.map(entry => parseLocalJobDate(entry.entryDate).getFullYear()),
   ])).sort((a, b) => b - a);
 
-  const activePayments = euerEntries.filter(entry => (
-    entry.entryType === 'income'
-    && entry.sourceType === 'invoice_payment'
-    && entry.sourceId
-    && entry.status !== 'voided'
-    && Number(entry.amount || 0) > 0
-  ));
-  const paymentsByInvoice = new Map<string, EuerEntry[]>();
-  activePayments.forEach(entry => {
-    const invoiceEntries = paymentsByInvoice.get(entry.sourceId!) || [];
-    invoiceEntries.push(entry);
-    paymentsByInvoice.set(entry.sourceId!, invoiceEntries);
-  });
-
-  const revenueRecords: DashboardRevenueRecord[] = [];
-  invoices.forEach(invoice => {
+  const revenueInvoices = invoices.map(invoice => {
     const hasUnconfirmedSourceJob = invoice.sourceJobs?.some(sourceJob => {
       const source = jobEntries.find(job => job.id === sourceJob.jobId);
       return source && source.status !== 'completed' && source.status !== 'invoiced';
     }) ?? false;
-    if (hasUnconfirmedSourceJob) return;
-
-    const payments = paymentsByInvoice.get(invoice.id) || [];
-    if (payments.length > 0) {
-      payments.forEach(payment => revenueRecords.push({
-        customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
-        date: parseLocalJobDate(payment.entryDate),
-        amount: Number(payment.amount || 0),
-      }));
-    }
-
-    // Bezahlte Alt-Rechnungen können aus der Zeit vor der EÜR-Buchung stammen.
-    // Für diese bleibt das Rechnungsdatum der nachvollziehbare Fallback.
-    if (payments.length === 0 && invoice.status === 'paid') {
-      revenueRecords.push({
-        customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
-        date: parseLocalJobDate(invoice.issueDate),
-        amount: Number(invoice.total || 0),
-      });
-    }
-
-    if (includeUnpaidInvoices && invoice.status !== 'draft' && invoice.status !== 'paid') {
-      const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      const openAmount = Math.max(0, Number(invoice.total || 0) - paidAmount);
-      if (openAmount > 0) {
-        revenueRecords.push({
-          customerName: invoice.customerName?.trim() || 'Ohne Zuordnung',
-          date: parseLocalJobDate(invoice.issueDate),
-          amount: openAmount,
-        });
-      }
-    }
+    return { ...invoice, sourceJobsEligible: !hasUnconfirmedSourceJob };
+  });
+  const revenueRecords: DashboardRevenueRecord[] = buildRevenueRecords({
+    invoices: revenueInvoices,
+    euerEntries,
+    customers,
+    includeUnpaidInvoices,
   });
 
-  // Einnahmen ohne Rechnung (etwa aus einer übernommenen Tabelle) zählen mit
-  // ihrem Buchungsdatum. Zahlungen zu Rechnungen sind oben bereits enthalten.
-  const customerNames = new Map(customers.map(customer => [customer.id, customer.name]));
-  euerEntries
-    .filter(entry => entry.entryType === 'income'
-      && (entry.sourceType || 'manual') === 'manual'
-      && entry.status !== 'voided'
-      && Number(entry.amount || 0) > 0)
-    .forEach(entry => revenueRecords.push({
-      customerName: (entry.customerId && customerNames.get(entry.customerId)) || 'Ohne Zuordnung',
-      date: parseLocalJobDate(entry.entryDate),
-      amount: Number(entry.amount || 0),
-    }));
-
-  const recordsForYear = (year: number) => revenueRecords.filter(record => record.date.getFullYear() === year);
-  const monthlyRevenueForYear = (year: number) => {
-    const monthly = new Map<string, number>();
-    recordsForYear(year).forEach(record => {
-      const key = monthKeyOf(record.date);
-      monthly.set(key, (monthly.get(key) || 0) + record.amount);
-    });
-    return monthly;
-  };
-  const monthlyRevenue = monthlyRevenueForYear(dashboardYear);
-  const previousYearRevenue = monthlyRevenueForYear(dashboardYear - 1);
-  const monthLabelFormat = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' });
-  const monthShortFormat = new Intl.DateTimeFormat(locale, { month: 'short' });
-
-  const revenuePoints = Array.from({ length: 12 }, (_, month) => {
-    const date = new Date(dashboardYear, month, 1);
-    const key = monthKeyOf(date);
-    return {
-      key,
-      label: monthLabelFormat.format(date),
-      shortLabel: monthShortFormat.format(date).replace('.', ''),
-      value: monthlyRevenue.get(key) || 0,
-    };
-  });
-
-  const revenueWindowTotal = revenuePoints.reduce((sum, point) => sum + point.value, 0);
-  const previousWindowTotal = Array.from(previousYearRevenue.values()).reduce((sum, value) => sum + value, 0);
+  const recordsForYear = (year: number | 'all') => year === 'all'
+    ? revenueRecords : revenueRecords.filter(record => record.date.getFullYear() === year);
+  const revenuePoints = aggregateRevenue(revenueRecords, dashboardYear, locale);
+  const previousPoints = !allYears && preferences.comparePrevious
+    ? aggregateRevenue(revenueRecords, Number(dashboardYear) - 1, locale) : [];
+  const revenueWindowTotal = sumRevenue(revenuePoints);
+  const previousWindowTotal = sumRevenue(previousPoints);
 
   // Ohne Vergleichswert lässt sich keine Veränderung angeben. Dann entfällt die
   // Angabe, statt einen Platzhalter zu zeigen.
-  const revenueDelta = previousWindowTotal > 0
-    ? ((revenueWindowTotal - previousWindowTotal) / previousWindowTotal) * 100
-    : null;
+  const revenueDelta = !allYears && preferences.comparePrevious
+    ? compareRevenue(revenueWindowTotal, previousWindowTotal) : null;
 
   const money = (value: number) => formatCurrency(value, locale, company?.numberFormat, company?.currency);
   const formatPercent = (value: number) => `${formatNumber(
@@ -596,90 +551,130 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const invoicesCardSpan = ongoingCourseSeries.length > 0
+  const orderOf = (id: DashboardItemId) => preferences.items.findIndex(item => item.id === id);
+  const isVisible = (id: DashboardItemId) => preferences.items.find(item => item.id === id)?.visible !== false;
+  const invoicesCardSpan = isVisible('course-series') && ongoingCourseSeries.length > 0
     ? 'md:col-span-2 lg:col-span-3'
     : 'md:col-span-2 lg:col-span-4';
+  const moveItem = (id: DashboardItemId, direction: -1 | 1) => {
+    const items = [...preferences.items];
+    const index = items.findIndex(item => item.id === id);
+    const quick = id.startsWith('quick-');
+    let nextIndex = index + direction;
+    while (nextIndex >= 0 && nextIndex < items.length && items[nextIndex].id.startsWith('quick-') !== quick) nextIndex += direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return;
+    [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+    savePreferences({ ...preferences, items });
+  };
+  const itemLabel = (id: DashboardItemId): string => {
+    switch (id) {
+      case 'quick-customer': return terminology.entity.newLabel;
+      case 'quick-course': return terminology.work.newLabel;
+      case 'top-customers': return `Top-${terminology.entity.plural}`;
+      case 'recent-jobs': return `Aktuelle ${terminology.work.plural}`;
+      default: return DASHBOARD_ITEM_LABELS[id];
+    }
+  };
+
+  const canMoveItem = (id: DashboardItemId, direction: -1 | 1) => {
+    const index = orderOf(id);
+    const quick = id.startsWith('quick-');
+    let nextIndex = index + direction;
+    while (nextIndex >= 0 && nextIndex < preferences.items.length && preferences.items[nextIndex].id.startsWith('quick-') !== quick) nextIndex += direction;
+    return index >= 0 && nextIndex >= 0 && nextIndex < preferences.items.length;
+  };
+  const greetingName = user?.firstName?.trim() || user?.displayName?.trim() || company.name?.trim();
 
   return (
-    <div className="dashboard-metrics page-root space-y-6">
-      {/* Der Navigationspunkt heißt „Übersicht“; die Seitenüberschrift folgt
-          derselben Bezeichnung. */}
-      <PageHeader icon={Home} title="Übersicht" subtitle={`Ihre Rechnungen und ${terminology.entity.plural} auf einen Blick`} />
-
-      <div className="dashboard-quick-actions grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <button type="button" onClick={() => onNavigate('invoices', 'new')} className="dashboard-quick-action group" aria-label="Neue Rechnung schreiben">
-            <span className="dashboard-quick-action-icon"><FileText className="h-7 w-7" /></span>
-            Rechnung schreiben
-          </button>
-          <button type="button" onClick={() => onNavigate('documents', 'receipts')} className="dashboard-quick-action group" aria-label="Beleg hochladen">
-            <span className="dashboard-quick-action-icon"><Upload className="h-7 w-7" /></span>
-            Beleg hochladen
-          </button>
-          <button type="button" onClick={() => onNavigate('customers', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
-            <span className="dashboard-quick-action-icon"><Users className="h-7 w-7" /></span>
-            {terminology.entity.newLabel}
-          </button>
-          <button type="button" onClick={() => onNavigate('jobs', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
-            <span className="dashboard-quick-action-icon"><Briefcase className="h-7 w-7" /></span>
-          {terminology.work.newLabel}
-          </button>
+    <div className="dashboard-metrics page-root space-y-6" aria-busy={!preferencesLoaded}>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <h1 className="min-w-0 truncate text-lg font-semibold text-gray-900 sm:text-2xl">Willkommen<span className="hidden min-[400px]:inline"> zurück</span>{greetingName ? `, ${greetingName}` : ''}</h1>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <label className="sr-only" htmlFor="dashboard-year">Jahr auswählen</label>
+          <select id="dashboard-year" value={allYears ? 'all' : dashboardYear} onChange={event => {
+            // Das laufende Jahr wird als `null` gespeichert, damit die Übersicht im
+            // neuen Jahr automatisch mitwandert.
+            const selected = event.target.value === 'all' ? 'all' : Number(event.target.value);
+            const year = selected === today.getFullYear() ? null : selected;
+            savePreferences({ ...preferences, year, comparePrevious: year === 'all' ? false : preferences.comparePrevious });
+          }} disabled={!preferencesLoaded} className="form-input min-h-10 w-[6.5rem] px-2 py-1.5 text-sm disabled:opacity-60 sm:w-28">
+            <option value="all">Gesamt</option>
+            {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+          </select>
+          <ActionMenu ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
+            menuClassName="w-[min(22rem,calc(100vw-1rem))] min-w-[18rem]" triggerClassName="action-icon-button action-icon-blue" disabled={!preferencesLoaded}>
+            <p className="px-3 pb-1 pt-2 text-xs font-medium text-gray-500">Auswertung</p>
+            <ActionMenuItem icon={<SwitchTrack checked={!includeUnpaidInvoices} />} role="menuitemcheckbox" aria-checked={!includeUnpaidInvoices}
+              onClick={event => { event.preventDefault(); savePreferences({ ...preferences, includeUnpaidInvoices: !includeUnpaidInvoices }); }}>
+              Nur bezahlte Rechnungen
+            </ActionMenuItem>
+            <ActionMenuItem icon={<SwitchTrack checked={preferences.comparePrevious && !allYears} />} role="menuitemcheckbox" aria-checked={preferences.comparePrevious && !allYears}
+              disabled={allYears} title={allYears ? 'Für den gesamten Zeitraum gibt es keinen einzelnen Vorzeitraum.' : undefined}
+              onClick={event => { event.preventDefault(); if (!allYears) savePreferences({ ...preferences, comparePrevious: !preferences.comparePrevious }); }}>
+              Mit Vorzeitraum vergleichen
+            </ActionMenuItem>
+            <ActionMenuItem icon={<SwitchTrack checked={allYears} />} role="menuitemcheckbox" aria-checked={allYears}
+              onClick={event => { event.preventDefault(); savePreferences({ ...preferences, year: allYears ? null : 'all', comparePrevious: allYears ? preferences.comparePrevious : false }); }}>
+              Gesamter Zeitraum
+            </ActionMenuItem>
+            {allYears && <p className="px-3 pb-1 text-xs text-gray-500">Der Vergleich ist für „Gesamt“ nicht verfügbar.</p>}
+            <div className="my-1 border-t border-gray-100" />
+            <ActionMenuItem icon={<SlidersHorizontal className="h-4 w-4" />} role="menuitem" onClick={() => setCustomizeOpen(true)}>Dashboard anpassen …</ActionMenuItem>
+            <p className="px-3 pb-2 pt-2 text-[11px] leading-4 text-gray-500">Bezahlte Rechnungen zählen nach Zahlungsdatum, offene nach Rechnungsdatum. Entwürfe und nicht bestätigte Aufträge fließen nicht ein.</p>
+          </ActionMenu>
+        </div>
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm" aria-label="Dashboard-Auswertung filtern">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Auswertung</h2>
-            <p className="mt-1 text-xs text-gray-500">Bezahlte Rechnungen verwenden das Zahlungsdatum.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-              Jahr
-              <select value={dashboardYear} onChange={event => setDashboardYear(Number(event.target.value))} className="form-input min-h-10 w-auto py-1.5">
-                {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
-              </select>
-            </label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={includeUnpaidInvoices}
-              onClick={() => setIncludeUnpaidInvoices(value => !value)}
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-primary-custom hover:text-primary-custom"
-            >
-              <span className={`relative h-5 w-9 rounded-full transition-colors ${includeUnpaidInvoices ? 'bg-primary-custom' : 'bg-gray-300'}`} aria-hidden="true">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${includeUnpaidInvoices ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </span>
-              {includeUnpaidInvoices ? 'Bezahlte und offene' : 'Nur bezahlte Rechnungen'}
-            </button>
-          </div>
-        </div>
-        {includeUnpaidInvoices && <p className="mt-3 text-xs text-gray-500">Offene Rechnungsbeträge werden mit dem Rechnungsdatum berücksichtigt. Entwürfe und nicht bestätigte Aufträge fließen nicht ein.</p>}
-      </section>
+      <div className="dashboard-quick-actions grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {isVisible('quick-invoice') && <button style={{ order: orderOf('quick-invoice') }} type="button" onClick={() => onNavigate('invoices', 'new')} className="dashboard-quick-action group" aria-label="Neue Rechnung schreiben">
+            <span className="dashboard-quick-action-icon"><FileText className="h-7 w-7" /></span>
+            Rechnung schreiben
+          </button>}
+          {isVisible('quick-receipt') && <button style={{ order: orderOf('quick-receipt') }} type="button" onClick={() => onNavigate('documents', 'receipts')} className="dashboard-quick-action group" aria-label="Beleg hochladen">
+            <span className="dashboard-quick-action-icon"><Upload className="h-7 w-7" /></span>
+            Beleg hochladen
+          </button>}
+          {isVisible('quick-customer') && <button style={{ order: orderOf('quick-customer') }} type="button" onClick={() => onNavigate('customers', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.entity.singular} anlegen`}>
+            <span className="dashboard-quick-action-icon"><Users className="h-7 w-7" /></span>
+            {terminology.entity.newLabel}
+          </button>}
+          {isVisible('quick-course') && <button style={{ order: orderOf('quick-course') }} type="button" onClick={() => onNavigate('jobs', 'new')} className="dashboard-quick-action group" aria-label={`Neuen ${terminology.work.singular} anlegen`}>
+            <span className="dashboard-quick-action-icon"><Briefcase className="h-7 w-7" /></span>
+          {terminology.work.newLabel}
+          </button>}
+      </div>
+
+      {preferencesError && <p role="status" className="text-xs text-red-700">Dashboard-Einstellungen konnten nicht gespeichert werden.</p>}
 
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Umsatzverlauf */}
-        <MetricCard className="md:col-span-2 lg:col-span-3">
+        {isVisible('revenue') && <MetricCard style={{ order: orderOf('revenue') }} className={isVisible('top-customers') ? 'md:col-span-2 lg:col-span-3' : 'md:col-span-2 lg:col-span-4'}>
           <MetricCardHeader>
             <div className="flex min-w-0 flex-col">
               <MetricValue>{money(revenueWindowTotal)}</MetricValue>
-              <MetricCardDescription>Gesamtumsatz {dashboardYear} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
+              <MetricCardDescription>Gesamtumsatz {allYears ? 'gesamt' : dashboardYear} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
+              {!allYears && preferences.comparePrevious && <MetricCardDescription className="mt-1">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
             </div>
             {revenueDelta !== null && (
               <DeltaBadge
                 value={revenueDelta}
                 formattedValue={formatPercent(revenueDelta)}
-                label="ggü. Vorjahr"
+                label={`ggü. ${Number(dashboardYear) - 1}`}
               />
             )}
           </MetricCardHeader>
           <MetricCardContent className="px-2 pb-2 lg:px-4">
-            {revenueWindowTotal > 0 ? (
+            {revenueWindowTotal > 0 || previousWindowTotal > 0 ? (
               <RevenueAreaChart
                 points={revenuePoints}
+                previousPoints={previousPoints}
+                currentLabel={String(dashboardYear)}
+                previousLabel={String(Number(dashboardYear) - 1)}
                 formatValue={money}
-                ariaLabel={`Umsatzverlauf ${dashboardYear}, insgesamt ${money(revenueWindowTotal)}`}
+                ariaLabel={`Umsatzverlauf ${allYears ? 'gesamt' : dashboardYear}, insgesamt ${money(revenueWindowTotal)}`}
               />
             ) : (
-              <MetricEmptyState>Für {dashboardYear} wurden keine Umsätze erfasst.</MetricEmptyState>
+              <MetricEmptyState>Für {allYears ? 'den Gesamtzeitraum' : dashboardYear} wurden keine Umsätze erfasst.</MetricEmptyState>
             )}
           </MetricCardContent>
           {company.reportingEnabled && (
@@ -687,14 +682,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               Zu den Auswertungen
             </MetricCardFooterAction>
           )}
-        </MetricCard>
+        </MetricCard>}
 
         {/* Top-Kunden */}
-        <MetricCard className="md:col-span-2 lg:col-span-1">
+        {isVisible('top-customers') && <MetricCard style={{ order: orderOf('top-customers') }} className="md:col-span-2 lg:col-span-1">
           <MetricCardHeader bordered>
             <div className="min-w-0">
               <MetricCardTitle>Top-{terminology.entity.plural}</MetricCardTitle>
-              <MetricCardDescription className="mt-1">Umsatzstärkste {dashboardYear}</MetricCardDescription>
+              <MetricCardDescription className="mt-1">Umsatzstärkste {allYears ? 'gesamt' : dashboardYear}</MetricCardDescription>
             </div>
           </MetricCardHeader>
           <MetricCardContent className="flex flex-1 flex-col justify-center py-1">
@@ -717,10 +712,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardFooterAction onClick={() => onNavigate('customers')}>
             Alle {terminology.entity.plural}
           </MetricCardFooterAction>
-        </MetricCard>
+        </MetricCard>}
 
         {/* Termine der aktuellen Kalenderwoche */}
-        <MetricCard className="md:col-span-2 lg:col-span-4">
+        {isVisible('week-calendar') && <MetricCard style={{ order: orderOf('week-calendar') }} className="md:col-span-2 lg:col-span-4">
           <MetricCardHeader bordered>
             <div className="flex min-w-0 items-start gap-3">
               <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
@@ -796,11 +791,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           ) : (
             <MetricEmptyState>In dieser Kalenderwoche sind keine Termine geplant.</MetricEmptyState>
           )}
-        </MetricCard>
+        </MetricCard>}
 
         {/* Aktuelle Aufträge: unabhängig von der Kalenderwoche, damit auch
             importierte Aufträge direkt auf der Übersicht auffindbar sind. */}
-        <MetricCard className="md:col-span-2 lg:col-span-4">
+        {isVisible('recent-jobs') && <MetricCard style={{ order: orderOf('recent-jobs') }} className="md:col-span-2 lg:col-span-4">
           <MetricCardHeader bordered>
             <div className="flex min-w-0 items-start gap-3">
               <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
@@ -846,10 +841,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <MetricCardFooterAction onClick={() => onNavigate('jobs')}>
             Alle {terminology.work.plural}
           </MetricCardFooterAction>
-        </MetricCard>
+        </MetricCard>}
 
         {/* Aktuelle Rechnungen */}
-        <MetricCard className={invoicesCardSpan}>
+        {isVisible('recent-invoices') && <MetricCard style={{ order: orderOf('recent-invoices') }} className={invoicesCardSpan}>
           <MetricCardHeader>
             <div className="min-w-0">
               <MetricCardTitle>Aktuelle Rechnungen</MetricCardTitle>
@@ -1011,11 +1006,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           ) : (
             <MetricEmptyState>Noch keine Rechnungen vorhanden.</MetricEmptyState>
           )}
-        </MetricCard>
+        </MetricCard>}
 
         {/* Laufende Serien */}
-        {ongoingCourseSeries.length > 0 && (
-          <MetricCard className="md:col-span-2 lg:col-span-1">
+        {isVisible('course-series') && ongoingCourseSeries.length > 0 && (
+          <MetricCard style={{ order: orderOf('course-series') }} className="md:col-span-2 lg:col-span-1">
             <MetricCardHeader bordered>
               <div className="flex min-w-0 items-start gap-3">
                 <span className="shrink-0 rounded-lg bg-primary-custom/10 p-2 text-primary-custom">
@@ -1078,6 +1073,39 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         customer={emailModal.customer!}
         isLoading={isSendingEmail === emailModal.invoice?.id}
       />
+      {customizeOpen && <DialogShell
+        title="Dashboard anpassen"
+        description="Blende Bereiche ein oder aus und lege ihre Reihenfolge fest. Änderungen werden direkt gespeichert."
+        titleId="dashboard-customize-title"
+        onClose={() => setCustomizeOpen(false)}
+        size="md"
+        fitContent
+        footer={<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+          <button type="button" className="min-h-11 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50" onClick={() => savePreferences({ ...preferences, items: DEFAULT_DASHBOARD_PREFERENCES.items })}>Auf Standard zurücksetzen</button>
+          <button type="button" className="btn-primary min-h-11 rounded-lg px-6 py-2 text-sm font-semibold text-white transition hover:brightness-90" onClick={() => setCustomizeOpen(false)}>Fertig</button>
+        </div>}
+      >
+        {([['Schnellzugriffe', true], ['Kacheln', false]] as const).map(([groupTitle, quickGroup]) => (
+          <section key={groupTitle} className="mb-4 last:mb-0" aria-label={groupTitle}>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{groupTitle}</h3>
+            <ol className="space-y-2">
+              {preferences.items.filter(item => item.id.startsWith('quick-') === quickGroup).map(item => {
+                const label = itemLabel(item.id);
+                return <li key={item.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5">
+                  <button type="button" role="switch" aria-checked={item.visible} aria-label={`${label} anzeigen`}
+                    onClick={() => savePreferences({ ...preferences, items: preferences.items.map(entry => entry.id === item.id ? { ...entry, visible: !entry.visible } : entry) })}
+                    className="flex min-h-9 min-w-0 flex-1 items-center gap-3 text-left text-sm text-gray-800">
+                    <SwitchTrack checked={item.visible} />
+                    <span className={`truncate ${item.visible ? '' : 'text-gray-400'}`}>{label}</span>
+                  </button>
+                  <button type="button" aria-label={`${label} nach oben`} title="Nach oben" disabled={!canMoveItem(item.id, -1)} onClick={() => moveItem(item.id, -1)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 disabled:opacity-40"><ArrowUp className="h-4 w-4" /></button>
+                  <button type="button" aria-label={`${label} nach unten`} title="Nach unten" disabled={!canMoveItem(item.id, 1)} onClick={() => moveItem(item.id, 1)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 disabled:opacity-40"><ArrowDown className="h-4 w-4" /></button>
+                </li>;
+              })}
+            </ol>
+          </section>
+        ))}
+      </DialogShell>}
     </div>
   );
 }

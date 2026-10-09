@@ -12,12 +12,15 @@ export interface RevenuePoint {
 
 interface RevenueAreaChartProps {
   points: RevenuePoint[];
+  previousPoints?: RevenuePoint[];
+  currentLabel?: string;
+  previousLabel?: string;
   formatValue: (value: number) => string;
   ariaLabel: string;
 }
 
 const CHART_HEIGHT = 240;
-const PADDING = { top: 12, right: 14, bottom: 26, left: 14 };
+const PADDING = { top: 12, right: 14, bottom: 26, left: 54 };
 const GRID_LINES = 4;
 const TOOLTIP_GAP = 10;
 /** Geschätzte Höhe der Kurzinfo; sie entscheidet nur über oben oder unten. */
@@ -34,7 +37,7 @@ const TOOLTIP_HEIGHT = 52;
  * Seitenleiste skaliert frei zwischen 72 und 360 Pixeln; dieselbe Fensterbreite
  * lässt der Karte dadurch sehr unterschiedlich viel Platz.
  */
-export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueAreaChartProps) {
+export function RevenueAreaChart({ points, previousPoints = [], currentLabel, previousLabel, formatValue, ariaLabel }: RevenueAreaChartProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const gradientId = `revenue-area-${useId().replace(/:/g, '')}`;
@@ -48,9 +51,12 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
   const plotWidth = Math.max(width - PADDING.left - PADDING.right, 1);
   const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
   const baseline = PADDING.top + plotHeight;
-  const maxValue = points.reduce((max, point) => Math.max(max, point.value), 0);
-  // Kopfraum über der Spitze, damit Kurve und Punkt nicht an der Oberkante kleben.
-  const scaleMax = maxValue > 0 ? maxValue * 1.15 : 1;
+  const maxValue = [...points, ...previousPoints].reduce((max, point) => Math.max(max, point.value), 0);
+  const roughStep = (maxValue || 1) / GRID_LINES;
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalizedStep = roughStep / magnitude;
+  const tickStep = (normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 2.5 ? 2.5 : normalizedStep <= 5 ? 5 : 10) * magnitude;
+  const scaleMax = Math.max(tickStep * GRID_LINES, tickStep);
 
   const pointX = (index: number) => (points.length > 1
     ? PADDING.left + (index / (points.length - 1)) * plotWidth
@@ -62,7 +68,7 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
     .join(' ');
   const areaPath = `${linePath} L${pointX(points.length - 1).toFixed(2)} ${baseline} L${pointX(0).toFixed(2)} ${baseline} Z`;
 
-  const gridLines = Array.from({ length: GRID_LINES + 1 }, (_, index) => PADDING.top + (plotHeight / GRID_LINES) * index);
+  const gridLines = Array.from({ length: GRID_LINES + 1 }, (_, index) => ({ y: PADDING.top + (plotHeight / GRID_LINES) * index, value: scaleMax - tickStep * index }));
 
   // Beschriftungen von rechts ausdünnen: Der jüngste Monat ist der wichtigste
   // und bleibt dadurch bei jeder Breite beschriftet.
@@ -84,7 +90,14 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
   // Fenster) soll das nicht auslösen, deshalb hängt der Schlüssel nur an den
   // Daten. `pathLength={1}` normiert die Linie, damit das Einzeichnen in CSS
   // ohne gemessene Pfadlänge auskommt.
-  const dataKey = points.map(point => `${point.key}:${point.value}`).join('|');
+  const dataKey = `${points.map(point => `${point.key}:${point.value}`).join('|')}#${previousPoints.map(point => `${point.key}:${point.value}`).join('|')}`;
+  const previousLinePath = previousPoints.length === points.length ? previousPoints
+    .map((point, index) => `${index === 0 ? 'M' : 'L'}${pointX(index).toFixed(2)} ${pointY(point.value).toFixed(2)}`).join(' ') : '';
+  const compactMoney = (value: number) => {
+    if (value === 0) return '0 €';
+    if (value >= 1000) return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value / 1000)} T€`;
+    return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 }).format(value)} €`;
+  };
 
   return (
     <div ref={ref} className="relative w-full">
@@ -105,9 +118,9 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
           </linearGradient>
         </defs>
 
-        {gridLines.map((y) => (
+        {gridLines.map(({ y, value }) => (
+          <g key={y}>
           <line
-            key={y}
             x1={PADDING.left}
             x2={width - PADDING.right}
             y1={y}
@@ -115,6 +128,8 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
             stroke="var(--dashboard-chart-grid)"
             strokeWidth={1}
           />
+          <text x={PADDING.left - 7} y={y + 3} textAnchor="end" fontSize={10} fill="var(--dashboard-chart-axis)">{compactMoney(value)}</text>
+          </g>
         ))}
 
         <path d={areaPath} fill={`url(#${gradientId})`} className="chart-area-reveal" />
@@ -128,6 +143,7 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
           strokeLinejoin="round"
           strokeLinecap="round"
         />
+        {previousLinePath && <path d={previousLinePath} fill="none" stroke="var(--dashboard-chart-axis)" strokeWidth={1.75} strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" />}
 
         {activeIndex !== null && (
           <line
@@ -202,14 +218,22 @@ export function RevenueAreaChart({ points, formatValue, ariaLabel }: RevenueArea
           <p className="whitespace-nowrap font-sans text-xs font-semibold text-gray-900 tabular-nums">
             {formatValue(activePoint.value)}
           </p>
+          {previousPoints[activeIndex!] && <p className="whitespace-nowrap text-[11px] text-gray-500">{previousLabel}: {formatValue(previousPoints[activeIndex!].value)}</p>}
         </div>
       )}
+      {currentLabel && previousLabel && previousPoints.length > 0 && <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-1 text-[11px] text-gray-500">
+        <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-4 bg-primary-custom" />{currentLabel}</span>
+        <span className="inline-flex items-center gap-1.5"><i className="w-4 border-t-2 border-dashed border-gray-500" />{previousLabel}</span>
+      </div>}
 
       {/* Dieselben Werte als Liste: Das Diagramm selbst ist für Vorlesehilfen
           nur ein Bild. */}
       <ul className="sr-only">
         {points.map((point) => (
           <li key={`value-${point.key}`}>{`${point.label}: ${formatValue(point.value)}`}</li>
+        ))}
+        {previousPoints.map((point) => (
+          <li key={`previous-value-${point.key}`}>{`${previousLabel} ${point.label}: ${formatValue(point.value)}`}</li>
         ))}
       </ul>
     </div>

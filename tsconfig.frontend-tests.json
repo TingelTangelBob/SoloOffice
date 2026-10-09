@@ -27,6 +27,8 @@
     "src/utils/paymentInformation.ts",
     "src/utils/serviceDate.ts",
     "src/utils/templateDefaults.ts",
+    "src/utils/dashboardPreferences.ts",
+    "src/utils/dashboardMetrics.ts",
     "src/utils/timeZones.ts",
     "src/utils/tableSort.ts",
     "src/utils/hashRouter.ts"

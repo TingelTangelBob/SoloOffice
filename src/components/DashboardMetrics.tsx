@@ -24,9 +24,9 @@ const TONE_CLASS: Record<MetricTone, string> = {
   warning: 'bg-amber-50 text-amber-700',
 };
 
-export function MetricCard({ className = '', children }: { className?: string; children: ReactNode }) {
+export function MetricCard({ className = '', children, style }: { className?: string; children: ReactNode; style?: React.CSSProperties }) {
   return (
-    <section className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
+    <section style={style} className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
       {children}
     </section>
   );

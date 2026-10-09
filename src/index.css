@@ -2926,3 +2926,20 @@
     stroke-dashoffset: 0;
   }
 }
+
+/* Schalter im Dunkelmodus: Die globalen Dark-Overrides für `.bg-white`,
+   `.bg-gray-300` und `.bg-primary-custom` machen Bahn und Regler sonst gleich
+   dunkel, sodass „an“ und „aus“ nicht unterscheidbar sind. Daher invertiert
+   wie im Hellmodus: aktive Bahn hell mit dunklem Regler. */
+#app-shell[data-theme="dark"] .so-switch[data-checked="true"] {
+  background-color: #e4e4e7 !important;
+}
+#app-shell[data-theme="dark"] .so-switch[data-checked="true"] .so-switch-knob {
+  background-color: #18181b !important;
+}
+#app-shell[data-theme="dark"] .so-switch[data-checked="false"] {
+  background-color: #3f3f46 !important;
+}
+#app-shell[data-theme="dark"] .so-switch[data-checked="false"] .so-switch-knob {
+  background-color: #a1a1aa !important;
+}

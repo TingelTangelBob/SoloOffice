@@ -7,6 +7,7 @@ import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 import { IMPORT_RESOURCES, MAX_IMPORT_ROWS, isApplicable, planImport, planInvoiceCourses, reportRows, summariseImport } from '../../backend/utils/importPlanner.js';
 import type { ImportPlan, PlannerContext, PlannerResource } from '../../backend/utils/importPlanner.js';
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
+import { normalizeDashboardPreferences } from '../utils/dashboardPreferences';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 type DemoCourseAction = {
@@ -52,6 +53,7 @@ interface DemoState {
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'solooffice-demo-active-workspace-v1';
+const DASHBOARD_PREFERENCES_STORAGE_KEY = 'solooffice-demo-dashboard-preferences-v1';
 const DEMO_TAKEOVER_STORAGE_KEY = 'solooffice-demo-takeover-v1';
 export const DEMO_DEFAULT_WORKSPACE_ID = 'demo-workspace';
 
@@ -139,7 +141,7 @@ function demoDigest(value: unknown): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 9;
+const DEMO_SEED_VERSION = 10;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -282,13 +284,14 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
       ...(index % 2 === 0 ? [makeItem('Zusatzleistung und Dokumentation', 85 + index * 10, 1, 1)] : []),
     ];
     const totals = calculateItems(items);
+    const issueOffset = index === 6 ? -365 - (index * 4 + 1) : -(index * 4 + 1);
     return {
-      id: generateUUID(), invoiceNumber: `RE-${yearOf(-(index * 4 + 1))}-${String(index + 1).padStart(3, '0')}`,
+      id: generateUUID(), invoiceNumber: `RE-${yearOf(issueOffset)}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name,
-      issueDate: isoDate(-(index * 4 + 1)), dueDate: isoDate(14 - index * 3),
+      issueDate: isoDate(issueOffset), dueDate: isoDate(14 - index * 3),
       ...totals,
       status: (['draft', 'sent', 'paid', 'overdue'][index % 4]), notes: fixture.workDescription,
-      createdAt: isoDate(-(index * 4 + 1)),
+      createdAt: isoDate(issueOffset),
     };
   });
 
@@ -362,7 +365,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     { id: '2027', year: 2027, start_number: 100, created_at: isoDate(-5), updated_at: isoDate() },
   ];
   state.euerEntries = Array.from({ length: 8 }, (_, index) => ({
-    id: generateUUID(), entryDate: dateOnly(isoDate(-index * 5)), description: `${fixture.workTitles[index % fixture.workTitles.length]} – Einnahme`,
+    id: generateUUID(), entryDate: dateOnly(isoDate(index >= 6 ? -365 - index * 5 : -index * 5)), description: `${fixture.workTitles[index % fixture.workTitles.length]} – Einnahme`,
     amount: 280 + index * 75, taxRate: 19, notes: fixture.workDescription, sourceType: 'manual', status: 'active', createdAt: isoDate(-index * 5), updatedAt: isoDate(-index * 5),
   }));
   state.euerEntryHistory = [];
@@ -1711,6 +1714,20 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'user-preferences' && parts[1] === 'dashboard') {
+    const key = `${DASHBOARD_PREFERENCES_STORAGE_KEY}:${getDemoActiveWorkspaceId()}:demo-user`;
+    if (method === 'GET') {
+      let stored: unknown = null;
+      try { stored = JSON.parse(localStorage.getItem(key) || 'null'); } catch { localStorage.removeItem(key); }
+      return { preferences: normalizeDashboardPreferences(stored) } as T;
+    }
+    if (method === 'PUT') {
+      const preferences = normalizeDashboardPreferences(data.preferences);
+      localStorage.setItem(key, JSON.stringify(preferences));
+      return { preferences } as T;
+    }
+  }
 
   if (resource === 'takeover') {
     let session = readDemoTakeover(state);
@@ -3089,6 +3106,7 @@ export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { compan
 export function deleteDemoWorkspaceData(workspaceId: string) {
   localStorage.removeItem(workspaceId === DEMO_DEFAULT_WORKSPACE_ID ? STORAGE_KEY : `${STORAGE_KEY}:${workspaceId}`);
   localStorage.removeItem(`${DEMO_TAKEOVER_STORAGE_KEY}:${workspaceId}`);
+  localStorage.removeItem(`${DASHBOARD_PREFERENCES_STORAGE_KEY}:${workspaceId}:demo-user`);
   if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(`${DEMO_TAKEOVER_STORAGE_KEY}:${workspaceId}`);
 }
 

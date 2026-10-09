@@ -20,6 +20,8 @@ interface ActionMenuProps {
   variant?: 'default' | 'primary';
   /** Öffnet das Menü einmal automatisch, wenn sich das Signal ändert. */
   autoOpenSignal?: string | number | null;
+  closeOnClick?: boolean;
+  disabled?: boolean;
 }
 
 interface MenuPosition {
@@ -65,7 +67,7 @@ export function ActionMenuItem({
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex min-h-0 w-full ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors ${colors.item} ${className}`}
+      className={`action-menu-item flex min-h-0 w-full ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
     >
       <span className={`shrink-0 ${colors.icon}`}>{icon}</span>
       <span className={`min-w-0 flex-1 ${multiline ? '' : 'truncate'}`}>{children}</span>
@@ -83,6 +85,8 @@ export function ActionMenu({
   triggerClassName = 'action-icon-button action-icon-blue',
   variant = 'default',
   autoOpenSignal = null,
+  closeOnClick = true,
+  disabled = false,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
@@ -125,7 +129,10 @@ export function ActionMenu({
   };
 
   useLayoutEffect(() => {
-    if (isOpen) updatePosition();
+    if (isOpen) {
+      updatePosition();
+      requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>('button:not(:disabled), [role^="menuitem"]:not([aria-disabled="true"])')?.focus());
+    }
   }, [isOpen, updatePosition]);
 
   useEffect(() => {
@@ -183,6 +190,7 @@ export function ActionMenu({
         aria-expanded={isOpen}
         aria-haspopup="menu"
         title={title}
+        disabled={disabled}
       >
         {icon}
       </button>
@@ -199,7 +207,26 @@ export function ActionMenu({
             boxSizing: 'border-box',
             visibility: position ? 'visible' : 'hidden'
           }}
-          onClick={() => setIsOpen(false)}
+          onClick={event => { if (closeOnClick && !event.defaultPrevented) setIsOpen(false); }}
+          onKeyDown={event => {
+            const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [role^="menuitem"]:not([aria-disabled="true"])') || []);
+            const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              const nextIndex = event.key === 'ArrowDown'
+                ? (currentIndex + 1 + items.length) % items.length
+                : (currentIndex - 1 + items.length) % items.length;
+              items[nextIndex]?.focus();
+            } else if (event.key === 'Home') {
+              event.preventDefault(); items[0]?.focus();
+            } else if (event.key === 'End') {
+              event.preventDefault(); items.at(-1)?.focus();
+            } else if (event.key === 'Escape') {
+              setIsOpen(false); triggerRef.current?.focus();
+            } else if (event.key === 'Tab') {
+              setIsOpen(false);
+            }
+          }}
         >
           {children}
         </div>,

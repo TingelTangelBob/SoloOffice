@@ -10,6 +10,7 @@ import { apiService } from '../services/api';
 import { updateFavicon } from '../utils/faviconUtils';
 import { YearlyInvoiceStartNumber, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm } from '../types';
 import { PageHeader } from './PageHeader';
+import { ToggleSwitch } from './ToggleSwitch';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { getCurrencySymbol } from '../utils/formatters';
 import { getTerminology, terminologyProfiles } from '../utils/terminology';
@@ -1592,12 +1593,10 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
               <p className="mt-1 text-xs text-gray-500">„Bewegung reduzieren“ im Betriebssystem schaltet Animationen zusätzlich aus.</p>
               {motionError && <p role="alert" className="mt-2 text-xs text-red-700">Die Einstellung konnte nicht gespeichert werden.</p>}
             </div>
-            <button type="button" role="switch" aria-checked={animationsEnabled} aria-label="Animationen" onClick={() => {
+            <ToggleSwitch checked={animationsEnabled} label="Animationen" showLabel={false} onChange={() => {
               setMotionError(false);
               void setAnimationsEnabled(!animationsEnabled).catch(() => setMotionError(true));
-            }} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${animationsEnabled ? 'bg-primary-custom' : 'bg-gray-400'}`}>
-              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${animationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
+            }} className="h-7 w-12 min-h-0 justify-start rounded-full border-0 bg-transparent p-0 hover:border-0 hover:bg-transparent" />
           </div>
         </div>
 

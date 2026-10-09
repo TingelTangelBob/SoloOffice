@@ -7,6 +7,7 @@ import {
   validateDiscountFields,
   validateSchema,
 } from '../utils/validation.js';
+import { normalizeDashboardPreferences } from '../utils/dashboardPreferences.js';
 
 test('Grundtypen werden streng validiert', () => {
   assert.equal(isValidUUID('8c0d9c77-6b26-4279-866e-11042e056cbc'), true);
@@ -33,4 +34,17 @@ test('Rabatte verhindern negative und zu hohe Werte', () => {
   });
   assert.equal(validateDiscountFields({ items: [{ discountType: 'fixed', discountValue: 2.5 }] }).valid, true);
   assert.match(validateDiscountFields({ items: [{ discountType: 'fixed', discountValue: -1 }] }).message, /Position 1/);
+});
+
+test('Dashboard-Einstellungen akzeptieren nur bekannte Bausteine und begrenzte Auswahlwerte', () => {
+  const result = normalizeDashboardPreferences({
+    items: [{ id: 'revenue', visible: false }, { id: 'unknown', visible: false }, { id: 'revenue', visible: true }],
+    year: 2026, includeUnpaidInvoices: true, comparePrevious: true,
+  });
+  assert.equal(result.items.length, 10);
+  assert.deepEqual(result.items[0], { id: 'revenue', visible: false });
+  assert.equal(result.includeUnpaidInvoices, true);
+  assert.equal(result.year, 2026);
+  assert.equal(normalizeDashboardPreferences({ year: '2099', comparePrevious: true }).year, null);
+  assert.equal(normalizeDashboardPreferences({ year: 'all', comparePrevious: true }).comparePrevious, false);
 });
