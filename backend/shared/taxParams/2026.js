@@ -101,7 +101,42 @@ export default {
     "warningRatio": 0.8,
     "cashAccountingPreviousLimit": 800000,
     "monthlyAdvanceThreshold": 9000,
-    "advanceExemptionThreshold": 2000
+    "advanceExemptionThreshold": 2000,
+    "standardRate": 19,
+    "reducedRate": 7,
+    "zeroRate": 0,
+    "filingDayAfterPeriod": 10,
+    "permanentExtensionMonths": 1,
+    "specialPrepaymentDivisor": 11,
+    "specialPrepaymentDueMonth": 2,
+    "specialPrepaymentDueDay": 10,
+    "tenDayRuleDays": 10,
+    "founderMonthlySuspendedUntil": 2026,
+    "kennzahlen": {
+      "kz81": "Steuerpflichtige Umsätze zum Steuersatz von 19 % (Bemessungsgrundlage)",
+      "kz86": "Steuerpflichtige Umsätze zum Steuersatz von 7 % (Bemessungsgrundlage)",
+      "kz87": "Umsätze zum Steuersatz von 0 % nach § 12 Abs. 3 UStG",
+      "kz35": "Umsätze zu anderen Steuersätzen (Bemessungsgrundlage)",
+      "kz36": "Steuer zu anderen Steuersätzen",
+      "kz48": "Steuerfreie Umsätze ohne Vorsteuerabzug (§ 4 Nr. 8 bis 29 UStG)",
+      "kz46": "Sonstige Leistungen eines im übrigen Gemeinschaftsgebiet ansässigen Unternehmers (§ 13b Abs. 1 UStG), Bemessungsgrundlage",
+      "kz47": "Steuer zu Kz 46",
+      "kz84": "Andere Leistungen (§ 13b Abs. 2 Nr. 1, 2, 4 bis 12 UStG), Bemessungsgrundlage",
+      "kz85": "Steuer zu Kz 84",
+      "kz66": "Vorsteuerbeträge aus Rechnungen von anderen Unternehmern",
+      "kz67": "Vorsteuerbeträge aus Leistungen im Sinne des § 13b UStG",
+      "kz39": "Abzug der festgesetzten Sondervorauszahlung für Dauerfristverlängerung",
+      "kz83": "Verbleibende Umsatzsteuer-Vorauszahlung bzw. verbleibender Überschuss"
+    },
+    "euerKennzahlen": {
+      "smallBusinessIncome": "111",
+      "exemptIncome": "103",
+      "taxableIncomeNet": "112",
+      "vatCollected": "140",
+      "vatRefunded": "141",
+      "inputTaxPaid": "185",
+      "vatPaidToOffice": "186"
+    }
   },
   "chambers": {
     "ihkExemptionProfit": 5200,
@@ -261,6 +296,60 @@ export default {
       "status": "PLAN/c; Gründungsjahr 25000, kein automatischer Rechnungsschalter"
     },
     {
+      "id": "vat-periods",
+      "url": "https://www.gesetze-im-internet.de/ustg_1980/__18.html",
+      "covers": [
+        "vat.monthlyAdvanceThreshold",
+        "vat.advanceExemptionThreshold",
+        "vat.filingDayAfterPeriod",
+        "vat.founderMonthlySuspendedUntil"
+      ],
+      "status": "Primärquelle am 09.10.2026 geprüft: Kalendervierteljahr, monatlich über 9.000 €, Befreiung bis 2.000 €, Neugründer-Monatspflicht 2021–2026 ausgesetzt; Fälligkeit 10. Tag nach Ablauf"
+    },
+    {
+      "id": "vat-extension",
+      "url": "https://www.gesetze-im-internet.de/ustdv_1980/__47.html",
+      "covers": [
+        "vat.permanentExtensionMonths",
+        "vat.specialPrepaymentDivisor",
+        "vat.specialPrepaymentDueMonth",
+        "vat.specialPrepaymentDueDay"
+      ],
+      "status": "§§ 46–48 UStDV: Fristverlängerung um einen Monat, Sondervorauszahlung 1/11 der Vorjahresvorauszahlungen bei Monatszahlern, Antrag/Zahlung bis 10. Februar; nicht im Volltext neu geöffnet"
+    },
+    {
+      "id": "vat-cash",
+      "url": "https://www.gesetze-im-internet.de/ustg_1980/__20.html",
+      "covers": [
+        "vat.cashAccountingPreviousLimit"
+      ],
+      "status": "Primärquelle laut c-RESULT: 800.000 € Vorjahresumsatz oder freiberufliche Umsätze; Ist-Versteuerung nur auf Antrag/Genehmigung"
+    },
+    {
+      "id": "vat-form-2026",
+      "url": "https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Umsatzsteuer/Umsatzsteuer-Vordrucke/",
+      "covers": [
+        "vat.kennzahlen"
+      ],
+      "status": "BMF-Schreiben vom 29.12.2025 (Vordruckmuster 2026) laut Sekundärquellen; Kz 81/86/66/83 sowie 46/47 und 84/85 für 2026 bestätigt; Kz 87, 35/36, 48, 67, 39 aus Vorjahresvordrucken, im Original 2026 nicht geöffnet"
+    },
+    {
+      "id": "euer-ten-day",
+      "url": "https://www.gesetze-im-internet.de/estg/__11.html",
+      "covers": [
+        "vat.tenDayRuleDays"
+      ],
+      "status": "§ 11 Abs. 2 Satz 2 EStG; BFH XI R 48/05 (USt-Vorauszahlung regelmäßig wiederkehrend), BFH X R 44/16 (gesetzliche Fälligkeit am 10.01. maßgeblich, keine Verschiebung nach § 108 Abs. 3 AO); bei Dauerfristverlängerung Fälligkeit außerhalb des Zeitraums"
+    },
+    {
+      "id": "euer-form",
+      "url": "https://www.elster.de/eportal/formulare-leistungen/alleformulare/euer",
+      "covers": [
+        "vat.euerKennzahlen"
+      ],
+      "status": "Anlage-EÜR-Kennzahlen 111/103/112/140/141/185/186 als Orientierung aus Vorjahresvordrucken; für 2026 nicht amtlich gegengeprüft"
+    },
+    {
       "id": "ihk",
       "url": "https://www.gesetze-im-internet.de/ihkg/__3.html",
       "covers": [
@@ -296,7 +385,9 @@ export default {
   "limitations": [
     "Kirchensteuer ohne Kappung und besondere Kirchgeldfälle",
     "Keine rechtliche Einstufung von Tätigkeit, Versicherungspflicht oder USt-Befreiung",
-    "Vorsteuer nur grobe Rücklage aus erfassten Sätzen; keine UStVA",
+    "Umsatzsteuer-Zahllast aus erfassten Rechnungen und EÜR-Angaben als Orientierung; keine Voranmeldung, keine ELSTER-Übermittlung",
+    "Gemischt genutzte Eingangsleistungen (steuerfrei/steuerpflichtig) ohne Aufteilungsautomatik; Anzahlungen, Forderungsausfälle (§ 17 UStG) und innergemeinschaftliche Lieferungen/Erwerbe nicht abgebildet",
+    "Fälligkeiten verschieben sich nur um Wochenenden und bundeseinheitliche Feiertage; Landesfeiertage nicht berücksichtigt",
     "Kammerbeiträge ausschließlich aus Nutzerangaben",
     "Kein verifizierter Parametersatz vor/nach 2026"
   ]

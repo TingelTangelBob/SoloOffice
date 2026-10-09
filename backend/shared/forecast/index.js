@@ -261,7 +261,7 @@ function findProfileMissing(profile, legalForm, complete) {
 }
 
 /** Pure annual forecast over canonical camelCase finance data. */
-export function buildForecast({ year, profile = {}, entries = [], expenses = [], runs = [], levyPayments = [], previousEntries = [], now = new Date() } = {}) {
+export function buildForecast({ year, profile = {}, entries = [], expenses = [], runs = [], levyPayments = [], previousEntries = [], vat = null, now = new Date() } = {}) {
   if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new RangeError('Ungültiges Prognosejahr.');
   // Der Stichtag ist ein Zeitpunkt, keine PostgreSQL-DATE-Spalte.
   const nowDate = now instanceof Date ? now.toISOString().slice(0, 10) : datePart(now);
@@ -314,19 +314,51 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   const companyProfile = findProfileMissing({ ...effectiveProfile, previousYearRevenue: inferredPreviousRevenue }, profile.legalForm,
     profileMissing({ ...effectiveProfile, previousYearRevenue: inferredPreviousRevenue }));
   if (companyProfile.fields.length) warnings.push(`Für eine vollständigere Prognose fehlen Angaben: ${companyProfile.fields.join(', ')}.`);
-  const vatAnnual = vatEstimate(effectiveProfile, revenueAnnual,
+  const roughVatAnnual = vatEstimate(effectiveProfile, revenueAnnual,
     actual.vatIncome + Math.max(0, revenueAnnual - actual.revenue) * (actual.revenue ? actual.vatIncome / actual.revenue : 0),
     actual.vatExpense + Math.max(0, expensesAnnual - actual.expenses) * (actual.expenses ? actual.vatExpense / actual.expenses : 0), params, warnings);
+  const vatApplicable = Boolean(vat?.applicable && ['regular', 'education_exempt'].includes(vat.vatStatus));
+  const vatIncompleteEntries = vat ? Math.max(0, Number(vat.completeness?.incompleteEntries) || 0) : 0;
+  const vatBasis = !vat ? 'rough' : (vatApplicable && vatIncompleteEntries > 0 ? 'estimate' : 'calculated');
+  const vatNextDue = vat?.nextDue ?? null;
+  const pastVatMonthly = Array.from({ length: params.forecast.monthsPerYear }, (_, index) => {
+    const month = monthKey(year, index + 1);
+    if (!vatApplicable || month > nowDate.slice(0, 7)) return null;
+    const item = vat.months?.find(candidate => candidate.month === month);
+    if (!item) return 0;
+    return amount(item.complete ? item.liability : item.estimatedLiability);
+  });
+  const vatFutureMonthly = Array(params.forecast.monthsPerYear).fill(0);
+  let vatAnnual = roughVatAnnual;
+  let paidUst = 0;
+  if (vatApplicable) {
+    const remainingRevenue = Math.max(0, revenueAnnual - actual.revenue);
+    const remainingExpenses = Math.max(0, expensesAnnual - actual.expenses);
+    const futureEstimate = vatEstimate(effectiveProfile, remainingRevenue,
+      remainingRevenue * (actual.revenue ? actual.vatIncome / actual.revenue : 0),
+      remainingExpenses * (actual.expenses ? actual.vatExpense / actual.expenses : 0), params, warnings);
+    const futureMonths = Array.from({ length: params.forecast.monthsPerYear }, (_, index) => index)
+      .filter(index => pastVatMonthly[index] === null);
+    const projected = distribute(futureEstimate, Array(12).fill(1), futureMonths);
+    for (const index of futureMonths) vatFutureMonthly[index] = projected[index];
+    const recordedMonths = pastVatMonthly.map(value => value === null ? 0 : value);
+    vatAnnual = round(recordedMonths.reduce((sum, value) => sum + value, 0) + futureEstimate);
+    paidUst = round((vat.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.paid)), 0));
+  }
+  const vatRemainingReserve = vatApplicable
+    ? round(pastVatMonthly.reduce((sum, value) => sum + (value ?? 0), 0) - paidUst
+      + Math.max(0, amount(vat.annual?.refunded ?? (vat.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.refunded)), 0)))
+      + vatFutureMonthly.reduce((sum, value) => sum + value, 0))
+    : vat ? 0 : vatAnnual;
   const paid = levyPayments.filter(item => Number(item.year) === year && item.paidOn && datePart(item.paidOn) <= nowDate);
-  const paidLevies = round(paid.reduce((sum, item) => sum + Math.max(0, amount(item.amount)), 0));
-  const paidUst = round(paid.filter(item => item.kind === 'ust').reduce((sum, item) => sum + amount(item.amount), 0));
-  const vatRemainingReserve = round(vatAnnual - paidUst);
+  const paidLevies = round(paid.filter(item => item.kind !== 'ust').reduce((sum, item) => sum + Math.max(0, amount(item.amount)), 0));
+  if (!vat) paidUst = 0;
   if (paidUst > 0 && vatRemainingReserve < 0) warnings.push('Erfasste Umsatzsteuerzahlungen übersteigen den Jahresrichtwert; daraus wird keine Erstattung zugesagt.');
   const paidAdvances = { est_vz: 0, gewst_vz: 0, ust: 0 };
   const paidAdvanceMonths = Array.from({ length: params.forecast.monthsPerYear }, (_, index) => ({
     month: monthKey(year, index + 1), est_vz: 0, gewst_vz: 0, ust: 0,
   }));
-  for (const payment of paid) {
+  for (const payment of paid.filter(item => item.kind !== 'ust')) {
     if (!Object.hasOwn(paidAdvances, payment.kind)) continue;
     paidAdvances[payment.kind] = round(paidAdvances[payment.kind] + amount(payment.amount));
     const paidDate = datePart(payment.paidOn);
@@ -334,6 +366,14 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
       const month = paidAdvanceMonths[monthOf(paidDate) - 1];
       month[payment.kind] = round(month[payment.kind] + amount(payment.amount));
     }
+  }
+  paidAdvances.ust = paidUst;
+  for (const payment of vat?.payments || []) {
+    if (!vatApplicable || payment.kind === 'refund' || !payment.paidOn || datePart(payment.paidOn) > nowDate) continue;
+    const paidDate = datePart(payment.paidOn);
+    if (validYear(paidDate) !== year) continue;
+    const month = paidAdvanceMonths[monthOf(paidDate) - 1];
+    month.ust = round(month.ust + amount(payment.amount));
   }
   const expenseNotices = expenses.filter(item => (item.scope || 'business') === 'business').map(item => {
     const endDate = item.endDate ? datePart(item.endDate) : null;
@@ -363,7 +403,9 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   const socialMonths = monthIndexes.filter(index => !startedOn || monthEnd(year, index + 1) >= startedOn);
   const socialByMonth = distribute(social.total, weights, socialMonths);
   const taxByMonth = distribute(taxes.total, weights, monthIndexes);
-  const vatByMonth = distribute(vatAnnual, weights, monthIndexes);
+  const vatByMonth = vatApplicable
+    ? monthIndexes.map(index => round((pastVatMonthly[index] ?? 0) + vatFutureMonthly[index]))
+    : vat ? Array(12).fill(0) : distribute(vatAnnual, weights, monthIndexes);
   const monthly = Array.from({ length: params.forecast.monthsPerYear }, (_, index) => {
     const monthNumber = index + 1;
     const key = monthKey(year, monthNumber);
@@ -385,7 +427,10 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     { id: 'fixed_costs', label: 'Fixkosten', points: monthly.map(item => ({ label: item.month, value: item.fixedCosts, forecast: item.forecast })), kind: 'bar', tooltip: 'Betriebliche Fixkosten; geplante künftige Fälligkeiten werden aus Vorlagen berechnet.' },
     { id: 'social', label: 'Sozialbeiträge', points: monthly.map(item => ({ label: item.month, value: item.social, forecast: item.forecast })), kind: 'bar', tooltip: 'Auf aktive Kalendermonate verteilte Jahresprognose; geleistete Zahlungen sind separat erfasst.' },
     { id: 'tax_reserve', label: 'Steuerrücklage', points: monthly.map(item => ({ label: item.month, value: item.taxReserve, forecast: item.forecast })), kind: 'bar', tooltip: 'Gleichmäßig verteilte Steuerprognose.' },
-    { id: 'vat_reserve', label: 'Umsatzsteuer-Richtwert', points: monthly.map(item => ({ label: item.month, value: item.vatReserve, forecast: item.forecast })), kind: 'bar', tooltip: 'Grobe Umsatzsteuer-Schätzung aus erfassten Bruttowerten und Steuersätzen.' },
+    { id: 'vat_reserve', label: 'Umsatzsteuer', points: monthly.map(item => ({ label: item.month, value: item.vatReserve, forecast: item.forecast })), kind: 'bar', tooltip: vatBasis === 'calculated'
+      ? 'Aus deinen erfassten Belegen berechnet.'
+      : vatBasis === 'estimate' ? `Schätzung – ${vatIncompleteEntries} Buchungen ohne USt-Angaben.`
+        : 'Schätzung aus erfassten Bruttowerten und Steuersätzen.' },
     { id: 'available', label: 'Verfügbar', points: monthly.map(item => ({ label: item.month, value: item.available, forecast: item.forecast })), kind: 'line', tooltip: 'Umsatz abzüglich variabler Ausgaben, Fixkosten und geschätzter Abgaben; die Diagrammauswahl wird separat berücksichtigt.' },
   ];
   const businessRunMap = new Map();
@@ -410,13 +455,22 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
       kind: 'bar', tooltip: 'Kostenserie aus gebuchten und geplanten Fälligkeiten dieser Vorlage.' });
   }
   const paidByMonth = Array(12).fill(0);
-  for (const payment of paid) {
+  for (const payment of paid.filter(item => item.kind !== 'ust')) {
     const paidDate = datePart(payment.paidOn);
     if (validYear(paidDate) === year) paidByMonth[monthOf(paidDate) - 1] += amount(payment.amount);
   }
   series.push({ id: 'paid_levies', label: 'Gezahlte Abgaben', points: paidByMonth.map((value, index) => ({ label: monthKey(year, index + 1), value: round(value), forecast: false })),
     kind: 'bar', tooltip: 'Tatsächlich als bezahlt erfasste private Abgaben nach Zahlungsmonat; getrennt von den erwarteten Monatswerten.' });
-  const upcomingLevies = levyPayments.filter(item => Number(item.year) === year && (!item.paidOn || datePart(item.paidOn) > nowDate));
+  const upcomingLevies = levyPayments.filter(item => item.kind !== 'ust' && Number(item.year) === year && (!item.paidOn || datePart(item.paidOn) > nowDate));
+  for (const period of vat?.periods || []) {
+    if (!vatApplicable || !['closed', 'running'].includes(period.state) || !period.dueDate) continue;
+    const expected = period.complete ? amount(period.liability) : amount(period.estimatedLiability);
+    const openAmount = round(expected - amount(period.paid) + amount(period.refunded));
+    if (openAmount <= 0.01) continue;
+    upcomingLevies.push({ id: `forecast:ust:${period.key}`, kind: 'ust', year, period: period.key,
+      dueDate: period.dueDate, paidOn: null, amount: openAmount, source: 'notice', expenseRunId: null,
+      notes: period.complete ? 'Aus erfassten Belegen berechnet.' : 'Schätzung aus erfassten Belegen.' });
+  }
   for (const [kind, field, dates] of [
     ['est_vz', 'incomeTaxAdvanceQuarterly', params.advancePayments.incomeTaxDates],
     ['gewst_vz', 'tradeTaxAdvanceQuarterly', params.advancePayments.tradeTaxDates],
@@ -435,7 +489,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     { label: 'Prognostizierter Umsatz', amount: revenueAnnual }, { label: 'Variable betriebliche Ausgaben', amount: variableAnnual },
     { label: 'Fixkosten', amount: fixedAnnual }, { label: 'Prognostizierter Gewinn', amount: profitAnnual },
     { label: 'Sozialbeiträge', amount: social.total }, { label: 'Steuern', amount: taxes.total }, { label: 'Kammerbeitrag (Nutzereingabe)', amount: chamber.annual },
-    { label: 'Umsatzsteuer-Richtwert', amount: vatAnnual }, { label: 'Bereits gezahlte Abgaben', amount: paidLevies },
+    { label: 'Umsatzsteuer', amount: vatAnnual }, { label: 'Bereits gezahlte Abgaben', amount: paidLevies },
   ];
   return {
     year, parameterYear, paramsVersion: params.version, paramsAsOf: params.asOf, generatedAt: new Date(now).toISOString(),
@@ -445,6 +499,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     reserveRatio, expectedRemainingInflows, vatStatus: profile.vatStatus ?? null,
     previousYearRevenueKnown: inferredPreviousRevenue !== null, paidNonVatLevies: expectedLevies,
     paidAdvances, paidAdvanceMonths, dueExpenses, expenseNotices, combinedMarginalRate, vatReserveGrossEstimate: vatAnnual, vatRemainingReserve,
+    vatBasis, vatIncompleteEntries, vatNextDue,
     thresholds: thresholdData.thresholds, smallBusiness: thresholdData.smallBusiness, series, upcomingLevies,
     upcomingExpenses: schedule.planned, fixedCostsMonthly: round(fixedAnnual / params.forecast.monthsPerYear), fixedCostsAnnual: fixedAnnual, calculationSteps, monthly,
   };

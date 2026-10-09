@@ -15,6 +15,9 @@ export interface TaxTexts {
   pensionNotice: string;
   kskNotice: string;
   vatRoughNotice: string;
+  vatCalculatedNotice: string;
+  vatEstimateNotice(count: number): string;
+  vatBusinessNotice: string;
   missingYearNotice(requestedYear: number, parameterYear: number, asOf: string): string;
   helpTitle: string;
 }

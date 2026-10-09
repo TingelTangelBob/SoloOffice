@@ -19,6 +19,9 @@ export const TAX_TEXTS = Object.freeze({
   pensionNotice: 'Ob für dich Rentenversicherungspflicht besteht, hängt von deiner konkreten Tätigkeit und persönlichen Situation ab. SoloOffice leitet den Status nicht allein aus deinem Beruf ab. Bei offenen Fragen kann die Deutsche Rentenversicherung deinen Status prüfen.',
   kskNotice: 'Ob eine Versicherung über die Künstlersozialkasse möglich ist, prüft die Künstlersozialkasse anhand der persönlichen und beruflichen Voraussetzungen. Die Anzeige nimmt keine Einstufung vor.',
   vatRoughNotice: 'Die Umsatzsteuer-Rücklage ist nur ein grober Richtwert aus den erfassten Zahlungen und Steuersätzen. Vorsteuer und besondere Sachverhalte können unvollständig sein. Die Anzeige ersetzt keine Umsatzsteuer-Voranmeldung.',
+  vatCalculatedNotice: 'Die Umsatzsteuer wird aus deinen erfassten Rechnungen, Zahlungseingängen und EÜR-Buchungen mit USt-Angaben berechnet. Sie ist eine Orientierung für die Umsatzsteuer-Voranmeldung, keine Steuerberatung und keine Übermittlung an das Finanzamt (kein ELSTER).',
+  vatEstimateNotice: count => `Schätzung: ${count} ${count === 1 ? 'Buchung hat' : 'Buchungen haben'} noch keine vollständigen USt-Angaben. Für sie wird höchstens der vorhandene Steuersatz als Vorschlag verwendet.`,
+  vatBusinessNotice: 'Umsatzsteuer ist keine private Abgabe: Zahlungen an das Finanzamt sind Betriebsausgaben, Erstattungen Betriebseinnahmen (EÜR, Bruttomethode).',
   missingYearNotice: (requestedYear, parameterYear, asOf) => `Für ${requestedYear} liegen keine geprüften Parameter vor. Diese Schätzung verwendet Werte für ${parameterYear} (Stand ${asOf}).`,
   helpTitle: 'So entstehen die Schätzungen',
 });

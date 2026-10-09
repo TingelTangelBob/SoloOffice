@@ -68,6 +68,8 @@ export const DASHBOARD_ITEM_DEFINITIONS = Object.freeze([
   { id: 'small-business', group: 'card', defaultVisible: false, defaultSize: 'third', sizes: SMALL, requiredExtension: 'taxes' },
   { id: 'fixed-costs', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
   { id: 'tax-advances', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
+  // Betriebliche Kachel (keine private Abgabe): USt-Zahllast des Voranmeldungszeitraums.
+  { id: 'vat-return', group: 'card', defaultVisible: false, defaultSize: 'third', sizes: ['third', 'half'], requiredExtension: 'taxes' },
   { id: 'health-backpayment', group: 'card', defaultVisible: false, defaultSize: 'half', sizes: WIDE, requiredExtension: 'taxes' },
 ].map(definition => Object.freeze(definition)));
 

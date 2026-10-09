@@ -16,10 +16,11 @@ const NULLABLE = new Set([
   'healthInsurance', 'privateHealthBasicMonthly', 'healthNoticeMonthly', 'careNoticeMonthly',
   'healthNoticeIncomeMonthly', 'pensionNoticeMonthly', 'kskIncomeAnnual', 'tradeMultiplier',
   'incomeTaxAdvanceQuarterly', 'tradeTaxAdvanceQuarterly', 'churchTaxLiable', 'unemploymentAppliedOn', 'birthYear',
+  'vatAccounting', 'vatSpecialPrepayment', 'previousYearVatLiability',
 ]);
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const INTEGER_FIELDS = new Set(['year', 'children', 'childrenUnder25', 'birthYear']);
-const BOOLEAN_FIELDS = new Set(['churchTaxLiable', 'singleParent', 'sickPay', 'unemploymentEnabled', 'chamberFounderEligible']);
+const BOOLEAN_FIELDS = new Set(['churchTaxLiable', 'singleParent', 'sickPay', 'unemploymentEnabled', 'chamberFounderEligible', 'vatPermanentExtension']);
 const STRING_FIELDS = new Set(['state']);
 const PAYLOAD_FIELDS = Object.freeze(Object.keys(defaultTaxProfile(2026)).filter(key => ![
   'id', 'disclaimerAcceptedAt', 'churchTaxConsentAt', 'updatedAt', 'paramsVersion',

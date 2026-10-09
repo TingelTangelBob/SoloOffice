@@ -98,6 +98,18 @@ export type TaxParameters = {
     cashAccountingPreviousLimit: number;
     monthlyAdvanceThreshold: number;
     advanceExemptionThreshold: number;
+    standardRate: number;
+    reducedRate: number;
+    zeroRate: number;
+    filingDayAfterPeriod: number;
+    permanentExtensionMonths: number;
+    specialPrepaymentDivisor: number;
+    specialPrepaymentDueMonth: number;
+    specialPrepaymentDueDay: number;
+    tenDayRuleDays: number;
+    founderMonthlySuspendedUntil: number;
+    kennzahlen: Record<'kz81' | 'kz86' | 'kz87' | 'kz35' | 'kz36' | 'kz48' | 'kz46' | 'kz47' | 'kz84' | 'kz85' | 'kz66' | 'kz67' | 'kz39' | 'kz83', string>;
+    euerKennzahlen: Record<'smallBusinessIncome' | 'exemptIncome' | 'taxableIncomeNet' | 'vatCollected' | 'vatRefunded' | 'inputTaxPaid' | 'vatPaidToOffice', string>;
   };
   chambers: {
     ihkExemptionProfit: number;

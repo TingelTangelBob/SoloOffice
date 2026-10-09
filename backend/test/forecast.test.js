@@ -233,12 +233,12 @@ test('verdoppelt ESt-Stufengrenzen beim Splitting und zeigt KSK-Bemessung im KV-
   assert.equal(result.thresholds.find(item => item.id === 'kv').value, 18000);
 });
 
-test('zieht bezahlte Umsatzsteuer vom Richtwert ab und verspricht bei Überzahlung keine Erstattung', () => {
+test('zählt private ust-Abgaben nicht als bezahlte Umsatzsteuer', () => {
   const result = buildForecast({ year: 2026, profile: baseProfile(2026), now: '2026-01-31', entries: [income('2026-01-10', 119, 19)],
     levyPayments: [{ id: 'ust', kind: 'ust', year: 2026, period: '2026-01', dueDate: '2026-01-20', paidOn: '2026-01-20', amount: 500, source: 'manual', expenseRunId: null, notes: '' }] });
-  assert.equal(result.paidUst, 500);
-  assert.equal(result.vatRemainingReserve, Math.round((result.vatReserveGrossEstimate - 500) * 100) / 100);
-  assert.ok(result.warnings.some(item => item.includes('keine Erstattung zugesagt')));
+  assert.equal(result.paidUst, 0);
+  assert.equal(result.paidAdvances.ust, 0);
+  assert.equal(result.vatRemainingReserve, result.vatReserveGrossEstimate);
 });
 
 
@@ -309,10 +309,10 @@ test('Kachelvertrag trennt bezahlte Vorauszahlungen von Sozialbeiträgen und lie
       { kind: 'est_vz', year: 2026, paidOn: '2026-09-10', amount: 300 },
       { kind: 'ust', year: 2026, paidOn: '2026-08-10', amount: 100 },
     ] });
-  assert.deepEqual(result.paidAdvances, { est_vz: 300, gewst_vz: 0, ust: 100 });
+  assert.deepEqual(result.paidAdvances, { est_vz: 300, gewst_vz: 0, ust: 0 });
   assert.equal(result.paidNonVatLevies, 700);
   assert.equal(result.paidAdvanceMonths.find(item => item.month === '2026-09').est_vz, 300);
-  assert.equal(result.paidAdvanceMonths.find(item => item.month === '2026-08').ust, 100);
+  assert.equal(result.paidAdvanceMonths.find(item => item.month === '2026-08').ust, 0);
   assert.equal(result.previousYearRevenueKnown, true);
   assert.equal(result.vatStatus, 'regular');
   assert.equal(result.expectedRemainingInflows, result.revenueAnnual - result.revenueYtd);

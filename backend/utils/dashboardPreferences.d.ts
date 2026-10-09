@@ -8,7 +8,7 @@ export type DashboardCardItemId =
   | 'revenue' | 'top-customers' | 'week-calendar' | 'recent-jobs' | 'recent-invoices' | 'course-series'
   | 'open-invoices' | 'income-expense' | 'upcoming-jobs' | 'open-quotes' | 'unbilled-jobs'
   | 'average-invoice' | 'active-customers' | 'recent-receipts'
-  | 'taxes' | 'tax-reserve' | 'tax-position' | 'small-business' | 'fixed-costs' | 'tax-advances' | 'health-backpayment';
+  | 'taxes' | 'tax-reserve' | 'tax-position' | 'small-business' | 'fixed-costs' | 'tax-advances' | 'health-backpayment' | 'vat-return';
 
 export type DashboardItemId = DashboardQuickItemId | DashboardCardItemId;
 
