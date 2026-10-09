@@ -610,6 +610,8 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                   <option value="professional_services">Fremdleistungen</option>
                   <option value="insurance">Versicherungen</option>
                   <option value="bank_fees">Bankgebühren</option>
+                  <option value="rent">Miete und Raumkosten</option>
+                  <option value="memberships">Kammern und Verbände</option>
                   <option value="other_expense">Sonstige Betriebsausgaben</option>
                 </select>
               </label>

@@ -47,7 +47,7 @@ export type LevyPaymentPayload = Omit<LevyPayment, 'id' | 'expenseRunId'>;
 export interface ThresholdBand { id: string; label: string; from: number; to: number | null; rate?: number; tone: 'neutral' | 'success' | 'warning' | 'danger' }
 export interface ThresholdResult { id: 'est' | 'kv' | 'rv' | 'small_business' | 'trade' | 'ksk'; label: string; value: number; bands: ThresholdBand[]; message: string; marginalRate?: number }
 export interface ChartSeries { id: 'fixed_costs' | 'social' | 'tax_reserve' | 'vat_reserve' | 'available'; label: string; points: { label: string; value: number; forecast: boolean }[]; kind: 'bar' | 'line'; tooltip: string }
-export interface SocialResult { health: number; care: number; pension: number; unemployment: number; total: number; deductible: number; healthAssessmentMonthly: number; healthBackpaymentRisk: number; warnings: string[] }
+export interface SocialResult { health: number; care: number; pension: number; unemployment: number; total: number; deductible: number; healthAssessmentMonthly: number; healthBackpaymentRisk: number | null; warnings: string[] }
 export interface TaxResult { taxableIncome: number; incomeTaxBeforeCredit: number; incomeTax: number; solidarity: number; churchTax: number; tradeTax: number; tradeAssessment: number; tradeCredit: number; total: number; marginalRate: number; warnings: string[] }
 export interface ForecastResult {
   year: number; parameterYear: number; paramsVersion: string; paramsAsOf: string; generatedAt: string;

@@ -264,7 +264,7 @@ router.post('/:id/create-euer', async (req, res, next) => {
     const validCategories = new Set([
       'other_income', 'materials', 'office', 'software', 'telecommunications',
       'travel', 'vehicle', 'marketing', 'professional_services', 'insurance',
-      'bank_fees', 'other_expense',
+      'bank_fees', 'rent', 'memberships', 'other_expense',
     ]);
     if (entryType !== 'expense' || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || Number.isNaN(Date.parse(`${entryDate}T00:00:00Z`))) {
       await client.query('ROLLBACK');

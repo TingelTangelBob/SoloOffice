@@ -56,6 +56,9 @@ import * as migration047 from './047_migration_categories.js';
 import * as migration048 from './048_user_motion_preference.js';
 import * as migration049 from './049_invoice_item_units.js';
 import * as migration050 from './050_dashboard_preferences.js';
+import * as migration051 from './051_tax_profiles.js';
+import * as migration052 from './052_recurring_expenses.js';
+import * as migration053 from './053_workspace_extensions.js';
 
 // List of all migrations in execution order
 export const migrations = [
@@ -109,6 +112,9 @@ export const migrations = [
   migration048,
   migration049,
   migration050,
+  migration051,
+  migration052,
+  migration053,
 ];
 
 /**

@@ -964,6 +964,8 @@ export type EuerEntryCategory =
   | 'professional_services'
   | 'insurance'
   | 'bank_fees'
+  | 'rent'
+  | 'memberships'
   | 'other_expense';
 
 export interface EuerEntry extends Timestamps {
@@ -984,7 +986,7 @@ export interface EuerEntry extends Timestamps {
   correctionReason?: string;
 }
 
-export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction';
+export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction' | 'recurring_expense';
 
 /**
  * Fortgeschriebener Änderungsverlauf einer Rechnung. Die Einträge werden von

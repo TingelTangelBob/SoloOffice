@@ -32,6 +32,10 @@ import notificationSettingsRouter from './routes/notificationSettings.js';
 import userPreferencesRouter from './routes/userPreferences.js';
 import workspaceSetupRouter from './routes/workspaceSetup.js';
 import takeoverRouter from './routes/takeover.js';
+import extensionsRouter from './routes/extensions.js';
+import taxProfilesRouter from './routes/taxProfiles.js';
+import recurringExpensesRouter from './routes/recurringExpenses.js';
+import levyPaymentsRouter from './routes/levyPayments.js';
 import { requireAuth, authorizeLegacyRequest, csrfProtection } from './middleware/auth.js';
 import { workspaceSuspensionGuard } from './middleware/workspaceSuspension.js';
 import { persistentRateLimit, pruneRateLimitBuckets } from './middleware/rateLimit.js';
@@ -161,6 +165,10 @@ app.use('/api/notification-settings', notificationSettingsRouter);
 app.use('/api/user-preferences', userPreferencesRouter);
 app.use('/api/workspace-setup', workspaceSetupRouter);
 app.use('/api/takeover', takeoverRouter);
+app.use('/api/extensions', extensionsRouter);
+app.use('/api/tax-profile', taxProfilesRouter);
+app.use('/api/recurring-expenses', recurringExpensesRouter);
+app.use('/api/levy-payments', levyPaymentsRouter);
 
 app.get('/metrics', (req, res) => {
   const accessStatus = metricsAccessStatus(process.env.METRICS_TOKEN, req.get('authorization'));

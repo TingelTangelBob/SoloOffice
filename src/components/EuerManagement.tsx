@@ -99,12 +99,14 @@ const categoryLabels: Record<EuerEntryCategory, string> = {
   professional_services: 'Fremdleistungen',
   insurance: 'Versicherungen',
   bank_fees: 'Bankgebühren',
+  rent: 'Miete und Raumkosten',
+  memberships: 'Kammern und Verbände',
   other_expense: 'Sonstige Betriebsausgaben',
 };
 
 const expenseCategories: EuerEntryCategory[] = [
   'materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle',
-  'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense',
+  'marketing', 'professional_services', 'insurance', 'bank_fees', 'rent', 'memberships', 'other_expense',
 ];
 
 const categorySuggestions: Array<{ category: EuerEntryCategory; words: string[] }> = [
@@ -146,6 +148,7 @@ const sourceLabels: Record<EuerEntrySourceType, string> = {
   invoice_payment: 'Teilzahlung',
   receipt: 'Beleg',
   correction: 'Korrektur',
+  recurring_expense: 'Fixkosten',
 };
 
 interface EuerManagementProps {

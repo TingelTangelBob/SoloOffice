@@ -8,7 +8,7 @@ const sourceTypes = new Set(['manual', 'invoice_payment', 'receipt', 'correction
 const categories = new Set([
   'other_income', 'materials', 'office', 'software', 'telecommunications',
   'travel', 'vehicle', 'marketing', 'professional_services', 'insurance',
-  'bank_fees', 'other_expense',
+  'bank_fees', 'rent', 'memberships', 'other_expense',
 ]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -61,7 +61,7 @@ async function syncInvoicePaymentStatus(client, invoiceId) {
   `, [invoiceId]);
 }
 
-function validateEntry(data) {
+function validateEntry(data, allowRecurringSource = false) {
   const entryType = String(data.entryType || '');
   const entryDate = String(data.entryDate || '');
   const description = String(data.description || '').trim();
@@ -78,7 +78,7 @@ function validateEntry(data) {
   if (!categories.has(category)) return 'Ungültige Kategorie.';
   if (!Number.isFinite(amount) || amount < 0) return 'Der Betrag muss eine positive Zahl sein.';
   if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return 'Der MwSt.-Satz muss zwischen 0 und 100 liegen.';
-  if (!sourceTypes.has(sourceType)) return 'Ungültige Buchungsquelle.';
+  if (!sourceTypes.has(sourceType) && !(allowRecurringSource && sourceType === 'recurring_expense')) return 'Ungültige Buchungsquelle.';
   if (sourceId && !uuidPattern.test(sourceId)) return 'Ungültige Quellenreferenz.';
   if (externalReference.length > 255) return 'Die externe Zahlungs-ID darf höchstens 255 Zeichen enthalten.';
   if (data.correctionReason && String(data.correctionReason).length > 500) return 'Der Korrekturgrund darf höchstens 500 Zeichen enthalten.';
@@ -94,6 +94,16 @@ async function validateSource(data, currentId = null, executor = query) {
 
   if (sourceType === 'manual') return null;
   if (!sourceId || !uuidPattern.test(sourceId)) return 'Für diese Buchungsart ist eine gültige Quelle erforderlich.';
+
+  if (sourceType === 'recurring_expense') {
+    if (!currentId || data.entryType !== 'expense') return 'Fixkosten werden ausschließlich über ihre Fälligkeit als Ausgabe gebucht.';
+    const result = await executor('SELECT snapshot, status, euer_entry_id FROM recurring_expense_runs WHERE id = $1 FOR UPDATE', [sourceId]);
+    const run = result.rows[0];
+    if (!run || run.snapshot?.scope !== 'business' || run.status !== 'confirmed' || run.euer_entry_id !== currentId) {
+      return 'Die betriebliche Fixkostenquelle stimmt nicht mit dieser Buchung überein.';
+    }
+    return null;
+  }
 
   if (sourceType === 'invoice_payment') {
     if (data.entryType !== 'income') return 'Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.';
@@ -288,7 +298,12 @@ router.put('/:id', async (req, res, next) => {
       sourceType: req.body.sourceType || current.sourceType || 'manual',
       sourceId: req.body.sourceId === '' ? undefined : (req.body.sourceId ?? current.sourceId),
     };
-    const error = validateEntry(merged);
+    const allowRecurringSource = current.sourceType === 'recurring_expense' && merged.sourceId === current.sourceId;
+    if (current.sourceType === 'recurring_expense' && merged.sourceType !== current.sourceType) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Der Quellenverweis einer Fixkostenbuchung bleibt erhalten.' });
+    }
+    const error = validateEntry(merged, allowRecurringSource);
     if (error) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error });
