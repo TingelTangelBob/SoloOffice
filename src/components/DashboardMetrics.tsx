@@ -24,9 +24,10 @@ const TONE_CLASS: Record<MetricTone, string> = {
   warning: 'bg-amber-50 text-amber-700',
 };
 
+/** `flex-1`: Die Karte füllt die Rasterzelle, auch wenn die Nachbarkarte höher ist. */
 export function MetricCard({ className = '', children, style }: { className?: string; children: ReactNode; style?: React.CSSProperties }) {
   return (
-    <section style={style} className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
+    <section style={style} className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
       {children}
     </section>
   );
@@ -217,8 +218,4 @@ export function ShareBarItem({
       </span>
     </li>
   );
-}
-
-export function MetricEmptyState({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-8 text-center text-sm text-gray-500 lg:px-6">{children}</p>;
 }

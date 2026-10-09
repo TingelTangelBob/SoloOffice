@@ -120,12 +120,12 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'recurring-invoices':
         return <RecurringInvoiceManagement />;
       case 'credit-notes':
-        return <CreditNoteManagement />;
+        return <CreditNoteManagement initialAction={currentPageState.filter} />;
       case 'taxes':
       case 'tax-overview':
         return <TaxOverview onNavigate={onPageChange} />;
       case 'euer':
-        return <EuerManagement onNavigate={onPageChange} />;
+        return <EuerManagement onNavigate={onPageChange} initialAction={currentPageState.filter} />;
       case 'fixed-assets':
         return <FixedAssetManagement />;
       case 'documents':

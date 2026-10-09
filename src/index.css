@@ -1525,6 +1525,239 @@
     transform: scale(1.05);
   }
 
+  /* Schnellzugriffe verteilen sich gleichmäßig auf die Reihen (siehe
+     `balancedColumns` in Dashboard.tsx): bis 640 px höchstens zwei Spalten,
+     bis 1280 px vier, darüber sechs. */
+  .dashboard-quick-actions {
+    grid-template-columns: repeat(var(--quick-cols-base, 2), minmax(0, 1fr));
+  }
+
+  @media (min-width: 640px) {
+    .dashboard-quick-actions {
+      grid-template-columns: repeat(var(--quick-cols-sm, 4), minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .dashboard-quick-actions {
+      grid-template-columns: repeat(var(--quick-cols-lg, 4), minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .dashboard-quick-actions {
+      grid-template-columns: repeat(var(--quick-cols-xl, 4), minmax(0, 1fr));
+    }
+  }
+
+  /* Kopfzeile der Übersicht: Zeitraum, „Anpassen“ und Optionen teilen Höhe,
+     Rundung und Rahmen mit dem Auswahlfeld (`form-input`). */
+  #app-shell .dashboard-header-control {
+    height: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  #app-shell .dashboard-header-button {
+    display: inline-flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background-color: #ffffff;
+    color: var(--ink-muted, #6b6b73);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+  }
+
+  #app-shell .dashboard-header-button:hover:not(:disabled),
+  #app-shell .dashboard-header-button[aria-expanded="true"],
+  #app-shell .dashboard-header-button[aria-pressed="true"] {
+    border-color: var(--primary-color, #2563eb);
+    color: var(--primary-on-surface, var(--primary-color, #2563eb));
+  }
+
+  #app-shell .dashboard-header-button:focus-visible {
+    outline: none;
+    border-color: var(--primary-color, #2563eb);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #2563eb) 18%, transparent);
+  }
+
+  #app-shell .dashboard-header-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  #app-shell[data-theme="dark"] .dashboard-header-button {
+    border-color: #3f3f46;
+    background-color: #18181b;
+    color: #d4d4d8;
+  }
+
+  /* Der Optionen-Trigger trägt zusätzlich `action-menu-trigger`, dessen
+     Farbfläche DynamicColors mit !important setzt. In der Kopfzeile gilt
+     dieselbe Optik wie für Auswahlfeld und „Anpassen“. */
+  #app-shell .dashboard-header-button.action-menu-trigger {
+    background-color: #ffffff !important;
+    color: var(--ink-muted, #6b6b73) !important;
+  }
+
+  #app-shell .dashboard-header-button.action-menu-trigger:hover,
+  #app-shell .dashboard-header-button.action-menu-trigger[aria-expanded="true"] {
+    color: var(--primary-on-surface, var(--primary-color, #2563eb)) !important;
+  }
+
+  #app-shell[data-theme="dark"] .dashboard-header-button.action-menu-trigger {
+    background-color: #18181b !important;
+    color: #d4d4d8 !important;
+  }
+
+  #app-shell[data-theme="dark"] .dashboard-header-button.action-menu-trigger:hover,
+  #app-shell[data-theme="dark"] .dashboard-header-button.action-menu-trigger[aria-expanded="true"] {
+    color: var(--primary-on-surface, #93c5fd) !important;
+  }
+
+  /* „Hinzufügen“-Einträge im Bearbeiten-Modus. */
+  #app-shell .dashboard-add-chip {
+    border: 1px dashed var(--line-strong, #d6d6db);
+    color: var(--ink-strong, #18181b);
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+  }
+
+  #app-shell .dashboard-add-chip:hover,
+  #app-shell .dashboard-add-chip:focus-visible {
+    outline: none;
+    border-color: var(--primary-color, #2563eb);
+    background-color: var(--accent-tint, #eff6ff);
+    color: var(--primary-on-surface, var(--primary-color, #2563eb));
+  }
+
+  /* Bearbeiten-Modus: Kacheln bleiben sichtbar, sind aber nicht bedienbar;
+     der gestrichelte Rahmen zeigt, dass sie verschoben werden können. */
+  .dashboard-edit-item {
+    position: relative;
+    min-width: 0;
+    border-radius: var(--container-radius, 0.75rem);
+    outline: 2px dashed color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+    outline-offset: 2px;
+  }
+
+  .dashboard-edit-item[data-dragging="true"] {
+    z-index: 30;
+    opacity: 0.85;
+    box-shadow: 0 18px 40px rgb(15 23 42 / 0.18);
+  }
+
+  .dashboard-edit-item-content {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .dashboard-edit-controls {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    border: 1px solid var(--line-strong, #d6d6db);
+    border-radius: 0.5rem;
+    background-color: var(--surface-raised, #ffffff);
+    padding: 0.125rem;
+    box-shadow: 0 4px 12px rgb(15 23 42 / 0.12);
+  }
+
+  .dashboard-edit-control {
+    display: inline-flex;
+    height: 2rem;
+    min-height: 2rem;
+    min-width: 2rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    border-radius: 0.375rem;
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ink-muted, #6b6b73);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  .dashboard-edit-control:hover:not(:disabled) {
+    background-color: var(--surface-hover, #ededef);
+    color: var(--ink-strong, #18181b);
+  }
+
+  .dashboard-edit-control:focus-visible {
+    outline: 2px solid var(--primary-color, #2563eb);
+    outline-offset: 1px;
+  }
+
+  .dashboard-edit-control:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .dashboard-edit-handle {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .dashboard-edit-handle:active {
+    cursor: grabbing;
+  }
+
+  /* Auf Touch etwas größer; vier Steuerelemente passen so noch auf eine
+     halbe Kachelbreite bei 390 px. */
+  @media (pointer: coarse) {
+    .dashboard-edit-control {
+      height: 2.25rem;
+      min-height: 2.25rem;
+      min-width: 2.25rem;
+    }
+  }
+
+  /* Leerzustände: Linien in der Akzentfarbe, Flächen als zarte Tönung. */
+  .dashboard-empty-illustration {
+    color: var(--primary-on-surface, var(--primary-color, #2563eb));
+  }
+
+  .dashboard-empty-illustration .empty-fill {
+    fill: currentColor;
+    fill-opacity: 0.1;
+  }
+
+  .dashboard-empty-illustration .empty-soft {
+    fill: currentColor;
+    fill-opacity: 0.22;
+  }
+
+  .dashboard-empty-illustration .empty-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .dashboard-empty-illustration .empty-muted {
+    fill: none;
+    stroke: var(--ink-muted, #9ca3af);
+    stroke-opacity: 0.45;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .dashboard-empty-illustration .empty-surface {
+    fill: var(--surface-raised, #ffffff);
+  }
+
 }
 
 @layer utilities {
@@ -2541,6 +2774,34 @@
       padding: 1.5rem;
     }
   }
+}
+
+/* Kurzinfo im Portal (FloatingTooltipBubble). Gleiche Optik wie
+   `.info-tooltip-bubble`, Position kommt aus dem Skript. */
+.floating-tooltip {
+  position: fixed;
+  z-index: 1100;
+  width: max-content;
+  max-width: min(19rem, calc(100vw - 1rem));
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.65rem;
+  background-color: var(--surface-tooltip, #202a35);
+  color: var(--tooltip-text, #f8fafc);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 0.2);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+}
+
+.floating-tooltip[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* Randnahe Feldhilfen bleiben auf der Seite ihrer Auslöser. */

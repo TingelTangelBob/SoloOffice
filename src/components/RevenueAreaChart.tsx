@@ -10,11 +10,25 @@ export interface RevenuePoint {
   value: number;
 }
 
+/**
+ * Zusätzliche Linie über dem Umsatzverlauf, etwa der Vorzeitraum. Die Punkte
+ * liegen auf derselben x-Achse wie `points` (gleiche Länge, gleiche
+ * Reihenfolge); weitere Reihen kommen über die Registry in
+ * `dashboardChartSeries.ts` hinzu.
+ */
+export interface RevenueChartOverlay {
+  key: string;
+  label: string;
+  points: RevenuePoint[];
+  /** CSS-Farbe; Standard ist die neutrale Achsenfarbe. */
+  color?: string;
+  dashed?: boolean;
+}
+
 interface RevenueAreaChartProps {
   points: RevenuePoint[];
-  previousPoints?: RevenuePoint[];
+  overlays?: RevenueChartOverlay[];
   currentLabel?: string;
-  previousLabel?: string;
   formatValue: (value: number) => string;
   ariaLabel: string;
 }
@@ -37,7 +51,7 @@ const TOOLTIP_HEIGHT = 52;
  * Seitenleiste skaliert frei zwischen 72 und 360 Pixeln; dieselbe Fensterbreite
  * lässt der Karte dadurch sehr unterschiedlich viel Platz.
  */
-export function RevenueAreaChart({ points, previousPoints = [], currentLabel, previousLabel, formatValue, ariaLabel }: RevenueAreaChartProps) {
+export function RevenueAreaChart({ points, overlays = [], currentLabel, formatValue, ariaLabel }: RevenueAreaChartProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const gradientId = `revenue-area-${useId().replace(/:/g, '')}`;
@@ -51,7 +65,8 @@ export function RevenueAreaChart({ points, previousPoints = [], currentLabel, pr
   const plotWidth = Math.max(width - PADDING.left - PADDING.right, 1);
   const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
   const baseline = PADDING.top + plotHeight;
-  const maxValue = [...points, ...previousPoints].reduce((max, point) => Math.max(max, point.value), 0);
+  const visibleOverlays = overlays.filter(overlay => overlay.points.length === points.length);
+  const maxValue = [...points, ...visibleOverlays.flatMap(overlay => overlay.points)].reduce((max, point) => Math.max(max, point.value), 0);
   const roughStep = (maxValue || 1) / GRID_LINES;
   const magnitude = 10 ** Math.floor(Math.log10(roughStep));
   const normalizedStep = roughStep / magnitude;
@@ -90,9 +105,10 @@ export function RevenueAreaChart({ points, previousPoints = [], currentLabel, pr
   // Fenster) soll das nicht auslösen, deshalb hängt der Schlüssel nur an den
   // Daten. `pathLength={1}` normiert die Linie, damit das Einzeichnen in CSS
   // ohne gemessene Pfadlänge auskommt.
-  const dataKey = `${points.map(point => `${point.key}:${point.value}`).join('|')}#${previousPoints.map(point => `${point.key}:${point.value}`).join('|')}`;
-  const previousLinePath = previousPoints.length === points.length ? previousPoints
-    .map((point, index) => `${index === 0 ? 'M' : 'L'}${pointX(index).toFixed(2)} ${pointY(point.value).toFixed(2)}`).join(' ') : '';
+  const dataKey = [points, ...visibleOverlays.map(overlay => overlay.points)]
+    .map(series => series.map(point => `${point.key}:${point.value}`).join('|')).join('#');
+  const overlayPath = (series: RevenuePoint[]) => series
+    .map((point, index) => `${index === 0 ? 'M' : 'L'}${pointX(index).toFixed(2)} ${pointY(point.value).toFixed(2)}`).join(' ');
   const compactMoney = (value: number) => {
     if (value === 0) return '0 €';
     if (value >= 1000) return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value / 1000)} T€`;
@@ -143,7 +159,10 @@ export function RevenueAreaChart({ points, previousPoints = [], currentLabel, pr
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        {previousLinePath && <path d={previousLinePath} fill="none" stroke="var(--dashboard-chart-axis)" strokeWidth={1.75} strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" />}
+        {visibleOverlays.map(overlay => (
+          <path key={`overlay-${overlay.key}`} d={overlayPath(overlay.points)} fill="none" stroke={overlay.color ?? 'var(--dashboard-chart-axis)'}
+            strokeWidth={1.75} strokeDasharray={overlay.dashed === false ? undefined : '5 4'} strokeLinejoin="round" strokeLinecap="round" />
+        ))}
 
         {activeIndex !== null && (
           <line
@@ -218,12 +237,19 @@ export function RevenueAreaChart({ points, previousPoints = [], currentLabel, pr
           <p className="whitespace-nowrap font-sans text-xs font-semibold text-gray-900 tabular-nums">
             {formatValue(activePoint.value)}
           </p>
-          {previousPoints[activeIndex!] && <p className="whitespace-nowrap text-[11px] text-gray-500">{previousLabel}: {formatValue(previousPoints[activeIndex!].value)}</p>}
+          {visibleOverlays.map(overlay => overlay.points[activeIndex!] && (
+            <p key={overlay.key} className="whitespace-nowrap text-[11px] text-gray-500">{overlay.label}: {formatValue(overlay.points[activeIndex!].value)}</p>
+          ))}
         </div>
       )}
-      {currentLabel && previousLabel && previousPoints.length > 0 && <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-1 text-[11px] text-gray-500">
+      {currentLabel && visibleOverlays.length > 0 && <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-1 text-[11px] text-gray-500">
         <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-4 bg-primary-custom" />{currentLabel}</span>
-        <span className="inline-flex items-center gap-1.5"><i className="w-4 border-t-2 border-dashed border-gray-500" />{previousLabel}</span>
+        {visibleOverlays.map(overlay => (
+          <span key={overlay.key} className="inline-flex items-center gap-1.5">
+            <i className={`w-4 border-t-2 ${overlay.dashed === false ? 'border-solid' : 'border-dashed'}`} style={{ borderColor: overlay.color ?? 'var(--dashboard-chart-axis)' }} />
+            {overlay.label}
+          </span>
+        ))}
       </div>}
 
       {/* Dieselben Werte als Liste: Das Diagramm selbst ist für Vorlesehilfen
@@ -232,9 +258,9 @@ export function RevenueAreaChart({ points, previousPoints = [], currentLabel, pr
         {points.map((point) => (
           <li key={`value-${point.key}`}>{`${point.label}: ${formatValue(point.value)}`}</li>
         ))}
-        {previousPoints.map((point) => (
-          <li key={`previous-value-${point.key}`}>{`${previousLabel} ${point.label}: ${formatValue(point.value)}`}</li>
-        ))}
+        {visibleOverlays.flatMap(overlay => overlay.points.map((point) => (
+          <li key={`${overlay.key}-value-${point.key}`}>{`${overlay.label} ${point.label}: ${formatValue(point.value)}`}</li>
+        )))}
       </ul>
     </div>
   );

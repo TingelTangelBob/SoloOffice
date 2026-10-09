@@ -131,7 +131,10 @@ export function ActionMenu({
   useLayoutEffect(() => {
     if (isOpen) {
       updatePosition();
-      requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>('button:not(:disabled), [role^="menuitem"]:not([aria-disabled="true"])')?.focus());
+      // Echte Menüeinträge zuerst: Ein Hilfe-Symbol im Menü soll beim Öffnen
+      // nicht den Fokus und damit seine Kurzinfo bekommen.
+      requestAnimationFrame(() => (menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled):not([aria-disabled="true"])')
+        || menuRef.current?.querySelector<HTMLElement>('button:not(:disabled)'))?.focus());
     }
   }, [isOpen, updatePosition]);
 

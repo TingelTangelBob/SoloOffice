@@ -41,7 +41,7 @@ const CREDIT_NOTE_TABLE_LAYOUT = listTableLayout({
 const creditNoteStatusLabel = (status: CreditNote['status']) =>
   status === 'draft' ? 'Entwurf' : status === 'sent' ? 'Versendet' : status;
 
-export function CreditNoteManagement() {
+export function CreditNoteManagement({ initialAction }: { initialAction?: string } = {}) {
   const { confirm } = useFeedback();
   const { customers } = useCustomers();
   const { invoices } = useInvoices();
@@ -63,6 +63,13 @@ export function CreditNoteManagement() {
 
   const load = async () => { setLoading(true); setError(''); try { setNotes(await apiService.getCreditNotes()); } catch (e) { setError(e instanceof Error ? e.message : 'Gutschriften konnten nicht geladen werden.'); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
+  // Schnellzugriff „Gutschrift erstellen“ der Übersicht (#credit-notes/new).
+  useEffect(() => {
+    if (initialAction !== 'new') return;
+    setEditingNote(null);
+    setForm(emptyForm());
+    setOpen(true);
+  }, [initialAction]);
   const customerName = (id: string) => customers.find(customer => customer.id === id)?.name || `Unbekannter ${terminology.entity.singular}`;
   const total = (note: CreditNote) => Math.abs(Number(note.total || 0));
   const referenceNumber = (note: CreditNote) => {

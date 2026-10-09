@@ -150,9 +150,11 @@ const sourceLabels: Record<EuerEntrySourceType, string> = {
 
 interface EuerManagementProps {
   onNavigate?: (page: string) => void;
+  /** `new` öffnet direkt eine neue Ausgabe (Schnellzugriff der Übersicht). */
+  initialAction?: string;
 }
 
-export function EuerManagement({ onNavigate }: EuerManagementProps) {
+export function EuerManagement({ onNavigate, initialAction }: EuerManagementProps) {
   const { confirm } = useFeedback();
   const { invoices } = useInvoices();
   const { company } = useCompany();
@@ -212,6 +214,12 @@ export function EuerManagement({ onNavigate }: EuerManagementProps) {
   }, [year]);
 
   useEffect(() => { void loadEntries(); }, [loadEntries]);
+  useEffect(() => {
+    if (initialAction !== 'new') return;
+    setDraft(emptyDraft());
+    setDialogEntry(null);
+    setError('');
+  }, [initialAction]);
   useEffect(() => { setInfoNoticeDismissed(isNoticeDismissed(getEuerInfoNoticeId(year))); }, [year]);
 
   const rows = useMemo<EuerRow[]>(() => {

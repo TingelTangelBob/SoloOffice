@@ -1,6 +1,13 @@
+/**
+ * Der Regler sitzt mit demselben Innenabstand oben, links und rechts:
+ * klein 36 × 20 mit 16er-Regler (2 px), groß 48 × 28 mit 20er-Regler (4 px).
+ * Der Weg beim Umschalten ist daher Bahnbreite − Regler − 2 × Abstand
+ * (klein 16 px, groß 20 px). Vorher lag der Regler links bei 2 px, rechts
+ * aber bei 4 px, weil der Weg von 0 statt vom Innenabstand aus gerechnet war.
+ */
 export function SwitchTrack({ checked, showLabel = true }: { checked: boolean; showLabel?: boolean }) {
   return <span data-checked={checked ? 'true' : 'false'} className={`so-switch relative inline-block shrink-0 rounded-full transition-colors ${showLabel ? 'h-5 w-9' : 'h-7 w-12'} ${checked ? 'bg-primary-custom' : 'bg-gray-300'}`} aria-hidden="true">
-    <span className={`so-switch-knob absolute left-0 inline-block shrink-0 rounded-full bg-white shadow transition-transform ${showLabel ? 'top-0.5 h-4 w-4' : 'top-1 h-5 w-5'} ${checked ? (showLabel ? 'translate-x-4' : 'translate-x-6') : (showLabel ? 'translate-x-0.5' : 'translate-x-1')}`} />
+    <span className={`so-switch-knob absolute inline-block shrink-0 rounded-full bg-white shadow transition-transform ${showLabel ? 'left-0.5 top-0.5 h-4 w-4' : 'left-1 top-1 h-5 w-5'} ${checked ? (showLabel ? 'translate-x-4' : 'translate-x-5') : 'translate-x-0'}`} />
   </span>;
 }
 
