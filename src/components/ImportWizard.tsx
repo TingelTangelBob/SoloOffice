@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Download, FileUp, History, Link2, Loader2, PenLine, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
@@ -38,6 +39,7 @@ interface ImportWizardProps {
   initialSheet?: string;
   initialSelectedRowNumbers?: number[];
   takeoverSessionId?: string;
+  nextCategory?: { label: string; onClick: () => void };
 }
 
 type ImportStep = 'file' | 'mapping' | 'preview' | 'result';
@@ -130,7 +132,7 @@ function fileSlug(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet, initialSelectedRowNumbers, takeoverSessionId }: ImportWizardProps) {
+export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet, initialSelectedRowNumbers, takeoverSessionId, nextCategory }: ImportWizardProps) {
   const { company } = useCompany();
   const baseDefinition = getImportDefinition(resource);
   const terminology = getTerminology(company.terminologyProfile);
@@ -447,7 +449,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const previewFields = definition.fields.filter(field => isSatisfied(field.key)).slice(0, 8);
   const entityPlural = terminology.entity.plural;
 
-  return (
+  return createPortal((
     <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && !isBusy && close()}>
       <div className="form-consistent-fields flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="import-wizard-title">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
@@ -563,7 +565,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <div className="rounded-xl border border-gray-200 p-4 text-sm text-gray-700">
                   <label className="flex items-start gap-3">
                     <input type="checkbox" className="custom-checkbox mt-0.5 shrink-0" checked={createInvoiceCourses} onChange={event => { setCreateInvoiceCourses(event.target.checked); setPreview(null); }} />
-                    <span><span className="font-medium text-gray-900">Kurse zu den Rechnungspositionen anlegen</span><span className="block text-gray-500">Je geeigneter Position wird ein Kurs angelegt oder einem eindeutig passenden, noch nicht abgerechneten Kurs zugeordnet.</span></span>
+                    <span><span className="font-medium text-gray-900">Kurse zu den Rechnungspositionen anlegen</span><span className="block text-gray-500">Je geeignetem Kursnamen wird ein Kurs angelegt oder einem eindeutig passenden, noch nicht abgerechneten Kurs zugeordnet. Optional können Sie oben die Spalte „Kursname“ zuordnen; ohne Wert dient die Positionsbeschreibung als Kursname.</span></span>
                   </label>
                 </div>
               )}
@@ -714,7 +716,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
                 <h3 className="mt-3 text-lg font-semibold">Import abgeschlossen</h3>
                 <p className="mt-1 text-sm">{result.demoMode ? 'Simulation: ' : ''}{result.summary.imported} {result.summary.imported === 1 ? 'Eintrag wurde' : 'Einträge wurden'} {result.demoMode ? 'in der Demo simuliert' : 'gespeichert'}{result.summary.newCustomers ? `; dabei ${result.summary.newCustomers === 1 ? `wurde ein neuer ${terminology.entity.singular}` : `wurden ${result.summary.newCustomers} neue ${entityPlural}`} angelegt` : ''}.</p>
-                {takeoverSessionId && <p className="mt-2 text-sm">Die Kategorie ist freigegeben. Schließen Sie dieses Fenster und prüfen Sie danach die nächste offene Kategorie.</p>}
+                {takeoverSessionId && <p className="mt-2 text-sm">Die Kategorie ist freigegeben. {nextCategory ? 'Sie können direkt die nächste offene Kategorie prüfen.' : 'Weitere offene Kategorien finden Sie in der Übersicht.'}</p>}
                 {result.runId && (
                   <p className="mt-3 text-sm">
                     Bis zum Abschluss des Umzugs können Sie diesen Import unter{' '}
@@ -731,21 +733,28 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <SummaryCard label="Fehler" value={result.summary.errors} tone="red" />
                 <SummaryCard label="Übersprungen" value={result.summary.skipped} tone="amber" />
               </div>
-              {result.summary.skipped > 0 && (
-                <button type="button" onClick={() => downloadIssues(result.rows)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">
-                  <Download className="h-4 w-4" /> Nicht übernommene Zeilen herunterladen
-                </button>
-              )}
-              <ImportResultTable rows={result.rows} resource={resource} />
+              {result.courseSummary && <p className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">Kurse: {result.courseSummary.created} angelegt, {result.courseSummary.assigned} bestehenden Kursen zugeordnet.</p>}
             </div>
           )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:px-6">
-          <button type="button" disabled={isBusy} onClick={step === 'file' || step === 'result' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">
-            {step === 'file' || step === 'result' ? <X className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
-            {step === 'file' || step === 'result' ? 'Schließen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
-          </button>
+          {step === 'result' ? (
+            <>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {result && result.summary.skipped > 0 && <button type="button" onClick={() => downloadIssues(result.rows)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 sm:w-auto"><Download className="h-4 w-4 shrink-0" /> Nicht übernommene Zeilen herunterladen</button>}
+              </div>
+              <div className="flex w-full flex-col-reverse justify-end gap-2 sm:w-auto sm:flex-row">
+                <button type="button" onClick={close} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"><X className="h-4 w-4" /> Schließen</button>
+                {nextCategory && <button type="button" onClick={nextCategory.onClick} className="inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-2 whitespace-normal break-words rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 sm:w-auto">Nächste Kategorie prüfen: {nextCategory.label} <ArrowRight className="h-4 w-4 shrink-0" /></button>}
+              </div>
+            </>
+          ) : (
+            <button type="button" disabled={isBusy} onClick={step === 'file' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">
+              {step === 'file' ? <X className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+              {step === 'file' ? 'Schließen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
+            </button>
+          )}
           {step === 'mapping' && <button type="button" onClick={runPreview} disabled={isBusy || mappedRows.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Vorschau prüfen</button>}
           {step === 'preview' && (
             <div className="flex items-center gap-2">
@@ -756,7 +765,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
         </div>
       </div>
     </div>
-  );
+  ), document.getElementById('app-shell') ?? document.body);
 }
 
 function displayValue(field: ImportFieldDefinition, value: unknown): string {

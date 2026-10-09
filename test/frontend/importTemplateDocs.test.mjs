@@ -19,6 +19,22 @@ test('Rechnungsvorlage nennt Nummer und Datum als Pflichtspalten', () => {
   assert.equal(dateField.requirement, 'required', 'Rechnungsdatum ist Pflichtfeld');
 });
 
+test('Kursname ist in Einzel- und Komplettvorlage samt Hilfetext enthalten', async () => {
+  const { getImportDefinition, buildImportTemplate, buildCombinedImportTemplate } = await import('../../.test-dist/utils/importParser.js');
+  const invoiceTemplate = buildImportTemplate(getImportDefinition('invoices'));
+  const combinedTemplate = buildCombinedImportTemplate();
+  const doc = getImportTemplateDoc('invoices');
+  const field = doc.columns.find(column => column.key === 'courseName');
+
+  assert.match(invoiceTemplate.split('\n')[0], /Kursname/);
+  assert.match(combinedTemplate.split('\n')[0], /Kursname/);
+  assert.ok(field);
+  assert.equal(field.label, 'Kursname');
+  assert.equal(field.requirement, 'optional');
+  assert.equal(field.inTemplate, true);
+  assert.ok(field.recognisedHeaders.some(header => /^(Kurs|Kursname|Kurstitel|Course)$/i.test(header)));
+});
+
 test('Kundenbezug-Felder sind als Gruppenpflicht mit Gruppenlabel ausgewiesen', () => {
   const doc = getImportTemplateDoc('jobs');
 

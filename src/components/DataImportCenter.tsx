@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Download, FileText, History, Loader2, RotateCcw, SkipForward, Upload } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Download, FileText, History, Loader2, RotateCcw, SkipForward, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
@@ -22,7 +22,7 @@ import {
 } from '../utils/importParser';
 import { getImportTemplateDocs, type ImportTemplateColumnDoc } from '../utils/importTemplateDocs';
 import { getTerminology } from '../utils/terminology';
-import { planTakeoverDependencies, takeoverOrderConflict } from '../../backend/utils/takeoverDependencies.js';
+import { planTakeoverDependencies } from '../../backend/utils/takeoverDependencies.js';
 import { DialogShell } from './DialogShell';
 import { ImportResultTable, ImportWizard } from './ImportWizard';
 import { ImportStepIllustration, type ImportIllustrationStep } from './ImportStepIllustration';
@@ -124,8 +124,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [scanCandidates, setScanCandidates] = useState<ImportResourceCandidate[]>([]);
   const [scannedEuerEntries, setScannedEuerEntries] = useState<EuerEntry[]>([]);
   const [skippedCategories, setSkippedCategories] = useState<ImportResource[]>([]);
-  const [dependencyOrder, setDependencyOrder] = useState<string[]>([]);
-  const [orderNotice, setOrderNotice] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
   const [manualScanResource, setManualScanResource] = useState<ImportResource | ''>('');
   const [protocolRun, setProtocolRun] = useState<ImportRun | null>(null);
@@ -339,8 +337,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       setScanCandidates(candidates);
       setScannedEuerEntries(euerEntries);
       setSkippedCategories([]);
-      setDependencyOrder([]);
-      setOrderNotice('');
       setStepIndex(0);
       setManualScanResource('');
     } catch (error) {
@@ -377,29 +373,8 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
   const dependencyNodes = useMemo(() => {
     if (!dependencyPlan) return [];
-    const retainedOrder = dependencyOrder.filter(id => dependencyPlan.nodes.some(node => node.id === id));
-    const proposedOrder = [...retainedOrder, ...dependencyPlan.nodes.map(node => node.id).filter(id => !retainedOrder.includes(id))];
-    const order = dependencyOrder.length && takeoverOrderConflict(dependencyPlan.nodes, proposedOrder) === null
-      ? proposedOrder
-      : dependencyPlan.nodes.map(node => node.id);
-    return [...dependencyPlan.nodes].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  }, [dependencyOrder, dependencyPlan]);
-
-  const moveDependency = (nodeId: string, offset: -1 | 1) => {
-    const current = dependencyNodes.map(node => node.id);
-    const from = current.indexOf(nodeId);
-    const to = from + offset;
-    if (from < 0 || to < 0 || to >= current.length) return;
-    [current[from], current[to]] = [current[to], current[from]];
-    const conflict = dependencyPlan ? takeoverOrderConflict(dependencyPlan.nodes, current) : 'Die Reihenfolge ist nicht bekannt.';
-    if (conflict) {
-      setOrderNotice(`Diese Reihenfolge ist nicht möglich: ${conflict}`);
-      return;
-    }
-    setOrderNotice('');
-    setDependencyOrder(current);
-    setStepIndex(to);
-  };
+    return dependencyPlan.nodes;
+  }, [dependencyPlan]);
 
   const hasImportPermission = (resource: ImportResource) => canWrite && (!settingsResources.includes(resource) || canAdmin);
   const takeoverOpen = takeover?.session?.status === 'open' && !takeover.session.legacyBackfill;
@@ -469,8 +444,12 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     setWizardResource(resource);
   };
 
+  const nextWizardStep = wizardResource
+    ? formSteps.slice(formSteps.findIndex(step => step.node.resource === wizardResource) + 1)
+      .find(step => !step.node.synthetic && !step.completed && !step.skipped && step.candidate && !categoryPrerequisiteReason(step.node.resource))
+    : undefined;
+
   const toggleSkip = (resource: ImportResource, skip: boolean) => {
-    setOrderNotice('');
     setSkippedCategories(current => skip ? [...new Set([...current, resource])] : current.filter(item => item !== resource));
   };
 
@@ -589,7 +568,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                     <li key={step.node.id}>
                       <button
                         type="button"
-                        onClick={() => { setStepIndex(index); setOrderNotice(''); }}
+                        onClick={() => setStepIndex(index)}
                         aria-current={isActive ? 'step' : undefined}
                         className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm transition ${isActive ? 'border-primary-custom bg-[var(--accent-tint)] font-semibold text-gray-900' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                       >
@@ -602,8 +581,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                   );
                 })}
               </ol>
-
-              {orderNotice && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">{orderNotice}</p>}
 
               {activeStep && (
                 <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -618,10 +595,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                           <span className="text-xs text-gray-600">Voraussetzung: {activeStep.node.dependencies.map(dependency => formSteps.find(step => step.node.id === dependency)?.node.label || dependency).join(', ')}</span>
                         )}
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button type="button" onClick={() => moveDependency(activeStep.node.id, -1)} disabled={stepIndex === 0} aria-label={`${activeStep.node.label} einen Schritt früher übernehmen`} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"><ArrowUp className="h-4 w-4" /></button>
-                      <button type="button" onClick={() => moveDependency(activeStep.node.id, 1)} disabled={stepIndex >= formSteps.length - 1} aria-label={`${activeStep.node.label} einen Schritt später übernehmen`} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"><ArrowDown className="h-4 w-4" /></button>
                     </div>
                   </div>
 
@@ -676,14 +649,14 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                     </div>
                   )}
 
-                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
+                  <div className="mt-4 flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:items-center sm:justify-end">
                     {!activeStep.node.synthetic && (
-                      <>
+                      <div className="flex flex-col gap-2 sm:flex-row-reverse sm:items-center">
                         <button
                           type="button"
                           onClick={() => void openCategory(activeStep.node.resource, activeStep.candidate?.matchedRowNumbers)}
                           disabled={activeStep.completed || activeStep.skipped || Boolean(categoryPrerequisiteReason(activeStep.node.resource)) || !canOpenImport(activeStep.node.resource) || busyId !== null}
-                          className="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                          className="btn-primary inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                         >
                           {activeStep.completed ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <ArrowRight className="h-4 w-4" aria-hidden="true" />}
                           {activeStep.completed ? 'Übernommen' : hasImportPermission(activeStep.node.resource) ? 'Zuordnung prüfen und übernehmen' : 'Keine Berechtigung'}
@@ -692,16 +665,12 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                           type="button"
                           onClick={() => toggleSkip(activeStep.node.resource, !activeStep.skipped)}
                           disabled={activeStep.completed}
-                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                         >
                           <SkipForward className="h-4 w-4" aria-hidden="true" />{activeStep.skipped ? 'Wieder aufnehmen' : 'Überspringen'}
                         </button>
-                      </>
+                      </div>
                     )}
-                    <div className="ml-auto flex items-center gap-2">
-                      <button type="button" onClick={() => setStepIndex(index => Math.max(0, index - 1))} disabled={stepIndex === 0} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"><ArrowLeft className="h-4 w-4" />Zurück</button>
-                      <button type="button" onClick={() => setStepIndex(index => Math.min(formSteps.length - 1, index + 1))} disabled={stepIndex >= formSteps.length - 1} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">Weiter<ArrowRight className="h-4 w-4" /></button>
-                    </div>
                   </div>
                 </div>
               )}
@@ -898,12 +867,14 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
       {wizardResource && (
         <ImportWizard
+          key={wizardResource}
           resource={wizardResource}
           isOpen
           initialFile={wizardSourceFile || undefined}
           initialSheet={wizardSheet}
           initialSelectedRowNumbers={wizardSelectedRowNumbers}
           takeoverSessionId={takeoverOpen ? takeover?.session?.id : undefined}
+          nextCategory={takeoverOpen && nextWizardStep ? { label: resourceLabel(nextWizardStep.node.resource), onClick: () => { void openCategory(nextWizardStep.node.resource, nextWizardStep.candidate?.matchedRowNumbers); } } : undefined}
           onClose={() => { setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); setWizardSelectedRowNumbers(undefined); }}
           onImported={async () => {
             await Promise.all([load(), refreshData(wizardResource)]);
@@ -949,6 +920,7 @@ function TemplateColumnRow({ column }: { column: ImportTemplateColumnDoc }) {
         Erkannte Spaltennamen: {column.recognisedHeaders.join(', ')}
         {column.example ? ` · Beispiel: ${column.example}` : ''}
       </p>
+      {column.helpText && <p className="mt-1 text-xs text-gray-500">{column.helpText}</p>}
       {column.options.length > 0 && <p className="mt-0.5 text-xs text-gray-600">Mögliche Werte: {column.options.join(', ')}</p>}
     </li>
   );

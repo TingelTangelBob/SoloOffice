@@ -172,9 +172,17 @@
   /* Drawer und Dialoge sperren den Dokument-Scroll. Scrollbare Inhalte wie
      Sidebar-Menü und Dialogkörper behalten ihren eigenen Scrollcontainer.
      Die Sperre folgt der Overlay-Instanz und endet automatisch beim Schließen. */
-  html:has(.dialog-overlay),
-  body:has(.dialog-overlay) {
+  html:has(.dialog-overlay) {
     overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  /* Der Body darf beim Sperren nicht selbst zum Scrollcontainer werden
+     (sein overflow-x: hidden würde sonst greifen, sobald html nicht mehr
+     „visible“ ist). Sonst bezieht sich die sticky Sidebar auf den Body und
+     rutscht bei gescrollter Seite um die Scrollhöhe nach oben. */
+  body:has(.dialog-overlay) {
+    overflow: visible;
     overscroll-behavior: none;
   }
 

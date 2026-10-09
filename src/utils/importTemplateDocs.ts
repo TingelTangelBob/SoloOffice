@@ -15,6 +15,7 @@ export interface ImportTemplateColumnDoc {
   example: string;
   /** Spaltennamen, die automatisch erkannt werden (höchstens sechs). */
   recognisedHeaders: string[];
+  helpText?: string;
   /** Labels der Auswahlwerte bei Aufzählungsfeldern. */
   options: string[];
   /** Feld steht in der herunterladbaren CSV-Vorlage. */
@@ -102,6 +103,7 @@ export function getImportTemplateDoc(resource: ImportResource): ImportTemplateDo
       typeLabel: typeLabels[field.type || 'text'],
       example: field.example || '',
       recognisedHeaders: recognisedHeaders(field),
+      ...(field.key === 'courseName' && resource === 'invoices' ? { helpText: 'Optional: Wird „Kurse anlegen“ gewählt, dient diese Spalte als Kursname. Fehlt der Wert, wird die Positionsbeschreibung verwendet.' } : {}),
       options: (field.options || []).map(option => option.label),
       inTemplate: Boolean(field.required || field.template),
       allowsConstant: Boolean(field.constant),

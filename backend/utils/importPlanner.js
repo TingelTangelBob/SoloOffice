@@ -631,6 +631,7 @@ function documentItems(rows, { defaultTaxRate = 19 } = {}) {
       }
       items.push({
         description, quantity, unitPrice,
+        courseName: text(pick(row, ['courseName', 'course_name', 'Kurs', 'Kursname', 'Kurstitel', 'Course'])) || null,
         unit: text(pick(item, ['unit', 'einheit', 'unitName', 'unit_name'])) || null,
         taxRate: parseNumber(pick(item, ['taxRate', 'tax_rate', 'tax', 'mwst', 'ust', 'steuersatz'])) ?? defaultTaxRate,
         discountType: normaliseDiscountType(pick(item, ['discountType', 'discount_type'])),
@@ -648,6 +649,7 @@ function documentItems(rows, { defaultTaxRate = 19 } = {}) {
       } else {
         items.push({
           description,
+          courseName: text(pick(row, ['courseName', 'course_name', 'Kurs', 'Kursname', 'Kurstitel', 'Course'])) || null,
           quantity: itemQuantity ?? 1,
           unitPrice: itemUnitPrice,
           unit: text(pick(row, ['itemUnit', 'item_unit', 'positionsEinheit', 'einheit', 'unit', 'unitName'])) || null,
@@ -1343,6 +1345,7 @@ function planInvoices(rows, context, options) {
     const itemsWithUnits = calculated.items.map((item, index) => ({
       ...item,
       unit: itemResult.items[index]?.unit || null,
+      courseName: itemResult.items[index]?.courseName || null,
       order: index + 1,
     }));
     const courseActions = options.createInvoiceCourses
@@ -1435,8 +1438,10 @@ const isHourUnit = unit => !unit || /^(h|std\.?|stunde(n)?|hour(s)?)$/i.test(Str
 export function planInvoiceCourses(invoice, jobs) {
   const availableJobs = new Set(jobs.map(job => String(job.id)));
   return invoice.items.filter(item => item.description).map(item => {
+    const title = String(item.courseName || item.description).trim().slice(0, 255);
+    const key = courseKey(title);
     const existing = invoice.customerId && jobs.filter(job => job.customerId === invoice.customerId
-      && job.date === invoice.date && courseKey(job.title) === courseKey(item.description)
+      && job.date === invoice.date && courseKey(job.title) === key
       && job.status !== 'invoiced' && !job.invoiceId && availableJobs.has(String(job.id)));
     const assignedJob = existing?.length === 1 ? existing[0] : null;
     if (assignedJob) availableJobs.delete(String(assignedJob.id));
@@ -1447,7 +1452,7 @@ export function planInvoiceCourses(invoice, jobs) {
       jobId: assignedJob?.id || null,
       customerKey: invoice.customerKey,
       date: invoice.date,
-      title: String(item.description).slice(0, 255),
+      title,
       description: item.description,
       hoursWorked: hours,
       hourlyRate: rate,

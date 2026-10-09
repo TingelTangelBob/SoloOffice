@@ -253,3 +253,26 @@ test('Rechnungsimport plant Kurse aus Stundenpositionen und ordnet nur eindeutig
   assert.deepEqual(exact.entries[0].data.courseActions.map(action => action.action), ['assign', 'create', 'create']);
   assert.deepEqual(exact.courseSummary, { created: 2, assigned: 1 });
 });
+
+test('Kursname-Spalte steuert Kursnamen, leerer Wert fällt auf Position zurück, bestehende Kurse werden zugeordnet', () => {
+  const customers = [{ id: 'c1', name: 'Anna Müller' }];
+  const rows = [
+    { _rowNumber: 2, invoiceNumber: 'ALT-KURS', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Position A', courseName: '  Mathe  ', itemQuantity: 1, itemUnitPrice: 20 },
+    { _rowNumber: 3, invoiceNumber: 'ALT-KURS', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Position B', courseName: 'mathe', itemQuantity: 1, itemUnitPrice: 20 },
+    { _rowNumber: 4, invoiceNumber: 'ALT-KURS', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Fallback', courseName: '', itemQuantity: 1, itemUnitPrice: 20 },
+  ];
+  const selected = planImport('invoices', rows, context({ customers }), { createInvoiceCourses: true });
+  assert.deepEqual(selected.entries[0].data.courseActions.map(action => action.title), ['Mathe', 'mathe', 'Fallback']);
+  assert.deepEqual(selected.entries[0].data.courseActions.map(action => action.description), ['Position A', 'Position B', 'Fallback']);
+  assert.deepEqual(selected.courseSummary, { created: 3, assigned: 0 });
+  const again = planImport('invoices', rows, context({ customers }), { createInvoiceCourses: true });
+  assert.deepEqual(again.entries[0].data.courseActions, selected.entries[0].data.courseActions, 'gleiche Eingabe ergibt dieselbe Planung');
+  const withoutColumn = planImport('invoices', rows.map(({ courseName: _ignored, ...row }) => row), context({ customers }), { createInvoiceCourses: true });
+  assert.deepEqual(withoutColumn.entries[0].data.courseActions.map(action => action.title), ['Position A', 'Position B', 'Fallback']);
+
+  const existing = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'ALT-BESTAND', issueDate: '2025-02-03', customerName: 'Anna Müller', taxRate: 0, itemDescription: 'Andere Position', courseName: '  MATHE  ', itemQuantity: 1, itemUnitPrice: 20 },
+  ], context({ customers, jobs: [{ id: 'j1', customerId: 'c1', title: 'Mathe', date: '2025-02-03', status: 'completed' }] }), { createInvoiceCourses: true });
+  assert.equal(existing.entries[0].data.courseActions[0].action, 'assign');
+  assert.equal(existing.entries[0].data.courseActions[0].jobId, 'j1');
+});

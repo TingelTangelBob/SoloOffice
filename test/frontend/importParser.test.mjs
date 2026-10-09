@@ -362,7 +362,8 @@ test('Kategorien mit unsicher erkannter Pflichtspalte werden nicht vorgeschlagen
 
 test('Die Beschreibung der Komplettvorlage nennt je Spalte die Zielkategorie', () => {
   const columns = describeCombinedImportTemplate();
-  assert.equal(columns.length, 16);
+  assert.equal(columns.length, 17);
   assert.deepEqual(columns[0], { header: 'Kundennummer', resourceLabel: 'Kunden', example: '1001' });
   assert.ok(columns.some(column => column.header === 'Rechnungsnummer' && column.resourceLabel === 'Rechnungen (Altbestand)'));
+  assert.ok(columns.some(column => column.header === 'Kursname' && column.resourceLabel === 'Rechnungen (Altbestand)'));
 });

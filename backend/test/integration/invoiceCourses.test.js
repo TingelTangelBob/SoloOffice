@@ -56,10 +56,12 @@ test('Importoption erstellt Kurse und Rückgängigmachen löscht Verknüpfungen 
   const customerId = (await own(() => query(`INSERT INTO customers (name, customer_number, customer_type, address, city, postal_code, country) VALUES ('Kurskunde', $1, 'person', 'Weg 1', 'Bonn', '53111', 'Deutschland') RETURNING id`, [`C-${suffix}`]))).rows[0].id;
   const result = await own(() => invoke('/:resource', 'post', {
     params: { resource: 'invoices' },
-    body: { dryRun: false, createInvoiceCourses: true, rows: [{ invoiceNumber: `ALT-${suffix}`, issueDate: '2025-02-03', customerId, customerName: 'Kurskunde', taxRate: 0, items: [{ description: 'Matheunterricht', quantity: 2, unitPrice: 40, unit: 'Stunde' }] }] },
+    body: { dryRun: false, createInvoiceCourses: true, rows: [{ invoiceNumber: `ALT-${suffix}`, issueDate: '2025-02-03', customerId, customerName: 'Kurskunde', taxRate: 0, itemDescription: 'Position aus Altbestand', courseName: 'Kurs aus Mapping', itemQuantity: 2, itemUnitPrice: 40, itemUnit: 'Stunde' }] },
   }));
   assert.equal(result.statusCode, 200, JSON.stringify(result.payload));
   assert.deepEqual(result.payload.courseSummary, { created: 1, assigned: 0 });
+  const createdCourse = await own(() => query('SELECT title FROM job_entries WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1', [customerId]));
+  assert.equal(createdCourse.rows[0]?.title, 'Kurs aus Mapping');
   const imported = await own(() => query(`SELECT i.id AS invoice_id, j.id AS job_id, j.status, j.hours_worked, j.hourly_rate, ii.unit FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id JOIN invoice_job_sources ijs ON ijs.invoice_id = i.id JOIN job_entries j ON j.id = ijs.job_id WHERE i.invoice_number = $1`, [`ALT-${suffix}`]));
   assert.equal(imported.rows.length, 1);
   assert.equal(imported.rows[0].status, 'invoiced');
