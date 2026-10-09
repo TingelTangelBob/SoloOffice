@@ -68,4 +68,13 @@ test('USt-Standardzeitraum folgt der nächsten Fälligkeit, sonst dem laufenden 
   assert.equal(module.defaultVatPeriod(periods, { periodKey: '2026-Q4' }).key, '2026-Q4');
   assert.equal(module.defaultVatPeriod(periods, null).key, '2026-Q3');
   assert.equal(module.defaultVatPeriod([{ key: '2026-10', state: 'running' }], null).key, '2026-10');
+  const realistic = [
+    { key: '2026-Q1', state: 'closed', dueDate: '2026-04-10' },
+    { key: '2026-Q2', state: 'closed', dueDate: '2026-07-10' },
+    { key: '2026-Q3', state: 'closed', dueDate: '2026-10-12' },
+    { key: '2026-Q4', state: 'running', dueDate: '2027-01-11' },
+  ];
+  // Offener, überfälliger Q1 darf nicht vorausgewählt werden – aktuell fällig ist Q3.
+  assert.equal(module.defaultVatPeriod(realistic, { periodKey: '2026-Q1', dueDate: '2026-04-10' }, '2026-10-09').key, '2026-Q3');
+  assert.equal(module.defaultVatPeriod(realistic, null, '2026-10-20').key, '2026-Q4');
 });

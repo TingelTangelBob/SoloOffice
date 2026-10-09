@@ -425,7 +425,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
 
                   {upcomingJobsForCustomer.length > 0 && <section className="rounded-lg border border-gray-200 bg-white p-5">
                     <div className="flex items-center justify-between gap-3">
-                      <div><h2 className="text-base font-semibold text-gray-900">Nächste Termine</h2><p className="mt-1 text-xs text-gray-500">Anstehende {terminology.work.plural.toLocaleLowerCase('de-DE')} dieses Kunden.</p></div>
+                      <div><h2 className="text-base font-semibold text-gray-900">Nächste Termine</h2><p className="mt-1 text-xs text-gray-500">Anstehende {terminology.work.plural} dieses Kunden.</p></div>
                       <button type="button" onClick={() => onNavigate('calendar')} className="shrink-0 text-sm font-medium text-primary-custom hover:underline">Kalender öffnen</button>
                     </div>
                     <ul className="mt-3 divide-y divide-gray-100">

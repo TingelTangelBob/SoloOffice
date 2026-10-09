@@ -2,8 +2,25 @@ import type { VatOverview, VatPaymentStatus, VatPeriodResult } from '../types/va
 
 export type VatCardTone = 'positive' | 'negative' | 'warning' | 'info' | 'neutral';
 
-export function defaultVatPeriod(periods: VatOverview['periods'], nextDue: VatOverview['nextDue']): VatPeriodResult | null {
-  if (nextDue) {
+function localIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Standardzeitraum für Kachel und USt-Seite: der als Nächstes fällige Zeitraum
+ * (Fälligkeit heute oder später), sonst der laufende. Überfällige Altzeiträume
+ * werden nicht vorausgewählt, sondern bleiben über ihre Warnung sichtbar.
+ */
+export function defaultVatPeriod(
+  periods: VatOverview['periods'],
+  nextDue: Pick<NonNullable<VatOverview['nextDue']>, 'periodKey'> & Partial<Pick<NonNullable<VatOverview['nextDue']>, 'dueDate'>> | null,
+  today: string = localIsoDate(new Date()),
+): VatPeriodResult | null {
+  const upcoming = periods
+    .filter(item => item.state === 'closed' && item.dueDate && item.dueDate >= today)
+    .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
+  if (upcoming) return upcoming;
+  if (nextDue && (!nextDue.dueDate || nextDue.dueDate >= today)) {
     const due = periods.find(item => item.key === nextDue.periodKey);
     if (due) return due;
   }
