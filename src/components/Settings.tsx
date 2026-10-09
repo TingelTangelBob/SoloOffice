@@ -22,8 +22,11 @@ import { useFeedback } from '../context/FeedbackContext';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { trackTelemetry } from '../services/telemetry';
 import { useMotionPreference } from '../context/MotionProvider';
+import { ExtensionsSettings } from './ExtensionsSettings';
+import { TaxProfileSettings } from './TaxProfileSettings';
+import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
 
-type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system';
+type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system' | 'extensions' | 'taxes';
 
 interface SettingsProps {
   initialTab?: SettingsTab;
@@ -287,6 +290,7 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (activeTab === 'extensions' || activeTab === 'taxes') return;
     if (receiptLabelError) {
       setFeedback({ type: 'error', text: receiptLabelError });
       return;
@@ -433,6 +437,8 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
             { id: 'invoices' as const, label: 'Rechnungen' },
             { id: 'appearance' as const, label: 'Darstellung' },
             { id: 'system' as const, label: 'E-Mail & Backup' },
+            { id: 'extensions' as const, label: 'Erweiterungen' },
+            { id: 'taxes' as const, label: <span className="inline-flex items-center gap-1.5">Steuern &amp; Abgaben<span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{TAX_TEXTS.badge}</span></span> },
           ]}
         />
 
@@ -1664,8 +1670,11 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
           </div>
         )}
 
+        {activeTab === 'extensions' && <div className="mx-auto w-full max-w-5xl"><ExtensionsSettings /></div>}
+        {activeTab === 'taxes' && <div className="mx-auto w-full max-w-5xl"><TaxProfileSettings onNavigate={onNavigate} /></div>}
+
         {/* Save Button */}
-        <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 px-3 py-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+        {!['extensions', 'taxes'].includes(activeTab) && <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 px-3 py-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
           {feedback && (
             <div className={`w-full text-sm sm:w-auto sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
               {feedback.text}
@@ -1686,7 +1695,7 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
             <Save className="h-4 w-4 shrink-0" />
             <span>{isSaving ? 'Speichert...' : 'Speichern'}</span>
           </button>
-        </div>
+        </div>}
       </form>
       </div>
 

@@ -7,7 +7,7 @@ export interface PageState {
   jobSeriesId?: string;
 }
 
-const SETTINGS_TABS = ['app', 'general', 'invoices', 'appearance', 'system'] as const;
+const SETTINGS_TABS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes'] as const;
 type SettingsTab = typeof SETTINGS_TABS[number];
 
 function normalizePageState(page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string): PageState {

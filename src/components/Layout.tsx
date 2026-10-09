@@ -44,7 +44,7 @@ interface NavItem {
 }
 
 const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
-const taxSubPageIds = ['euer', 'fixed-assets'];
+const taxSubPageIds = ['euer', 'fixed-costs', 'fixed-assets'];
 const SIDEBAR_DEFAULT_WIDTH = 256;
 const SIDEBAR_COMPACT_WIDTH = 72;
 const SIDEBAR_MIN_WIDTH = 72;
@@ -320,6 +320,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     icon: Calculator,
     children: [
       { id: 'euer', label: 'EÜR' },
+      { id: 'fixed-costs', label: 'Fixkosten' },
       { id: 'fixed-assets', label: 'Anlagenverzeichnis' },
     ],
   };

@@ -8,8 +8,19 @@ import { IMPORT_RESOURCES, MAX_IMPORT_ROWS, isApplicable, planImport, planInvoic
 import type { ImportPlan, PlannerContext, PlannerResource } from '../../backend/utils/importPlanner.js';
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 import { normalizeDashboardPreferences } from '../utils/dashboardPreferences';
+import { demoDefaultTaxProfile, demoExtensionId, demoExtensionList, demoSeedTaxProfile, demoTaxesEnabled } from './demoFinance';
+import { addDays, canAccessDemoFinance, demoExpenseDueDates, demoLevyFromRun, demoRunRecord, validateDemoExpense, validateDemoLevy, validateDemoTaxProfile } from '../../backend/shared/financeDemo.js';
+import { isRecurringExpenseDue, occurrenceOnOrAfter } from '../../backend/shared/recurrence.js';
+import type { ForecastResult, LevyPayment, RecurringExpense, RecurringExpenseRun, TaxProfile, WorkspaceExtension } from '../types/finance';
+import { buildForecast } from '../../backend/shared/forecast/index.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
+class DemoApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code: string) {
+    super(message);
+    this.name = 'DemoApiError';
+  }
+}
 type DemoCourseAction = {
   action: 'create' | 'assign';
   jobId: string | null;
@@ -37,6 +48,12 @@ interface DemoState {
   fixedAssets: DemoRecord[];
   receipts: DemoRecord[];
   incomingEInvoices: DemoRecord[];
+  /** Workspacegebundene Entsprechungen der fünf Finanzmodul-Tabellen. */
+  extensions?: WorkspaceExtension[];
+  taxProfiles?: TaxProfile[];
+  recurringExpenses?: RecurringExpense[];
+  recurringExpenseRuns?: (RecurringExpenseRun & { snapshot?: Record<string, unknown> })[];
+  levyPayments?: LevyPayment[];
   /** Importläufe mit den angelegten bzw. geänderten Datensätzen (für „Rückgängig“). */
   importRuns?: DemoRecord[];
   /** Originaldokumente übernommener Rechnungen, je Rechnungs-ID. */
@@ -49,6 +66,7 @@ interface DemoState {
   seededAt?: string;
   /** true, sobald der Besucher selbst etwas geändert hat (siehe saveState). */
   touched?: boolean;
+  financeSeedVersion?: number;
 }
 
 const STORAGE_KEY = 'solooffice-demo-data-v1';
@@ -141,7 +159,8 @@ function demoDigest(value: unknown): string {
 
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
-const DEMO_SEED_VERSION = 10;
+const DEMO_SEED_VERSION = 11;
+const DEMO_FINANCE_SEED_VERSION = 2;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -238,6 +257,99 @@ const demoProfileFixtures: Record<TerminologyProfile, DemoProfileFixture> = {
     workDescription: 'Beispielberatung für den lokalen Frontend-Test',
   },
 };
+
+function seedDemoFinance(state: DemoState): void {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const year = Number(today.slice(0, 4));
+  const acceptedAt = new Date().toISOString();
+  state.extensions = demoExtensionList({
+    taxesAcceptedAt: acceptedAt,
+    jobTrackingEnabled: state.company.jobTrackingEnabled,
+    quotesEnabled: state.company.quotesEnabled,
+    reportingEnabled: state.company.reportingEnabled,
+  });
+  const profile = demoSeedTaxProfile(year, year);
+  profile.disclaimerAcceptedAt = acceptedAt;
+  profile.churchTaxLiable = null;
+  profile.churchTaxConsentAt = null;
+  state.taxProfiles = [profile];
+
+  const makeExpense = (name: string, category: string, amount: number, startDate: string,
+    options: Partial<RecurringExpense> = {}): RecurringExpense => ({
+    id: generateUUID(), name, counterparty: 'Beispielanbieter', category, amountGross: amount, taxRate: 19,
+    interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate, endDate: null,
+    noticePeriodDays: 30, cancelledOn: null, status: 'active', pauses: [], priceChanges: [],
+    automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: '',
+    nextDueDate: startDate, createdAt: acceptedAt, updatedAt: acceptedAt, ...options,
+  });
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const futurePrice = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+  const futurePriceDate = `${futurePrice.getFullYear()}-${String(futurePrice.getMonth() + 1).padStart(2, '0')}-01`;
+  const expenses: RecurringExpense[] = [
+    makeExpense('Raummiete', 'rent', 920, `${year}-01-01`, { priceChanges: [{ validFrom: futurePriceDate, amountGross: 960 }] }),
+    makeExpense('Software', 'software', 85, `${year}-01-01`),
+    makeExpense('Telefon', 'telecommunications', 39, `${year}-01-01`, { cancelledOn: today, endDate: addDays(today, 30) }),
+    makeExpense('Berufshaftpflicht', 'insurance', 28, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-07-01`, until: `${year}-07-31` }] }),
+    makeExpense('Fachzeitschrift', 'memberships', 24, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-08-01`, until: null }] }),
+  ];
+  state.recurringExpenses = expenses;
+  state.recurringExpenseRuns = [];
+  state.levyPayments = [];
+  // Synthetische EÜR-Zahlungseingänge und bestätigte betriebliche Läufe
+  // erzeugen eine vollständige, konsistente Forecast-Historie.
+  const monthsElapsed = Number(today.slice(5, 7));
+  state.euerEntries = Array.from({ length: Math.max(0, monthsElapsed - 1) }, (_, index) => {
+    const month = String(index + 1).padStart(2, '0');
+    const entry = {
+      id: generateUUID(), entryType: 'income', entryDate: `${year}-${month}-05`,
+      description: 'Beispielhonorar Unterricht', category: 'other_income', amount: 4500, taxRate: 19,
+      sourceType: 'manual', status: 'active', notes: 'Synthetischer Zahlungseingang der Demo',
+      createdAt: `${year}-${month}-05T09:00:00.000Z`, updatedAt: `${year}-${month}-05T09:00:00.000Z`,
+    };
+    return entry;
+  });
+  state.euerEntryHistory = [];
+  const currentMonthNumber = Number(today.slice(5, 7));
+  for (const expense of expenses) {
+    for (let monthNumber = 1; monthNumber < currentMonthNumber; monthNumber += 1) {
+      const dueDate = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
+      if (!isRecurringExpenseDue(expense, dueDate)) continue;
+      const run = demoRunRecord(expense, dueDate, generateUUID());
+      run.status = 'confirmed';
+      run.paidOn = dueDate;
+      if (run.scope === 'business') {
+        const entry = {
+          id: generateUUID(), entryType: 'expense', entryDate: dueDate, description: run.snapshot.name,
+          category: run.snapshot.category, amount: run.snapshot.amount, taxRate: run.snapshot.taxRate || 0,
+          sourceType: 'recurring_expense', sourceId: run.id, status: 'active', notes: 'Synthetischer bestätigter Fixkostenlauf',
+          createdAt: `${dueDate}T09:00:00.000Z`, updatedAt: `${dueDate}T09:00:00.000Z`,
+        };
+        run.euerEntryId = entry.id;
+        state.euerEntries.push(entry);
+        state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: entry.id, action: 'created', reason: 'Beispiel-Fixkostenlauf bestätigt',
+          oldData: null, newData: { ...entry }, changedAt: `${dueDate}T09:00:00.000Z` });
+      }
+      state.recurringExpenseRuns.push(run);
+    }
+    if (isRecurringExpenseDue(expense, monthStart)) {
+      state.recurringExpenseRuns.push(demoRunRecord(expense, monthStart, generateUUID()));
+    }
+  }
+  for (let monthNumber = 1; monthNumber < currentMonthNumber; monthNumber += 1) {
+    const month = String(monthNumber).padStart(2, '0');
+    for (const [kind, amount] of [['kv', 262.5], ['pv', 63], ['rv', 600]] as const) {
+      state.levyPayments.push({ id: generateUUID(), kind, year, period: `${year}-${month}`, dueDate: `${year}-${month}-15`,
+        paidOn: `${year}-${month}-15`, amount, source: 'notice', expenseRunId: null, notes: 'Synthetische Bescheidzahlung der Demo' });
+    }
+  }
+  state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
+}
+
+function todayLocal(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 function demoSlug(value: string): string {
   return value.toLocaleLowerCase('de-DE')
@@ -424,6 +536,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
   state.seedVersion = DEMO_SEED_VERSION;
   state.seededAt = isoDate();
   state.touched = false;
+  seedDemoFinance(state);
   return state;
 }
 
@@ -577,6 +690,27 @@ function readState(): DemoState {
       }
     }
 
+    // Ältere, bereits genutzte Workspaces erhalten das Finanzbeispiel genau
+    // einmal. Vorhandene EÜR-Daten bleiben erhalten; nur neu angelegte
+    // Fixkostenläufe ergänzen passende EÜR-Ausgaben.
+    if (parsed.financeSeedVersion !== DEMO_FINANCE_SEED_VERSION
+      && !parsed.taxProfiles && !parsed.recurringExpenses && !parsed.recurringExpenseRuns && !parsed.levyPayments) {
+      const seededFinance = createInitialState(storedProfile);
+      parsed.extensions = seededFinance.extensions;
+      parsed.taxProfiles = seededFinance.taxProfiles;
+      parsed.recurringExpenses = seededFinance.recurringExpenses;
+      parsed.recurringExpenseRuns = seededFinance.recurringExpenseRuns;
+      parsed.levyPayments = seededFinance.levyPayments;
+      const financeEntries = seededFinance.euerEntries || [];
+      const recurringEntries = financeEntries.filter(entry => entry.sourceType === 'recurring_expense');
+      parsed.euerEntries = parsed.euerEntries?.length ? [...parsed.euerEntries, ...recurringEntries] : financeEntries;
+      parsed.euerEntryHistory = parsed.euerEntryHistory?.length
+        ? [...parsed.euerEntryHistory, ...(seededFinance.euerEntryHistory || [])]
+        : seededFinance.euerEntryHistory;
+      parsed.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
+      localStorage.setItem(storageKey, JSON.stringify(parsed));
+    }
+
     return {
       ...parsed,
       yearlyInvoiceStartNumbers: parsed.yearlyInvoiceStartNumbers || [],
@@ -584,6 +718,12 @@ function readState(): DemoState {
       recurringInvoices: parsed.recurringInvoices || [],
       euerEntries: parsed.euerEntries || [],
       euerEntryHistory: parsed.euerEntryHistory || [],
+      extensions: parsed.extensions || [],
+      taxProfiles: parsed.taxProfiles || [],
+      recurringExpenses: parsed.recurringExpenses || [],
+      recurringExpenseRuns: parsed.recurringExpenseRuns || [],
+      levyPayments: parsed.levyPayments || [],
+      financeSeedVersion: parsed.financeSeedVersion,
       invoiceHistory: parsed.invoiceHistory || [],
       fixedAssets: parsed.fixedAssets || [],
       receipts: (parsed.receipts || []).map(receipt => ({ ...receipt, ocrExtractedData: receipt.ocrExtractedData || receipt.extractedData || {} })),
@@ -1715,6 +1855,398 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   const id = parts[1];
   const data = payload(options);
 
+  const financeState = () => {
+    state.extensions ||= demoExtensionList({
+      taxesAcceptedAt: null,
+      jobTrackingEnabled: state.company.jobTrackingEnabled,
+      quotesEnabled: state.company.quotesEnabled,
+      reportingEnabled: state.company.reportingEnabled,
+    });
+    state.taxProfiles ||= [];
+    state.recurringExpenses ||= [];
+    state.recurringExpenseRuns ||= [];
+    state.levyPayments ||= [];
+    return state;
+  };
+  const taxesActive = () => canAccessDemoFinance({ enabled: demoTaxesEnabled(financeState().extensions || []), hasSettingsPermission: true });
+  const assertTaxesActive = () => {
+    if (!taxesActive()) {
+      throw new DemoApiError('Diese Erweiterung ist nicht aktiviert.', 403, 'EXTENSION_DISABLED');
+    }
+  };
+  const extensionChanged = (extension: WorkspaceExtension) => {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('solooffice-extensions-changed', {
+      detail: { workspaceId: getDemoActiveWorkspaceId(), extension },
+    }));
+  };
+  const publicRun = (run: RecurringExpenseRun & { snapshot?: Record<string, unknown> }) => {
+    const visible = { ...run };
+    delete visible.snapshot;
+    return visible;
+  };
+
+  if (resource === 'extensions') {
+    financeState();
+    if (method === 'GET' && !id) {
+      const taxExtension = state.extensions!.find(extension => extension.id === 'taxes');
+      const legacyExtensions = demoExtensionList({
+        taxesAcceptedAt: taxExtension?.acceptedAt,
+        jobTrackingEnabled: state.company.jobTrackingEnabled,
+        quotesEnabled: state.company.quotesEnabled,
+        reportingEnabled: state.company.reportingEnabled,
+      });
+      state.extensions = legacyExtensions.map(extension => extension.id === 'taxes' && taxExtension
+        ? { ...extension, enabled: taxExtension.enabled, acceptedAt: taxExtension.acceptedAt }
+        : extension);
+      return state.extensions as unknown as T;
+    }
+    if (method === 'PUT' && id) {
+      const extensionId = demoExtensionId(id);
+      if (!extensionId || Object.keys(data).some(key => !['enabled', 'acceptDisclaimer'].includes(key))
+        || typeof data.enabled !== 'boolean' || (data.acceptDisclaimer !== undefined && data.acceptDisclaimer !== true)) {
+        throw new Error('Ungültige Erweiterungseinstellung.');
+      }
+      const current = state.extensions!.find(extension => extension.id === extensionId);
+      if (!current) throw new Error('Erweiterung nicht gefunden.');
+      if (extensionId === 'taxes' && data.enabled && !current.acceptedAt && data.acceptDisclaimer !== true) {
+        throw new Error('Bitte bestätigen Sie zuerst den Hinweis zur Steuerschätzung.');
+      }
+      const acceptedAt = extensionId === 'taxes' && data.enabled && !current.acceptedAt ? new Date().toISOString() : current.acceptedAt;
+      const updated = { ...current, enabled: data.enabled && current.available, acceptedAt };
+      state.extensions = state.extensions!.map(extension => extension.id === extensionId ? updated : extension);
+      if (extensionId !== 'taxes' && current.legacyCompanyField) {
+        const field = current.legacyCompanyField === 'job_tracking_enabled' ? 'jobTrackingEnabled'
+          : current.legacyCompanyField === 'quotes_enabled' ? 'quotesEnabled' : 'reportingEnabled';
+        state.company[field] = data.enabled;
+      }
+      saveState(state);
+      extensionChanged(updated);
+      return updated as unknown as T;
+    }
+  }
+
+  if (resource === 'tax-profile' && id) {
+    assertTaxesActive();
+    const year = /^\d{4}$/.test(id) ? Number(id) : NaN;
+    if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new Error('Ungültiges Steuerjahr.');
+    financeState();
+    const profiles = state.taxProfiles!;
+    const profileAt = () => profiles.find(profile => profile.year === year) || demoDefaultTaxProfile(year);
+    const persistProfile = (profile: TaxProfile) => {
+      state.taxProfiles = profiles.some(item => item.year === year)
+        ? profiles.map(item => item.year === year ? profile : item) : [...profiles, profile];
+      saveState(state);
+      return profile;
+    };
+    if (parts.length === 2 && method === 'GET') return profileAt() as unknown as T;
+    if (parts.length === 2 && method === 'PUT') {
+      const payloadValue = validateDemoTaxProfile(data, year);
+      if (!payloadValue.valid) throw new Error(payloadValue.errors.join(' '));
+      const current = profileAt();
+      if (typeof payloadValue.value?.churchTaxLiable === 'boolean' && !current.churchTaxConsentAt) {
+        throw new Error('Für diese Angabe ist zuerst eine gesonderte Einwilligung erforderlich.');
+      }
+      return persistProfile({ ...current, ...payloadValue.value, disclaimerAcceptedAt: current.disclaimerAcceptedAt,
+        churchTaxConsentAt: current.churchTaxConsentAt, paramsVersion: current.paramsVersion, updatedAt: new Date().toISOString() }) as unknown as T;
+    }
+    if (parts[2] === 'copy' && method === 'POST') {
+      if (Object.keys(data).length !== 1 || !Number.isInteger(data.targetYear) || Number(data.targetYear) < 2000
+        || Number(data.targetYear) > 2200 || Number(data.targetYear) === year) throw new Error('Ungültiges Zieljahr.');
+      const targetYear = Number(data.targetYear);
+      const targetProfile = profiles.find(profile => profile.year === targetYear);
+      const copied = { ...profileAt(), ...(targetProfile?.id ? { id: targetProfile.id } : {}), year: targetYear,
+        churchTaxLiable: targetProfile?.churchTaxLiable ?? null, churchTaxConsentAt: targetProfile?.churchTaxConsentAt ?? null,
+        disclaimerAcceptedAt: state.extensions!.find(extension => extension.id === 'taxes')?.acceptedAt || null,
+        paramsVersion: demoDefaultTaxProfile(targetYear).paramsVersion, updatedAt: new Date().toISOString() };
+      state.taxProfiles = targetProfile ? profiles.map(profile => profile.year === targetYear ? copied : profile) : [...profiles, copied];
+      saveState(state);
+      return copied as unknown as T;
+    }
+    if (parts[2] === 'disclaimer' && method === 'POST') {
+      if (Object.keys(data).length !== 1 || data.accepted !== true) throw new Error('Die Bestätigung muss ausdrücklich erfolgen.');
+      return persistProfile({ ...profileAt(), disclaimerAcceptedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }) as unknown as T;
+    }
+    if (parts[2] === 'church-consent' && method === 'POST') {
+      if (typeof data.consented !== 'boolean' || Object.keys(data).some(key => !['consented', 'liable'].includes(key))
+        || (data.consented && typeof data.liable !== 'boolean') || (!data.consented && Object.hasOwn(data, 'liable'))) {
+        throw new Error('Ungültige Einwilligungsangabe.');
+      }
+      return persistProfile({ ...profileAt(), churchTaxLiable: data.consented ? data.liable as boolean : null,
+        churchTaxConsentAt: data.consented ? new Date().toISOString() : null, updatedAt: new Date().toISOString() }) as unknown as T;
+    }
+  }
+
+  if (resource === 'recurring-expenses') {
+    financeState();
+    const expenses = state.recurringExpenses!;
+    const runs = state.recurringExpenseRuns!;
+    const privateAllowed = () => taxesActive();
+    const visibleExpense = (expense: RecurringExpense) => expense.scope === 'business' || privateAllowed();
+    const expenseFromInput = (input: DemoRecord, current?: RecurringExpense): RecurringExpense => {
+      const immutablePriceChanges = (current?.priceChanges || []).filter(change => change.validFrom <= todayLocal())
+        .map(change => ({ validFrom: change.validFrom, amount: change.amountGross, taxRate: current?.taxRate ?? null }));
+      const checked = validateDemoExpense({ ...(current || {}), ...input }, todayLocal(), immutablePriceChanges);
+      if (typeof checked === 'string') throw new Error(checked);
+      const interval: RecurringExpense['interval'] = checked.interval === 'monthly' || checked.interval === 'quarterly'
+        || checked.interval === 'half_yearly' || checked.interval === 'yearly'
+        ? checked.interval
+        : checked.intervalUnit === 'year' ? 'yearly' : checked.intervalValue === 3 ? 'quarterly' : checked.intervalValue === 6 ? 'half_yearly' : 'custom';
+      const intervalCount = checked.intervalUnit === 'year' ? checked.intervalValue * 12 : checked.intervalValue;
+      return {
+        id: current?.id || generateUUID(), name: checked.name, counterparty: checked.counterparty || '', category: checked.category,
+        amountGross: checked.amount, taxRate: checked.taxRate, interval, intervalCount,
+        intervalUnit: checked.intervalUnit === 'week' ? 'weeks' : 'months', startDate: checked.startDate,
+        endDate: checked.endDate, noticePeriodDays: checked.cancellationNoticeDays, cancelledOn: checked.cancelledOn,
+        status: checked.status, pauses: checked.pauses,
+        priceChanges: checked.priceChanges.map(change => ({ validFrom: change.validFrom, amountGross: change.amount })),
+        automaticBooking: checked.autoConfirm, scope: checked.scope, levyKind: checked.scope === 'private_levy' ? checked.category as RecurringExpense['levyKind'] : null,
+        linkedReceiptId: checked.linkedReceiptId, notes: checked.notes || '', nextDueDate: current?.nextDueDate || checked.nextDueDate,
+        createdAt: current?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+    };
+    if (!id && method === 'GET') return expenses.filter(visibleExpense) as unknown as T;
+    if (!id && method === 'POST') {
+      if (data.scope === 'private_levy') assertTaxesActive();
+      const created = expenseFromInput(data);
+      state.recurringExpenses = [...expenses, created];
+      saveState(state);
+      return created as unknown as T;
+    }
+    if (id === 'runs' && parts.length === 2 && method === 'GET') {
+      const yearParam = queryParams.get('year');
+      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2100)) throw new Error('Ungültiges Jahr.');
+      const dueOnly = queryParams.get('dueOnly') === 'true';
+      const today = todayLocal();
+      const permittedIds = new Set(expenses.filter(visibleExpense).map(expense => expense.id));
+      return runs.filter(run => permittedIds.has(run.expenseId)
+        && (!yearParam || run.dueDate.startsWith(`${yearParam}-`)) && (!dueOnly || run.dueDate <= today)
+        && (run.status !== 'planned' || (() => {
+          const expense = expenses.find(item => item.id === run.expenseId);
+          return expense ? isRecurringExpenseDue(expense, run.dueDate) : false;
+        })())
+      ).map(publicRun) as unknown as T;
+    }
+    if (id === 'generate' && method === 'POST') {
+      if (Object.keys(data).some(key => !['throughDate', 'autoConfirm'].includes(key)) || (data.autoConfirm !== undefined && typeof data.autoConfirm !== 'boolean')) throw new Error('Ungültige Generierungsangaben.');
+      const throughDate = String(data.throughDate || '');
+      const today = todayLocal();
+      const autoConfirmRequested = data.autoConfirm !== false;
+      const generated: (RecurringExpenseRun & { snapshot?: Record<string, unknown> })[] = [];
+      let processedDueDates = 0;
+      // Bereits vorhandene offene Opt-in-Läufe bleiben bestätigbar, auch wenn
+      // nextDueDate nach ihrer ersten Anlage schon auf das Folgeraster zeigt.
+      if (autoConfirmRequested) {
+        for (const run of runs) {
+          const expense = expenses.find(item => item.id === run.expenseId);
+          if (run.status !== 'planned' || run.dueDate > today || run.dueDate > throughDate
+            || !expense?.automaticBooking || !visibleExpense(expense) || !isRecurringExpenseDue(expense, run.dueDate)) continue;
+          confirmExpenseRun(run, today);
+          generated.push(run);
+        }
+      }
+      for (const expense of expenses.filter(item => (['active', 'paused'].includes(item.status) || item.status === 'ended' && item.endDate) && visibleExpense(item))) {
+        const dueDates = demoExpenseDueDates(expense, throughDate, 2000 - processedDueDates, today);
+        processedDueDates += dueDates.processedCount;
+        if (processedDueDates > 2000) throw new TypeError('Zu viele Fälligkeiten für einen einzelnen Generierungslauf.');
+        for (const dueDate of dueDates.dates) {
+          let run = runs.find(item => item.expenseId === expense.id && item.dueDate === dueDate);
+          if (!run) {
+            run = demoRunRecord(expense, dueDate, generateUUID());
+            runs.push(run);
+            generated.push(run);
+          } else if (run.status !== 'planned') {
+            continue;
+          }
+          if (autoConfirmRequested && expense.automaticBooking && dueDate <= today && run.status === 'planned') confirmExpenseRun(run, today);
+          if (!generated.includes(run) && run.status === 'confirmed') generated.push(run);
+        }
+        expense.nextDueDate = dueDates.nextDueDate;
+        expense.updatedAt = new Date().toISOString();
+      }
+      saveState(state);
+      return generated.map(publicRun) as unknown as T;
+    }
+    if (id === 'runs' && parts[2] && ['confirm', 'skip'].includes(parts[3]) && method === 'POST') {
+      const run = runs.find(item => item.id === parts[2]);
+      if (!run) throw new Error('Fälligkeitslauf nicht gefunden.');
+      const expense = expenses.find(item => item.id === run.expenseId);
+      if (run.scope === 'private_levy' || expense?.scope === 'private_levy') assertTaxesActive();
+      if (parts[3] === 'skip') {
+        if (Object.keys(data).length) throw new Error('Ungültige Angaben.');
+        if (run.status === 'confirmed') throw new Error('Ein bestätigter Lauf kann nicht übersprungen werden.');
+        run.status = 'skipped';
+        saveState(state);
+        return publicRun(run) as unknown as T;
+      }
+      if (run.status === 'confirmed') return publicRun(run) as unknown as T;
+      if (run.status === 'skipped') throw new Error('Ein übersprungener Lauf kann nicht als bezahlt bestätigt werden.');
+      confirmExpenseRun(run, String(data.paidOn || ''));
+      saveState(state);
+      return publicRun(run) as unknown as T;
+    }
+    if (id && !parts[2] && method === 'PUT') {
+      const index = expenses.findIndex(expense => expense.id === id);
+      if (index < 0) throw new Error('Fixkosten-Vorlage nicht gefunden.');
+      const current = expenses[index];
+      if (current.scope === 'private_levy' || data.scope === 'private_levy') assertTaxesActive();
+      const updated = expenseFromInput(data, current);
+      const today = todayLocal();
+      const hasRuns = runs.some(run => run.expenseId === id);
+      if (hasRuns && (updated.scope !== current.scope || updated.category !== current.category)) {
+        throw new Error('Bereich und Kategorie können nach dem ersten Fälligkeitslauf nicht geändert werden.');
+      }
+      const scheduleChanged = updated.startDate !== current.startDate || updated.intervalCount !== current.intervalCount
+        || updated.intervalUnit !== current.intervalUnit || updated.endDate !== current.endDate
+        || updated.cancelledOn !== current.cancelledOn || updated.noticePeriodDays !== current.noticePeriodDays
+        || updated.status !== current.status || JSON.stringify(updated.pauses) !== JSON.stringify(current.pauses || []);
+      if (scheduleChanged) updated.nextDueDate = occurrenceOnOrAfter(updated.startDate, today, updated.intervalCount, updated.intervalUnit === 'weeks' ? 'week' : 'month');
+      if (scheduleChanged) {
+        state.recurringExpenseRuns = runs.filter(run => !(run.expenseId === id && run.status === 'planned' && run.dueDate >= today));
+      } else {
+        for (const run of runs) if (run.expenseId === id && run.status === 'planned' && run.dueDate >= today) {
+          if (!isRecurringExpenseDue(updated, run.dueDate)) {
+            state.recurringExpenseRuns = state.recurringExpenseRuns!.filter(item => item.id !== run.id);
+            continue;
+          }
+          // Preisänderungen aktualisieren nur strikt zukünftige Snapshots.
+          if (run.dueDate > today) {
+            run.snapshot = demoRunRecord(updated, run.dueDate, run.id).snapshot;
+            run.amountGross = Number(run.snapshot?.amount || 0);
+          }
+        }
+      }
+      updated.updatedAt = new Date().toISOString();
+      expenses[index] = updated;
+      saveState(state);
+      return updated as unknown as T;
+    }
+    if (id && !parts[2] && method === 'DELETE') {
+      const index = expenses.findIndex(expense => expense.id === id);
+      if (index < 0) throw new Error('Fixkosten-Vorlage nicht gefunden.');
+      if (expenses[index].scope === 'private_levy') assertTaxesActive();
+      if (runs.some(run => run.expenseId === id)) throw new Error('Zu dieser Vorlage bestehen Fälligkeitsläufe. Beenden Sie sie, damit die Historie erhalten bleibt.');
+      state.recurringExpenses = expenses.filter(expense => expense.id !== id);
+      saveState(state);
+      return undefined as T;
+    }
+  }
+
+  if (resource === 'levy-payments') {
+    assertTaxesActive();
+    financeState();
+    const payments = state.levyPayments!;
+    const allowedKeys = new Set(['kind', 'year', 'period', 'periodStart', 'periodEnd', 'dueDate', 'paidOn', 'amount', 'source', 'notes']);
+    const checkedLevy = (input: DemoRecord) => {
+      if (Object.keys(input).some(key => !allowedKeys.has(key))) throw new Error('Ungültige Abgabenangaben.');
+      const result = validateDemoLevy(input, todayLocal());
+      if (typeof result === 'string') throw new Error(result);
+      return result;
+    };
+    if (!id && method === 'GET') {
+      const yearParam = queryParams.get('year');
+      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2100)) throw new Error('Ungültiges Jahr.');
+      return payments.filter(payment => !yearParam || payment.year === Number(yearParam)) as unknown as T;
+    }
+    if (!id && method === 'POST') {
+      const payment = { id: generateUUID(), ...checkedLevy(data) } as LevyPayment;
+      state.levyPayments = [...payments, payment];
+      saveState(state);
+      return payment as unknown as T;
+    }
+    if (id && method === 'PUT') {
+      const index = payments.findIndex(payment => payment.id === id);
+      if (index < 0) throw new Error('Abgabenzahlung nicht gefunden.');
+      if (payments[index].expenseRunId) throw new Error('Zahlungen aus Fixkostenläufen werden an der Vorlage verwaltet.');
+      const current = payments[index];
+      const currentPayload = Object.fromEntries(Object.entries(current).filter(([key]) => key !== 'id' && key !== 'expenseRunId')) as DemoRecord;
+      const merged = { ...currentPayload, ...data } as DemoRecord;
+      if (data.year !== undefined || data.period !== undefined) {
+        merged.year = data.year ?? current.year;
+        merged.period = data.period ?? `${String(merged.year)}-${current.period.slice(5, 7)}`;
+        delete merged.periodStart;
+      }
+      const payment = { id, ...checkedLevy(merged) } as LevyPayment;
+      payments[index] = payment;
+      saveState(state);
+      return payment as unknown as T;
+    }
+    if (id && method === 'DELETE') {
+      const existing = payments.find(payment => payment.id === id);
+      if (!existing || existing.expenseRunId) throw new Error('Abgabenzahlung nicht gefunden oder aus einem Fixkostenlauf erstellt.');
+      state.levyPayments = payments.filter(payment => payment.id !== id);
+      saveState(state);
+      return undefined as T;
+    }
+  }
+
+  if (resource === 'forecast' && id && method === 'GET') {
+    assertTaxesActive();
+    const year = /^\d{4}$/.test(id) ? Number(id) : NaN;
+    if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new Error('Ungültiges Steuerjahr.');
+    const profile = (state.taxProfiles || []).find(item => item.year === year) || demoDefaultTaxProfile(year);
+    const extensionAcceptedAt = state.extensions?.find(extension => extension.id === 'taxes')?.acceptedAt;
+    if (!profile.disclaimerAcceptedAt && !extensionAcceptedAt) throw new Error('Bitte bestätigen Sie zuerst den Hinweis zur Steuerschätzung.');
+    const entries = state.euerEntries.map(entry => ({ entryType: entry.entryType === 'expense' ? 'expense' as const : 'income' as const,
+      entryDate: String(entry.entryDate || ''), amount: Number(entry.amount || 0), taxRate: Number(entry.taxRate || 0),
+      sourceType: typeof entry.sourceType === 'string' ? entry.sourceType : undefined,
+      status: typeof entry.status === 'string' ? entry.status : undefined,
+      description: typeof entry.description === 'string' ? entry.description : undefined,
+      category: typeof entry.category === 'string' ? entry.category : undefined }));
+    const forecast = buildForecast({ year, profile: profile as Partial<TaxProfile> & Record<string, unknown>, entries, expenses: state.recurringExpenses || [],
+      runs: state.recurringExpenseRuns || [], levyPayments: state.levyPayments || [],
+      previousEntries: entries.filter(entry => entry.entryDate.slice(0, 4) === String(year - 1)), now: new Date() }) as ForecastResult as unknown as T;
+    const companyBusiness = state.company.taxBusinessType;
+    if (companyBusiness && companyBusiness !== profile.businessKind && forecast && typeof forecast === 'object'
+      && 'warnings' in forecast && Array.isArray(forecast.warnings)) {
+      forecast.warnings.push('Das Demo-Unternehmensprofil und das gewählte Tätigkeitsprofil stimmen nicht überein. Die Prognose ist ein Beispiel.');
+    }
+    const paidLegacyInvoiceIds = new Set(state.euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.status !== 'voided')
+      .map(entry => String(entry.sourceId)));
+    const hasUnbookedPaidInvoice = state.invoices.some(invoice => invoice.status === 'paid'
+      && ['invoice', 'credit_note'].includes(String(invoice.documentType || 'invoice')) && !paidLegacyInvoiceIds.has(invoice.id));
+    if (hasUnbookedPaidInvoice && forecast && typeof forecast === 'object' && 'warnings' in forecast && Array.isArray(forecast.warnings)) {
+      forecast.warnings.push('Bezahlte ältere Rechnungen ohne zugehörigen EÜR-Zahlungseingang wurden nicht als Ist-Umsatz angesetzt; die Datenbasis kann unvollständig sein.');
+    }
+    return forecast;
+  }
+
+  function confirmExpenseRun(run: RecurringExpenseRun & { snapshot?: Record<string, unknown> }, paidOn: string): void {
+    const today = todayLocal();
+    const paidDate = assertDemoDate(paidOn, 'Das Zahlungsdatum');
+    if (paidDate > today) throw new Error('Ein zukünftiges Zahlungsdatum kann nicht als erfolgte Zahlung bestätigt werden.');
+    const expense = state.recurringExpenses?.find(item => item.id === run.expenseId);
+    if (!expense || !isRecurringExpenseDue(expense, run.dueDate)) throw new Error('Diese Fälligkeit ist nach der aktuellen Fixkostenregel nicht mehr zulässig.');
+    if (run.scope === 'private_levy') {
+      const levy = demoLevyFromRun(run as RecurringExpenseRun & { snapshot: Record<string, unknown> }, paidDate, generateUUID());
+      state.levyPayments!.push(levy);
+      run.levyPaymentId = levy.id;
+    } else {
+      const snapshot = run.snapshot || {};
+      let receiptToLink = snapshot.linkedReceiptId ? state.receipts.find(item => item.id === snapshot.linkedReceiptId) : null;
+      if (snapshot.linkedReceiptId && !receiptToLink) throw new Error('Der verknüpfte Beleg ist nicht mehr verfügbar.');
+      if (receiptToLink?.linkedEuerEntryId) {
+        const linked = state.euerEntries.find(item => item.id === receiptToLink?.linkedEuerEntryId);
+        if (linked?.status !== 'voided') {
+          const previousRun = state.recurringExpenseRuns?.find(item => item.euerEntryId === linked?.id);
+          if (previousRun?.expenseId !== expense.id) throw new Error('Der verknüpfte Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.');
+          receiptToLink = null;
+        }
+      }
+      const entry = {
+        id: generateUUID(), entryType: 'expense', entryDate: paidDate, description: String(snapshot.name || run.name || 'Fixkosten'),
+        category: String(snapshot.category || 'other_expense'), amount: Number(snapshot.amount || run.amountGross),
+        taxRate: Number(snapshot.taxRate || 0), sourceType: 'recurring_expense', sourceId: run.id, status: 'active',
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      state.euerEntries.push(entry);
+      if (receiptToLink) { receiptToLink.linkedEuerEntryId = entry.id; expense.linkedReceiptId = null; }
+      state.euerEntryHistory!.push({ id: generateUUID(), euerEntryId: entry.id, action: 'created', reason: 'Fixkostenlauf bestätigt', oldData: null, newData: { ...entry }, changedAt: new Date().toISOString() });
+      run.euerEntryId = entry.id;
+    }
+    run.status = 'confirmed';
+    run.paidOn = paidDate;
+  }
+
   if (resource === 'user-preferences' && parts[1] === 'dashboard') {
     const key = `${DASHBOARD_PREFERENCES_STORAGE_KEY}:${getDemoActiveWorkspaceId()}:demo-user`;
     if (method === 'GET') {
@@ -2770,7 +3302,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'importRuns' | 'invoiceOriginals'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'financeSeedVersion' | 'importRuns' | 'invoiceOriginals' | 'extensions' | 'taxProfiles' | 'recurringExpenses' | 'recurringExpenseRuns' | 'levyPayments'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -3064,6 +3596,14 @@ export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { compan
   state.calendarEvents = [];
   state.euerEntries = [];
   state.euerEntryHistory = [];
+  state.extensions = options.companyProfile
+    ? (state.extensions || []).map(extension => extension.id === 'taxes' ? { ...extension, enabled: false, acceptedAt: null } : extension)
+    : previous.extensions || state.extensions;
+  state.taxProfiles = options.companyProfile ? [] : previous.taxProfiles || [];
+  state.recurringExpenses = [];
+  state.recurringExpenseRuns = [];
+  state.levyPayments = [];
+  state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
   state.invoiceHistory = [];
   state.fixedAssets = [];
   state.receipts = [];

@@ -45,19 +45,24 @@ export interface LevyPayment {
 }
 export type LevyPaymentPayload = Omit<LevyPayment, 'id' | 'expenseRunId'>;
 export interface ThresholdBand { id: string; label: string; from: number; to: number | null; rate?: number; tone: 'neutral' | 'success' | 'warning' | 'danger' }
-export interface ThresholdResult { id: 'est' | 'kv' | 'rv' | 'small_business' | 'trade' | 'ksk'; label: string; value: number; bands: ThresholdBand[]; message: string; marginalRate?: number }
-export interface ChartSeries { id: 'fixed_costs' | 'social' | 'tax_reserve' | 'vat_reserve' | 'available'; label: string; points: { label: string; value: number; forecast: boolean }[]; kind: 'bar' | 'line'; tooltip: string }
+export interface ThresholdResult { id: 'est' | 'kv' | 'rv' | 'small_business' | 'trade' | 'ksk' | 'ihk' | 'bookkeeping_revenue' | 'bookkeeping_profit'; label: string; value: number; bands: ThresholdBand[]; message: string; marginalRate?: number }
+export interface ChartSeries { id: 'fixed_costs' | 'social' | 'tax_reserve' | 'vat_reserve' | 'available' | 'paid_levies' | `expense:${string}`; label: string; points: { label: string; value: number; forecast: boolean }[]; kind: 'bar' | 'line'; tooltip: string }
 export interface SocialResult { health: number; care: number; pension: number; unemployment: number; total: number; deductible: number; healthAssessmentMonthly: number; healthBackpaymentRisk: number | null; warnings: string[] }
 export interface TaxResult { taxableIncome: number; incomeTaxBeforeCredit: number; incomeTax: number; solidarity: number; churchTax: number; tradeTax: number; tradeAssessment: number; tradeCredit: number; total: number; marginalRate: number; warnings: string[] }
+export interface ForecastMonth {
+  month: string; revenue: number; expenses: number; fixedCosts: number; social: number;
+  taxReserve: number; vatReserve: number; available: number; forecast: boolean;
+}
 export interface ForecastResult {
   year: number; parameterYear: number; paramsVersion: string; paramsAsOf: string; generatedAt: string;
   profileComplete: boolean; missingFields: string[]; warnings: string[]; method: 'linear' | 'seasonal';
   profitYtd: number; profitAnnual: number; profitBand: { low: number; high: number }; revenueYtd: number; revenueAnnual: number;
-  social: SocialResult; taxes: TaxResult; annualBurden: number; paidLevies: number; remainingReserve: number;
-  reserveRatio: number; combinedMarginalRate: number; vatReserveGrossEstimate: number;
+  social: SocialResult; taxes: TaxResult; annualBurden: number; paidLevies: number; paidUst: number; remainingReserve: number;
+  reserveRatio: number; combinedMarginalRate: number; vatReserveGrossEstimate: number; vatRemainingReserve: number;
   thresholds: ThresholdResult[]; smallBusiness: { previous: 'green' | 'yellow' | 'red'; current: 'green' | 'yellow' | 'red'; previousValue: number; currentValue: number; currentLimit: number; forecastValue: number };
   series: ChartSeries[]; upcomingLevies: LevyPayment[]; upcomingExpenses: RecurringExpenseRun[];
   fixedCostsMonthly: number; fixedCostsAnnual: number; calculationSteps: { label: string; amount: number }[];
+  monthly: ForecastMonth[];
 }
 export interface ExtensionDefinition { id: string; label: string; description: string; requiredPlan: 'free' | 'pro'; legacyCompanyField?: string }
 export interface WorkspaceExtension extends ExtensionDefinition { enabled: boolean; available: boolean; acceptedAt: string | null }

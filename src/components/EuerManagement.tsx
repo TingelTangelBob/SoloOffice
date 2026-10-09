@@ -1,8 +1,9 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import {
   AlertTriangle,
   Calculator,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   Download,
@@ -47,6 +48,11 @@ import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
 import { ImportWizard } from './ImportWizard';
 import { getTerminology } from '../utils/terminology';
+import { DueRecurringExpensesNotice } from './DueRecurringExpensesNotice';
+import { RecurringExpenseDialog } from './RecurringExpenseDialog';
+import { financeApi } from '../services/financeApi';
+import type { RecurringExpensePayload } from '../types/finance';
+import { useAuth } from '../context/AuthContext';
 
 /**
  * Spaltenmaße der Buchungstabelle: Datum 112, Kategorie 160, Quelle 144 und
@@ -55,7 +61,7 @@ import { getTerminology } from '../utils/terminology';
 const EUER_TABLE_LAYOUT = listTableLayout({
   baseColumnsWidth: 112 + 160 + 144 + 128,
   flexibleColumnMinWidth: 200,
-  maxActions: 4,
+  maxActions: 5,
 });
 
 type EntryDraft = {
@@ -152,13 +158,15 @@ const sourceLabels: Record<EuerEntrySourceType, string> = {
 };
 
 interface EuerManagementProps {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, filter?: string) => void;
   /** `new` öffnet direkt eine neue Ausgabe (Schnellzugriff der Übersicht). */
   initialAction?: string;
 }
 
 export function EuerManagement({ onNavigate, initialAction }: EuerManagementProps) {
   const { confirm } = useFeedback();
+  const { can, workspace } = useAuth();
+  const workspaceId = workspace?.id ?? null;
   const { invoices } = useInvoices();
   const { company } = useCompany();
   const currentYear = new Date().getFullYear();
@@ -182,6 +190,11 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [historyEntry, setHistoryEntry] = useState<EuerEntry | null>(null);
   const [history, setHistory] = useState<EuerEntryHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [expenseTemplateEntry, setExpenseTemplateEntry] = useState<EuerEntry | null>(null);
+  const templateWorkspace = useRef(workspace?.id ?? null);
+  const entryRequestVersion = useRef(0);
+  templateWorkspace.current = workspace?.id ?? null;
+
 
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
   // Zehn Jahre, damit auch übernommene Altdaten erreichbar sind.
@@ -200,6 +213,8 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const entriesById = useMemo(() => new Map(entries.map(entry => [entry.id, entry])), [entries]);
 
   const loadEntries = useCallback(async () => {
+    const request = ++entryRequestVersion.current;
+    const targetWorkspace = workspaceId;
     setLoading(true);
     setError('');
     try {
@@ -207,16 +222,20 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         apiService.getEuerEntries(year),
         apiService.getCreditNotes(),
       ]);
+      if (entryRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
       setEntries(entryData);
       setCreditNotes(creditNoteData);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'EÜR-Buchungen konnten nicht geladen werden.');
+      if (entryRequestVersion.current === request && templateWorkspace.current === targetWorkspace) setError(loadError instanceof Error ? loadError.message : 'EÜR-Buchungen konnten nicht geladen werden.');
     } finally {
-      setLoading(false);
+      if (entryRequestVersion.current === request && templateWorkspace.current === targetWorkspace) setLoading(false);
     }
-  }, [year]);
+  }, [year, workspaceId]);
 
-  useEffect(() => { void loadEntries(); }, [loadEntries]);
+  useEffect(() => {
+    entryRequestVersion.current += 1; setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
+    void loadEntries(); return () => { entryRequestVersion.current += 1; };
+  }, [loadEntries]);
   useEffect(() => {
     if (initialAction !== 'new') return;
     setDraft(emptyDraft());
@@ -568,6 +587,8 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     {notice && <Notice variant="success" onDismiss={() => setNotice('')}>{notice}</Notice>}
     {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Fehler schließen"><X className="h-4 w-4" /></button></div>}
 
+    <DueRecurringExpensesNotice onBooked={() => { void loadEntries(); }} />
+
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-bold text-emerald-700">{formatAmount(summary.income)}</p></article>
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />Ausgaben</div><p className="mt-3 text-2xl font-bold text-rose-700">{formatAmount(summary.expenses)}</p></article>
@@ -609,10 +630,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{rows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button><button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">{rows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{rows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem><ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}</article>; })}</div>
+        <div className="divide-y divide-gray-100 tablet:hidden">{rows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}</article>; })}</div>
       </>}
     </section>
 
@@ -672,5 +693,18 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     )}
 
     {historyEntry && <div className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-gray-900">Änderungsverlauf</h2><p className="mt-1 text-sm text-gray-500">{historyEntry.description}</p></div><button type="button" onClick={() => setHistoryEntry(null)} aria-label="Historie schließen"><X className="h-5 w-5 text-gray-500" /></button></div>{historyLoading ? <div className="py-10 text-center text-sm text-gray-500">Historie wird geladen …</div> : history.length === 0 ? <div className="py-10 text-center text-sm text-gray-500">Noch keine Historieneinträge vorhanden.</div> : <div className="mt-5 space-y-3">{history.map(item => <article key={item.id} className="rounded-lg border border-gray-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2 font-medium text-gray-900"><CheckCircle2 className="h-4 w-4 text-primary-custom" />{item.action === 'created' ? 'Erstellt' : item.action === 'updated' ? 'Geändert' : 'Storniert'}</span><span className="text-xs text-gray-500">{formatDate(item.changedAt, locale, company?.dateFormat)}</span></div>{item.reason && <p className="mt-2 text-sm text-gray-700">Grund: {item.reason}</p>}{(item.oldData || item.newData) && <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-gray-500">Technische Werte anzeigen</summary><pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">{JSON.stringify({ vorher: item.oldData, nachher: item.newData }, null, 2)}</pre></details>}</article>)}</div>}</section></div>}
+    {expenseTemplateEntry && <RecurringExpenseDialog
+      key={expenseTemplateEntry.id}
+      scope="business"
+      initialValues={{ name: expenseTemplateEntry.description, counterparty: '', category: expenseTemplateEntry.category, amountGross: Number(expenseTemplateEntry.amount), taxRate: expenseTemplateEntry.taxRate, interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate: new Date().toISOString().slice(0, 10), endDate: null, noticePeriodDays: 0, cancelledOn: null, status: 'active', pauses: [], priceChanges: [], automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: `Als Vorlage aus der EÜR-Buchung vom ${expenseTemplateEntry.entryDate} erstellt.` }}
+      onClose={() => setExpenseTemplateEntry(null)}
+      onSave={async (payload: RecurringExpensePayload) => {
+        const targetWorkspace = workspace?.id ?? null;
+        await financeApi.saveExpense(payload);
+        if (templateWorkspace.current !== targetWorkspace) return;
+        setExpenseTemplateEntry(null);
+        setNotice('Fixkostenvorlage wurde aus der EÜR-Buchung erstellt. Die bestehende EÜR-Ausgabe blieb unverändert.');
+      }}
+    />}
   </div>;
 }

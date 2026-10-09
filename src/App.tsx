@@ -31,6 +31,7 @@ const RecurringInvoiceManagement = lazy(() => import('./components/RecurringInvo
 const CreditNoteManagement = lazy(() => import('./components/CreditNoteManagement').then(({ CreditNoteManagement: page }) => ({ default: page })));
 const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOverview: page }) => ({ default: page })));
 const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
+const RecurringExpensesManagement = lazy(() => import('./components/RecurringExpensesManagement').then(({ RecurringExpensesManagement: page }) => ({ default: page })));
 const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
 const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
 const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
@@ -126,6 +127,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <TaxOverview onNavigate={onPageChange} />;
       case 'euer':
         return <EuerManagement onNavigate={onPageChange} initialAction={currentPageState.filter} />;
+      case 'fixed-costs':
+        return <RecurringExpensesManagement onNavigate={onPageChange} />;
       case 'fixed-assets':
         return <FixedAssetManagement />;
       case 'documents':
@@ -157,7 +160,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reminders':
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : 'general'} onNavigate={onPageChange} />;
+        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : currentPageState.filter === 'extensions' ? 'extensions' : currentPageState.filter === 'taxes' ? 'taxes' : 'general'} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
       case 'workspace':

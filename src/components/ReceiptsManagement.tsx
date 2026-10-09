@@ -1,6 +1,7 @@
 import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle2, FilePlus2, FileScan, FileUp, Link2, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
+import { useAuth } from '../context/AuthContext';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
@@ -16,6 +17,9 @@ import { ReceiptBillingDialog } from './ReceiptBillingDialog';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { TableSkeleton } from './TableSkeleton';
 import { trackTelemetry } from '../services/telemetry';
+import { RecurringExpenseDialog } from './RecurringExpenseDialog';
+import { financeApi } from '../services/financeApi';
+import type { RecurringExpense, RecurringExpensePayload } from '../types/finance';
 
 // Auf den Belegseiten werden ausschließlich Ausgaben importiert.
 const EXPENSE_IMPORT_CONSTANTS = { entryType: 'expense' };
@@ -59,6 +63,9 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
 ) {
   const { confirm } = useFeedback();
   const { company } = useCompany();
+  const { workspace, can } = useAuth();
+  const workspaceId = workspace?.id ?? null;
+  const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { setInvoices } = useInvoices();
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
@@ -76,24 +83,36 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   const [notice, setNotice] = useState('');
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [billingReceipt, setBillingReceipt] = useState<Receipt | null>(null);
+  const [recurringReceipt, setRecurringReceipt] = useState<Receipt | null>(null);
+  const activeWorkspace = useRef(workspaceId);
+  const receiptRequestVersion = useRef(0);
+  activeWorkspace.current = workspaceId;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const openUpload = useCallback(() => fileInputRef.current?.click(), []);
   useImperativeHandle(ref, () => ({ openUpload }), [openUpload]);
 
   const loadReceipts = useCallback(async () => {
+    const request = ++receiptRequestVersion.current;
+    const targetWorkspace = workspaceId;
     setLoading(true);
     setError('');
     try {
-      setReceipts(await apiService.getReceipts());
+      const loaded = await apiService.getReceipts();
+      if (receiptRequestVersion.current === request && activeWorkspace.current === targetWorkspace) setReceipts(loaded);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : `${receiptLabel} konnten nicht geladen werden.`);
+      if (receiptRequestVersion.current === request && activeWorkspace.current === targetWorkspace) setError(loadError instanceof Error ? loadError.message : `${receiptLabel} konnten nicht geladen werden.`);
     } finally {
-      setLoading(false);
+      if (receiptRequestVersion.current === request && activeWorkspace.current === targetWorkspace) setLoading(false);
     }
-  }, [receiptLabel]);
+  }, [receiptLabel, workspaceId]);
 
-  useEffect(() => { void loadReceipts(); }, [loadReceipts]);
+  useEffect(() => {
+    receiptRequestVersion.current += 1; setReceipts([]); setSelectedReceipt(null); setReviewData({}); setOriginalReviewData({}); setOcrReviewData({});
+    setRecurringReceipt(null); setBillingReceipt(null); setIsImportOpen(false); setBusyId(null); setSavingReview(false); setError(''); setNotice(''); setLoading(true);
+    void loadReceipts();
+    return () => { receiptRequestVersion.current += 1; };
+  }, [workspaceId, loadReceipts]);
 
   const filteredReceipts = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase(locale);
@@ -485,7 +504,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                   </div>
                   <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
                   <div className="mt-3 space-y-1.5">{receipt.linkedEuerEntryId && <p className="flex items-center gap-1.5 text-xs font-medium text-blue-700"><Link2 className="h-3.5 w-3.5" />Mit EÜR verknüpft</p>}{receipt.billedInvoiceId && <button type="button" onClick={() => onNavigate?.('invoices', 'all', undefined, receipt.billedInvoiceId || undefined)} className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:underline"><FilePlus2 className="h-3.5 w-3.5" />Weiterberechnete Rechnung öffnen</button>}</div>
-                  <div className="mt-auto flex items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button><button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || Boolean(receipt.billedInvoiceId)} aria-label={`${displayName} löschen`} title={receipt.billedInvoiceId ? 'Weiterberechnete Belege bleiben als Nachweis erhalten' : 'Löschen'}><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button>{canWrite && receipt.ocrStatus === 'completed' && Number(data.grossAmount) > 0 && !receipt.linkedEuerEntryId && <button type="button" onClick={() => setRecurringReceipt(receipt)} className="action-button min-h-10 justify-center px-3 text-xs">Als Fixkosten speichern</button>}<button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || Boolean(receipt.billedInvoiceId)} aria-label={`${displayName} löschen`} title={receipt.billedInvoiceId ? 'Weiterberechnete Belege bleiben als Nachweis erhalten' : 'Löschen'}><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
                 </article>
               );
             })}
@@ -651,6 +670,25 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           </div>
         </DialogShell>
       )}
+
+      {recurringReceipt && <RecurringExpenseDialog
+        key={recurringReceipt.id}
+        scope="business"
+        initialValues={{
+          name: recurringReceipt.extractedData?.vendorName || recurringReceipt.name || 'Fixkosten',
+          counterparty: recurringReceipt.extractedData?.vendorName || '',
+          category: ['materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','other_expense'].includes(String(recurringReceipt.extractedData?.suggestedCategory))
+            ? String(recurringReceipt.extractedData?.suggestedCategory) : 'other_expense',
+          amountGross: Number(recurringReceipt.extractedData?.grossAmount || 0),
+          taxRate: recurringReceipt.extractedData?.taxRate ?? null,
+          interval: 'monthly', intervalCount: 1, intervalUnit: 'months',
+          startDate: recurringReceipt.extractedData?.documentDate || new Date().toISOString().slice(0, 10),
+          endDate: null, noticePeriodDays: 0, cancelledOn: null, status: 'active', pauses: [], priceChanges: [],
+          automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: recurringReceipt.id, notes: `Aus Beleg ${recurringReceipt.name}`,
+        } as Partial<RecurringExpense>}
+        onClose={() => setRecurringReceipt(null)}
+        onSave={async (payload: RecurringExpensePayload) => { const targetWorkspace = workspaceId; await financeApi.saveExpense({ ...payload, linkedReceiptId: recurringReceipt.id }); if (activeWorkspace.current !== targetWorkspace) return; setRecurringReceipt(null); setNotice('Fixkostenvorlage wurde erstellt. Eine EÜR-Buchung wurde dabei nicht angelegt.'); }}
+      />}
       <ReceiptBillingDialog
         receipt={billingReceipt}
         customers={customers}
