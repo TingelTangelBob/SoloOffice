@@ -123,6 +123,7 @@ export type TaxParameters = {
   forecast: {
     defaultBandRatio: number;
     monthsPerYear: number;
+    marginalStep: number;
   };
   sources: ({
     id: string;

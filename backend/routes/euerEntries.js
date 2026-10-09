@@ -1,6 +1,11 @@
 import express from 'express';
 import { pool, query } from '../database.js';
 
+// pg liefert DATE als lokale Mitternacht; String(Date) ergäbe kein ISO-Datum.
+const storedDateKey = value => value instanceof Date
+  ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+  : String(value).slice(0, 10);
+
 const router = express.Router();
 
 const entryTypes = new Set(['income', 'expense']);
@@ -294,7 +299,7 @@ router.put('/:id', async (req, res, next) => {
     const merged = {
       ...current,
       ...req.body,
-      entryDate: req.body.entryDate || String(current.entryDate).slice(0, 10),
+      entryDate: req.body.entryDate || storedDateKey(current.entryDate),
       sourceType: req.body.sourceType || current.sourceType || 'manual',
       sourceId: req.body.sourceId === '' ? undefined : (req.body.sourceId ?? current.sourceId),
     };

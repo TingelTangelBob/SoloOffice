@@ -59,6 +59,7 @@ import * as migration050 from './050_dashboard_preferences.js';
 import * as migration051 from './051_tax_profiles.js';
 import * as migration052 from './052_recurring_expenses.js';
 import * as migration053 from './053_workspace_extensions.js';
+import * as migration054 from './054_recurring_expense_scope_guards.js';
 
 // List of all migrations in execution order
 export const migrations = [
@@ -115,6 +116,7 @@ export const migrations = [
   migration051,
   migration052,
   migration053,
+  migration054,
 ];
 
 /**

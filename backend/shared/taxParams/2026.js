@@ -160,7 +160,8 @@ export default {
   },
   "forecast": {
     "defaultBandRatio": 0.15,
-    "monthsPerYear": 12
+    "monthsPerYear": 12,
+    "marginalStep": 100
   },
   "sources": [
     {

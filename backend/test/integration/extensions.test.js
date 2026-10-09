@@ -54,5 +54,5 @@ test('Steuererweiterung verlangt beim ersten Aktivieren die Bestätigung und beh
   assert.ok(enabled.payload.acceptedAt);
   const disabled = await request('put', '/:id', workspaceId, { enabled: false });
   assert.equal(disabled.payload.enabled, false);
-  assert.equal(disabled.payload.acceptedAt, enabled.payload.acceptedAt);
+  assert.equal(new Date(disabled.payload.acceptedAt).toISOString(), new Date(enabled.payload.acceptedAt).toISOString());
 });

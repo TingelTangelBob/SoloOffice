@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import params from '../shared/taxParams/2026.js';
 import { calculateTaxes, incomeTax, solidarity, tradeTax } from '../shared/forecast/tax.js';
 
+test('Betrieblicher Verlust mindert weitere Einkünfte in der vereinfachten Jahresrechnung', () => {
+  const result = calculateTaxes(-10000, { businessKind: 'commercial', assessment: 'single', otherIncomeAnnual: 30000 }, { deductible: 0 }, params);
+  assert.equal(result.taxableIncome, 20000 - params.incomeTax.specialExpenseAllowance);
+  assert.equal(result.incomeTax, incomeTax(result.taxableIncome, 'single', params));
+  assert.equal(result.tradeTax, 0);
+  assert.equal(result.tradeCredit, 0);
+});
+
 test('Einkommensteuertarif rundet das zvE ab und trifft die Tarifgrenzen', () => {
   const { incomeTax: rules } = params;
   assert.equal(incomeTax(rules.basicAllowance - 1, 'single', params), 0);

@@ -112,12 +112,12 @@ export function calculateTaxes(profitAnnual, profile = {}, social = {}, params) 
     };
   }
 
-  const profit = finiteNonNegative(profitAnnual);
+  const profit = Number.isFinite(profitAnnual) ? profitAnnual : 0;
   const assessment = profile.assessment || 'single';
   const ownOtherIncome = finiteNonNegative(profile.otherIncomeAnnual);
   const partnerIncome = finiteNonNegative(profile.partnerIncomeAnnual);
   if (!isJoint(assessment) && partnerIncome > 0) warnings.push('Partnereinkünfte werden bei Einzelveranlagung nicht einbezogen.');
-  const incomeBeforeDeductions = profit + ownOtherIncome + (isJoint(assessment) ? partnerIncome : 0);
+  const incomeBeforeDeductions = Math.max(0, profit + ownOtherIncome + (isJoint(assessment) ? partnerIncome : 0));
   const deductible = finiteNonNegative(social?.deductible);
   const allowance = isJoint(assessment)
     ? params.incomeTax.specialExpenseAllowance * 2
@@ -138,7 +138,7 @@ export function calculateTaxes(profitAnnual, profile = {}, social = {}, params) 
   const multiplierMissing = commercial && (!Number.isFinite(profile.tradeMultiplier) || profile.tradeMultiplier <= 0);
   if (multiplierMissing) warnings.push('Hebesatz fehlt oder ist null; für die Gewerbesteuer-Schätzung wird der Richtwert verwendet.');
   const shareDenominator = Math.max(0, incomeBeforeDeductions);
-  const commercialShare = commercial && shareDenominator > 0 ? Math.min(1, profit / shareDenominator) : 0;
+  const commercialShare = commercial && shareDenominator > 0 ? Math.min(1, Math.max(0, profit) / shareDenominator) : 0;
   const trade = commercial
     ? tradeTax(profit, profile.tradeMultiplier, taxBeforeCredit, commercialShare, params)
     : { tradeTax: 0, tradeAssessment: 0, tradeCredit: 0 };

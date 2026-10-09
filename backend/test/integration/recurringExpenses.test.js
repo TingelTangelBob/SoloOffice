@@ -5,6 +5,7 @@ import { pool, query } from '../../database.js';
 import { runWithRequestContext } from '../../utils/requestContext.js';
 import { confirmRun, createExpense, generateRuns, listExpenses, updateExpense } from '../../services/recurringExpenses.js';
 import recurringExpensesRouter from '../../routes/recurringExpenses.js';
+import { cleanupFinanceWorkspaces } from './financeTestCleanup.js';
 
 if (!/(?:^|[_-])(integration|test)(?:$|[_-])/i.test(String(process.env.DB_NAME || ''))) {
   throw new Error('Integrationstests dürfen nur gegen eine als Test/Integration benannte Datenbank laufen.');
@@ -20,6 +21,7 @@ let privateExpenseId;
 let confirmedRunId;
 
 const inWorkspace = (workspaceId, userId, callback) => runWithRequestContext({ workspaceId, userId }, callback);
+const dateKey = value => value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10);
 const routeHandler = (method, path) => recurringExpensesRouter.stack
   .find(layer => layer.route?.path === path && layer.route.methods[method])?.route.stack.at(-1)?.handle;
 
@@ -51,19 +53,7 @@ before(async () => {
   });
 });
 
-after(async () => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query("SELECT set_config('app.allow_history_purge','true',true)");
-    await client.query('DELETE FROM workspaces WHERE id=ANY($1::uuid[])', [[workspaceA,workspaceB]]);
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally { client.release(); }
-  await pool.end();
-});
+after(() => cleanupFinanceWorkspaces([workspaceA, workspaceB]));
 
 test('Fixkosten und private Abgaben sind durch FORCE RLS getrennt', async () => {
   const own = await inWorkspace(workspaceA,userA,() => listExpenses(query));
@@ -153,6 +143,47 @@ test('Preisänderung ab heute aktualisiert geplante Läufe, bestätigter Snapsho
       await client.query('ROLLBACK');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
+  });
+});
+
+test('Regeländerung nimmt Zukunftsläufe aus der Vorschau, schützt historische Buchungen und bestätigt keine unzulässige Vergangenheit', async () => {
+  await inWorkspace(workspaceA,userA,async () => {
+    const created = await createExpense(query, { name: `Lebenszyklus ${suffix}`, category: 'rent', amountGross: 75,
+      startDate: '2026-10-01', nextDueDate: '2026-10-01', interval: 'monthly', status: 'active' }, '2026-10-09');
+    const expenseId = created.expense.id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await generateRuns(client, '2027-01-01', { today: '2026-10-09' });
+      const before = await client.query('SELECT id,due_date,status FROM recurring_expense_runs WHERE expense_id=$1 ORDER BY due_date', [expenseId]);
+      assert.deepEqual(before.rows.map(row => dateKey(row.due_date)), ['2026-10-01','2026-11-01','2026-12-01','2027-01-01']);
+      await client.query('COMMIT');
+
+      await client.query('BEGIN');
+      const ended = await updateExpense(client.query.bind(client), expenseId, { endDate: '2026-10-01' }, '2026-10-09');
+      assert.ok(ended.expense);
+      const after = await client.query('SELECT id,due_date,status FROM recurring_expense_runs WHERE expense_id=$1 ORDER BY due_date', [expenseId]);
+      assert.deepEqual(after.rows.map(row => dateKey(row.due_date)), ['2026-10-01']);
+      const forbidden = await confirmRun(client, before.rows.find(row => dateKey(row.due_date) === '2026-10-01').id, '2026-10-09', '2026-10-09');
+      assert.match(forbidden.conflict, /aktuellen Fixkostenregel/);
+      await client.query('ROLLBACK');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  });
+});
+
+test('Finite Pause mit Status paused erzeugt nach dem Pausenende wieder geplante Läufe', async () => {
+  await inWorkspace(workspaceA,userA,async () => {
+    const created = await createExpense(query, { name: `Pause ${suffix}`, category: 'rent', amountGross: 25,
+      startDate: '2026-10-01', nextDueDate: '2026-10-01', interval: 'monthly', status: 'paused',
+      pauses: [{ from: '2026-10-01', until: '2026-11-30' }] }, '2026-10-09');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const generated = await generateRuns(client, '2027-01-01', { today: '2026-10-09' });
+      assert.deepEqual(generated.filter(run => run.expenseId === created.expense.id).map(run => run.dueDate), ['2026-12-01','2027-01-01']);
+      await client.query('ROLLBACK');
+    } finally { client.release(); }
   });
 });
 

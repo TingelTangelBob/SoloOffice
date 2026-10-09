@@ -1,4 +1,4 @@
-import { addDays, assertDateOnly, isPausedOn, nextOccurrence, occurrenceAt } from '../shared/recurrence.js';
+import { addDays, assertDateOnly, isRecurringExpenseDue, nextOccurrence, occurrenceAt, occurrenceOnOrAfter } from '../shared/recurrence.js';
 
 const expenseCategorySet = new Set(['rent','memberships','materials','office','software','telecommunications','insurance','bank_fees','travel','vehicle','marketing','professional_services','other_expense','kv','pv','rv','av','ksk','est_vz','gewst_vz','ust']);
 const levyCategorySet = new Set(['kv','pv','rv','av','ksk','est_vz','gewst_vz','ust']);
@@ -93,7 +93,7 @@ export function mapExpense(row) {
         : row.interval_unit === 'month' && Number(row.interval_value) === 6 ? 'half_yearly' : 'custom';
   return { id: row.id, name: row.name, counterparty: row.counterparty || '', category: row.category,
     scope: row.scope, amountGross: Number(row.amount), taxRate: row.tax_rate == null ? null : Number(row.tax_rate),
-    interval, intervalCount: row.interval_value, intervalUnit: row.interval_unit === 'week' ? 'weeks' : 'months',
+    interval, intervalCount: Number(row.interval_value) * (row.interval_unit === 'year' ? 12 : 1), intervalUnit: row.interval_unit === 'week' ? 'weeks' : 'months',
     startDate: dateOnly(row.start_date), endDate: dateOnly(row.end_date), cancelledOn: dateOnly(row.cancelled_on),
     nextDueDate: dateOnly(row.next_due_date), noticePeriodDays: row.cancellation_notice_days, status: row.status,
     automaticBooking: row.auto_confirm, levyKind: row.scope === 'private_levy' ? row.category : null,
@@ -108,7 +108,11 @@ export function mapRun(row) {
     name: row.snapshot?.name };
 }
 
-function dateOnly(value) { return value == null ? null : value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10); }
+function dateOnly(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  return String(value).slice(0, 10);
+}
 
 export async function listExpenses(executor) {
   const result = await executor('SELECT * FROM recurring_expenses ORDER BY next_due_date, name');
@@ -126,6 +130,7 @@ export async function createExpense(executor, input, today) {
 }
 
 export async function updateExpense(executor, id, input, today) {
+  assertDateOnly(today, 'Heutiges Datum');
   const currentResult = await executor('SELECT * FROM recurring_expenses WHERE id=$1 FOR UPDATE', [id]);
   if (!currentResult.rows.length) return { missing: true };
   const current = currentResult.rows[0];
@@ -134,7 +139,7 @@ export async function updateExpense(executor, id, input, today) {
     startDate: dateOnly(current.start_date), endDate: dateOnly(current.end_date), nextDueDate: dateOnly(current.next_due_date),
     cancellationNoticeDays: current.cancellation_notice_days, noticePeriodDays: current.cancellation_notice_days,
     cancelledOn: dateOnly(current.cancelled_on), status: current.status, autoConfirm: current.auto_confirm, automaticBooking: current.auto_confirm,
-    amountGross: Number(current.amount), intervalCount: current.interval_value,
+    amountGross: Number(current.amount), intervalCount: Number(current.interval_value) * (current.interval_unit === 'year' ? 12 : 1),
     interval: current.interval_unit === 'month' && Number(current.interval_value) === 3 ? 'quarterly' : current.interval_unit === 'month' && Number(current.interval_value) === 6 ? 'half_yearly' : current.interval_unit === 'year' ? 'yearly' : current.interval_unit === 'month' && Number(current.interval_value) === 1 ? 'monthly' : 'custom',
     intervalUnit: current.interval_unit === 'week' ? 'weeks' : 'months',
     linkedReceiptId: current.linked_receipt_id, notes: current.notes, priceChanges: current.price_changes, immutablePriceChanges: current.price_changes, pauses: current.pauses, ...input };
@@ -144,12 +149,28 @@ export async function updateExpense(executor, id, input, today) {
     const existingRuns = await executor('SELECT 1 FROM recurring_expense_runs WHERE expense_id=$1 LIMIT 1', [id]);
     if (existingRuns.rows.length) return { error: 'Bereich und Kategorie können nach dem ersten Fälligkeitslauf nicht geändert werden.' };
   }
+  const scheduleChanged = value.startDate !== dateOnly(current.start_date)
+    || value.intervalValue !== Number(current.interval_value) || value.intervalUnit !== current.interval_unit
+    || value.endDate !== dateOnly(current.end_date) || value.cancelledOn !== dateOnly(current.cancelled_on)
+    || value.cancellationNoticeDays !== Number(current.cancellation_notice_days)
+    || value.status !== current.status || JSON.stringify(value.pauses) !== JSON.stringify(current.pauses || []);
+  const nextDueDate = scheduleChanged
+    ? occurrenceOnOrAfter(value.startDate, today, value.intervalValue, value.intervalUnit)
+    : value.nextDueDate;
   await executor(`UPDATE recurring_expenses SET name=$1,counterparty=$2,category=$3,scope=$4,amount=$5,tax_rate=$6,interval_value=$7,interval_unit=$8,start_date=$9,end_date=$10,cancelled_on=$11,next_due_date=$12,cancellation_notice_days=$13,status=$14,auto_confirm=$15,linked_receipt_id=$16,notes=$17,price_changes=$18::jsonb,pauses=$19::jsonb,updated_at=NOW() WHERE id=$20`,
-    [value.name,value.counterparty,value.category,value.scope,value.amount,value.taxRate,value.intervalValue,value.intervalUnit,value.startDate,value.endDate,value.cancelledOn,value.nextDueDate,value.cancellationNoticeDays,value.status,value.autoConfirm,value.linkedReceiptId,value.notes,JSON.stringify(value.priceChanges),JSON.stringify(value.pauses),id]);
+    [value.name,value.counterparty,value.category,value.scope,value.amount,value.taxRate,value.intervalValue,value.intervalUnit,value.startDate,value.endDate,value.cancelledOn,nextDueDate,value.cancellationNoticeDays,value.status,value.autoConfirm,value.linkedReceiptId,value.notes,JSON.stringify(value.priceChanges),JSON.stringify(value.pauses),id]);
   const updated = await executor('SELECT * FROM recurring_expenses WHERE id=$1', [id]);
   const futureRuns = await executor("SELECT id,due_date FROM recurring_expense_runs WHERE expense_id=$1 AND status='planned' AND due_date >= $2", [id,today]);
   for (const run of futureRuns.rows) {
-    await executor('UPDATE recurring_expense_runs SET snapshot=$1::jsonb WHERE id=$2', [JSON.stringify(makeSnapshot(updated.rows[0], dateOnly(run.due_date))),run.id]);
+    const dueDate = dateOnly(run.due_date);
+    if (scheduleChanged || !isRecurringExpenseDue(updated.rows[0], dueDate)) {
+      await executor("DELETE FROM recurring_expense_runs WHERE id=$1 AND status='planned' AND due_date >= $2", [run.id,today]);
+      continue;
+    }
+    // Der DB-Trigger schützt den unveränderlichen Tages-Snapshot; nur kommende
+    // Termine dürfen durch eine reine Preisänderung neu bewertet werden.
+    if (dueDate <= today) continue;
+    await executor('UPDATE recurring_expense_runs SET snapshot=$1::jsonb WHERE id=$2', [JSON.stringify(makeSnapshot(updated.rows[0], dueDate)),run.id]);
   }
   return { expense: mapExpense(updated.rows[0]) };
 }
@@ -165,7 +186,7 @@ export async function generateRuns(client, throughDate, { autoConfirm = false, c
   assertDateOnly(throughDate, 'Stichtag');
   assertDateOnly(today, 'Heutiges Datum');
   if (throughDate > occurrenceAt(today, 2, 1, 'year')) throw new TypeError('Der Vorschauzeitraum darf höchstens zwei Jahre umfassen.');
-  const expenses = await client.query(`SELECT * FROM recurring_expenses WHERE status='active' AND next_due_date <= $1 ORDER BY next_due_date,id FOR UPDATE`, [throughDate]);
+  const expenses = await client.query(`SELECT * FROM recurring_expenses WHERE (status IN ('active','paused') OR (status='ended' AND end_date IS NOT NULL)) AND next_due_date <= $1 ORDER BY next_due_date,id FOR UPDATE`, [throughDate]);
   const generated = [];
   let processedDueDates = 0;
   for (const expense of expenses.rows) {
@@ -174,7 +195,7 @@ export async function generateRuns(client, throughDate, { autoConfirm = false, c
     while (due <= throughDate && (!expense.end_date || due < dateOnly(expense.end_date))) {
       processedDueDates += 1;
       if (processedDueDates > MAX_GENERATED_RUNS) throw new TypeError('Zu viele Fälligkeiten für einen einzelnen Generierungslauf.');
-      if (isPausedOn(due, expense.pauses)) {
+      if (!isRecurringExpenseDue(expense, due)) {
         due = nextOccurrence(dateOnly(expense.start_date), due, expense.interval_value, expense.interval_unit);
         continue;
       }
@@ -206,7 +227,9 @@ export async function confirmRun(client, runId, paidOn, today = new Date().toISO
   assertDateOnly(paidOn, 'Zahlungsdatum');
   assertDateOnly(today, 'Heutiges Datum');
   if (paidOn > today) throw new TypeError('Ein zukünftiges Zahlungsdatum kann nicht als erfolgte Zahlung bestätigt werden.');
-  const result = await client.query(`SELECT r.*,lp.id AS levy_payment_id,e.name,e.category,e.scope,e.amount,e.tax_rate,e.linked_receipt_id,e.price_changes,e.pauses
+  const result = await client.query(`SELECT r.*,lp.id AS levy_payment_id,e.name,e.category,e.scope,e.amount,e.tax_rate,e.linked_receipt_id,e.price_changes,e.pauses,
+    e.start_date AS expense_start_date,e.end_date AS expense_end_date,e.cancelled_on AS expense_cancelled_on,
+    e.cancellation_notice_days AS expense_notice_days,e.status AS expense_status,e.interval_value AS expense_interval_value,e.interval_unit AS expense_interval_unit
     FROM recurring_expense_runs r JOIN recurring_expenses e ON e.id=r.expense_id AND e.workspace_id=r.workspace_id
     LEFT JOIN levy_payments lp ON lp.recurring_expense_run_id=r.id AND lp.workspace_id=r.workspace_id
     WHERE r.id=$1 FOR UPDATE OF r`, [runId]);
@@ -214,6 +237,11 @@ export async function confirmRun(client, runId, paidOn, today = new Date().toISO
   const run = result.rows[0];
   if (run.status === 'confirmed') return { run: mapRun(run), idempotent: true };
   if (run.status === 'skipped') return { conflict: 'Ein übersprungener Lauf kann nicht als bezahlt bestätigt werden.' };
+  if (!isRecurringExpenseDue({ startDate: dateOnly(run.expense_start_date), endDate: dateOnly(run.expense_end_date),
+    cancelledOn: dateOnly(run.expense_cancelled_on), noticePeriodDays: Number(run.expense_notice_days), status: run.expense_status,
+    intervalCount: Number(run.expense_interval_value), intervalUnit: run.expense_interval_unit, pauses: run.pauses || [] }, dateOnly(run.due_date))) {
+    return { conflict: 'Diese Fälligkeit ist nach der aktuellen Fixkostenregel nicht mehr zulässig.' };
+  }
   if (run.snapshot.scope === 'private_levy') {
     const type = run.snapshot.category;
     const payment = await client.query(`INSERT INTO levy_payments (levy_type,period_start,due_date,paid_on,amount,source,recurring_expense_run_id,notes)
@@ -221,20 +249,27 @@ export async function confirmRun(client, runId, paidOn, today = new Date().toISO
     const updated = await client.query(`UPDATE recurring_expense_runs SET status='confirmed',paid_on=$1,confirmed_at=NOW() WHERE id=$2 RETURNING *`, [paidOn,run.id]);
     return { run: mapRun({ ...updated.rows[0], levy_payment_id: payment.rows[0].id }), levyPaymentId: payment.rows[0].id };
   }
-  if (run.snapshot.linkedReceiptId) {
+  let receiptToLink = run.snapshot.linkedReceiptId || null;
+  if (receiptToLink) {
     const receipt = await client.query('SELECT linked_euer_entry_id FROM receipts WHERE id=$1 FOR UPDATE', [run.snapshot.linkedReceiptId]);
     if (!receipt.rows.length) return { conflict: 'Der verknüpfte Beleg ist nicht mehr verfügbar.' };
     if (receipt.rows[0].linked_euer_entry_id) {
-      const linked = await client.query('SELECT status FROM euer_entries WHERE id=$1', [receipt.rows[0].linked_euer_entry_id]);
-      if (linked.rows[0]?.status !== 'voided') return { conflict: 'Der verknüpfte Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.' };
+      const linked = await client.query(`SELECT e.status,r.expense_id FROM euer_entries e
+        LEFT JOIN recurring_expense_runs r ON r.id=e.source_id AND r.workspace_id=e.workspace_id AND e.source_type='recurring_expense'
+        WHERE e.id=$1`, [receipt.rows[0].linked_euer_entry_id]);
+      if (linked.rows[0]?.status !== 'voided') {
+        if (linked.rows[0]?.expense_id !== run.expense_id) return { conflict: 'Der verknüpfte Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.' };
+        receiptToLink = null; // Der Ausgangsbeleg gehört nur zur ersten Zahlung dieser Vorlage.
+      }
     }
   }
   await client.query("SELECT set_config('app.recurring_expense_confirmation',$1,true)", [run.id]);
   const entry = await client.query(`INSERT INTO euer_entries (entry_type,entry_date,description,category,amount,tax_rate,source_type,source_id)
     VALUES ('expense',$1,$2,$3,$4,$5,'recurring_expense',$6) RETURNING id`,
   [paidOn,run.snapshot.name,run.snapshot.category,Number(run.snapshot.amount),Number(run.snapshot.taxRate || 0),run.id]);
-  if (run.snapshot.linkedReceiptId) {
-    await client.query('UPDATE receipts SET linked_euer_entry_id=$1,updated_at=NOW() WHERE id=$2', [entry.rows[0].id,run.snapshot.linkedReceiptId]);
+  if (receiptToLink) {
+    await client.query('UPDATE receipts SET linked_euer_entry_id=$1,updated_at=NOW() WHERE id=$2', [entry.rows[0].id,receiptToLink]);
+    await client.query('UPDATE recurring_expenses SET linked_receipt_id=NULL,updated_at=NOW() WHERE id=$1 AND linked_receipt_id=$2', [run.expense_id,receiptToLink]);
   }
   const updated = await client.query(`UPDATE recurring_expense_runs SET status='confirmed',paid_on=$1,euer_entry_id=$2,confirmed_at=NOW() WHERE id=$3 RETURNING *`, [paidOn,entry.rows[0].id,run.id]);
   return { run: mapRun(updated.rows[0]) };
@@ -251,6 +286,7 @@ export async function skipRun(client, runId) {
 }
 
 export async function listRuns(executor, { year, dueOnly = false, today = new Date().toISOString().slice(0, 10) } = {}) {
+  assertDateOnly(today, 'Heutiges Datum');
   const values = [];
   const conditions = [];
   if (year !== undefined) {
@@ -258,10 +294,17 @@ export async function listRuns(executor, { year, dueOnly = false, today = new Da
     values.push(Number(year)); conditions.push(`r.due_date >= make_date($${values.length},1,1) AND r.due_date < make_date($${values.length}+1,1,1)`);
   }
   if (dueOnly) { values.push(today); conditions.push(`r.due_date <= $${values.length}`); }
-  const result = await executor(`SELECT r.*,lp.id AS levy_payment_id FROM recurring_expense_runs r
+  const result = await executor(`SELECT r.*,lp.id AS levy_payment_id,e.start_date AS expense_start_date,e.end_date AS expense_end_date,
+    e.cancelled_on AS expense_cancelled_on,e.cancellation_notice_days AS expense_notice_days,e.status AS expense_status,
+    e.interval_value AS expense_interval_value,e.interval_unit AS expense_interval_unit,e.pauses AS expense_pauses
+    FROM recurring_expense_runs r JOIN recurring_expenses e ON e.id=r.expense_id AND e.workspace_id=r.workspace_id
     LEFT JOIN levy_payments lp ON lp.recurring_expense_run_id=r.id AND lp.workspace_id=r.workspace_id
     ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY r.due_date`, values);
-  return result.rows.map(mapRun);
+  return result.rows.filter(row => row.status !== 'planned' || isRecurringExpenseDue({
+    startDate: dateOnly(row.expense_start_date), endDate: dateOnly(row.expense_end_date), cancelledOn: dateOnly(row.expense_cancelled_on),
+    noticePeriodDays: Number(row.expense_notice_days), status: row.expense_status, intervalCount: Number(row.expense_interval_value),
+    intervalUnit: row.expense_interval_unit, pauses: row.expense_pauses || [],
+  }, dateOnly(row.due_date))).map(mapRun);
 }
 
 export const expenseCategories = [...expenseCategorySet];
