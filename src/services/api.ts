@@ -134,6 +134,11 @@ class ApiService {
   // Identity and workspace API
   // --------------------------------------------------------------------------
 
+  /** Erweiterungen nutzen denselben Auth-/CSRF-/Demo-Pfad. */
+  async financeRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+    return this.request<T>(endpoint, options);
+  }
+
   async getAuthSession(): Promise<AuthResponse> {
     return this.request<AuthResponse>('/auth/me', { skipErrorLogging: true });
   }
