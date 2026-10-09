@@ -30,6 +30,7 @@ import {
   moveDashboardItem,
   nextDashboardSize,
   normalizeDashboardPreferences,
+  getDashboardItemDefinition,
   packDashboardRows,
   resetDashboardLayout,
   resizeDashboardItem,
@@ -51,7 +52,7 @@ import {
   summarizeOpenQuotes,
   upcomingJobs,
 } from '../utils/dashboardMetrics';
-import { REVENUE_CHART_SERIES } from '../utils/dashboardChartSeries';
+import { REVENUE_CHART_SERIES, getForecastRevenuePoints } from '../utils/dashboardChartSeries';
 import {
   DeltaBadge,
   MetricBadge,
@@ -65,7 +66,9 @@ import {
   ShareBarItem,
   ShareBarList,
 } from './DashboardMetrics';
-import { RevenueAreaChart } from './RevenueAreaChart';
+import { RevenueAreaChart, type RevenuePoint } from './RevenueAreaChart';
+import { DashboardMonthSelector } from './DashboardMonthSelector';
+import { MonthlyRevenueChart, type MonthlyRevenueComparisonRow } from './MonthlyRevenueChart';
 import { IncomeExpenseChart } from './IncomeExpenseChart';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardEditItem, DashboardEditToolbar, DashboardSortableGroup } from './DashboardEditMode';
@@ -75,6 +78,19 @@ import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
 import { SkeletonBlock } from './TableSkeleton';
+import { useExtensions } from '../hooks/useExtensions';
+import { useForecast } from '../hooks/useForecast';
+import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
+import { TaxDashboardCards, type TaxDashboardCardId } from './TaxDashboardCards';
+import {
+  filterDashboardPointsByMonth,
+  filterDashboardRecordsByMonth,
+  enqueueDashboardPreferenceSave,
+  isDashboardCardVisibleForPrivateView,
+  moveDashboardMonthSelection,
+  resolveDashboardPeriod,
+  sumDashboardRecordsByMonth,
+} from '../utils/dashboardPeriod';
 
 interface DashboardProps {
   onNavigate: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -174,18 +190,31 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { invoices, updateInvoice } = useInvoices();
   const { jobEntries } = useJobs();
   const { company } = useCompany();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const hasSettingsPermission = can('workspace.settings');
+  const { isEnabled: isExtensionEnabled } = useExtensions();
+  const taxesEnabled = hasSettingsPermission && isExtensionEnabled('taxes');
   const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
   const [preferences, setPreferences] = useState<DashboardPreferences>(DEFAULT_DASHBOARD_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [preferencesError, setPreferencesError] = useState(false);
+  const preferenceSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const preferenceSaveVersion = useRef(0);
   const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
   const { quotes } = useQuotes();
   /** Entwurf des Bearbeiten-Modus; `null` = normale Ansicht. */
   const [editDraft, setEditDraft] = useState<DashboardPreferences | null>(null);
   const [liveMessage, setLiveMessage] = useState('');
   const [receipts, setReceipts] = useState<Receipt[] | null>(null);
+  const earlyPeriod = resolveDashboardPeriod(preferences);
+  const forecastYear = earlyPeriod.selectedYear;
+  const { forecast, loading: forecastLoading, error: forecastError } = useForecast(forecastYear, taxesEnabled && (preferences.monthView || preferences.year !== 'all'));
+  const comparisonYear = Number(earlyPeriod.comparisonMonth.slice(0, 4));
+  const { forecast: comparisonForecast, loading: comparisonForecastLoading, error: comparisonForecastError } = useForecast(
+    comparisonYear,
+    taxesEnabled && preferences.monthView && comparisonYear !== forecastYear,
+  );
   const editToolbarRef = useRef<HTMLDivElement>(null);
   const customizeTooltip = useFloatingTooltip<HTMLButtonElement>();
   // Belege werden nur geladen, wenn die Kachel sichtbar ist.
@@ -207,7 +236,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const normalized = normalizeDashboardPreferences(next);
     setPreferences(normalized);
     setPreferencesError(false);
-    void apiService.updateDashboardPreferences(normalized).catch(() => setPreferencesError(true));
+    const version = ++preferenceSaveVersion.current;
+    const pendingSave = enqueueDashboardPreferenceSave(preferenceSaveQueue.current, () => apiService.updateDashboardPreferences(normalized));
+    preferenceSaveQueue.current = pendingSave.catch(() => undefined);
+    void pendingSave.then(() => {
+      if (preferenceSaveVersion.current === version) setPreferencesError(false);
+    }).catch(() => {
+      if (preferenceSaveVersion.current === version) setPreferencesError(true);
+    });
   };
 
   useEffect(() => {
@@ -246,12 +282,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const today = new Date();
   const todayDate = parseLocalJobDate(today);
-  const currentWeekStart = getWeekStart(today);
+  const firstOfSelectedMonth = new Date(`${earlyPeriod.selectedMonth}-01T00:00:00`);
+  const calendarAnchor = preferences.monthView && earlyPeriod.selectedMonth !== `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    ? new Date(firstOfSelectedMonth.getFullYear(), firstOfSelectedMonth.getMonth(), 7) : today;
+  const currentWeekStart = getWeekStart(calendarAnchor);
   const currentWeekEnd = new Date(currentWeekStart);
   currentWeekEnd.setDate(currentWeekEnd.getDate() + 6);
-  const currentWeekNumber = getCalendarWeek(today);
+  const currentWeekNumber = getCalendarWeek(calendarAnchor);
 
-  const currentWeekJobs = jobEntries
+  const calendarJobs = preferences.monthView ? filterDashboardRecordsByMonth(jobEntries, earlyPeriod.selectedMonth, job => job.date) : jobEntries;
+  const currentWeekJobs = calendarJobs
     .map(job => ({ job, date: parseLocalJobDate(job.date) }))
     .filter(({ date }) => date >= currentWeekStart && date <= currentWeekEnd)
     .sort((a, b) => {
@@ -273,7 +313,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   });
 
   const recurringJobsBySeries = new Map<string, JobEntry[]>();
-  jobEntries.forEach(job => {
+  calendarJobs.forEach(job => {
     const seriesId = job.recurrence?.id;
     if (!seriesId) return;
     const seriesJobs = recurringJobsBySeries.get(seriesId) || [];
@@ -282,7 +322,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   });
 
   const ongoingCourseSeries: DashboardCourseSeries[] = Array.from(recurringJobsBySeries.entries())
-    .filter(([, jobs]) => jobs.length > 1 && jobs.some(job => job.status === 'draft' || job.status === 'in-progress'))
+    .filter(([, jobs]) => preferences.monthView ? jobs.length > 0 : jobs.length > 1 && jobs.some(job => job.status === 'draft' || job.status === 'in-progress'))
     .map(([key, jobs]) => {
       const sortedJobs = [...jobs].sort(
         (a, b) => parseLocalJobDate(a.date).getTime() - parseLocalJobDate(b.date).getTime(),
@@ -511,9 +551,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
    * Rechnungen können optional zugeschaltet werden und verwenden dann ihr
    * Rechnungsdatum.
    */
-  const dashboardYear = preferences.year ?? today.getFullYear();
-  const allYears = preferences.year === 'all';
+  const period = earlyPeriod;
+  const allYears = period.allYears;
   const includeUnpaidInvoices = preferences.includeUnpaidInvoices;
+  const { monthKeys, selectedMonth, comparisonMonth } = period;
+  const dashboardYear = period.selectedYear;
+  const selectedPeriodYear = period.selectedYear;
   const availableYears = Array.from(new Set([
     today.getFullYear(),
     ...(typeof preferences.year === 'number' ? [preferences.year] : []),
@@ -535,17 +578,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     includeUnpaidInvoices,
   });
 
-  const recordsForYear = (year: number | 'all') => year === 'all'
-    ? revenueRecords : revenueRecords.filter(record => record.date.getFullYear() === year);
-  const revenuePoints = aggregateRevenue(revenueRecords, dashboardYear, locale);
+  const recordsForYear = (year: number | 'all') => {
+    const records = year === 'all' ? revenueRecords : revenueRecords.filter(record => record.date.getFullYear() === year);
+    return preferences.monthView ? filterDashboardRecordsByMonth(records, selectedMonth, record => record.date) : records;
+  };
+  const annualRevenuePoints = aggregateRevenue(revenueRecords, allYears ? 'all' : selectedPeriodYear, locale);
+  const revenuePoints = preferences.monthView ? filterDashboardPointsByMonth(annualRevenuePoints, selectedMonth) : annualRevenuePoints;
   const previousPoints = !allYears && preferences.comparePrevious
     ? aggregateRevenue(revenueRecords, Number(dashboardYear) - 1, locale) : [];
-  const revenueWindowTotal = sumRevenue(revenuePoints);
-  const previousWindowTotal = sumRevenue(previousPoints);
+  const sumRecordsForMonth = (monthKey: string) => sumDashboardRecordsByMonth(revenueRecords, monthKey, record => record.date, record => record.amount);
+  const revenueWindowTotal = preferences.monthView ? sumRecordsForMonth(selectedMonth) : sumRevenue(revenuePoints);
+  const previousWindowTotal = preferences.monthView ? sumRecordsForMonth(comparisonMonth) : sumRevenue(previousPoints);
 
   // Ohne Vergleichswert lässt sich keine Veränderung angeben. Dann entfällt die
   // Angabe, statt einen Platzhalter zu zeigen.
-  const revenueDelta = !allYears && preferences.comparePrevious
+  const revenueDelta = preferences.monthView
+    ? compareRevenue(revenueWindowTotal, previousWindowTotal)
+    : !allYears && preferences.comparePrevious
     ? compareRevenue(revenueWindowTotal, previousWindowTotal) : null;
 
   const money = (value: number) => formatCurrency(value, locale, company?.numberFormat, company?.currency);
@@ -557,7 +606,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   )} %`;
 
   const customerRevenue = new Map<string, number>();
-  recordsForYear(dashboardYear).forEach(record => {
+  recordsForYear(allYears ? 'all' : dashboardYear).forEach(record => {
     customerRevenue.set(record.customerName, (customerRevenue.get(record.customerName) || 0) + record.amount);
   });
   const topCustomers = Array.from(customerRevenue.entries())
@@ -567,7 +616,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     .map(([name, revenue]) => ({ name, revenue }));
   const topCustomerMax = topCustomers.reduce((max, entry) => Math.max(max, entry.revenue), 0);
 
-  const recentInvoices = [...invoices]
+  const periodInvoices = preferences.monthView ? filterDashboardRecordsByMonth(invoices, earlyPeriod.selectedMonth, invoice => invoice.issueDate) : invoices;
+  const periodJobs = preferences.monthView ? filterDashboardRecordsByMonth(jobEntries, earlyPeriod.selectedMonth, job => job.date) : jobEntries;
+  const recentInvoices = [...periodInvoices]
     .sort((a, b) => compareTableValues(b.issueDate, a.issueDate, locale)
       || compareTableValues(b.invoiceNumber, a.invoiceNumber, locale)
       || compareTableValues(b.createdAt, a.createdAt, locale))
@@ -579,7 +630,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     return Number.isFinite(timestamp) ? timestamp : 0;
   };
 
-  const recentJobs = [...jobEntries]
+  const recentJobs = [...periodJobs]
     .sort((a, b) => {
       const activityDifference = jobActivityTimestamp(b) - jobActivityTimestamp(a);
       if (activityDifference !== 0) return activityDifference;
@@ -610,8 +661,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const greetingName = user?.firstName?.trim() || user?.displayName?.trim() || company.name?.trim();
   const editing = editDraft !== null;
   const layout = editDraft ?? preferences;
-  const periodYear: number | 'all' = allYears ? 'all' : Number(dashboardYear);
-  const periodLabel = allYears ? 'gesamt' : String(dashboardYear);
+  const periodYear: number | 'all' = allYears ? 'all' : selectedPeriodYear;
+  const selectedMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(`${selectedMonth}-01T00:00:00`));
+  const comparisonMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(`${comparisonMonth}-01T00:00:00`));
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const selectedMonthOngoing = preferences.monthView && selectedMonth === currentMonthKey;
+  const comparisonMonthOngoing = preferences.monthView && comparisonMonth === currentMonthKey;
+  const periodLabel = preferences.monthView ? `${selectedMonthLabel}${selectedMonthOngoing ? ' · bisher' : ''}` : allYears ? 'gesamt' : String(dashboardYear);
   const jobsEnabled = Boolean(company.jobTrackingEnabled);
   const quotesEnabled = Boolean(company.quotesEnabled);
   const seriesTitle = terminology.work.plural.toLocaleLowerCase('de-DE').includes('kurs')
@@ -620,23 +676,72 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // Zusätzliche Zeitreihen im Umsatzverlauf (Vorzeitraum u. a.), siehe
   // `dashboardChartSeries.ts`.
-  const seriesContext = { preferences, allYears, year: periodYear, records: revenueRecords, locale };
+  const yearForecast = forecast && forecast.year === selectedPeriodYear && forecast.profileComplete ? forecast : null;
+  const comparisonYearForecast = comparisonYear === selectedPeriodYear
+    ? yearForecast
+    : comparisonForecast && comparisonForecast.year === comparisonYear && comparisonForecast.profileComplete ? comparisonForecast : null;
+  const seriesContext = { preferences, allYears, year: periodYear, records: revenueRecords, locale, forecast: yearForecast, taxesEnabled };
+  const unavailableSeries = new Map(REVENUE_CHART_SERIES.map(series => [series.id,
+    series.group === 'levies' && includeUnpaidInvoices
+      ? 'Die Umsatzreihe mit offenen Rechnungen wird nicht mit Zahlungs- und Forecastwerten kombiniert.'
+      : series.unavailableReason(seriesContext)]));
+  const financialPreferencesSelected = REVENUE_CHART_SERIES.some(series => series.group === 'levies' && series.isActive(preferences));
+  const financialSeriesActive = REVENUE_CHART_SERIES.some(series => series.group === 'levies'
+    && !unavailableSeries.get(series.id) && series.isActive(preferences));
   const chartOverlays = REVENUE_CHART_SERIES.flatMap(series => {
-    const overlay = series.build(seriesContext);
-    return overlay ? [overlay] : [];
+    if (preferences.monthView && series.id === 'previous-period') return [];
+    const overlay = series.group === 'levies' && includeUnpaidInvoices ? null : series.build(seriesContext);
+    if (!overlay) return [];
+    return preferences.monthView ? [{ ...overlay, points: filterDashboardPointsByMonth(overlay.points, selectedMonth) }] : [overlay];
   });
-
-  const openInvoices = summarizeOpenInvoices(invoices, euerEntries, today);
-  const incomeExpense = summarizeIncomeExpense({ invoices, euerEntries, year: periodYear, locale });
-  const averageInvoice = averageInvoiceAmount(invoices, periodYear, !includeUnpaidInvoices);
-  const activeCustomerCount = countActiveCustomers({ invoices, jobs: jobEntries, year: periodYear });
-  const nextJobs = upcomingJobs(jobEntries, today, 5);
-  const openQuotes = summarizeOpenQuotes(quotes, today);
-  const unbilledJobs = jobEntries
+  const chartAnnualRevenuePoints: RevenuePoint[] = financialSeriesActive && !includeUnpaidInvoices
+    ? getForecastRevenuePoints(yearForecast, [], locale) : annualRevenuePoints;
+  const chartRevenuePoints = preferences.monthView ? filterDashboardPointsByMonth(chartAnnualRevenuePoints, selectedMonth) : chartAnnualRevenuePoints;
+  const comparisonChartMonth = comparisonYearForecast?.monthly.find(item => item.month === comparisonMonth);
+  const comparisonChartValue = financialSeriesActive && !includeUnpaidInvoices && comparisonChartMonth
+    ? comparisonChartMonth.revenue
+    : sumRecordsForMonth(comparisonMonth);
+  const comparisonSeriesContext = { ...seriesContext, year: comparisonYear, forecast: comparisonYearForecast };
+  const monthlyChartRows: MonthlyRevenueComparisonRow[] = [{
+    key: 'revenue', label: financialSeriesActive ? 'EÜR-Einnahmen' : 'Rechnungsumsatz', color: 'var(--dashboard-chart-line)',
+    current: chartRevenuePoints[0]?.value ?? 0,
+    comparison: financialSeriesActive && !comparisonYearForecast ? null : comparisonChartValue,
+    currentEstimate: Boolean(chartRevenuePoints[0]?.forecast),
+    comparisonEstimate: financialSeriesActive && Boolean(comparisonChartMonth?.forecast),
+    tooltip: financialSeriesActive ? TAX_TEXTS.tooltip(dashboardYear) : undefined,
+  }, ...chartOverlays.map(overlay => {
+    const comparison = REVENUE_CHART_SERIES.find(series => series.id === overlay.key)?.build(comparisonSeriesContext);
+    const comparisonPoint = comparison?.points.find(point => point.key === comparisonMonth);
+    return {
+      key: overlay.key, label: overlay.label, color: overlay.color ?? 'var(--dashboard-chart-line)',
+      current: overlay.points[0]?.value ?? null, comparison: comparisonPoint?.value ?? null,
+      currentEstimate: Boolean(overlay.estimated || overlay.points[0]?.forecast),
+      comparisonEstimate: Boolean(comparison?.estimated || comparisonPoint?.forecast),
+      tooltip: overlay.tooltip,
+    };
+  })];
+  const openInvoices = summarizeOpenInvoices(periodInvoices, euerEntries, today);
+  const incomeExpenseBase = summarizeIncomeExpense({ invoices, euerEntries, year: periodYear, locale });
+  const incomeExpense = preferences.monthView ? (() => {
+    const point = incomeExpenseBase.points.find(item => item.key === selectedMonth);
+    const selected = point ? [point] : [];
+    const income = selected.reduce((sum, item) => sum + item.income, 0);
+    const expenses = selected.reduce((sum, item) => sum + item.expenses, 0);
+    return { ...incomeExpenseBase, points: selected, income, expenses, result: income - expenses };
+  })() : incomeExpenseBase;
+  const invoicesInPeriod = preferences.monthView ? invoices.filter(invoice => `${parseLocalJobDate(invoice.issueDate).getFullYear()}-${String(parseLocalJobDate(invoice.issueDate).getMonth() + 1).padStart(2, '0')}` === selectedMonth) : invoices;
+  const jobsInPeriod = preferences.monthView ? jobEntries.filter(job => `${parseLocalJobDate(job.date).getFullYear()}-${String(parseLocalJobDate(job.date).getMonth() + 1).padStart(2, '0')}` === selectedMonth) : jobEntries;
+  const averageInvoice = averageInvoiceAmount(invoicesInPeriod, periodYear, !includeUnpaidInvoices);
+  const activeCustomerCount = countActiveCustomers({ invoices: invoicesInPeriod, jobs: jobsInPeriod, year: periodYear });
+  const nextJobs = upcomingJobs(periodJobs, preferences.monthView ? firstOfSelectedMonth : today, 5);
+  const periodQuotes = preferences.monthView ? filterDashboardRecordsByMonth(quotes, selectedMonth, quote => quote.issueDate) : quotes;
+  const openQuotes = summarizeOpenQuotes(periodQuotes, today);
+  const unbilledJobs = periodJobs
     .filter(job => job.status === 'completed')
     .sort((a, b) => parseLocalJobDate(b.date).getTime() - parseLocalJobDate(a.date).getTime());
   const unbilledHours = unbilledJobs.reduce((sum, job) => sum + calculateTotalHours(job), 0);
-  const latestReceipts = [...(receipts ?? [])]
+  const periodReceipts = preferences.monthView ? filterDashboardRecordsByMonth(receipts ?? [], selectedMonth, receipt => receipt.createdAt) : receipts ?? [];
+  const latestReceipts = [...periodReceipts]
     .sort((a, b) => compareTableValues(b.createdAt, a.createdAt, locale))
     .slice(0, 5);
 
@@ -674,15 +779,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     'average-invoice': { label: 'Ø Rechnungsbetrag', description: 'Durchschnittlicher Rechnungsbetrag im Zeitraum', available: true },
     'active-customers': { label: `Aktive ${terminology.entity.plural}`, description: `${terminology.entity.plural} mit Rechnung oder Termin im Zeitraum`, available: true },
     'recent-receipts': { label: 'Neueste Belege', description: 'Zuletzt hochgeladene Belege mit Lesestatus', available: true },
+    taxes: { label: 'Steuern', description: 'Jahresprognose und Monatsrichtwert', available: true },
+    'tax-reserve': { label: 'Verbleibende Rücklage', description: 'Unverbindliche Abgabenrücklage', available: true },
+    'tax-position': { label: 'Wo stehe ich?', description: 'Einordnung zu Steuer- und Sozialschwellen', available: true },
+    'small-business': { label: 'Kleinunternehmerregelung (§ 19 UStG)', description: 'Ist-Ampel und Jahresprognose', available: true },
+    'fixed-costs': { label: 'Betriebliche Fixkosten', description: 'Monats- und Jahresrichtwert', available: true },
+    'tax-advances': { label: 'Vorauszahlungen', description: 'Erfasste und geplante Vorauszahlungstermine', available: true },
+    'health-backpayment': { label: 'Mögliche KV-Nachzahlung', description: 'Jahresbezogene Schätzung gegenüber dem Bescheid', available: true },
   };
 
   const itemLabel = (id: DashboardItemId) => isQuickItem(id) ? quickActions[id].label : cardMeta[id as DashboardCardItemId].label;
-  const isAvailable = (id: DashboardItemId) => isQuickItem(id) ? quickActions[id].available : cardMeta[id as DashboardCardItemId].available;
+  const isPrivateTaxCard = (id: DashboardItemId) => !isQuickItem(id)
+    && getDashboardItemDefinition(id)?.requiredExtension === 'taxes'
+    && isDashboardCardVisibleForPrivateView(id, false) === false;
+  const definitionAvailable = (id: DashboardItemId) => !getDashboardItemDefinition(id)?.requiredExtension || taxesEnabled;
+  const isAvailable = (id: DashboardItemId) => definitionAvailable(id) && (isQuickItem(id) ? quickActions[id].available : cardMeta[id as DashboardCardItemId].available);
   // Laufende Serien erscheinen wie bisher nur, wenn es welche gibt. Im
   // Bearbeiten-Modus bleiben sie sichtbar, damit man sie anordnen kann.
   const isRendered = (id: DashboardItemId) => editing || id !== 'course-series' || ongoingCourseSeries.length > 0;
 
-  const visibleItems = layout.items.filter(item => item.visible && isAvailable(item.id) && isRendered(item.id));
+  const visibleItems = layout.items.filter(item => item.visible && isAvailable(item.id)
+    && !(isPrivateTaxCard(item.id) && !preferences.showPrivateLevies) && isRendered(item.id));
   const quickIds = visibleItems.map(item => item.id).filter(isQuickItem);
   const cardItems = visibleItems.filter(item => isCardItem(item.id));
   const cardIds = cardItems.map(item => item.id as DashboardCardItemId);
@@ -753,7 +870,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const addGroups = ([['Schnellzugriffe', true], ['Kacheln', false]] as const).map(([title, quick]) => ({
     title,
     options: layout.items
-      .filter(item => !item.visible && isQuickItem(item.id) === quick && isAvailable(item.id))
+      .filter(item => !item.visible && isQuickItem(item.id) === quick && isAvailable(item.id)
+        && !(isPrivateTaxCard(item.id) && !preferences.showPrivateLevies))
       .map(item => ({
         id: item.id,
         label: itemLabel(item.id),
@@ -774,6 +892,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const listButtonClass = 'flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 lg:px-6';
 
   const renderCard = (id: DashboardCardItemId): ReactNode => {
+    const taxCardIds = new Set<TaxDashboardCardId>(['taxes', 'tax-reserve', 'tax-position', 'small-business', 'fixed-costs', 'tax-advances', 'health-backpayment']);
+    if (taxCardIds.has(id as TaxDashboardCardId)) {
+      return <TaxDashboardCards id={id as TaxDashboardCardId} forecast={forecast} year={dashboardYear} month={selectedMonth} monthView={preferences.monthView}
+        compareMonth={comparisonMonth} comparisonForecast={comparisonYearForecast?.monthly.find(item => item.month === comparisonMonth)}
+        privateLeviesVisible={preferences.showPrivateLevies || id === 'small-business'}
+        loading={(forecastLoading || (preferences.monthView && comparisonYear !== selectedPeriodYear && comparisonForecastLoading)) && !allYears}
+        error={allYears ? 'Wähle ein einzelnes Steuerjahr, um die Schätzung anzuzeigen.' : forecastError ?? comparisonForecastError}
+        onSetup={() => onNavigate('settings', 'taxes')} onFixedCosts={() => onNavigate('fixed-costs')} />;
+    }
     switch (id) {
       case 'revenue':
         return (
@@ -782,22 +909,30 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <div className="flex min-w-0 flex-col">
                 <MetricValue>{money(revenueWindowTotal)}</MetricValue>
                 <MetricCardDescription>Gesamtumsatz {periodLabel} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
-                {!allYears && preferences.comparePrevious && <MetricCardDescription className="mt-1">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
+                {preferences.monthView && <MetricCardDescription className="mt-1">Vergleichsmonat {comparisonMonthLabel}{comparisonMonthOngoing ? ' · bisher' : ''}: {money(previousWindowTotal)}</MetricCardDescription>}
+                {!preferences.monthView && !allYears && preferences.comparePrevious && <MetricCardDescription className="mt-1">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
               </div>
-              {revenueDelta !== null && (
+              {revenueDelta !== null && !selectedMonthOngoing && !comparisonMonthOngoing && (
                 <DeltaBadge
                   value={revenueDelta}
                   formattedValue={formatPercent(revenueDelta)}
-                  label={`ggü. ${Number(dashboardYear) - 1}`}
+                  label={preferences.monthView ? `ggü. ${comparisonMonthLabel}` : `ggü. ${Number(dashboardYear) - 1}`}
                 />
               )}
             </MetricCardHeader>
             <MetricCardContent className="flex flex-1 flex-col px-2 pb-2 lg:px-4">
-              {revenueWindowTotal > 0 || previousWindowTotal > 0 ? (
+              {financialSeriesActive && <p className="px-2 pb-2 text-xs text-gray-500">Diagramm: EÜR-Zahlungen und Prognose. Die Umsatzkennzahl zeigt Rechnungszahlungen.</p>}
+              {preferences.monthView ? <MonthlyRevenueChart rows={monthlyChartRows}
+                currentLabel={periodLabel} comparisonLabel={`${comparisonMonthLabel}${comparisonMonthOngoing ? ' · bisher' : ''}`}
+                formatValue={money} ariaLabel={`Umsatz- und Kostenvergleich ${periodLabel} mit ${comparisonMonthLabel}`} /> : chartRevenuePoints.some(point => point.value !== 0) || previousWindowTotal > 0 || chartOverlays.some(overlay => overlay.points.some(point => point.value !== 0)) ? (
                 <RevenueAreaChart
-                  points={revenuePoints}
+                  points={chartRevenuePoints}
                   overlays={chartOverlays}
-                  currentLabel={String(dashboardYear)}
+                  currentLabel={periodLabel}
+                  onToggle={key => {
+                    const series = REVENUE_CHART_SERIES.find(item => item.id === key);
+                    if (series && !series.unavailableReason(seriesContext)) savePreferences(series.toggle(preferences));
+                  }}
                   formatValue={money}
                   ariaLabel={`Umsatzverlauf ${periodLabel}, insgesamt ${money(revenueWindowTotal)}`}
                 />
@@ -809,6 +944,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   action={{ label: 'Rechnung schreiben', onClick: () => onNavigate('invoices', 'new') }}
                 />
               )}
+              {includeUnpaidInvoices && financialPreferencesSelected && <p role="note" className="px-3 pb-3 text-xs leading-5 text-amber-800">Die Umsatzreihe enthält offene Rechnungen nach Rechnungsdatum. Daher wird sie nicht mit der Zahlungs-/Forecastreihe vermischt.</p>}
             </MetricCardContent>
             {company.reportingEnabled && (
               <MetricCardFooterAction onClick={() => onNavigate('reporting')}>
@@ -1220,7 +1356,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <div className="flex min-w-0 flex-col">
                 <MetricValue>{money(openInvoices.total)}</MetricValue>
                 <MetricCardDescription>
-                  Offene Posten · {openInvoices.items.length === 1 ? '1 Rechnung' : `${openInvoices.items.length} Rechnungen`}
+                  {preferences.monthView ? `Offene Rechnungen aus ${selectedMonthLabel} · heutiger Zahlungsstatus` : 'Offene Posten'} · {openInvoices.items.length === 1 ? '1 Rechnung' : `${openInvoices.items.length} Rechnungen`}
                 </MetricCardDescription>
               </div>
               {openInvoices.overdueCount > 0 && (
@@ -1264,6 +1400,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             </MetricCardHeader>
             <MetricCardContent className="flex flex-1 flex-col px-2 pb-2 lg:px-4">
+              {financialSeriesActive && <p className="px-2 pb-2 text-xs text-gray-500">Diagramm: EÜR-Zahlungen und Prognose. Die Umsatzkennzahl zeigt Rechnungszahlungen.</p>}
               {incomeExpense.income > 0 || incomeExpense.expenses > 0 ? (
                 <IncomeExpenseChart points={incomeExpense.points} formatValue={money}
                   ariaLabel={`Einnahmen und Ausgaben ${periodLabel}: Einnahmen ${money(incomeExpense.income)}, Ausgaben ${money(incomeExpense.expenses)}`} />
@@ -1283,7 +1420,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <MetricCardHeader bordered>
               <div className="min-w-0">
                 <MetricCardTitle>Nächste Termine</MetricCardTitle>
-                <MetricCardDescription className="mt-1">Ab heute, chronologisch</MetricCardDescription>
+                <MetricCardDescription className="mt-1">{preferences.monthView ? `Termine im ${selectedMonthLabel}` : 'Ab heute, chronologisch'}</MetricCardDescription>
               </div>
             </MetricCardHeader>
             {nextJobs.length > 0 ? (
@@ -1319,7 +1456,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <div className="flex min-w-0 flex-col">
                 <MetricValue>{money(openQuotes.total)}</MetricValue>
                 <MetricCardDescription>
-                  Offene Angebote · {openQuotes.items.length === 1 ? '1 versendet' : `${openQuotes.items.length} versendet`}
+                  {preferences.monthView ? `Angebote aus ${selectedMonthLabel} · heutiger Status` : 'Offene Angebote'} · {openQuotes.items.length === 1 ? '1 versendet' : `${openQuotes.items.length} versendet`}
                 </MetricCardDescription>
               </div>
             </MetricCardHeader>
@@ -1475,7 +1612,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             // neuen Jahr automatisch mitwandert.
             const selected = event.target.value === 'all' ? 'all' : Number(event.target.value);
             const year = selected === today.getFullYear() ? null : selected;
-            savePreferences({ ...preferences, year, comparePrevious: year === 'all' ? false : preferences.comparePrevious });
+            savePreferences({ ...preferences, year, monthView: false, comparePrevious: year === 'all' ? false : preferences.comparePrevious });
           }} disabled={!preferencesLoaded} className="form-input dashboard-header-control w-[6.5rem] px-2 py-1.5 text-sm disabled:opacity-60 sm:w-28">
             <option value="all">Gesamt</option>
             {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
@@ -1485,7 +1622,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
           <FloatingTooltipBubble id={customizeTooltip.id} anchorRef={customizeTooltip.anchorRef} open={customizeTooltip.open}>Dashboard anpassen</FloatingTooltipBubble>
-          <ActionMenu ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
+          <ActionMenu fitViewport ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
             menuClassName="w-[min(22rem,calc(100vw-1rem))] min-w-[18rem]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
             <div className="flex items-center justify-between gap-2 pl-3 pr-1.5 pt-1">
               <p className="text-xs font-medium text-gray-500">Auswertung</p>
@@ -1496,7 +1633,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               onClick={event => { event.preventDefault(); savePreferences({ ...preferences, includeUnpaidInvoices: !includeUnpaidInvoices }); }}>
               Nur bezahlte Rechnungen
             </ActionMenuItem>
-            {REVENUE_CHART_SERIES.map(series => {
+            {REVENUE_CHART_SERIES.filter(series => series.group === 'comparison' && !(preferences.monthView && series.id === 'previous-period')).map(series => {
               const reason = series.unavailableReason(seriesContext);
               const active = !reason && series.isActive(preferences);
               return (
@@ -1507,7 +1644,29 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 </ActionMenuItem>
               );
             })}
+            {taxesEnabled && <>
+              <div className="mt-1 border-t border-gray-100 px-3 pt-2"><p className="text-xs font-medium text-gray-500">Kosten &amp; Abgaben einblenden</p></div>
+              <ActionMenuItem icon={<SwitchTrack checked={preferences.showPrivateLevies} />} role="menuitemcheckbox" aria-checked={preferences.showPrivateLevies}
+                onClick={event => { event.preventDefault(); savePreferences({ ...preferences, showPrivateLevies: !preferences.showPrivateLevies }); }}>
+                Private Abgaben einblenden
+              </ActionMenuItem>
+              {REVENUE_CHART_SERIES.filter(series => series.group === 'levies' && (!series.private || preferences.showPrivateLevies)).map(series => {
+                const reason = unavailableSeries.get(series.id) ?? null;
+                const active = !reason && series.isActive(preferences);
+                return <ActionMenuItem key={series.id} icon={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
+                  disabled={Boolean(reason)} title={reason ?? undefined} multiline
+                  onClick={event => { event.preventDefault(); if (!reason) savePreferences(series.toggle(preferences)); }}>
+                  <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[10px] text-gray-600">privat</span>}<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} /></span>
+                </ActionMenuItem>;
+              })}
+            </>}
+            <div className="mt-1 border-t border-gray-100 px-3 pt-2"><p className="text-xs font-medium text-gray-500">Ansicht</p></div>
+            <ActionMenuItem icon={<SwitchTrack checked={preferences.monthView} />} role="menuitemcheckbox" aria-checked={preferences.monthView}
+              onClick={event => { event.preventDefault(); savePreferences({ ...preferences, monthView: !preferences.monthView, month: selectedMonth, compareMonth: comparisonMonth, year: Number(selectedMonth.slice(0, 4)) }); }}>
+              Monatsansicht mit Vergleich
+            </ActionMenuItem>
             <ActionMenuItem icon={<SwitchTrack checked={allYears} />} role="menuitemcheckbox" aria-checked={allYears}
+              disabled={preferences.monthView}
               onClick={event => { event.preventDefault(); savePreferences({ ...preferences, year: allYears ? null : 'all', comparePrevious: allYears ? preferences.comparePrevious : false }); }}>
               Gesamter Zeitraum
             </ActionMenuItem>
@@ -1515,6 +1674,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </ActionMenu>
         </div>}
       </div>
+
+      {!editing && preferences.monthView && <DashboardMonthSelector monthKeys={monthKeys} selectedMonth={selectedMonth} comparisonMonth={comparisonMonth}
+        locale={locale} currentMonth={currentMonthKey} onComparisonChange={month => savePreferences({ ...preferences, compareMonth: month })}
+        onMonthChange={month => {
+          const selection = moveDashboardMonthSelection(monthKeys, selectedMonth, comparisonMonth, month);
+          savePreferences({ ...preferences, month: selection.selectedMonth, compareMonth: selection.comparisonMonth, year: Number(selection.selectedMonth.slice(0, 4)) });
+        }} />}
+
 
       {/* Ein Abstand für alles: zwischen Schnellzugriffen, Kacheln und Reihen. */}
       <div className="flex min-w-0 flex-col gap-3">
@@ -1533,6 +1700,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             />
           </div>
         )}
+        {editing && taxesEnabled && !preferences.showPrivateLevies && <p role="note" className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">Private Abgaben sind ausgeblendet – im ⋯-Menü einschalten.</p>}
 
         {quickIds.length > 0 && (editing ? (
           <DashboardSortableGroup ids={quickIds} labelOf={itemLabel} onMove={(active, over) => updateDraft(items => moveDashboardItem(items, active, over))}>
@@ -1549,6 +1717,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ))}
 
         {preferencesError && <p role="status" className="text-xs text-red-700">Dashboard-Einstellungen konnten nicht gespeichert werden.</p>}
+        {taxesEnabled && allYears && (financialPreferencesSelected || cardIds.some(id => getDashboardItemDefinition(id)?.requiredExtension === 'taxes')) && <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Steuer- und Abgabenschätzungen benötigen ein einzelnes Steuerjahr. Bitte wähle oben ein Jahr aus.</p>}
+        {taxesEnabled && !allYears && (financialSeriesActive || cardIds.some(id => ['taxes', 'tax-reserve', 'tax-position', 'small-business', 'fixed-costs', 'tax-advances', 'health-backpayment'].includes(id))) && forecast?.profileComplete && forecast.warnings.length > 0 && <details className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <summary className="cursor-pointer font-medium">Hinweise zur Steuerschätzung ({forecast.warnings.length})</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{forecast.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul>
+        </details>}
 
         {cardIds.length > 0 ? (editing ? (
           <DashboardSortableGroup ids={cardIds} labelOf={itemLabel} onMove={(active, over) => updateDraft(items => moveDashboardItem(items, active, over))}>

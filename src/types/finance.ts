@@ -58,7 +58,13 @@ export interface ForecastResult {
   profileComplete: boolean; missingFields: string[]; warnings: string[]; method: 'linear' | 'seasonal';
   profitYtd: number; profitAnnual: number; profitBand: { low: number; high: number }; revenueYtd: number; revenueAnnual: number;
   social: SocialResult; taxes: TaxResult; annualBurden: number; paidLevies: number; paidUst: number; remainingReserve: number;
-  reserveRatio: number; combinedMarginalRate: number; vatReserveGrossEstimate: number; vatRemainingReserve: number;
+  reserveRatio: number; expectedRemainingInflows: number; vatStatus: TaxProfile['vatStatus'];
+  previousYearRevenueKnown: boolean; paidNonVatLevies: number;
+  paidAdvances: { est_vz: number; gewst_vz: number; ust: number };
+  paidAdvanceMonths: { month: string; est_vz: number; gewst_vz: number; ust: number }[];
+  dueExpenses: RecurringExpenseRun[];
+  expenseNotices: { id: string; name: string; noticePeriodDays: number; endDate: string | null; noticeDeadline: string | null }[];
+  combinedMarginalRate: number; vatReserveGrossEstimate: number; vatRemainingReserve: number;
   thresholds: ThresholdResult[]; smallBusiness: { previous: 'green' | 'yellow' | 'red'; current: 'green' | 'yellow' | 'red'; previousValue: number; currentValue: number; currentLimit: number; forecastValue: number };
   series: ChartSeries[]; upcomingLevies: LevyPayment[]; upcomingExpenses: RecurringExpenseRun[];
   fixedCostsMonthly: number; fixedCostsAnnual: number; calculationSteps: { label: string; amount: number }[];

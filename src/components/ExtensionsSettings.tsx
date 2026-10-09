@@ -62,7 +62,7 @@ export function ExtensionsSettings() {
               <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-gray-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{TAX_TEXTS.badge}</p>
             </div>
           </div>
-          <fieldset disabled={saving || !taxes?.available} className="disabled:opacity-60"><ToggleSwitch checked={taxes?.enabled === true} onChange={() => void changeTaxes(!(taxes?.enabled === true))} label="Steuern & Abgaben aktivieren" /></fieldset>
+          <fieldset disabled={saving || !taxes?.available} className="disabled:opacity-60"><ToggleSwitch checked={taxes?.enabled === true} onChange={() => void changeTaxes(!(taxes?.enabled === true))} label={taxes?.enabled ? 'Aktiv' : 'Aus'} /></fieldset>
         </div>
       )}
 
@@ -77,7 +77,7 @@ export function ExtensionsSettings() {
           onClose={() => setShowDisclaimer(false)}
           size="md"
           fitContent
-          footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowDisclaimer(false)} className="btn-secondary rounded-lg px-4 py-2 text-sm">Abbrechen</button><button type="button" disabled={!accepted || saving} onClick={() => void saveDisclaimer()} className="btn-primary rounded-lg px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">{saving ? 'Wird gespeichert …' : 'Bestätigen & aktivieren'}</button></div>}
+          footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowDisclaimer(false)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Abbrechen</button><button type="button" disabled={!accepted || saving} onClick={() => void saveDisclaimer()} className="btn-primary rounded-lg px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">{saving ? 'Wird gespeichert …' : 'Bestätigen & aktivieren'}</button></div>}
         >
           <div className="space-y-4 text-sm leading-6 text-gray-700">
             <p>{TAX_TEXTS.activationBody}</p>

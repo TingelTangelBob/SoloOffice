@@ -22,6 +22,8 @@ interface ActionMenuProps {
   autoOpenSignal?: string | number | null;
   closeOnClick?: boolean;
   disabled?: boolean;
+  /** Nutzt für umfangreiche Menüs den Platz bis zum unteren Fensterrand. */
+  fitViewport?: boolean;
 }
 
 interface MenuPosition {
@@ -87,6 +89,7 @@ export function ActionMenu({
   autoOpenSignal = null,
   closeOnClick = true,
   disabled = false,
+  fitViewport = false,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
@@ -208,6 +211,7 @@ export function ActionMenu({
             top: position?.top ?? VIEWPORT_PADDING,
             maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
             boxSizing: 'border-box',
+            maxHeight: fitViewport ? `calc(100dvh - ${(position?.top ?? VIEWPORT_PADDING) + VIEWPORT_PADDING}px)` : undefined,
             visibility: position ? 'visible' : 'hidden'
           }}
           onClick={event => { if (closeOnClick && !event.defaultPrevented) setIsOpen(false); }}

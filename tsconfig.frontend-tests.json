@@ -31,6 +31,10 @@
     "src/utils/dashboardMetrics.ts",
     "src/utils/timeZones.ts",
     "src/utils/tableSort.ts",
-    "src/utils/hashRouter.ts"
+    "src/utils/hashRouter.ts",
+    "src/utils/dashboardChartSeries.ts",
+    "src/utils/recurringExpenseDisplay.ts",
+    "src/utils/dashboardPeriod.ts",
+    "src/utils/taxDashboardDisplay.ts"
   ]
 }

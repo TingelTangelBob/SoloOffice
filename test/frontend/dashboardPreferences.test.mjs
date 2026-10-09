@@ -42,6 +42,24 @@ test('Dashboard-Jahr, Schalter und Vergleich werden streng normalisiert', () => 
   assert.equal(normalizeDashboardPreferences({ year: 1899, includeUnpaidInvoices: 'true' }).includeUnpaidInvoices, false);
 });
 
+test('Steuerpräferenzen und Monatsansicht starten aus und persistieren ausschließlich Boolesche Werte', () => {
+  const defaults = normalizeDashboardPreferences(null);
+  for (const key of ['showPrivateLevies', 'showFixedCosts', 'showSocialContributions', 'showTaxReserve', 'showVatReserve', 'showAvailable', 'monthView']) {
+    assert.equal(defaults[key], false, key);
+  }
+  assert.equal(defaults.month, null);
+  assert.equal(defaults.compareMonth, null);
+  const stored = normalizeDashboardPreferences({ showPrivateLevies: true, showFixedCosts: true, showSocialContributions: true,
+    showTaxReserve: true, showVatReserve: true, showAvailable: true, monthView: true, month: '2026-09', compareMonth: '2026-06' });
+  for (const key of ['showPrivateLevies', 'showFixedCosts', 'showSocialContributions', 'showTaxReserve', 'showVatReserve', 'showAvailable', 'monthView']) {
+    assert.equal(stored[key], true, key);
+  }
+  assert.equal(stored.month, '2026-09');
+  assert.equal(stored.compareMonth, '2026-06');
+  assert.deepEqual(normalizeDashboardPreferences(stored), stored);
+  assert.equal(normalizeDashboardPreferences({ showPrivateLevies: 'true', monthView: 1 }).showPrivateLevies, false);
+});
+
 test('Standardauswahl entspricht exakt dem Stand vor Version 2; neue Kacheln sind ausgeblendet', () => {
   assert.equal(DEFAULT_DASHBOARD_PREFERENCES.version, DASHBOARD_PREFERENCES_VERSION);
   assert.deepEqual(visibleIds(DEFAULT_DASHBOARD_PREFERENCES.items), LEGACY_IDS);

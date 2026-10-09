@@ -160,7 +160,7 @@ function demoDigest(value: unknown): string {
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
 const DEMO_SEED_VERSION = 11;
-const DEMO_FINANCE_SEED_VERSION = 2;
+const DEMO_FINANCE_SEED_VERSION = 3;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -273,6 +273,8 @@ function seedDemoFinance(state: DemoState): void {
   profile.disclaimerAcceptedAt = acceptedAt;
   profile.churchTaxLiable = null;
   profile.churchTaxConsentAt = null;
+  profile.pensionNoticeMonthly = 600;
+  profile.pensionMode = 'notice';
   state.taxProfiles = [profile];
 
   const makeExpense = (name: string, category: string, amount: number, startDate: string,
@@ -283,7 +285,6 @@ function seedDemoFinance(state: DemoState): void {
     automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: '',
     nextDueDate: startDate, createdAt: acceptedAt, updatedAt: acceptedAt, ...options,
   });
-  const monthStart = `${today.slice(0, 7)}-01`;
   const futurePrice = new Date(now.getFullYear(), now.getMonth() + 2, 1);
   const futurePriceDate = `${futurePrice.getFullYear()}-${String(futurePrice.getMonth() + 1).padStart(2, '0')}-01`;
   const expenses: RecurringExpense[] = [
@@ -292,6 +293,13 @@ function seedDemoFinance(state: DemoState): void {
     makeExpense('Telefon', 'telecommunications', 39, `${year}-01-01`, { cancelledOn: today, endDate: addDays(today, 30) }),
     makeExpense('Berufshaftpflicht', 'insurance', 28, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-07-01`, until: `${year}-07-31` }] }),
     makeExpense('Fachzeitschrift', 'memberships', 24, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-08-01`, until: null }] }),
+    ...([
+      ['kv', 'Krankenversicherung laut Bescheid', profile.healthNoticeMonthly],
+      ['pv', 'Pflegeversicherung laut Bescheid', profile.careNoticeMonthly],
+      ['rv', 'Rentenversicherung laut Bescheid', profile.pensionNoticeMonthly],
+    ] as const).filter(([, , amount]) => Number(amount) > 0).map(([kind, name, amount]) => makeExpense(name, kind, Number(amount), `${year}-01-15`, {
+      counterparty: 'Beispielkasse / Rentenversicherung', taxRate: null, scope: 'private_levy', levyKind: kind,
+    })),
   ];
   state.recurringExpenses = expenses;
   state.recurringExpenseRuns = [];
@@ -313,7 +321,7 @@ function seedDemoFinance(state: DemoState): void {
   const currentMonthNumber = Number(today.slice(5, 7));
   for (const expense of expenses) {
     for (let monthNumber = 1; monthNumber < currentMonthNumber; monthNumber += 1) {
-      const dueDate = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
+      const dueDate = `${year}-${String(monthNumber).padStart(2, '0')}-${expense.scope === 'private_levy' ? '15' : '01'}`;
       if (!isRecurringExpenseDue(expense, dueDate)) continue;
       const run = demoRunRecord(expense, dueDate, generateUUID());
       run.status = 'confirmed';
@@ -332,16 +340,23 @@ function seedDemoFinance(state: DemoState): void {
       }
       state.recurringExpenseRuns.push(run);
     }
-    if (isRecurringExpenseDue(expense, monthStart)) {
-      state.recurringExpenseRuns.push(demoRunRecord(expense, monthStart, generateUUID()));
+    const currentDueDate = `${today.slice(0, 7)}-${expense.scope === 'private_levy' ? '15' : '01'}`;
+    if (isRecurringExpenseDue(expense, currentDueDate)) {
+      state.recurringExpenseRuns.push(demoRunRecord(expense, currentDueDate, generateUUID()));
     }
   }
   for (let monthNumber = 1; monthNumber < currentMonthNumber; monthNumber += 1) {
     const month = String(monthNumber).padStart(2, '0');
-    for (const [kind, amount] of [['kv', 262.5], ['pv', 63], ['rv', 600]] as const) {
+    for (const [kind, amount] of [['kv', profile.healthNoticeMonthly], ['pv', profile.careNoticeMonthly], ['rv', profile.pensionNoticeMonthly]] as const) {
+      if (!(Number(amount) > 0)) continue;
       state.levyPayments.push({ id: generateUUID(), kind, year, period: `${year}-${month}`, dueDate: `${year}-${month}-15`,
-        paidOn: `${year}-${month}-15`, amount, source: 'notice', expenseRunId: null, notes: 'Synthetische Bescheidzahlung der Demo' });
+        paidOn: `${year}-${month}-15`, amount: Number(amount), source: 'notice', expenseRunId: null, notes: 'Synthetische Bescheidzahlung der Demo' });
     }
+  }
+  for (const run of state.recurringExpenseRuns.filter(item => item.scope === 'private_levy' && item.status === 'confirmed')) {
+    const kind = expenses.find(expense => expense.id === run.expenseId)?.levyKind;
+    const payment = state.levyPayments.find(item => item.kind === kind && item.period === run.dueDate.slice(0, 7));
+    if (payment) run.levyPaymentId = payment.id;
   }
   state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
 }
@@ -693,20 +708,52 @@ function readState(): DemoState {
     // Ältere, bereits genutzte Workspaces erhalten das Finanzbeispiel genau
     // einmal. Vorhandene EÜR-Daten bleiben erhalten; nur neu angelegte
     // Fixkostenläufe ergänzen passende EÜR-Ausgaben.
-    if (parsed.financeSeedVersion !== DEMO_FINANCE_SEED_VERSION
-      && !parsed.taxProfiles && !parsed.recurringExpenses && !parsed.recurringExpenseRuns && !parsed.levyPayments) {
+    if (Number(parsed.financeSeedVersion || 0) < DEMO_FINANCE_SEED_VERSION) {
       const seededFinance = createInitialState(storedProfile);
-      parsed.extensions = seededFinance.extensions;
-      parsed.taxProfiles = seededFinance.taxProfiles;
-      parsed.recurringExpenses = seededFinance.recurringExpenses;
-      parsed.recurringExpenseRuns = seededFinance.recurringExpenseRuns;
-      parsed.levyPayments = seededFinance.levyPayments;
-      const financeEntries = seededFinance.euerEntries || [];
-      const recurringEntries = financeEntries.filter(entry => entry.sourceType === 'recurring_expense');
-      parsed.euerEntries = parsed.euerEntries?.length ? [...parsed.euerEntries, ...recurringEntries] : financeEntries;
-      parsed.euerEntryHistory = parsed.euerEntryHistory?.length
-        ? [...parsed.euerEntryHistory, ...(seededFinance.euerEntryHistory || [])]
-        : seededFinance.euerEntryHistory;
+      const hadFinanceState = Boolean(parsed.recurringExpenses || parsed.recurringExpenseRuns || parsed.levyPayments);
+      parsed.extensions ||= seededFinance.extensions;
+      parsed.taxProfiles ||= seededFinance.taxProfiles;
+      parsed.recurringExpenses ||= seededFinance.recurringExpenses;
+      parsed.recurringExpenseRuns ||= seededFinance.recurringExpenseRuns;
+      parsed.levyPayments ||= seededFinance.levyPayments;
+      if (hadFinanceState) {
+        const existingExpenses = parsed.recurringExpenses || [];
+        const currentProfile = (parsed.taxProfiles || []).find(item => item.year === seededFinance.taxProfiles?.[0]?.year)
+          || seededFinance.taxProfiles?.[0];
+        const profileAmount = (kind: string) => kind === 'kv'
+          ? currentProfile?.healthNoticeMonthly ?? (currentProfile?.healthInsurance === 'pkv' ? currentProfile.privateHealthMonthly : null)
+          : kind === 'pv'
+            ? currentProfile?.careNoticeMonthly ?? (currentProfile?.healthInsurance === 'pkv' ? currentProfile.privateCareMonthly : null)
+            : kind === 'rv' ? currentProfile?.pensionNoticeMonthly : null;
+        const privateSeeds = (seededFinance.recurringExpenses || []).filter(item => item.scope === 'private_levy')
+          .flatMap(item => Number(profileAmount(item.levyKind || '')) > 0
+            ? [{ ...item, amountGross: Number(profileAmount(item.levyKind || '')) }]
+            : []);
+        for (const seed of privateSeeds) {
+          if (!existingExpenses.some(item => item.scope === 'private_levy' && item.name === seed.name)) existingExpenses.push(seed);
+        }
+        const existingRuns = parsed.recurringExpenseRuns || [];
+        for (const seedRun of (seededFinance.recurringExpenseRuns || []).filter(item => item.scope === 'private_levy')) {
+          const seedExpense = (seededFinance.recurringExpenses || []).find(item => item.id === seedRun.expenseId);
+          const targetExpense = existingExpenses.find(item => item.scope === 'private_levy' && item.name === seedExpense?.name);
+          if (!targetExpense || existingRuns.some(run => run.expenseId === targetExpense.id && run.dueDate === seedRun.dueDate)) continue;
+          if (seedRun.status === 'confirmed') {
+            const payment = (parsed.levyPayments || []).find(item => item.kind === targetExpense.levyKind && item.period === seedRun.dueDate.slice(0, 7));
+            if (!payment) continue;
+            existingRuns.push({ ...seedRun, id: generateUUID(), expenseId: targetExpense.id, amountGross: payment.amount,
+              snapshot: { ...seedRun.snapshot, amount: payment.amount }, levyPaymentId: payment.id });
+          } else {
+            existingRuns.push({ ...seedRun, id: generateUUID(), expenseId: targetExpense.id, amountGross: targetExpense.amountGross,
+              snapshot: { ...seedRun.snapshot, amount: targetExpense.amountGross } });
+          }
+        }
+      } else {
+        const financeEntries = seededFinance.euerEntries || [];
+        parsed.euerEntries = parsed.euerEntries?.length ? [...parsed.euerEntries, ...financeEntries.filter(entry => entry.sourceType === 'recurring_expense')] : financeEntries;
+        parsed.euerEntryHistory = parsed.euerEntryHistory?.length
+          ? [...parsed.euerEntryHistory, ...(seededFinance.euerEntryHistory || [])]
+          : seededFinance.euerEntryHistory;
+      }
       parsed.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
       localStorage.setItem(storageKey, JSON.stringify(parsed));
     }
@@ -2014,7 +2061,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (id === 'runs' && parts.length === 2 && method === 'GET') {
       const yearParam = queryParams.get('year');
-      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2100)) throw new Error('Ungültiges Jahr.');
+      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2200)) throw new Error('Ungültiges Jahr.');
       const dueOnly = queryParams.get('dueOnly') === 'true';
       const today = todayLocal();
       const permittedIds = new Set(expenses.filter(visibleExpense).map(expense => expense.id));
@@ -2144,7 +2191,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     };
     if (!id && method === 'GET') {
       const yearParam = queryParams.get('year');
-      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2100)) throw new Error('Ungültiges Jahr.');
+      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2200)) throw new Error('Ungültiges Jahr.');
       return payments.filter(payment => !yearParam || payment.year === Number(yearParam)) as unknown as T;
     }
     if (!id && method === 'POST') {

@@ -242,7 +242,13 @@ test('Alte persistierte Demo erhält Finanzseed einmal; bewusster Reset hält Ar
   await demo.demoRequest('/recurring-expenses');
   const before = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
   assert.ok(before.recurringExpenses.length > 0);
-  assert.equal(before.financeSeedVersion, 2);
+  assert.equal(before.financeSeedVersion, 3);
+  const privateTemplates = before.recurringExpenses.filter(expense => expense.scope === 'private_levy');
+  assert.deepEqual(privateTemplates.map(expense => expense.levyKind).sort(), ['kv', 'pv', 'rv']);
+  assert.ok(before.recurringExpenseRuns.some(run => run.scope === 'private_levy' && run.status === 'planned'));
+  assert.ok(before.recurringExpenseRuns.filter(run => run.scope === 'private_levy' && run.status === 'confirmed')
+    .every(run => before.levyPayments.some(payment => payment.id === run.levyPaymentId)));
+  assert.equal(before.euerEntries.some(entry => privateTemplates.some(expense => entry.sourceId === expense.id)), false);
   const savedProfiles = before.taxProfiles;
   const savedExtensions = before.extensions;
   demo.resetDemoWorkspaceData({ companyProfile: false, takeover: false });
@@ -255,6 +261,25 @@ test('Alte persistierte Demo erhält Finanzseed einmal; bewusster Reset hält Ar
   assert.equal(after.company.name, 'Bestehende Demo');
   await demo.demoRequest('/recurring-expenses');
   assert.deepEqual(JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1')).recurringExpenses, []);
+});
+
+test('Demo-Finanzupgrade ergänzt private Vorlagen, bewahrt Zahlungen und EÜR-Nutzerdaten', async t => {
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.sessionStorage = new MemoryStorage();
+  const userEntry = { id: 'user-euer', entryType: 'expense', amount: 123, sourceType: 'manual' };
+  const savedPayment = { id: 'user-levy', kind: 'kv', year: new Date().getFullYear(), period: `${new Date().getFullYear()}-01`, dueDate: `${new Date().getFullYear()}-01-15`, paidOn: `${new Date().getFullYear()}-01-15`, amount: 222, source: 'notice', expenseRunId: null, notes: 'Eigene Angabe' };
+  globalThis.localStorage.setItem('solooffice-demo-data-v1', JSON.stringify({ seedVersion: 11, financeSeedVersion: 2, touched: true,
+    company: { terminologyProfile: 'customers', name: 'Eigene Demo' }, euerEntries: [userEntry], euerEntryHistory: [],
+    extensions: [], taxProfiles: [], recurringExpenses: [], recurringExpenseRuns: [], levyPayments: [savedPayment] }));
+  const { module: demo, temp } = await loadDemoApi();
+  t.after(async () => { await rm(temp, { recursive: true, force: true }); });
+  await demo.demoRequest('/recurring-expenses');
+  const upgraded = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
+  assert.equal(upgraded.financeSeedVersion, 3);
+  assert.equal(upgraded.recurringExpenses.filter(expense => expense.scope === 'private_levy').length, 3);
+  assert.deepEqual(upgraded.levyPayments, [savedPayment]);
+  assert.deepEqual(upgraded.euerEntries, [userEntry]);
+  assert.equal(upgraded.recurringExpenseRuns.some(run => run.scope === 'private_levy' && run.status === 'planned'), true);
 });
 
 test('Demo-Forecast zählt bezahlte Alt-Rechnungen ohne EÜR-Zahlung nicht doppelt und warnt dazu', async t => {
