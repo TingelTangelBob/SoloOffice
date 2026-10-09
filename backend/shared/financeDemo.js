@@ -5,6 +5,7 @@ import { validateTaxProfilePayload } from '../utils/taxProfileValidation.js';
 /** Reine Demo-Helfer. Alle Daten bleiben im übergebenen Workspace-Zustand. */
 export function validateDemoLevy(input, today = new Date().toISOString().slice(0, 10)) {
   const kinds = new Set(['kv', 'pv', 'rv', 'av', 'ksk', 'est_vz', 'gewst_vz', 'ust']);
+  if (input.kind === 'ust') return 'Umsatzsteuerzahlungen werden unter Umsatzsteuer verwaltet.';
   if (!kinds.has(String(input.kind))) return 'Ungültige Abgabenart.';
   if (!['notice', 'manual'].includes(input.source ?? 'manual')) return 'Ungültige Zahlungsquelle.';
   const year = Number(input.year);
@@ -30,6 +31,38 @@ export function validateDemoLevy(input, today = new Date().toISOString().slice(0
     if (Number(periodStart.slice(0, 4)) !== year) return 'Jahr und Zeitraum passen nicht zusammen.';
     return { kind: input.kind, year, period: periodStart.slice(0, 7), dueDate, paidOn, amount,
       source: input.source || 'manual', expenseRunId: null, notes: String(input.notes || '').trim() };
+  } catch (error) { return error.message; }
+}
+
+const VAT_PAYMENT_KINDS = new Set(['advance', 'special_prepayment', 'annual_payment', 'refund']);
+const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+/** Validiert die Demo-Entsprechung eines betrieblichen Umsatzsteuer-Zahlungsdatensatzes. */
+export function validateDemoVatPayment(input, profile, today = new Date().toISOString().slice(0, 10)) {
+  const kind = String(input.kind || '');
+  const taxYear = Number(input.taxYear);
+  const amount = Number(input.amount);
+  if (!VAT_PAYMENT_KINDS.has(kind)) return 'Ungültige Umsatzsteuer-Zahlungsart.';
+  if (!Number.isInteger(taxYear) || taxYear < 2000 || taxYear > 2200) return 'Ungültiges Steuerjahr.';
+  if (!Number.isFinite(amount) || amount <= 0 || roundMoney(amount) !== amount) return 'Der Betrag muss größer als 0 sein und darf höchstens zwei Nachkommastellen haben.';
+  const periodKey = input.periodKey == null || input.periodKey === '' ? null : String(input.periodKey);
+  const yearKey = String(taxYear);
+  if (kind === 'special_prepayment' && periodKey !== null) return 'Eine Sondervorauszahlung wird keinem Voranmeldungszeitraum zugeordnet.';
+  if (kind === 'annual_payment' && periodKey !== null && periodKey !== yearKey) return 'Die Jahresnachzahlung muss dem Steuerjahr zugeordnet sein.';
+  if (kind === 'advance' || kind === 'refund') {
+    if (profile?.vatPeriod === 'annual') {
+      if (periodKey !== null && periodKey !== yearKey) return 'Der Zeitraum passt nicht zum jährlichen Voranmeldungszeitraum.';
+    } else {
+      const pattern = profile?.vatPeriod === 'monthly' ? /^\d{4}-(0[1-9]|1[0-2])$/ : /^\d{4}-Q[1-4]$/;
+      if (!periodKey || !pattern.test(periodKey) || Number(periodKey.slice(0, 4)) !== taxYear) return 'Der Zeitraum passt nicht zum Steuerjahr und Voranmeldungszeitraum.';
+    }
+  }
+  try {
+    const paidOn = input.paidOn ? assertDateOnly(String(input.paidOn), 'Zahlungsdatum') : null;
+    const dueDate = input.dueDate ? assertDateOnly(String(input.dueDate), 'Fälligkeit') : null;
+    if (paidOn && paidOn > assertDateOnly(today, 'Heutiges Datum')) return 'Ein zukünftiges Zahlungsdatum kann nicht als erfolgte Zahlung bestätigt werden.';
+    return { kind, taxYear, periodKey, paidOn, dueDate, amount: roundMoney(amount),
+      notes: String(input.notes || '').trim(), source: input.source === 'legacy_levy' ? 'legacy_levy' : 'manual' };
   } catch (error) { return error.message; }
 }
 

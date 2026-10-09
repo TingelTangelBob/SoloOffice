@@ -1,5 +1,10 @@
 import type { LevyPayment, RecurringExpense, RecurringExpenseRun } from '../../src/types/finance';
+import type { VatPaymentKind } from './vat/index.js';
 export function validateDemoLevy(input: Record<string, unknown>, today?: string): string | Omit<LevyPayment, 'id'>;
+export function validateDemoVatPayment(input: Record<string, unknown>, profile: { vatPeriod?: 'monthly' | 'quarterly' | 'annual' } | null | undefined, today?: string): string | {
+  kind: VatPaymentKind; taxYear: number; periodKey: string | null; paidOn: string | null; dueDate: string | null;
+  amount: number; notes: string; source: 'manual' | 'legacy_levy';
+};
 export function validateDemoExpense(input: Record<string, unknown>, today: string, immutablePriceChanges?: { validFrom: string; amount: number; taxRate: number | null }[]): string | {
   name: string; counterparty: string | null; category: string; scope: 'business' | 'private_levy'; amount: number; taxRate: number | null;
   intervalValue: number; intervalUnit: string; interval: string | null; startDate: string; endDate: string | null; nextDueDate: string;

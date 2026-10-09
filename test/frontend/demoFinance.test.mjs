@@ -242,7 +242,7 @@ test('Alte persistierte Demo erhält Finanzseed einmal; bewusster Reset hält Ar
   await demo.demoRequest('/recurring-expenses');
   const before = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
   assert.ok(before.recurringExpenses.length > 0);
-  assert.equal(before.financeSeedVersion, 3);
+  assert.equal(before.financeSeedVersion, 4);
   const privateTemplates = before.recurringExpenses.filter(expense => expense.scope === 'private_levy');
   assert.deepEqual(privateTemplates.map(expense => expense.levyKind).sort(), ['kv', 'pv', 'rv']);
   assert.ok(before.recurringExpenseRuns.some(run => run.scope === 'private_levy' && run.status === 'planned'));
@@ -256,6 +256,7 @@ test('Alte persistierte Demo erhält Finanzseed einmal; bewusster Reset hält Ar
   assert.deepEqual(after.recurringExpenses, []);
   assert.deepEqual(after.recurringExpenseRuns, []);
   assert.deepEqual(after.levyPayments, []);
+  assert.deepEqual(after.vatPayments, []);
   assert.deepEqual(after.taxProfiles, savedProfiles);
   assert.deepEqual(after.extensions, savedExtensions);
   assert.equal(after.company.name, 'Bestehende Demo');
@@ -267,17 +268,21 @@ test('Demo-Finanzupgrade ergänzt private Vorlagen, bewahrt Zahlungen und EÜR-N
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
   const userEntry = { id: 'user-euer', entryType: 'expense', amount: 123, sourceType: 'manual' };
-  const savedPayment = { id: 'user-levy', kind: 'kv', year: new Date().getFullYear(), period: `${new Date().getFullYear()}-01`, dueDate: `${new Date().getFullYear()}-01-15`, paidOn: `${new Date().getFullYear()}-01-15`, amount: 222, source: 'notice', expenseRunId: null, notes: 'Eigene Angabe' };
+  const currentYear = new Date().getFullYear();
+  const savedPayment = { id: 'user-levy', kind: 'kv', year: currentYear, period: `${currentYear}-01`, dueDate: `${currentYear}-01-15`, paidOn: `${currentYear}-01-15`, amount: 222, source: 'notice', expenseRunId: null, notes: 'Eigene Angabe' };
+  const legacyVatPayment = { id: 'old-ust', kind: 'ust', year: currentYear, period: `${currentYear}-02`, dueDate: `${currentYear}-03-10`, paidOn: `${currentYear}-03-10`, amount: 310, source: 'manual', expenseRunId: null, notes: 'Frühere USt-Zahlung' };
   globalThis.localStorage.setItem('solooffice-demo-data-v1', JSON.stringify({ seedVersion: 11, financeSeedVersion: 2, touched: true,
     company: { terminologyProfile: 'customers', name: 'Eigene Demo' }, euerEntries: [userEntry], euerEntryHistory: [],
-    extensions: [], taxProfiles: [], recurringExpenses: [], recurringExpenseRuns: [], levyPayments: [savedPayment] }));
+    extensions: [], taxProfiles: [], recurringExpenses: [], recurringExpenseRuns: [], levyPayments: [savedPayment, legacyVatPayment] }));
   const { module: demo, temp } = await loadDemoApi();
   t.after(async () => { await rm(temp, { recursive: true, force: true }); });
   await demo.demoRequest('/recurring-expenses');
   const upgraded = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
-  assert.equal(upgraded.financeSeedVersion, 3);
+  assert.equal(upgraded.financeSeedVersion, 4);
   assert.equal(upgraded.recurringExpenses.filter(expense => expense.scope === 'private_levy').length, 3);
   assert.deepEqual(upgraded.levyPayments, [savedPayment]);
+  assert.ok(upgraded.vatPayments.some(payment => payment.id === legacyVatPayment.id && payment.periodKey === `${currentYear}-Q1` && payment.source === 'legacy_levy'));
+  assert.equal(upgraded.euerEntries.some(entry => entry.sourceId === legacyVatPayment.id), false);
   assert.deepEqual(upgraded.euerEntries, [userEntry]);
   assert.equal(upgraded.recurringExpenseRuns.some(run => run.scope === 'private_levy' && run.status === 'planned'), true);
 });
@@ -294,6 +299,33 @@ test('Demo-Forecast zählt bezahlte Alt-Rechnungen ohne EÜR-Zahlung nicht doppe
     .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   assert.equal(forecast.revenueYtd, bookedIncome);
   assert.ok(forecast.warnings.some(warning => warning.includes('ohne zugehörigen EÜR-Zahlungseingang')));
+});
+
+test('Demo-USt-API berechnet den Zeitraum und synchronisiert USt-Zahlung mit EÜR samt Storno', async t => {
+  globalThis.localStorage = new MemoryStorage();
+  globalThis.sessionStorage = new MemoryStorage();
+  const { module: demo, temp } = await loadDemoApi();
+  t.after(async () => { await rm(temp, { recursive: true, force: true }); });
+  const year = new Date().getFullYear();
+  const overview = await demo.demoRequest(`/vat/${year}`);
+  assert.equal(overview.periodType, 'quarterly');
+  assert.equal(overview.completeness.complete, false);
+  assert.equal(overview.periods.length, 4);
+  const payment = await demo.demoRequest('/vat/payments', { method: 'POST', body: JSON.stringify({ kind: 'advance', taxYear: year,
+    periodKey: `${year}-Q4`, amount: 200, paidOn: null }) });
+  const today = new Date();
+  const paidOn = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const paid = await demo.demoRequest(`/vat/payments/${payment.id}`, { method: 'PUT', body: JSON.stringify({ paidOn }) });
+  assert.ok(paid.euerEntryId);
+  let stored = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
+  const entry = stored.euerEntries.find(item => item.id === paid.euerEntryId);
+  assert.equal(entry.sourceType, 'vat_payment');
+  assert.equal(entry.category, 'vat_payment');
+  assert.equal(entry.entryType, 'expense');
+  await demo.demoRequest(`/vat/payments/${payment.id}`, { method: 'DELETE' });
+  stored = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
+  assert.equal(stored.vatPayments.some(item => item.id === payment.id), false);
+  assert.equal(stored.euerEntries.find(item => item.id === paid.euerEntryId).status, 'voided');
 });
 
 test('Das aktuelle Steuerjahr nutzt das Demo-Beispielprofil; andere Jahre bleiben wirklich leer', async t => {

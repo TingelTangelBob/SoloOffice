@@ -9,10 +9,13 @@ import type { ImportPlan, PlannerContext, PlannerResource } from '../../backend/
 import type { MoneyItem } from '../../backend/utils/documentMoney.js';
 import { normalizeDashboardPreferences } from '../utils/dashboardPreferences';
 import { demoDefaultTaxProfile, demoExtensionId, demoExtensionList, demoSeedTaxProfile, demoTaxesEnabled } from './demoFinance';
-import { addDays, canAccessDemoFinance, demoExpenseDueDates, demoLevyFromRun, demoRunRecord, validateDemoExpense, validateDemoLevy, validateDemoTaxProfile } from '../../backend/shared/financeDemo.js';
+import { addDays, canAccessDemoFinance, demoExpenseDueDates, demoLevyFromRun, demoRunRecord, validateDemoExpense, validateDemoLevy, validateDemoTaxProfile, validateDemoVatPayment } from '../../backend/shared/financeDemo.js';
 import { isRecurringExpenseDue, occurrenceOnOrAfter } from '../../backend/shared/recurrence.js';
 import type { ForecastResult, LevyPayment, RecurringExpense, RecurringExpenseRun, TaxProfile, WorkspaceExtension } from '../types/finance';
 import { buildForecast } from '../../backend/shared/forecast/index.js';
+import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../backend/shared/vat/periods.js';
+import { normalizeEuerVatFields } from '../../backend/utils/euerVatValidation.js';
+import { resolveTaxParams } from '../../backend/shared/taxParams/index.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 class DemoApiError extends Error {
@@ -54,6 +57,7 @@ interface DemoState {
   recurringExpenses?: RecurringExpense[];
   recurringExpenseRuns?: (RecurringExpenseRun & { snapshot?: Record<string, unknown> })[];
   levyPayments?: LevyPayment[];
+  vatPayments?: DemoRecord[];
   /** Importläufe mit den angelegten bzw. geänderten Datensätzen (für „Rückgängig“). */
   importRuns?: DemoRecord[];
   /** Originaldokumente übernommener Rechnungen, je Rechnungs-ID. */
@@ -160,7 +164,7 @@ function demoDigest(value: unknown): string {
 // Bei Änderungen am Seed erhöhen – gespeicherte Zustände älterer Fassungen
 // werden dadurch beim nächsten Laden neu aufgebaut.
 const DEMO_SEED_VERSION = 11;
-const DEMO_FINANCE_SEED_VERSION = 3;
+const DEMO_FINANCE_SEED_VERSION = 4;
 
 /**
  * Nach dieser Zeit gelten die Demodaten als veraltet.
@@ -262,6 +266,7 @@ function seedDemoFinance(state: DemoState): void {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const year = Number(today.slice(0, 4));
+  const vatRates = resolveTaxParams(year).params.vat;
   const acceptedAt = new Date().toISOString();
   state.extensions = demoExtensionList({
     taxesAcceptedAt: acceptedAt,
@@ -275,11 +280,17 @@ function seedDemoFinance(state: DemoState): void {
   profile.churchTaxConsentAt = null;
   profile.pensionNoticeMonthly = 600;
   profile.pensionMode = 'notice';
+  profile.vatStatus = 'regular';
+  profile.vatPeriod = 'quarterly';
+  profile.vatAccounting = null;
+  profile.vatPermanentExtension = false;
+  profile.vatSpecialPrepayment = null;
+  profile.previousYearVatLiability = null;
   state.taxProfiles = [profile];
 
   const makeExpense = (name: string, category: string, amount: number, startDate: string,
     options: Partial<RecurringExpense> = {}): RecurringExpense => ({
-    id: generateUUID(), name, counterparty: 'Beispielanbieter', category, amountGross: amount, taxRate: 19,
+    id: generateUUID(), name, counterparty: 'Beispielanbieter', category, amountGross: amount, taxRate: vatRates.standardRate,
     interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate, endDate: null,
     noticePeriodDays: 30, cancelledOn: null, status: 'active', pauses: [], priceChanges: [],
     automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: '',
@@ -289,10 +300,10 @@ function seedDemoFinance(state: DemoState): void {
   const futurePriceDate = `${futurePrice.getFullYear()}-${String(futurePrice.getMonth() + 1).padStart(2, '0')}-01`;
   const expenses: RecurringExpense[] = [
     makeExpense('Raummiete', 'rent', 920, `${year}-01-01`, { priceChanges: [{ validFrom: futurePriceDate, amountGross: 960 }] }),
-    makeExpense('Software', 'software', 85, `${year}-01-01`),
-    makeExpense('Telefon', 'telecommunications', 39, `${year}-01-01`, { cancelledOn: today, endDate: addDays(today, 30) }),
-    makeExpense('Berufshaftpflicht', 'insurance', 28, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-07-01`, until: `${year}-07-31` }] }),
-    makeExpense('Fachzeitschrift', 'memberships', 24, `${year}-01-01`, { status: 'paused', pauses: [{ from: `${year}-08-01`, until: null }] }),
+    makeExpense('Software-Abo aus der EU', 'software', 85, `${year}-01-01`, { taxRate: vatRates.standardRate }),
+    makeExpense('Telefon', 'telecommunications', 39, `${year}-01-01`, { taxRate: vatRates.standardRate, cancelledOn: today, endDate: addDays(today, 30) }),
+    makeExpense('Berufshaftpflicht', 'insurance', 28, `${year}-01-01`, { taxRate: 0, status: 'paused', pauses: [{ from: `${year}-07-01`, until: `${year}-07-31` }] }),
+    makeExpense('Fachzeitschrift', 'memberships', 24, `${year}-01-01`, { taxRate: vatRates.reducedRate, status: 'paused', pauses: [{ from: `${year}-08-01`, until: null }] }),
     ...([
       ['kv', 'Krankenversicherung laut Bescheid', profile.healthNoticeMonthly],
       ['pv', 'Pflegeversicherung laut Bescheid', profile.careNoticeMonthly],
@@ -304,14 +315,17 @@ function seedDemoFinance(state: DemoState): void {
   state.recurringExpenses = expenses;
   state.recurringExpenseRuns = [];
   state.levyPayments = [];
+  state.vatPayments = [];
   // Synthetische EÜR-Zahlungseingänge und bestätigte betriebliche Läufe
   // erzeugen eine vollständige, konsistente Forecast-Historie.
   const monthsElapsed = Number(today.slice(5, 7));
   state.euerEntries = Array.from({ length: Math.max(0, monthsElapsed - 1) }, (_, index) => {
     const month = String(index + 1).padStart(2, '0');
     const entry = {
-      id: generateUUID(), entryType: 'income', entryDate: `${year}-${month}-05`,
-      description: 'Beispielhonorar Unterricht', category: 'other_income', amount: 4500, taxRate: 19,
+      id: generateUUID(), entryType: 'income', entryDate: `${year}-${month}-05`, documentDate: `${year}-${month}-01`,
+      description: 'Beispielhonorar Unterricht', category: 'other_income', amount: 4500, taxRate: vatRates.standardRate,
+      vatTreatment: 'taxable', netAmount: Math.round((4500 / (1 + vatRates.standardRate / 100) + Number.EPSILON) * 100) / 100,
+      vatAmount: Math.round((4500 - 4500 / (1 + vatRates.standardRate / 100) + Number.EPSILON) * 100) / 100, inputTaxDeductible: null,
       sourceType: 'manual', status: 'active', notes: 'Synthetischer Zahlungseingang der Demo',
       createdAt: `${year}-${month}-05T09:00:00.000Z`, updatedAt: `${year}-${month}-05T09:00:00.000Z`,
     };
@@ -327,9 +341,17 @@ function seedDemoFinance(state: DemoState): void {
       run.status = 'confirmed';
       run.paidOn = dueDate;
       if (run.scope === 'business') {
+        const category = String(run.snapshot.category);
+        const treatment = category === 'insurance' ? 'no_vat' : category === 'software' ? 'reverse_charge_eu' : 'taxable';
+        const rate = Number(run.snapshot.taxRate || 0);
+        const gross = Number(run.snapshot.amount);
+        const netAmount = treatment === 'reverse_charge_eu' ? gross : treatment === 'no_vat' ? gross : Math.round((gross / (1 + rate / 100) + Number.EPSILON) * 100) / 100;
+        const vatAmount = treatment === 'reverse_charge_eu' ? Math.round((netAmount * rate / 100 + Number.EPSILON) * 100) / 100
+          : treatment === 'no_vat' ? 0 : Math.round((gross - netAmount + Number.EPSILON) * 100) / 100;
         const entry = {
           id: generateUUID(), entryType: 'expense', entryDate: dueDate, description: run.snapshot.name,
-          category: run.snapshot.category, amount: run.snapshot.amount, taxRate: run.snapshot.taxRate || 0,
+          documentDate: dueDate, category: run.snapshot.category, amount: gross, taxRate: rate,
+          vatTreatment: treatment, netAmount, vatAmount, inputTaxDeductible: treatment === 'no_vat' ? false : true,
           sourceType: 'recurring_expense', sourceId: run.id, status: 'active', notes: 'Synthetischer bestätigter Fixkostenlauf',
           createdAt: `${dueDate}T09:00:00.000Z`, updatedAt: `${dueDate}T09:00:00.000Z`,
         };
@@ -358,12 +380,66 @@ function seedDemoFinance(state: DemoState): void {
     const payment = state.levyPayments.find(item => item.kind === kind && item.period === run.dueDate.slice(0, 7));
     if (payment) run.levyPaymentId = payment.id;
   }
+  // Altbuchungen bleiben sichtbar unvollständig, damit der Schätzhinweis in der Demo prüfbar ist.
+  state.euerEntries.push(
+    { id: generateUUID(), entryType: 'income', entryDate: `${year}-05-18`, documentDate: `${year}-05-15`, description: 'Beispielhonorar Workshop (7 %)', category: 'other_income', amount: 1070,
+      taxRate: vatRates.reducedRate, vatTreatment: 'taxable', netAmount: 1000,
+      vatAmount: Math.round((1000 * vatRates.reducedRate / 100 + Number.EPSILON) * 100) / 100, inputTaxDeductible: null, sourceType: 'manual', status: 'active', notes: 'Synthetische Beispielbuchung' },
+    { id: generateUUID(), entryType: 'income', entryDate: `${year}-09-03`, documentDate: `${year}-09-01`, description: 'Beispielhonorar mit offenem Steuervorschlag', category: 'other_income', amount: 1190,
+      taxRate: vatRates.standardRate, sourceType: 'manual', status: 'active', notes: 'Synthetische ältere Buchung ohne bestätigte USt-Angaben' },
+    { id: generateUUID(), entryType: 'expense', entryDate: `${year}-09-04`, documentDate: `${year}-09-02`, description: 'Kleinausgabe ohne Steuersatz', category: 'other_expense', amount: 42,
+      taxRate: 0, sourceType: 'manual', status: 'active', notes: 'Synthetische ältere Buchung ohne USt-Angaben' },
+  );
+  state.vatPayments = [
+    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q1`, dueDate: `${year}-04-10`, paidOn: `${year}-04-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Synthetische Vorauszahlung Q1' },
+    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q2`, dueDate: `${year}-07-10`, paidOn: `${year}-07-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Synthetische Vorauszahlung Q2' },
+  ];
+  state.vatPayments.forEach(payment => syncDemoVatPaymentEntry(state, payment, profile));
   state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
 }
 
 function todayLocal(): string {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function syncDemoVatPaymentEntry(state: DemoState, payment: DemoRecord, profile?: TaxProfile, action: 'sync' | 'void' = 'sync'): void {
+  state.euerEntries ||= [];
+  state.euerEntryHistory ||= [];
+  const existing = state.euerEntries.find(entry => entry.sourceType === 'vat_payment' && entry.sourceId === payment.id && entry.status !== 'voided');
+  if (action === 'void' || !payment.paidOn) {
+    if (existing) {
+      const oldData = { ...existing };
+      existing.status = 'voided';
+      existing.correctionReason = 'USt-Zahlung gelöscht oder Zahlung zurückgesetzt';
+      existing.updatedAt = isoDate();
+      state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: existing.id, action: 'voided', reason: existing.correctionReason,
+        oldData, newData: null, changedAt: isoDate() });
+    }
+    payment.euerEntryId = null;
+    return;
+  }
+  const profileForYear = profile || state.taxProfiles?.find(item => item.year === Number(String(payment.paidOn).slice(0, 4))) || demoDefaultTaxProfile(Number(String(payment.paidOn).slice(0, 4)));
+  const attribution = euerAttributionYear({ kind: payment.kind as 'advance' | 'special_prepayment' | 'annual_payment' | 'refund',
+    periodKey: payment.periodKey as string | null, paidOn: String(payment.paidOn) }, { permanentExtension: profileForYear.vatPermanentExtension });
+  const refund = payment.kind === 'refund';
+  const next = { id: existing?.id || generateUUID(), entryType: refund ? 'income' : 'expense', entryDate: String(payment.paidOn),
+    documentDate: String(payment.paidOn), description: refund ? 'Umsatzsteuer-Erstattung' : 'Umsatzsteuerzahlung an das Finanzamt',
+    category: refund ? 'vat_refund' : 'vat_payment', amount: Number(payment.amount), taxRate: 0, vatTreatment: 'no_vat',
+    netAmount: Number(payment.amount), vatAmount: 0, inputTaxDeductible: refund ? null : false, sourceType: 'vat_payment', sourceId: payment.id,
+    status: 'active', euerYear: attribution.year === Number(String(payment.paidOn).slice(0, 4)) ? null : attribution.year,
+    createdAt: existing?.createdAt || isoDate(), updatedAt: isoDate(), notes: payment.notes || '' } as DemoRecord;
+  if (existing) {
+    const oldData = { ...existing };
+    Object.assign(existing, next);
+    state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: existing.id, action: 'updated', reason: 'USt-Zahlung aktualisiert', oldData,
+      newData: { ...existing }, changedAt: isoDate() });
+  } else {
+    state.euerEntries.push(next);
+    state.euerEntryHistory.push({ id: generateUUID(), euerEntryId: next.id, action: 'created', reason: 'USt-Zahlung erfasst', oldData: null,
+      newData: { ...next }, changedAt: isoDate() });
+  }
+  payment.euerEntryId = next.id;
 }
 
 function demoSlug(value: string): string {
@@ -716,6 +792,20 @@ function readState(): DemoState {
       parsed.recurringExpenses ||= seededFinance.recurringExpenses;
       parsed.recurringExpenseRuns ||= seededFinance.recurringExpenseRuns;
       parsed.levyPayments ||= seededFinance.levyPayments;
+      parsed.vatPayments ||= seededFinance.vatPayments || [];
+      const legacyUst = (parsed.levyPayments || []).filter(payment => payment.kind === 'ust' && Number(payment.amount) > 0);
+      for (const legacy of legacyUst) {
+        const paymentKey = String(legacy.period || '');
+        const legacyProfile = (parsed.taxProfiles || []).find(profile => profile.year === Number(legacy.year)) || seededFinance.taxProfiles?.[0];
+        const periodKey = /^\d{4}-\d{2}$/.test(paymentKey) && legacyProfile?.vatPeriod
+          ? vatPeriodKeyFor(`${paymentKey}-01`, legacyProfile.vatPeriod) : null;
+        if (!(parsed.vatPayments || []).some(payment => payment.source === 'legacy_levy' && payment.id === legacy.id)) {
+          parsed.vatPayments!.push({ id: legacy.id, kind: 'advance', taxYear: Number(legacy.year), periodKey,
+            dueDate: legacy.dueDate || null, paidOn: legacy.paidOn || null, amount: Number(legacy.amount), euerEntryId: null,
+            source: 'legacy_levy', notes: legacy.notes || 'Übernommene frühere private USt-Zahlung' });
+        }
+      }
+      parsed.levyPayments = (parsed.levyPayments || []).filter(payment => payment.kind !== 'ust');
       if (hadFinanceState) {
         const existingExpenses = parsed.recurringExpenses || [];
         const currentProfile = (parsed.taxProfiles || []).find(item => item.year === seededFinance.taxProfiles?.[0]?.year)
@@ -770,6 +860,7 @@ function readState(): DemoState {
       recurringExpenses: parsed.recurringExpenses || [],
       recurringExpenseRuns: parsed.recurringExpenseRuns || [],
       levyPayments: parsed.levyPayments || [],
+      vatPayments: parsed.vatPayments || [],
       financeSeedVersion: parsed.financeSeedVersion,
       invoiceHistory: parsed.invoiceHistory || [],
       fixedAssets: parsed.fixedAssets || [],
@@ -1913,6 +2004,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     state.recurringExpenses ||= [];
     state.recurringExpenseRuns ||= [];
     state.levyPayments ||= [];
+    state.vatPayments ||= [];
     return state;
   };
   const taxesActive = () => canAccessDemoFinance({ enabled: demoTaxesEnabled(financeState().extensions || []), hasSettingsPermission: true });
@@ -2030,6 +2122,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const privateAllowed = () => taxesActive();
     const visibleExpense = (expense: RecurringExpense) => expense.scope === 'business' || privateAllowed();
     const expenseFromInput = (input: DemoRecord, current?: RecurringExpense): RecurringExpense => {
+      if ((input.scope === 'private_levy' && input.category === 'ust') || input.category === 'ust') throw new Error('Umsatzsteuer wird als betriebliche Zahlung verwaltet und kann nicht als private Abgabe oder Fixkosten-Vorlage angelegt werden.');
       const immutablePriceChanges = (current?.priceChanges || []).filter(change => change.validFrom <= todayLocal())
         .map(change => ({ validFrom: change.validFrom, amount: change.amountGross, taxRate: current?.taxRate ?? null }));
       const checked = validateDemoExpense({ ...(current || {}), ...input }, todayLocal(), immutablePriceChanges);
@@ -2053,6 +2146,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     };
     if (!id && method === 'GET') return expenses.filter(visibleExpense) as unknown as T;
     if (!id && method === 'POST') {
+      if (data.category === 'ust') throw new Error('Umsatzsteuer wird als betriebliche Zahlung verwaltet und kann nicht als private Abgabe oder Fixkosten-Vorlage angelegt werden.');
       if (data.scope === 'private_levy') assertTaxesActive();
       const created = expenseFromInput(data);
       state.recurringExpenses = [...expenses, created];
@@ -2239,9 +2333,24 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       status: typeof entry.status === 'string' ? entry.status : undefined,
       description: typeof entry.description === 'string' ? entry.description : undefined,
       category: typeof entry.category === 'string' ? entry.category : undefined }));
+    const vatEntries = state.euerEntries.map(entry => ({ id: entry.id, entryType: entry.entryType === 'expense' ? 'expense' as const : 'income' as const,
+      entryDate: String(entry.entryDate || ''), documentDate: entry.documentDate ? String(entry.documentDate) : null,
+      description: String(entry.description || ''), category: String(entry.category || ''), amount: Number(entry.amount || 0),
+      taxRate: entry.taxRate == null ? null : Number(entry.taxRate), vatTreatment: (entry.vatTreatment ?? null) as null | 'taxable' | 'exempt' | 'no_vat' | 'reverse_charge_eu' | 'reverse_charge_domestic',
+      netAmount: entry.netAmount == null ? null : Number(entry.netAmount), vatAmount: entry.vatAmount == null ? null : Number(entry.vatAmount),
+      inputTaxDeductible: typeof entry.inputTaxDeductible === 'boolean' ? entry.inputTaxDeductible : null,
+      sourceType: typeof entry.sourceType === 'string' ? entry.sourceType : undefined,
+      sourceId: typeof entry.sourceId === 'string' ? entry.sourceId : null, status: entry.status === 'voided' ? 'voided' as const : 'active' as const,
+      euerYear: entry.euerYear == null ? null : Number(entry.euerYear) }));
+    const { computeVat } = await import('../../backend/shared/vat/index.js');
+    const vat = computeVat({ year, profile: profile as TaxProfile, entries: vatEntries,
+      invoices: state.invoices.filter(invoice => ['invoice', 'credit_note'].includes(String(invoice.documentType || 'invoice')))
+        .map(invoice => ({ ...invoice, items: (Array.isArray(invoice.items) ? invoice.items : []) as unknown as MoneyItem[] })) as never,
+      payments: (state.vatPayments || []).filter(payment => Number(payment.taxYear) >= year - 1 && Number(payment.taxYear) <= year + 1) as never,
+      now: todayLocal() });
     const forecast = buildForecast({ year, profile: profile as Partial<TaxProfile> & Record<string, unknown>, entries, expenses: state.recurringExpenses || [],
       runs: state.recurringExpenseRuns || [], levyPayments: state.levyPayments || [],
-      previousEntries: entries.filter(entry => entry.entryDate.slice(0, 4) === String(year - 1)), now: new Date() }) as ForecastResult as unknown as T;
+      previousEntries: entries.filter(entry => entry.entryDate.slice(0, 4) === String(year - 1)), vat, now: new Date() }) as ForecastResult as unknown as T;
     const companyBusiness = state.company.taxBusinessType;
     if (companyBusiness && companyBusiness !== profile.businessKind && forecast && typeof forecast === 'object'
       && 'warnings' in forecast && Array.isArray(forecast.warnings)) {
@@ -2264,6 +2373,19 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const expense = state.recurringExpenses?.find(item => item.id === run.expenseId);
     if (!expense || !isRecurringExpenseDue(expense, run.dueDate)) throw new Error('Diese Fälligkeit ist nach der aktuellen Fixkostenregel nicht mehr zulässig.');
     if (run.scope === 'private_levy') {
+      const legacyTemplate = state.recurringExpenses?.find(item => item.id === run.expenseId);
+      if (legacyTemplate?.category === 'ust' || legacyTemplate?.levyKind === 'ust') {
+        const payment: DemoRecord = { id: generateUUID(), kind: 'advance', taxYear: Number(run.dueDate.slice(0, 4)), periodKey: null,
+          dueDate: run.dueDate, paidOn: paidDate, amount: Number(run.snapshot?.amount || run.amountGross), euerEntryId: null,
+          source: 'legacy_levy', notes: 'Übernommener früherer USt-Fixkostenlauf; Zeitraum bitte zuordnen.' };
+        state.vatPayments ||= [];
+        state.vatPayments.push(payment);
+        syncDemoVatPaymentEntry(state, payment);
+        run.levyPaymentId = null;
+        run.status = 'confirmed';
+        run.paidOn = paidDate;
+        return;
+      }
       const levy = demoLevyFromRun(run as RecurringExpenseRun & { snapshot: Record<string, unknown> }, paidDate, generateUUID());
       state.levyPayments!.push(levy);
       run.levyPaymentId = levy.id;
@@ -2279,10 +2401,20 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
           receiptToLink = null;
         }
       }
+      const rate = Number(snapshot.taxRate || 0);
+      const treatment = String(snapshot.vatTreatment || (snapshot.category === 'insurance' || rate <= 0 ? 'no_vat'
+        : snapshot.category === 'software' ? 'reverse_charge_eu' : 'taxable'));
+      const gross = Number(snapshot.amount || run.amountGross);
+      const netAmount = treatment === 'reverse_charge_eu' || treatment === 'reverse_charge_domestic' || treatment === 'no_vat' || treatment === 'exempt'
+        ? gross : Math.round((gross / (1 + rate / 100) + Number.EPSILON) * 100) / 100;
+      const vatAmount = treatment === 'reverse_charge_eu' || treatment === 'reverse_charge_domestic'
+        ? Math.round((netAmount * rate / 100 + Number.EPSILON) * 100) / 100
+        : treatment === 'no_vat' || treatment === 'exempt' ? 0 : Math.round((gross - netAmount + Number.EPSILON) * 100) / 100;
       const entry = {
         id: generateUUID(), entryType: 'expense', entryDate: paidDate, description: String(snapshot.name || run.name || 'Fixkosten'),
-        category: String(snapshot.category || 'other_expense'), amount: Number(snapshot.amount || run.amountGross),
-        taxRate: Number(snapshot.taxRate || 0), sourceType: 'recurring_expense', sourceId: run.id, status: 'active',
+        documentDate: paidDate, category: String(snapshot.category || 'other_expense'), amount: gross,
+        taxRate: rate, vatTreatment: treatment, netAmount, vatAmount, inputTaxDeductible: treatment === 'no_vat' || treatment === 'exempt' ? false : true,
+        sourceType: 'recurring_expense', sourceId: run.id, status: 'active',
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
       state.euerEntries.push(entry);
@@ -2858,6 +2990,88 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     return { id: customer.id, isActive: customer.isActive } as unknown as T;
   }
 
+  if (resource === 'vat') {
+    assertTaxesActive();
+    financeState();
+    const profiles = state.taxProfiles || [];
+    const activeProfile = (year: number) => profiles.find(item => item.year === year) || demoDefaultTaxProfile(year);
+    if (id && /^\d{4}$/.test(id) && method === 'GET') {
+      const year = Number(id);
+      if (year < 2000 || year > 2200) throw new Error('Ungültiges Steuerjahr.');
+      const profile = activeProfile(year);
+      const entries = state.euerEntries.map(entry => ({ id: entry.id, entryType: entry.entryType === 'expense' ? 'expense' as const : 'income' as const,
+        entryDate: String(entry.entryDate || ''), documentDate: entry.documentDate ? String(entry.documentDate) : null,
+        description: String(entry.description || ''), category: String(entry.category || ''), amount: Number(entry.amount || 0),
+        taxRate: entry.taxRate == null ? null : Number(entry.taxRate), vatTreatment: (entry.vatTreatment ?? null) as null | 'taxable' | 'exempt' | 'no_vat' | 'reverse_charge_eu' | 'reverse_charge_domestic',
+        netAmount: entry.netAmount == null ? null : Number(entry.netAmount), vatAmount: entry.vatAmount == null ? null : Number(entry.vatAmount),
+        inputTaxDeductible: typeof entry.inputTaxDeductible === 'boolean' ? entry.inputTaxDeductible : null,
+        sourceType: typeof entry.sourceType === 'string' ? entry.sourceType : undefined,
+        sourceId: typeof entry.sourceId === 'string' ? entry.sourceId : null, status: entry.status === 'voided' ? 'voided' as const : 'active' as const,
+        euerYear: entry.euerYear == null ? null : Number(entry.euerYear) }));
+      const invoices = state.invoices.filter(invoice => ['invoice', 'credit_note'].includes(String(invoice.documentType || 'invoice')))
+        .map(invoice => ({ ...invoice, items: (Array.isArray(invoice.items) ? invoice.items : []) as unknown as MoneyItem[] })) as never;
+      const yearPayments = (state.vatPayments || []).filter(payment => Number(payment.taxYear) >= year - 1 && Number(payment.taxYear) <= year + 1);
+      const { computeVat } = await import('../../backend/shared/vat/index.js');
+      const result = computeVat({ year, profile: profile as TaxProfile, entries, invoices, payments: yearPayments as never, now: todayLocal() });
+      return { ...result, payments: yearPayments } as unknown as T;
+    }
+    if (id && id !== 'payments' && method === 'GET') throw new Error('Ungültiges Steuerjahr.');
+    const payments = state.vatPayments!;
+    const yearParam = queryParams.get('year');
+    if (id === 'payments' && parts.length === 2 && method === 'GET') {
+      if (yearParam && (!/^\d{4}$/.test(yearParam) || Number(yearParam) < 2000 || Number(yearParam) > 2200)) throw new Error('Ungültiges Steuerjahr.');
+      return payments.filter(payment => !yearParam || Number(payment.taxYear) === Number(yearParam)) as unknown as T;
+    }
+    const paymentId = parts[2];
+    const currentProfile = (year: number) => activeProfile(year);
+    const normalizePayment = (input: DemoRecord) => {
+      const candidateYear = Number(input.taxYear);
+      const profile = currentProfile(candidateYear);
+      const checked = validateDemoVatPayment(input, profile, todayLocal());
+      if (typeof checked === 'string') throw new Error(checked);
+      const parsedPeriod = checked.periodKey ? checked.periodKey : null;
+      const dueDate = checked.dueDate || (parsedPeriod && checked.kind !== 'special_prepayment'
+        ? paymentDueDate(parsedPeriod, { permanentExtension: profile.vatPermanentExtension }) : null);
+      return { ...checked, dueDate };
+    };
+    if (id === 'payments' && parts.length === 2 && method === 'POST') {
+      const checked = normalizePayment(data);
+      const payment: DemoRecord = { id: generateUUID(), ...checked, euerEntryId: null };
+      state.vatPayments = [...payments, payment];
+      syncDemoVatPaymentEntry(state, payment, currentProfile(Number(payment.taxYear)));
+      saveState(state);
+      return payment as unknown as T;
+    }
+    if (id === 'payments' && paymentId && method === 'POST' && parts[3] === 'book') {
+      const payment = payments.find(item => item.id === paymentId);
+      if (!payment) throw new Error('USt-Zahlung nicht gefunden.');
+      if (!payment.paidOn) throw new Error('Nur eine bezahlte USt-Zahlung kann in die EÜR übernommen werden.');
+      syncDemoVatPaymentEntry(state, payment, currentProfile(Number(payment.taxYear)));
+      saveState(state);
+      return payment as unknown as T;
+    }
+    if (id === 'payments' && paymentId && method === 'PUT') {
+      const index = payments.findIndex(payment => payment.id === paymentId);
+      if (index < 0) throw new Error('USt-Zahlung nicht gefunden.');
+      const merged = { ...payments[index], ...data } as DemoRecord;
+      if ((data.periodKey !== undefined || data.taxYear !== undefined) && data.dueDate === undefined) merged.dueDate = null;
+      const checked = normalizePayment(merged);
+      const updated = { ...payments[index], ...checked, id: paymentId };
+      payments[index] = updated;
+      syncDemoVatPaymentEntry(state, updated, currentProfile(Number(updated.taxYear)));
+      saveState(state);
+      return updated as unknown as T;
+    }
+    if (id === 'payments' && paymentId && method === 'DELETE') {
+      const payment = payments.find(item => item.id === paymentId);
+      if (!payment) throw new Error('USt-Zahlung nicht gefunden.');
+      syncDemoVatPaymentEntry(state, payment, currentProfile(Number(payment.taxYear)), 'void');
+      state.vatPayments = payments.filter(item => item.id !== paymentId);
+      saveState(state);
+      return undefined as T;
+    }
+  }
+
   if (resource === 'euer-entries') {
     const entries = state.euerEntries;
     const history = state.euerEntryHistory;
@@ -2890,9 +3104,13 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (!String(data.description || '').trim()) throw new Error('Eine Beschreibung ist erforderlich.');
       if (!Number.isFinite(amount) || amount < 0) throw new Error('Der Betrag muss eine positive Zahl sein.');
       if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('Der MwSt.-Satz muss zwischen 0 und 100 liegen.');
+      if (['ust', 'vat_payment', 'vat_refund'].includes(String(data.category)) || data.sourceType === 'vat_payment') throw new DemoApiError('USt-Zahlungen werden über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
+      const vatFields = normalizeEuerVatFields(data, String(data.entryType), amount, taxRate);
+      if (vatFields.error) throw new Error(vatFields.error);
       validateDemoEuerSource(state, data);
       const record: DemoRecord = {
         ...data,
+        ...vatFields.values,
         id: generateUUID(),
         entryDate: dateOnly(data.entryDate),
         description: String(data.description).trim(),
@@ -2918,9 +3136,14 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (index < 0) throw new Error('EÜR-Buchung nicht gefunden.');
       if (method === 'GET') return entries[index] as unknown as T;
       if (method === 'PUT') {
+        if (entries[index].sourceType === 'vat_payment' || data.sourceType === 'vat_payment') throw new DemoApiError('Diese Buchung wird über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
         if (entries[index].status === 'voided') throw new Error('Eine stornierte Buchung kann nicht bearbeitet werden.');
         const oldEntry = entries[index];
         const updated: DemoRecord = { ...oldEntry, ...data, id, updatedAt: isoDate() };
+        if (['ust', 'vat_payment', 'vat_refund'].includes(String(updated.category))) throw new DemoApiError('USt-Zahlungen werden über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
+        const vatFields = normalizeEuerVatFields(updated, String(updated.entryType), Number(updated.amount), Number(updated.taxRate || 0));
+        if (vatFields.error) throw new Error(vatFields.error);
+        Object.assign(updated, vatFields.values);
         validateDemoEuerSource(state, updated, id);
         updated.customerId = demoEuerCustomerId(state, updated);
         if (oldEntry.sourceType === 'receipt' && (updated.sourceType !== 'receipt' || updated.sourceId !== oldEntry.sourceId)) {
@@ -2942,6 +3165,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         return updated as unknown as T;
       }
       if (method === 'DELETE') {
+        if (entries[index].sourceType === 'vat_payment') throw new DemoApiError('Diese Buchung wird über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
         if (entries[index].status === 'voided') throw new Error('Die Buchung wurde bereits storniert.');
         const oldData = { ...entries[index] };
         const updated: DemoRecord = { ...entries[index], status: 'voided', correctionReason: String(data.correctionReason || 'Stornierung'), updatedAt: isoDate() };
@@ -2986,9 +3210,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         throw new Error('Der Beleg ist bereits mit einer aktiven EÜR-Buchung verknüpft.');
       }
       const entryData = { ...data, sourceType: 'receipt', sourceId: id, entryType: 'expense' } as DemoRecord;
+      const vatFields = normalizeEuerVatFields(entryData, 'expense', Number(data.amount || 0), Number(data.taxRate || 0));
+      if (vatFields.error) throw new Error(vatFields.error);
       validateDemoEuerSource(state, entryData);
       const entry: DemoRecord = {
         ...entryData,
+        ...vatFields.values,
         id: generateUUID(),
         entryDate: dateOnly(data.entryDate || isoDate()),
         description: String(data.description || '').trim(),
@@ -3349,7 +3576,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'financeSeedVersion' | 'importRuns' | 'invoiceOriginals' | 'extensions' | 'taxProfiles' | 'recurringExpenses' | 'recurringExpenseRuns' | 'levyPayments'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'financeSeedVersion' | 'importRuns' | 'invoiceOriginals' | 'extensions' | 'taxProfiles' | 'recurringExpenses' | 'recurringExpenseRuns' | 'levyPayments' | 'vatPayments'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -3650,6 +3877,7 @@ export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { compan
   state.recurringExpenses = [];
   state.recurringExpenseRuns = [];
   state.levyPayments = [];
+  state.vatPayments = [];
   state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
   state.invoiceHistory = [];
   state.fixedAssets = [];
