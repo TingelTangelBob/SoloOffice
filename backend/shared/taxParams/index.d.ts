@@ -101,11 +101,13 @@ export type TaxParameters = {
   };
   chambers: {
     ihkExemptionProfit: number;
+    ihkLevyAllowance: number;
     ihkFounderProfitLimit: number;
     ihkFounderExemptYears: number;
     ihkFounderLevyExemptYears: number;
     hwkFounderExemptYears: number;
     hwkFounderReducedYears: number;
+    hwkFounderReducedBasicFactor: number;
     hwkFounderProfitLimit: number;
   };
   bookkeeping: {

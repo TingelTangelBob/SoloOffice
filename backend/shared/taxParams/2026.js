@@ -105,11 +105,13 @@ export default {
   },
   "chambers": {
     "ihkExemptionProfit": 5200,
+    "ihkLevyAllowance": 15340,
     "ihkFounderProfitLimit": 25000,
     "ihkFounderExemptYears": 2,
     "ihkFounderLevyExemptYears": 4,
     "hwkFounderExemptYears": 1,
     "hwkFounderReducedYears": 4,
+    "hwkFounderReducedBasicFactor": 0.5,
     "hwkFounderProfitLimit": 25000
   },
   "bookkeeping": {
