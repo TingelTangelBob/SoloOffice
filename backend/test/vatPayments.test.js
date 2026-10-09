@@ -55,7 +55,7 @@ test('Reset leert Zahlungsdatum und EÜR-Verknüpfung atomar im selben UPDATE', 
     paidOn: null, amount: 420, notes: null,
   });
 
-  assert.match(statement, /paid_on=\$5[\s\S]*euer_entry_id=CASE WHEN \$5 IS NULL THEN NULL ELSE euer_entry_id END/);
+  assert.match(statement, /paid_on=\$5::date[\s\S]*euer_entry_id=CASE WHEN \$5::date IS NULL THEN NULL ELSE euer_entry_id END/);
   assert.match(statement, /WHERE id=\$8 RETURNING \*/);
   assert.equal(values[4], null);
   assert.equal(values[7], 'payment-id');

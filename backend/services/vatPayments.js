@@ -145,8 +145,8 @@ async function transact(operation) {
 // Zahlungsdatum und EÜR-Verknüpfung müssen gemeinsam zurückgesetzt werden:
 // 057 verbietet eine Buchungsverknüpfung ohne paid_on.
 export async function updateVatPaymentRow(client, id, value) {
-  return client.query(`UPDATE vat_payments SET kind=$1,tax_year=$2,period_key=$3,due_date=$4,paid_on=$5,
-      euer_entry_id=CASE WHEN $5 IS NULL THEN NULL ELSE euer_entry_id END,
+  return client.query(`UPDATE vat_payments SET kind=$1,tax_year=$2,period_key=$3,due_date=$4,paid_on=$5::date,
+      euer_entry_id=CASE WHEN $5::date IS NULL THEN NULL ELSE euer_entry_id END,
       amount=$6,notes=$7,updated_at=NOW()
     WHERE id=$8 RETURNING *`,
   [value.kind,value.taxYear,value.periodKey,value.dueDate,value.paidOn,value.amount,value.notes,id]);
