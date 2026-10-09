@@ -9,6 +9,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { financeApi } from '../services/financeApi';
 import type { TaxProfile, TaxProfilePayload } from '../types/finance';
 import { useExtensions } from '../hooks/useExtensions';
+import { formatNumber } from '../utils/formatters';
 import { FloatingInfoTooltip } from './InfoTooltip';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { TaxForecastHelp } from './TaxForecastHelp';
@@ -256,7 +257,7 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
   if (!profile) return <section className="settings-section space-y-3"><h2 className="text-lg font-semibold text-gray-900">Steuerprofil {year}</h2><p role="alert" className="text-sm text-red-700">{error || 'Das Steuerprofil ist nicht verfügbar.'}</p><button type="button" onClick={() => void loadProfile(year)} className="btn-secondary rounded-lg px-4 py-2 text-sm">Erneut laden</button></section>;
 
   const select = (key: keyof TaxProfile, value: string) => {
-    const nullable = ['businessKind', 'vatStatus', 'healthInsurance', 'state'].includes(key);
+    const nullable = ['businessKind', 'vatStatus', 'vatAccounting', 'healthInsurance', 'state'].includes(key);
     update(key, (value === '' && nullable ? null : value) as TaxProfile[typeof key]);
   };
   const numeric = (key: keyof TaxProfile, value: string | number, nullable = false) => update(key, (value === '' && nullable ? null : Number(value)) as TaxProfile[typeof key]);
@@ -265,6 +266,13 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
   const isPkv = profile.healthInsurance === 'pkv';
   const hasPensionContribution = ['teacher', 'craft', 'single_client', 'ksk', 'voluntary'].includes(profile.pensionStatus);
   const hasKskIncome = profile.healthInsurance === 'gkv_ksk' || profile.pensionStatus === 'ksk';
+  const vatParams = resolved.params.vat;
+  const vatFieldsVisible = profile.vatStatus === 'regular' || profile.vatStatus === 'education_exempt';
+  const formatEuro = (value: number) => `${formatNumber(value, company?.locale || 'de-DE', company?.numberFormat, 0)} €`;
+  const expectedVatPeriod = profile.previousYearVatLiability === null ? null
+    : profile.previousYearVatLiability > vatParams.monthlyAdvanceThreshold ? 'monthly'
+      : profile.previousYearVatLiability <= vatParams.advanceExemptionThreshold ? 'annual' : 'quarterly';
+  const vatPeriodLabels: Record<TaxProfile['vatPeriod'], string> = { monthly: 'monatlich', quarterly: 'vierteljährlich', annual: 'jährlich' };
 
   return (
     <div className="space-y-4">
@@ -306,9 +314,27 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
           <Field label="Umsatzsteuerstatus"><select className={selectClass} value={profile.vatStatus ?? ''} onChange={event => select('vatStatus', event.target.value)}><option value="">Bitte auswählen oder überspringen</option><option value="small_business">Kleinunternehmerregelung</option><option value="regular">Regelbesteuert</option><option value="education_exempt">Unterricht steuerfrei, Bescheinigung prüfen</option></select></Field>
           {profile.vatStatus === 'education_exempt' && <Field label="Bescheinigung gültig bis"><input className={inputClass} type="date" value={profile.educationCertificateUntil ?? ''} onChange={event => update('educationCertificateUntil', event.target.value || null)} /></Field>}
           {numberField('Vorjahresumsatz in Euro', 'previousYearRevenue', true, 0)}
-          <Field label="Versteuerung"><select className={selectClass} value={profile.vatAccounting} onChange={event => select('vatAccounting', event.target.value)}><option value="cash">Ist-Versteuerung</option><option value="accrual">Soll-Versteuerung</option></select></Field>
-          <Field label="Umsatzsteuer-Voranmeldung"><select className={selectClass} value={profile.vatPeriod} onChange={event => select('vatPeriod', event.target.value)}><option value="monthly">Monatlich</option><option value="quarterly">Vierteljährlich</option><option value="annual">Jährlich</option></select></Field>
+          {vatFieldsVisible && <div className="min-w-0 space-y-1.5">
+            <Field label="Versteuerung"><select className={selectClass} value={profile.vatAccounting ?? ''} onChange={event => select('vatAccounting', event.target.value)}><option value="">Standard nach Tätigkeit</option><option value="cash">Ist-Versteuerung (nach vereinnahmten Entgelten)</option><option value="accrual">Soll-Versteuerung (nach vereinbarten Entgelten)</option></select></Field>
+            <p className="text-xs text-gray-600">Bei freiberuflicher Tätigkeit wird Ist angenommen, sonst Soll. Die Ist-Versteuerung setzt eine Genehmigung des Finanzamts voraus (§ 20 UStG).</p>
+          </div>}
+          {vatFieldsVisible && <Field label="Umsatzsteuer-Voranmeldung"><select className={selectClass} value={profile.vatPeriod} onChange={event => select('vatPeriod', event.target.value)}><option value="monthly">Monatlich</option><option value="quarterly">Vierteljährlich</option><option value="annual">Jährlich</option></select></Field>}
         </div>
+        {vatFieldsVisible && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="min-w-0 space-y-1.5">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-800"><input type="checkbox" checked={profile.vatPermanentExtension} onChange={event => update('vatPermanentExtension', event.target.checked)} className="h-4 w-4 accent-primary-custom" />Dauerfristverlängerung</label>
+            <p className="text-xs text-gray-600">Fristen verschieben sich um einen Monat. Bei monatlicher Abgabe ist eine Sondervorauszahlung von 1/{vatParams.specialPrepaymentDivisor} der Vorjahresvorauszahlungen fällig.</p>
+          </div>
+          {profile.vatPermanentExtension && profile.vatPeriod === 'monthly' && <div className="min-w-0 space-y-1.5">
+            {numberField('Sondervorauszahlung laut Anmeldung/Bescheid (optional)', 'vatSpecialPrepayment', true, 0)}
+            <p className="text-xs text-gray-600">Leer: SoloOffice schätzt 1/{vatParams.specialPrepaymentDivisor} aus den erfassten Vorjahreswerten, falls vorhanden.</p>
+          </div>}
+          <div className="min-w-0 space-y-1.5">
+            {numberField('USt-Zahllast des Vorjahres (optional)', 'previousYearVatLiability', true, 0)}
+            <p className="text-xs text-gray-600">Vorjahreszahllast: über {formatEuro(vatParams.monthlyAdvanceThreshold)} monatlich, bis {formatEuro(vatParams.advanceExemptionThreshold)} ist eine Befreiung möglich, sonst vierteljährlich.</p>
+            {expectedVatPeriod && expectedVatPeriod !== profile.vatPeriod && <p className="text-xs text-gray-600">Nach der Vorjahreszahllast wäre {vatPeriodLabels[expectedVatPeriod]} üblich; maßgeblich ist die Festlegung des Finanzamts.</p>}
+          </div>
+        </div>}
         <p className="text-sm text-gray-600">{TAX_TEXTS.educationNotice}</p>
       </Step>
 

@@ -80,6 +80,8 @@ import { useFeedback } from '../context/FeedbackContext';
 import { SkeletonBlock } from './TableSkeleton';
 import { useExtensions } from '../hooks/useExtensions';
 import { useForecast } from '../hooks/useForecast';
+import { useVatOverview } from '../hooks/useVatOverview';
+import { VatDashboardCard } from './VatDashboardCard';
 import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
 import { TaxDashboardCards, type TaxDashboardCardId } from './TaxDashboardCards';
 import {
@@ -194,6 +196,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const hasSettingsPermission = can('workspace.settings');
   const { isEnabled: isExtensionEnabled } = useExtensions();
   const taxesEnabled = hasSettingsPermission && isExtensionEnabled('taxes');
+  // Die USt-Kachel ist betrieblich: Erweiterung genügt, Einstellungsrecht nicht nötig.
+  const vatCardEnabled = isExtensionEnabled('taxes');
   const terminology = getTerminology(company.terminologyProfile);
   const { loading } = useLoading();
   const [preferences, setPreferences] = useState<DashboardPreferences>(DEFAULT_DASHBOARD_PREFERENCES);
@@ -210,6 +214,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const earlyPeriod = resolveDashboardPeriod(preferences);
   const forecastYear = earlyPeriod.selectedYear;
   const { forecast, loading: forecastLoading, error: forecastError } = useForecast(forecastYear, taxesEnabled && (preferences.monthView || preferences.year !== 'all'));
+  const vatCardWanted = vatCardEnabled && !earlyPeriod.allYears && (editDraft ?? preferences).items.some(item => item.id === 'vat-return' && item.visible);
+  const { overview: vatOverview, loading: vatOverviewLoading, error: vatOverviewError } = useVatOverview(forecastYear, vatCardWanted);
   const comparisonYear = Number(earlyPeriod.comparisonMonth.slice(0, 4));
   const { forecast: comparisonForecast, loading: comparisonForecastLoading, error: comparisonForecastError } = useForecast(
     comparisonYear,
@@ -786,13 +792,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     'fixed-costs': { label: 'Betriebliche Fixkosten', description: 'Monats- und Jahresrichtwert', available: true },
     'tax-advances': { label: 'Vorauszahlungen', description: 'Erfasste und geplante Vorauszahlungstermine', available: true },
     'health-backpayment': { label: 'Mögliche KV-Nachzahlung', description: 'Jahresbezogene Schätzung gegenüber dem Bescheid', available: true },
+    'vat-return': { label: 'Umsatzsteuer-Voranmeldung', description: 'Zahllast des Voranmeldungszeitraums aus erfassten Belegen', available: true },
   };
 
   const itemLabel = (id: DashboardItemId) => isQuickItem(id) ? quickActions[id].label : cardMeta[id as DashboardCardItemId].label;
   const isPrivateTaxCard = (id: DashboardItemId) => !isQuickItem(id)
     && getDashboardItemDefinition(id)?.requiredExtension === 'taxes'
     && isDashboardCardVisibleForPrivateView(id, false) === false;
-  const definitionAvailable = (id: DashboardItemId) => !getDashboardItemDefinition(id)?.requiredExtension || taxesEnabled;
+  const definitionAvailable = (id: DashboardItemId) => !getDashboardItemDefinition(id)?.requiredExtension || (id === 'vat-return' ? vatCardEnabled : taxesEnabled);
   const isAvailable = (id: DashboardItemId) => definitionAvailable(id) && (isQuickItem(id) ? quickActions[id].available : cardMeta[id as DashboardCardItemId].available);
   // Laufende Serien erscheinen wie bisher nur, wenn es welche gibt. Im
   // Bearbeiten-Modus bleiben sie sichtbar, damit man sie anordnen kann.
@@ -900,6 +907,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         loading={(forecastLoading || (preferences.monthView && comparisonYear !== selectedPeriodYear && comparisonForecastLoading)) && !allYears}
         error={allYears ? 'Wähle ein einzelnes Steuerjahr, um die Schätzung anzuzeigen.' : forecastError ?? comparisonForecastError}
         onSetup={() => onNavigate('settings', 'taxes')} onFixedCosts={() => onNavigate('fixed-costs')} />;
+    }
+    if (id === 'vat-return') {
+      return <VatDashboardCard overview={vatOverview} loading={vatOverviewLoading && !allYears} year={dashboardYear}
+        error={allYears ? 'Wähle ein einzelnes Steuerjahr, um die Umsatzsteuer anzuzeigen.' : vatOverviewError}
+        onOpen={() => onNavigate('vat')} onSetup={() => onNavigate('settings', 'taxes')} />;
     }
     switch (id) {
       case 'revenue':

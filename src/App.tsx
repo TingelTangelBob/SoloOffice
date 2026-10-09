@@ -31,6 +31,7 @@ const RecurringInvoiceManagement = lazy(() => import('./components/RecurringInvo
 const CreditNoteManagement = lazy(() => import('./components/CreditNoteManagement').then(({ CreditNoteManagement: page }) => ({ default: page })));
 const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOverview: page }) => ({ default: page })));
 const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
+const VatOverview = lazy(() => import('./components/VatOverview').then(({ VatOverview: page }) => ({ default: page })));
 const RecurringExpensesManagement = lazy(() => import('./components/RecurringExpensesManagement').then(({ RecurringExpensesManagement: page }) => ({ default: page })));
 const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
 const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
@@ -127,6 +128,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <TaxOverview onNavigate={onPageChange} />;
       case 'euer':
         return <EuerManagement onNavigate={onPageChange} initialAction={currentPageState.filter} />;
+      case 'vat':
+        return <VatOverview onNavigate={onPageChange} />;
       case 'fixed-costs':
         return <RecurringExpensesManagement onNavigate={onPageChange} />;
       case 'fixed-assets':

@@ -14,7 +14,8 @@ const businessCategories: Array<[EuerEntryCategory, string]> = [
   ['bank_fees', 'Bankgebühren'], ['materials', 'Material'], ['vehicle', 'Fahrzeug'], ['travel', 'Reisekosten'],
   ['marketing', 'Marketing'], ['professional_services', 'Beratungsleistungen'], ['other_expense', 'Sonstige Betriebsausgaben'],
 ];
-const levyKinds: Array<[LevyKind, string]> = [['kv', 'Krankenversicherung'], ['pv', 'Pflegeversicherung'], ['rv', 'Rentenversicherung'], ['av', 'Arbeitslosenversicherung'], ['ksk', 'Künstlersozialkasse'], ['est_vz', 'Einkommensteuer-Vorauszahlung'], ['gewst_vz', 'Gewerbesteuer-Vorauszahlung'], ['ust', 'Umsatzsteuer']];
+const ustLegacyLabel = 'Umsatzsteuer (bitte unter Steuern → Umsatzsteuer erfassen)';
+const levyKinds: Array<[LevyKind, string]> = [['kv', 'Krankenversicherung'], ['pv', 'Pflegeversicherung'], ['rv', 'Rentenversicherung'], ['av', 'Arbeitslosenversicherung'], ['ksk', 'Künstlersozialkasse'], ['est_vz', 'Einkommensteuer-Vorauszahlung'], ['gewst_vz', 'Gewerbesteuer-Vorauszahlung'], ['ust', ustLegacyLabel]];
 const field = 'form-input form-input-compact mt-1 w-full text-sm';
 const label = 'block min-w-0 text-sm font-medium text-gray-700';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -108,7 +109,7 @@ export function RecurringExpenseDialog({ expense, initialValues, scope, onClose,
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={label}>Bezeichnung<input className={field} value={name} onChange={e => setName(e.target.value)} required maxLength={160} /></label>
         <label className={label}>{scope === 'business' ? 'Anbieter' : 'Empfänger'}<input className={field} value={counterparty} onChange={e => setCounterparty(e.target.value)} maxLength={160} /></label>
-        <label className={label}>{scope === 'business' ? 'EÜR-Kategorie' : 'Abgabenart'}<select className={field} value={category} onChange={e => setCategory(e.target.value)}>{(scope === 'business' ? businessCategories : levyKinds).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
+        <label className={label}>{scope === 'business' ? 'EÜR-Kategorie' : 'Abgabenart'}<select className={field} value={category} onChange={e => setCategory(e.target.value)}>{(scope === 'business' ? businessCategories : levyKinds).filter(([key]) => key !== 'ust' || category === 'ust').map(([key, text]) => <option key={key} value={key} disabled={key === 'ust'}>{text}</option>)}</select></label>
         <label className={label}>Basisbetrag je Fälligkeit<input className={field} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} required /><span className="mt-1 block text-xs font-normal text-gray-500">Gilt ab der ersten Fälligkeit. Künftige Beträge legen Sie im Abschnitt „Preis ändern ab“ fest.</span></label>
         {scope === 'business' && <label className={label}>Umsatzsteuersatz in %<input className={field} inputMode="decimal" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="Nicht angegeben" /></label>}
         <label className={label}>Intervall<select className={field} value={interval} onChange={e => setInterval(e.target.value as RecurringExpense['interval'])}><option value="monthly">Monatlich</option><option value="quarterly">Vierteljährlich</option><option value="half_yearly">Halbjährlich</option><option value="yearly">Jährlich</option><option value="custom">Individuell</option></select></label>

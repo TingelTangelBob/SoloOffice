@@ -966,9 +966,27 @@ export type EuerEntryCategory =
   | 'bank_fees'
   | 'rent'
   | 'memberships'
-  | 'other_expense';
+  | 'other_expense'
+  /** Nur systemseitig über USt-Zahlungen: an das Finanzamt gezahlte Umsatzsteuer. */
+  | 'vat_payment'
+  /** Nur systemseitig über USt-Zahlungen: vom Finanzamt erstattete Umsatzsteuer. */
+  | 'vat_refund';
 
-export interface EuerEntry extends Timestamps {
+/** USt-Behandlung einer EÜR-Buchung; null = USt-Angaben unvollständig (Altbestand). */
+export type EuerVatTreatment = 'taxable' | 'exempt' | 'no_vat' | 'reverse_charge_eu' | 'reverse_charge_domestic';
+
+/** Optionale USt-Angaben einer EÜR-Buchung (Phase 3). */
+export interface EuerVatFields {
+  /** Rechnungs-/Belegdatum, falls abweichend vom Zahlungsdatum (`entryDate`). */
+  documentDate?: string | null;
+  vatTreatment?: EuerVatTreatment | null;
+  netAmount?: number | null;
+  vatAmount?: number | null;
+  /** Nur Ausgaben: Vorsteuer abziehbar. */
+  inputTaxDeductible?: boolean | null;
+}
+
+export interface EuerEntry extends Timestamps, EuerVatFields {
   id: UUID;
   entryType: EuerEntryType;
   entryDate: Date;
@@ -984,9 +1002,11 @@ export interface EuerEntry extends Timestamps {
   customerId?: UUID;
   status?: 'active' | 'voided';
   correctionReason?: string;
+  /** EÜR-Jahr nach § 11 EStG, falls abweichend vom Zahlungsjahr (nur USt-Zahlungen). */
+  euerYear?: number | null;
 }
 
-export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction' | 'recurring_expense';
+export type EuerEntrySourceType = 'manual' | 'invoice_payment' | 'receipt' | 'correction' | 'recurring_expense' | 'vat_payment';
 
 /**
  * Fortgeschriebener Änderungsverlauf einer Rechnung. Die Einträge werden von
@@ -1014,7 +1034,7 @@ export interface EuerEntryHistory {
   changedAt: Date;
 }
 
-export interface EuerEntryPayload {
+export interface EuerEntryPayload extends EuerVatFields {
   entryType: EuerEntryType;
   entryDate: Date | string;
   description: string;

@@ -5,7 +5,9 @@ export interface TaxProfile {
   id?: string; year: number; businessKind: BusinessKind | null; startedOn: string | null;
   vatStatus: 'small_business' | 'regular' | 'education_exempt' | null;
   educationCertificateUntil: string | null; previousYearRevenue: number | null;
-  vatAccounting: 'cash' | 'accrual'; vatPeriod: 'monthly' | 'quarterly' | 'annual';
+  /** null = Standard nach Tätigkeit (Ist bei freiberuflicher Tätigkeit, sonst Soll). */
+  vatAccounting: 'cash' | 'accrual' | null; vatPeriod: 'monthly' | 'quarterly' | 'annual';
+  vatPermanentExtension: boolean; vatSpecialPrepayment: number | null; previousYearVatLiability: number | null;
   assessment: 'single' | 'joint'; otherIncomeAnnual: number; partnerIncomeAnnual: number;
   otherContributoryIncomeAnnual: number; state: string | null;
   churchTaxLiable: boolean | null; churchTaxConsentAt: string | null;
@@ -65,6 +67,8 @@ export interface ForecastResult {
   dueExpenses: RecurringExpenseRun[];
   expenseNotices: { id: string; name: string; noticePeriodDays: number; endDate: string | null; noticeDeadline: string | null }[];
   combinedMarginalRate: number; vatReserveGrossEstimate: number; vatRemainingReserve: number;
+  vatBasis: 'calculated' | 'estimate' | 'rough'; vatIncompleteEntries: number;
+  vatNextDue: { periodKey: string; label: string; dueDate: string; amount: number; estimated: boolean } | null;
   thresholds: ThresholdResult[]; smallBusiness: { previous: 'green' | 'yellow' | 'red'; current: 'green' | 'yellow' | 'red'; previousValue: number; currentValue: number; currentLimit: number; forecastValue: number };
   series: ChartSeries[]; upcomingLevies: LevyPayment[]; upcomingExpenses: RecurringExpenseRun[];
   fixedCostsMonthly: number; fixedCostsAnnual: number; calculationSteps: { label: string; amount: number }[];

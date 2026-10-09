@@ -21,6 +21,7 @@ import { useSupportAvailability } from '../hooks/useSupportAvailability';
 import { useFeedback } from '../context/FeedbackContext';
 import { apiService } from '../services/api';
 import type { TakeoverStatus } from '../types';
+import { useExtensions } from '../hooks/useExtensions';
 
 interface LayoutProps {
   children: ReactNode;
@@ -44,7 +45,7 @@ interface NavItem {
 }
 
 const invoiceSubPageIds = ['recurring-invoices', 'reminders', 'credit-notes'];
-const taxSubPageIds = ['euer', 'fixed-costs', 'fixed-assets'];
+const taxSubPageIds = ['euer', 'vat', 'fixed-costs', 'fixed-assets'];
 const SIDEBAR_DEFAULT_WIDTH = 256;
 const SIDEBAR_COMPACT_WIDTH = 72;
 const SIDEBAR_MIN_WIDTH = 72;
@@ -131,6 +132,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const invoiceAreaActive = currentPage === 'invoices' || invoiceSubPageIds.includes(currentPage);
   const [isInvoiceMenuOpen, setIsInvoiceMenuOpen] = useState(() => invoiceAreaActive);
   const invoiceAreaWasActive = useRef(invoiceAreaActive);
+  const { isEnabled: isExtensionEnabled } = useExtensions();
+  const vatPageEnabled = isExtensionEnabled('taxes');
   const taxAreaActive = currentPage === 'taxes' || taxSubPageIds.includes(currentPage);
   const [isTaxMenuOpen, setIsTaxMenuOpen] = useState(() => taxAreaActive);
 
@@ -320,6 +323,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     icon: Calculator,
     children: [
       { id: 'euer', label: 'EÜR' },
+      // Die USt-Übersicht gehört zur Erweiterung „Steuern & Abgaben“.
+      ...(vatPageEnabled ? [{ id: 'vat', label: 'Umsatzsteuer' }] : []),
       { id: 'fixed-costs', label: 'Fixkosten' },
       { id: 'fixed-assets', label: 'Anlagenverzeichnis' },
     ],

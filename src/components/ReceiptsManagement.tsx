@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
-import type { EuerEntryPayload, Receipt, ReceiptExtractedData, ReceiptOcrStatus } from '../types';
+import type { EuerEntryPayload, EuerVatFields, Receipt, ReceiptExtractedData, ReceiptOcrStatus } from '../types';
 import { formatFileSize } from '../utils/fileUtils';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
 import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUpload';
@@ -14,6 +14,9 @@ import { ImportWizard } from './ImportWizard';
 import { PageHeader } from './PageHeader';
 import { useFeedback } from '../context/FeedbackContext';
 import { ReceiptBillingDialog } from './ReceiptBillingDialog';
+import { VatFieldsEditor } from './VatFieldsEditor';
+import { LocalizedNumberInput } from './LocalizedNumberInput';
+import { splitGrossAmount, validateVatAmounts } from '../utils/vatEntryForm';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { TableSkeleton } from './TableSkeleton';
 import { trackTelemetry } from '../services/telemetry';
@@ -83,6 +86,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   const [notice, setNotice] = useState('');
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [billingReceipt, setBillingReceipt] = useState<Receipt | null>(null);
+  const [euerDraft, setEuerDraft] = useState<{ receipt: Receipt; entryDate: string; amount: string; taxRate: string; vatFields: EuerVatFields } | null>(null);
   const [recurringReceipt, setRecurringReceipt] = useState<Receipt | null>(null);
   const activeWorkspace = useRef(workspaceId);
   const receiptRequestVersion = useRef(0);
@@ -281,48 +285,55 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     }
   };
 
-  const createEuerEntry = async (receiptOverride?: Receipt, dataOverride?: ReceiptExtractedData) => {
-    const receipt = receiptOverride || selectedReceipt;
-    const data = dataOverride || reviewData;
-    if (!receipt) return;
-    const amount = data.grossAmount ?? data.netAmount;
-    if (!Number.isFinite(amount) || Number(amount) < 0) {
-      setError('Bitte zuerst einen gültigen Brutto- oder Nettobetrag erfassen.');
-      return;
-    }
-
-    const entryDate = data.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(data.documentDate)
-      ? data.documentDate
-      : new Date().toISOString().slice(0, 10);
-    const description = data.vendorName?.trim() || receipt.name.replace(/\.[^.]+$/, '');
-    const notes = [
-      `Beleg: ${receipt.name}`,
-      data.documentNumber ? `Belegnummer: ${data.documentNumber}` : '',
-      'Erstellt aus lokaler Belegerkennung; bitte steuerlich prüfen.',
-    ].filter(Boolean).join(' · ');
-    const payload: EuerEntryPayload = {
-      entryType: 'expense',
+  const openEuerDraft = (receipt: Receipt, data: ReceiptExtractedData) => {
+    const today = new Date();
+    const entryDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const gross = Number(data.grossAmount ?? data.netAmount ?? 0);
+    const rate = Number(data.taxRate ?? 0);
+    const split = data.netAmount != null && data.taxAmount != null
+      ? { netAmount: Number(data.netAmount), vatAmount: Number(data.taxAmount) }
+      : splitGrossAmount(gross, rate);
+    setEuerDraft({
+      receipt,
       entryDate,
-      description,
-      category: 'other_expense',
-      amount: Number(amount),
-      taxRate: Number(data.taxRate || 0),
-      notes,
-      sourceType: 'receipt',
-      sourceId: receipt.id,
-    };
+      amount: String(gross),
+      taxRate: String(rate),
+      vatFields: {
+        vatTreatment: rate > 0 && split ? 'taxable' : null,
+        netAmount: split?.netAmount ?? null,
+        vatAmount: split?.vatAmount ?? null,
+        inputTaxDeductible: rate > 0 && split ? true : null,
+        documentDate: data.documentDate && data.documentDate !== entryDate ? data.documentDate : null,
+      },
+    });
+  };
 
-    setBusyId(receipt.id);
-    setError('');
+  const createEuerEntry = async () => {
+    if (!euerDraft) return;
+    const { receipt, vatFields } = euerDraft;
+    const amount = normalizeOptionalNumber(euerDraft.amount, locale, company.numberFormat);
+    if (amount === undefined || amount < 0) { setError('Bitte einen gültigen Bruttobetrag erfassen.'); return; }
+    const vatError = validateVatAmounts({ entryType: 'expense', amount, ...vatFields });
+    if (vatError) { setError(vatError); return; }
+    if (['taxable', 'reverse_charge_eu', 'reverse_charge_domestic'].includes(String(vatFields.vatTreatment)) && vatFields.inputTaxDeductible == null) { setError('Bitte angeben, ob Vorsteuer abziehbar ist.'); return; }
+    const data = receipt.extractedData || {};
+    const description = data.vendorName?.trim() || receipt.name.replace(/\.[^.]+$/, '');
+    const notes = [`Beleg: ${receipt.name}`, data.documentNumber ? `Belegnummer: ${data.documentNumber}` : '', 'OCR-Angaben als Vorschlag übernommen; bitte prüfen.'].filter(Boolean).join(' · ');
+    const payload: EuerEntryPayload = {
+      entryType: 'expense', entryDate: euerDraft.entryDate, description,
+      category: data.suggestedCategory || 'other_expense', amount,
+      taxRate: Number(euerDraft.taxRate || 0), notes, sourceType: 'receipt', sourceId: receipt.id,
+      documentDate: vatFields.documentDate || null, vatTreatment: vatFields.vatTreatment || null,
+      netAmount: vatFields.netAmount ?? null, vatAmount: vatFields.vatAmount ?? null,
+      inputTaxDeductible: vatFields.inputTaxDeductible ?? null,
+    };
+    setBusyId(receipt.id); setError('');
     try {
       const result = await apiService.createEuerEntryFromReceipt(receipt.id, payload);
-      updateReceiptInState(result.receipt);
+      updateReceiptInState(result.receipt); setEuerDraft(null);
       setNotice('EÜR-Ausgabe wurde angelegt und mit dem Beleg verknüpft.');
-    } catch (linkError) {
-      setError(linkError instanceof Error ? linkError.message : 'Die EÜR-Ausgabe konnte nicht angelegt werden.');
-    } finally {
-      setBusyId(null);
-    }
+    } catch (linkError) { setError(linkError instanceof Error ? linkError.message : 'Die EÜR-Ausgabe konnte nicht angelegt werden.'); }
+    finally { setBusyId(null); }
   };
 
   const saveAndCreateEuerEntry = async () => {
@@ -331,7 +342,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     setError('');
     try {
       const updated = await persistReview();
-      if (updated) await createEuerEntry(updated, updated.extractedData);
+      if (updated) { setSelectedReceipt(null); openEuerDraft(updated, updated.extractedData); }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Die Belegprüfung konnte nicht gespeichert werden.');
     } finally {
@@ -555,7 +566,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                 disabled={Boolean(selectedReceipt.linkedEuerEntryId) || savingReview || busyId === selectedReceipt.id}
               >
                 <Link2 className="h-4 w-4" />
-                {selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe übernehmen'}
+                {selectedReceipt.linkedEuerEntryId ? 'Bereits in EÜR' : 'Als EÜR-Ausgabe vorbereiten'}
               </button>
             </>
           )}
@@ -670,6 +681,15 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           </div>
         </DialogShell>
       )}
+
+      {euerDraft && <DialogShell titleId="receipt-euer-dialog-title" icon={Link2} title="EÜR-Ausgabe prüfen" description="OCR-Werte sind Vorschläge. Prüfe Betrag und Umsatzsteuer vor dem Anlegen." onClose={() => setEuerDraft(null)} onSubmit={event => { event.preventDefault(); void createEuerEntry(); }} size="wide" footer={<><button type="button" onClick={() => setEuerDraft(null)} className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700">Abbrechen</button><button type="submit" disabled={Boolean(busyId)} className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium text-white">{busyId ? 'Speichern …' : 'EÜR-Ausgabe anlegen'}</button></>}>
+        {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+        <div className="space-y-4"><p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Vorschlag aus der lokalen Belegerkennung. Bitte mit dem Originalbeleg abgleichen.</p>
+          <label className="block text-sm font-medium text-gray-700">Zahlungsdatum<input type="date" required value={euerDraft.entryDate} onChange={event => setEuerDraft(current => current ? { ...current, entryDate: event.target.value } : current)} className="form-input mt-1 w-full" /></label>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium text-gray-700">{euerDraft.vatFields.vatTreatment === 'reverse_charge_eu' || euerDraft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Betrag (Netto)' : 'Betrag (Brutto)'}<LocalizedNumberInput min="0" step="0.01" value={euerDraft.amount} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, amount: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label><label className="block text-sm font-medium text-gray-700">Steuersatz in %<LocalizedNumberInput min="0" max="100" step="0.01" value={euerDraft.taxRate} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, taxRate: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label></div>
+          <VatFieldsEditor entryType="expense" amount={euerDraft.amount} taxRate={euerDraft.taxRate} entryDate={euerDraft.entryDate} value={euerDraft.vatFields} locale={locale} dateFormat={company.dateFormat} numberFormat={company.numberFormat} isSmallBusiness={company.isSmallBusiness} onChange={vatFields => setEuerDraft(current => current ? { ...current, vatFields } : current)} onTaxRateChange={value => setEuerDraft(current => current ? { ...current, taxRate: String(value) } : current)} onAmountChange={value => setEuerDraft(current => current ? { ...current, amount: String(value) } : current)} />
+        </div>
+      </DialogShell>}
 
       {recurringReceipt && <RecurringExpenseDialog
         key={recurringReceipt.id}

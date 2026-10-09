@@ -5,7 +5,7 @@ import { DashboardEmptyState } from './DashboardEmptyState';
 import { FloatingInfoTooltip } from './InfoTooltip';
 import { MetricCard, MetricCardContent, MetricCardDescription, MetricCardHeader, MetricCardTitle, MetricBadge, MetricValue } from './DashboardMetrics';
 import { TaxThresholdBar } from './TaxThresholdBar';
-import { fixedCostMonthlyComparison, germanThresholdStatus, isRecordedAdvanceOverdue, previousRevenueDisplay, reserveRatioDisplay, taxBreakdown } from '../utils/taxDashboardDisplay';
+import { fixedCostMonthlyComparison, germanThresholdStatus, isRecordedAdvanceOverdue, previousRevenueDisplay, reserveRatioDisplay, taxBreakdown, vatReserveLabel } from '../utils/taxDashboardDisplay';
 
 export type TaxDashboardCardId = 'taxes' | 'tax-reserve' | 'tax-position' | 'small-business' | 'fixed-costs' | 'tax-advances' | 'health-backpayment';
 
@@ -53,7 +53,8 @@ export function TaxDashboardCards({ id, forecast, year, month, compareMonth, com
     'tax-advances': `Termine und Zahlungen aus gespeicherten Bescheiden und Profilangaben. ${TAX_TEXTS.tooltip(year)}`,
     'health-backpayment': `${TAX_TEXTS.socialNotice} ${TAX_TEXTS.tooltip(year)}`,
   };
-  if (privateCard(id) && !privateLeviesVisible) return null;
+  const hasBusinessVatPayments = Boolean(forecast && (forecast.paidUst > 0 || forecast.upcomingLevies.some(item => item.kind === 'ust')));
+  if (privateCard(id) && !privateLeviesVisible && !(id === 'tax-advances' && hasBusinessVatPayments)) return null;
 
   const isAnnual = ['taxes', 'tax-reserve', 'tax-position', 'small-business', 'health-backpayment'].includes(id);
   const showState = loading || Boolean(error) || !forecast || (isAnnual && !forecast.profileComplete);
@@ -84,7 +85,7 @@ export function TaxDashboardCards({ id, forecast, year, month, compareMonth, com
           <span>Kirchensteuer (Jahr)</span><span className="text-right tabular-nums">{money(breakdown.churchTax)}</span>
           <span>Gewerbesteuer, vor Anrechnung (Jahr)</span><span className="text-right tabular-nums">{money(breakdown.tradeTax)}</span>
           <span>§ 35 EStG, in der ESt berücksichtigt</span><span className="text-right tabular-nums">{money(breakdown.tradeCredit)}</span>
-          <span>Umsatzsteuer-Richtwert, separat</span><span className="text-right tabular-nums">{money(forecast.vatReserveGrossEstimate)}</span>
+          <span>{vatReserveLabel(forecast.vatBasis, forecast.vatIncompleteEntries)}</span><span className="text-right tabular-nums">{money(forecast.vatReserveGrossEstimate)}</span>
         </div>
         <p className="text-xs text-gray-600">Im Jahr erfasste Steuer- und Sozialzahlungen: {money(forecast.paidNonVatLevies)} · verbleibender Jahresbedarf: {money(forecast.remainingReserve)}.</p>
         <p className="text-xs text-gray-500">Jahreswerte bleiben auch in der Monatsansicht als Zusatzinformation ausgewiesen. {TAX_TEXTS.pensionNotice}</p>
@@ -96,7 +97,7 @@ export function TaxDashboardCards({ id, forecast, year, month, compareMonth, com
         <MetricCardDescription>{monthView ? 'Monatsrichtwert Sozialbeiträge und Steuern; Umsatzsteuer separat' : 'Verbleibende Jahresrücklage für Steuern und Sozialbeiträge'}</MetricCardDescription>
         {!monthView && <p className="text-xs text-gray-600">Erwartete Resteinnahmen: {money(reserve.denominator)} · Anteil der Rücklage: {reserve.ratio === null ? 'nicht berechenbar' : new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 1 }).format(reserve.ratio)}.</p>}
         {monthView && selectedMonth && <p className="text-xs text-gray-600">Sozial- und Steuerrichtwert: {money(selectedMonth.social + selectedMonth.taxReserve)} · Umsatzsteuer-Richtwert: {money(selectedMonth.vatReserve)}.</p>}
-        {!monthView && <p className="text-xs text-gray-600">Umsatzsteuer-Restbedarf (grob), separat: {money(forecast.vatRemainingReserve)}. {TAX_TEXTS.vatRoughNotice}</p>}
+        {!monthView && <p className="text-xs text-gray-600">{vatReserveLabel(forecast.vatBasis, forecast.vatIncompleteEntries, true)}: {money(forecast.vatRemainingReserve)}.{forecast.vatBasis === 'rough' ? ` ${TAX_TEXTS.vatRoughNotice}` : ''}</p>}
         {monthView && selectedComparisonMonth && <p className="text-xs text-gray-600">Vergleich {compareMonth}: {money(selectedComparisonMonth.social + selectedComparisonMonth.taxReserve)}.</p>}
         <p className="text-xs text-gray-500">Die Rücklage wird den erwarteten Resteinnahmen gegenübergestellt und ist keine persönliche Gestaltungsempfehlung.</p>
       </div>;
@@ -141,16 +142,18 @@ export function TaxDashboardCards({ id, forecast, year, month, compareMonth, com
         <button type="button" className="action-button" onClick={onFixedCosts}>Fixkosten öffnen</button>
       </div>;
     } else if (id === 'tax-advances') {
-      const advances: LevyPayment[] = forecast.upcomingLevies.filter(item => ['est_vz', 'gewst_vz', 'ust'].includes(item.kind) && (!monthView || item.dueDate.startsWith(`${month}-`)));
+      const advances: LevyPayment[] = forecast.upcomingLevies.filter(item => (privateLeviesVisible ? ['est_vz', 'gewst_vz', 'ust'].includes(item.kind) : item.kind === 'ust') && (!monthView || item.dueDate.startsWith(`${month}-`)));
       const paid = monthView && extended.paidAdvanceMonths?.find(item => item.month === month)
         ? extended.paidAdvanceMonths.find(item => item.month === month)!
         : extended.paidAdvances;
-      const paidAmount = paid ? paid.est_vz + paid.gewst_vz + paid.ust : 0;
+      const paidEst = privateLeviesVisible ? paid?.est_vz ?? 0 : 0;
+      const paidGewst = privateLeviesVisible ? paid?.gewst_vz ?? 0 : 0;
+      const paidAmount = paid ? paidEst + paidGewst + paid.ust : 0;
       const now = new Date().toISOString().slice(0, 10);
-      const groupedPaid = paid ? `ESt ${money(paid.est_vz)} · GewSt ${money(paid.gewst_vz)} · USt ${money(paid.ust)}` : 'Keine Vorauszahlungen erfasst';
+      const groupedPaid = paid ? (privateLeviesVisible ? `ESt ${money(paid.est_vz)} · GewSt ${money(paid.gewst_vz)} · USt ${money(paid.ust)}` : `USt ${money(paid.ust)}`) : 'Keine Vorauszahlungen erfasst';
       body = <div className="space-y-2 px-4 pb-4">
         <p className="text-xs text-gray-600">Gezahlt je Art{monthView ? ` im Monat ${month}` : ' im Jahr'}: {groupedPaid}. Gesamt {money(paidAmount)}.</p>
-        {advances.length ? <ul className="divide-y divide-gray-100">{advances.slice(0, 5).map(item => <li key={item.id} className="flex justify-between gap-3 py-2 text-sm"><span>{item.kind === 'est_vz' ? 'ESt' : item.kind === 'gewst_vz' ? 'GewSt' : 'USt'} · {dateLabel(item.dueDate)}{isRecordedAdvanceOverdue(item, now) && <span className="block text-rose-700">Überfällig · Zahlung nicht erfasst</span>}{item.id.startsWith('forecast:') && <span className="block text-xs text-gray-500">Terminrichtwert · keine Zahlungsbuchung</span>}</span><strong className="shrink-0 tabular-nums">{money(item.amount)}</strong></li>)}</ul> : <DashboardEmptyState variant="metric" title="Keine Vorauszahlungen erfasst" description="Erfasste ESt-, GewSt- und USt-Zahlungen erscheinen mit Termin und Zahlungsstatus." action={{ label: 'Vorauszahlungen einrichten', onClick: onSetup }} />}
+        {advances.length ? <ul className="divide-y divide-gray-100">{advances.slice(0, 5).map(item => <li key={item.id} className="flex justify-between gap-3 py-2 text-sm"><span>{item.kind === 'est_vz' ? 'ESt' : item.kind === 'gewst_vz' ? 'GewSt' : 'USt'} · {dateLabel(item.dueDate)}{isRecordedAdvanceOverdue(item, now) && <span className="block text-rose-700">Überfällig · Zahlung nicht erfasst</span>}{item.id.startsWith('forecast:ust:') && <span className="block text-xs text-gray-500">{item.notes}</span>}{item.id.startsWith('forecast:est_vz:') || item.id.startsWith('forecast:gewst_vz:') ? <span className="block text-xs text-gray-500">Terminrichtwert · keine Zahlungsbuchung</span> : null}</span><strong className="shrink-0 tabular-nums">{money(item.amount)}</strong></li>)}</ul> : <DashboardEmptyState variant="metric" title="Keine Vorauszahlungen erfasst" description="Erfasste ESt-, GewSt- und USt-Zahlungen erscheinen mit Termin und Zahlungsstatus." action={{ label: 'Vorauszahlungen einrichten', onClick: onSetup }} />}
         <p className="text-xs text-gray-500">KV- und RV-Zahlungen werden nicht als Steuervorauszahlungen ausgewiesen.</p>
       </div>;
     } else if (id === 'health-backpayment') {

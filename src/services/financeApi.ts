@@ -1,7 +1,12 @@
 import { apiService } from './api';
 import type { ForecastResult, LevyPayment, LevyPaymentPayload, RecurringExpense, RecurringExpensePayload, RecurringExpenseRun, TaxProfile, TaxProfilePayload } from '../types/finance';
+import type { VatOverview, VatPayment, VatPaymentPayload } from '../types/vat';
 
 const json = (method: string, data: unknown) => ({ method, body: JSON.stringify(data) });
+function vatPaymentPayload(payment: VatPaymentPayload): VatPaymentPayload {
+  const { kind, taxYear, periodKey, dueDate, paidOn, amount, notes } = payment;
+  return { kind, taxYear, periodKey, dueDate, paidOn, amount, notes };
+}
 function levyPayload(payment: LevyPaymentPayload): LevyPaymentPayload {
   const { kind, year, period, dueDate, paidOn, amount, source, notes } = payment;
   return { kind, year, period, dueDate, paidOn, amount, source, notes };
@@ -29,4 +34,9 @@ export const financeApi = {
   saveLevy: (payload: LevyPaymentPayload, id?: string) => mutate<LevyPayment>(id ? `/levy-payments/${id}` : '/levy-payments', json(id ? 'PUT' : 'POST', levyPayload(payload))),
   deleteLevy: (id: string) => mutate<void>(`/levy-payments/${id}`, { method: 'DELETE' }),
   getForecast: (year: number) => apiService.financeRequest<ForecastResult>(`/forecast/${year}`),
+  getVatOverview: (year: number) => apiService.financeRequest<VatOverview>(`/vat/${year}`),
+  getVatPayments: (year?: number) => apiService.financeRequest<VatPayment[]>(`/vat/payments${year === undefined ? '' : `?year=${year}`}`),
+  saveVatPayment: (payload: VatPaymentPayload, id?: string) => mutate<VatPayment>(id ? `/vat/payments/${id}` : '/vat/payments', json(id ? 'PUT' : 'POST', vatPaymentPayload(payload))),
+  deleteVatPayment: (id: string) => mutate<void>(`/vat/payments/${id}`, { method: 'DELETE' }),
+  bookVatPayment: (id: string) => mutate<VatPayment>(`/vat/payments/${id}/book`, json('POST', {})),
 };

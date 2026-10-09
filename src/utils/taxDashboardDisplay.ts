@@ -5,6 +5,12 @@ export interface ReserveRatioDisplay {
   denominator: number;
 }
 
+export function vatReserveLabel(basis: 'calculated' | 'estimate' | 'rough', incompleteEntries: number, remainder = false): string {
+  if (basis === 'calculated') return 'Umsatzsteuer, aus deinen erfassten Belegen berechnet';
+  if (basis === 'estimate') return `Umsatzsteuer, Schätzung · ${incompleteEntries} Buchungen ohne USt-Angaben`;
+  return remainder ? 'Umsatzsteuer-Restbedarf (grob), separat' : 'Umsatzsteuer-Richtwert, separat';
+}
+
 export function reserveRatioDisplay(expectedRemainingInflows: number, remainingReserve: number): ReserveRatioDisplay {
   const denominator = Math.max(0, Number(expectedRemainingInflows) || 0);
   const reserve = Math.max(0, Number(remainingReserve) || 0);
