@@ -7,8 +7,11 @@ export interface PageState {
   jobSeriesId?: string;
 }
 
-const SETTINGS_TABS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes'] as const;
-type SettingsTab = typeof SETTINGS_TABS[number];
+// Mit `.js`, damit die kompilierten Frontend-Tests das Modul unter Node finden.
+import { SETTINGS_AREAS, type SettingsArea } from './settingsNavigation.js';
+
+const SETTINGS_TABS = SETTINGS_AREAS;
+type SettingsTab = SettingsArea;
 
 function normalizePageState(page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string): PageState {
   if (page === 'receipts') return { page: 'documents', filter: filter || 'receipts', searchTerm };
