@@ -61,6 +61,15 @@ interface ApiRequestOptions extends RequestInit {
   allowPartialStatus?: boolean;
 }
 
+export interface EmailDeliveryResult {
+  success: boolean;
+  message: string;
+  messageId?: string;
+  copyRecipient?: string;
+  copyAccepted?: boolean;
+  warning?: string;
+}
+
 interface EmailAttachment {
   name: string;
   content: string;
@@ -603,7 +612,7 @@ class ApiService {
     customText?: string,
     attachments?: EmailAttachment[],
     pdfBuffer?: string
-  ): Promise<{ success: boolean; message: string; messageId?: string }> {
+  ): Promise<EmailDeliveryResult> {
     return this.request(`/quotes/${quoteId}/send-email`, {
       method: 'POST',
       body: JSON.stringify({
@@ -868,7 +877,7 @@ class ApiService {
     format: 'zugferd' | 'xrechnung' = 'zugferd',
     customText?: string,
     attachments?: EmailAttachment[]
-  ): Promise<{ success: boolean; message: string; messageId?: string }> {
+  ): Promise<EmailDeliveryResult> {
     return this.request('/email/send-invoice', {
       method: 'POST',
       body: JSON.stringify({
@@ -888,7 +897,7 @@ class ApiService {
     invoiceData: Invoice,
     customText?: string,
     attachments?: EmailAttachment[]
-  ): Promise<{ success: boolean; message: string; messageId?: string }> {
+  ): Promise<EmailDeliveryResult> {
     return this.request('/email/send-invoice-multi', {
       method: 'POST',
       body: JSON.stringify({
@@ -910,7 +919,7 @@ class ApiService {
     fee: number,
     customText?: string,
     additionalAttachments?: EmailAttachment[]
-  ): Promise<{ success: boolean; message: string; messageId?: string }> {
+  ): Promise<EmailDeliveryResult> {
     return this.request('/email/send-reminder', {
       method: 'POST',
       body: JSON.stringify({
@@ -982,7 +991,7 @@ class ApiService {
     });
   }
 
-  async sendTestEmail(recipient: string, subject?: string, message?: string): Promise<{ success: boolean; message: string }> {
+  async sendTestEmail(recipient: string, subject?: string, message?: string): Promise<EmailDeliveryResult> {
     return this.request('/email-management/send-test-email', {
       method: 'POST',
       body: JSON.stringify({

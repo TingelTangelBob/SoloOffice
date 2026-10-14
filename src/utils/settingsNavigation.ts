@@ -97,7 +97,7 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
     label: 'E-Mail & Backup',
     description: 'E-Mail-Versand, Datensicherung und Datenübernahme.',
     sections: [
-      { id: 'email', title: 'E-Mail-Versand', keywords: ['smtp', 'mail', 'postausgang', 'benachrichtigungen', 'absender'] },
+      { id: 'email', title: 'E-Mail-Versand', keywords: ['smtp', 'mail', 'postausgang', 'benachrichtigungen', 'absender', 'testmail', 'test-e-mail', 'kopie', 'passwort', 'versand'] },
       { id: 'sicherung', title: 'Datensicherung', keywords: ['backup', 'sicherung', 'zip', 'json', 'wiederherstellen', 'export'] },
       { id: 'datenuebernahme', title: 'Datenübernahme', keywords: ['import', 'übernahme', 'migration', 'csv'] },
     ],

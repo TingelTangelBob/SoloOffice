@@ -15,6 +15,8 @@ export interface NavigationGuard {
 export const TAX_PROFILE_GUARD_ID = 'settings-tax-profile';
 /** Firmeneinstellungen: bleiben beim Bereichswechsel erhalten, nicht beim Seitenwechsel. */
 export const COMPANY_SETTINGS_GUARD_ID = 'settings-company';
+/** Mail-Einrichtung: eigener Speicherstand im Systembereich. */
+export const SMTP_SETTINGS_GUARD_ID = 'settings-smtp';
 
 const guards = new Map<string, NavigationGuard>();
 
@@ -62,6 +64,7 @@ export function guardScopeForNavigation(from: PageTarget, to: PageTarget): Guard
   const fromArea = from.filter || '';
   const toArea = to.filter || '';
   if (fromArea === 'taxes' && toArea !== 'taxes') return [TAX_PROFILE_GUARD_ID];
+  if (fromArea === 'system' && toArea !== 'system') return [SMTP_SETTINGS_GUARD_ID];
   return null;
 }
 

@@ -3,6 +3,7 @@ import test, { beforeEach } from 'node:test';
 import {
   COMPANY_SETTINGS_GUARD_ID,
   TAX_PROFILE_GUARD_ID,
+  SMTP_SETTINGS_GUARD_ID,
   confirmNavigation,
   guardScopeForNavigation,
   isNavigationBlocked,
@@ -88,6 +89,17 @@ test('beim Seitenwechsel wird jedes betroffene Formular einzeln bestätigt', asy
   assert.equal(await confirmNavigation('all'), false);
   assert.equal(company.calls.confirm, 1);
   assert.equal(tax.calls.confirm, 1);
+});
+
+test('Mail-Einrichtung schützt den Entwurf beim Verlassen des Systembereichs', async () => {
+  const smtp = guard(SMTP_SETTINGS_GUARD_ID, { answer: false });
+  assert.equal(guardScopeForNavigation({ page: 'settings', filter: 'system' }, { page: 'settings', filter: 'system' }), null);
+  const scope = guardScopeForNavigation({ page: 'settings', filter: 'system' }, { page: 'settings', filter: 'general' });
+  assert.deepEqual(scope, [SMTP_SETTINGS_GUARD_ID]);
+  assert.equal(await confirmNavigation(scope), false);
+  assert.equal(smtp.calls.confirm, 1);
+  smtp.state.dirty = false;
+  assert.equal(await confirmNavigation(scope), true);
 });
 
 test('Steuerprofil: Schritte sind ohne Handwerk lückenlos 1 bis 4 nummeriert', () => {

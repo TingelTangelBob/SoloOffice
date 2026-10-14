@@ -7,6 +7,7 @@ import { formatCurrency } from '../utils/formatters';
 import { generateInvoicePDF, generateReminderPDF } from '../utils/pdfGenerator';
 import { blobToBase64 } from '../utils/blobUtils';
 import { apiService } from '../services/api';
+import { isDemoMode } from '../services/demoApi';
 import logger from '../utils/logger';
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
@@ -214,6 +215,7 @@ export function ReminderSendModal({
     try {
       const invoicesToProcess = isBulkMode ? bulkInvoices : [invoice];
       let successCount = 0;
+      const warnings: string[] = [];
 
       for (const inv of invoicesToProcess) {
         try {
@@ -307,7 +309,7 @@ export function ReminderSendModal({
           }
 
           // Send email via backend - this will log to email_history
-          await apiService.sendReminderEmail(
+          const emailResult = await apiService.sendReminderEmail(
             inv.id,
             stage,
             customerEmails,
@@ -317,13 +319,19 @@ export function ReminderSendModal({
             customText || reminderText,
             additionalAttachments
           );
-
-          // Update status if requested
-          if (updateStatus) {
-            await apiService.sendReminder(inv.id, stage, true);
-          }
+          if (!emailResult.success) throw new Error(emailResult.message || 'Die Mahnung konnte nicht versendet werden.');
+          if (emailResult.warning) warnings.push(`${inv.invoiceNumber}: ${emailResult.warning}`);
 
           successCount++;
+          // Die Mail ist bereits angenommen: ein Statusfehler darf keinen erneuten Versand nahelegen.
+          if (updateStatus) {
+            try {
+              await apiService.sendReminder(inv.id, stage, true);
+            } catch (error) {
+              warnings.push(`${inv.invoiceNumber}: Mail angenommen, aber der Mahnstatus konnte nicht aktualisiert werden. Bitte den Status prüfen, ohne erneut zu senden.`);
+              logger.error('Reminder status update failed after successful email:', error);
+            }
+          }
           logger.info('Reminder email sent successfully', { invoiceId: inv.id, stage, emailCount: customerEmails.length });
         } catch (error) {
           logger.error(`Error sending reminder email for invoice ${inv.id}:`, error);
@@ -331,7 +339,9 @@ export function ReminderSendModal({
       }
 
       if (successCount > 0) {
-        notify({ variant: 'success', message: `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} erfolgreich versendet!` });
+        const failedCount = invoicesToProcess.length - successCount;
+        if (failedCount > 0) warnings.push(`${formatCountLabel(failedCount, 'Mahnung', 'Mahnungen')} konnten nicht versendet werden.`);
+        notify({ variant: warnings.length ? 'warning' : 'success', message: `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} ${isDemoMode ? 'im Demo-Modus simuliert' : 'an den Mailserver übergeben'}.${warnings.length ? ` ${warnings.join(' ')}` : ''}` });
         onSuccess();
         onClose();
       } else {
@@ -510,6 +520,7 @@ export function ReminderSendModal({
             {showEmailSection && (
               <div className="space-y-4 bg-blue-50 rounded-lg p-4 border border-blue-200">
                 <h3 className="text-sm font-medium text-gray-900">E-Mail-Empfänger</h3>
+                <p className="text-xs leading-5 text-gray-600">Eine Kopie geht automatisch per BCC an die in der E-Mail-Einrichtung gespeicherte Absenderadresse.</p>
                 
                 {/* Customer Emails */}
                 <div className="space-y-2 max-h-96 overflow-y-auto">

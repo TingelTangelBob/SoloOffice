@@ -7,6 +7,7 @@ import logger from '../utils/logger.js';
 import { testEmailConnection } from '../services/emailService.js';
 import { renderSystemEmail } from '../services/emailTemplates.js';
 import { decryptSecret, encryptSecret } from '../utils/secretBox.js';
+import { isSingleEmailAddress, publicSmtpSettings, smtpErrorMessage, smtpPassword, smtpTransportOptions, validateSmtpSettings } from '../utils/smtpSettings.js';
 
 const router = express.Router();
 
@@ -252,153 +253,39 @@ router.get('/statistics', async (req, res) => {
   }
 });
 
-// Get SMTP settings
+// Zugangsdaten werden nie an den Browser zurückgeliefert.
 router.get('/smtp-settings', async (req, res) => {
   try {
     const result = await query('SELECT * FROM smtp_settings WHERE id = 1');
-    
-    if (result.rows.length === 0) {
-      return res.json({
-        success: true,
-        settings: {
-          smtp_host: '',
-          smtp_port: 587,
-          smtp_secure: false,
-          smtp_user: '',
-          smtp_pass: '',
-          email_from: '',
-          email_from_name: '',
-          is_enabled: false,
-          test_email: ''
-        }
-      });
-    }
-
-    const settings = result.rows[0];
-    // Never send the encrypted value to the browser; only expose a mask.
-    const { smtp_pass_encrypted: encryptedPassword, ...publicSettings } = settings;
-    const sanitizedSettings = {
-      ...publicSettings,
-      smtp_pass: encryptedPassword ? '****' : ''
-    };
-
-    res.json({
-      success: true,
-      settings: sanitizedSettings
-    });
-
+    res.json({ success: true, settings: publicSmtpSettings(result.rows[0]) });
   } catch (error) {
-    logger.error('Failed to fetch SMTP settings', {
-      error: error.message,
-      stack: error.stack,
-      method: 'GET',
-      endpoint: '/smtp-settings'
-    });
-    res.status(500).json({
-      success: false,
-      message: 'Fehler beim Laden der SMTP-Einstellungen',
-      error: error.message
-    });
+    logger.error('Failed to fetch SMTP settings', { code: error.code });
+    res.status(500).json({ success: false, message: 'Die Mail-Einstellungen konnten nicht geladen werden.' });
   }
 });
 
-// Update SMTP settings
 router.post('/smtp-settings', async (req, res) => {
   try {
-    const {
-      smtp_host,
-      smtp_port,
-      smtp_secure,
-      smtp_user,
-      smtp_pass,
-      email_from,
-      email_from_name,
-      is_enabled,
-      test_email
-    } = req.body;
-
-    // Validate required fields
-    if (is_enabled && (!smtp_host || !smtp_port || !smtp_user || !email_from)) {
-      return res.status(400).json({
-        success: false,
-        message: 'SMTP-Host, Port, Benutzer und Absender-E-Mail sind erforderlich'
-      });
-    }
-
-    // Check if settings exist
-    const existingResult = await query('SELECT id FROM smtp_settings WHERE id = 1');
-    
-    if (existingResult.rows.length === 0) {
-      // Create new settings
-      await query(`
-        INSERT INTO smtp_settings (
-          id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_encrypted,
-          email_from, email_from_name, is_enabled, test_email, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-      `, [
-        1, smtp_host, smtp_port || 587, smtp_secure || false,
-        smtp_user, encryptSecret(smtp_pass), email_from, email_from_name,
-        is_enabled || false, test_email
-      ]);
+    const existing = await query('SELECT id, smtp_pass_encrypted FROM smtp_settings WHERE id = 1');
+    const stored = existing.rows[0];
+    const settings = validateSmtpSettings(req.body, { hasStoredPassword: Boolean(stored?.smtp_pass_encrypted) });
+    const encryptedPassword = settings.smtp_pass ? encryptSecret(settings.smtp_pass) : stored?.smtp_pass_encrypted || null;
+    const values = [settings.smtp_host, settings.smtp_port, settings.smtp_secure, settings.smtp_user,
+      encryptedPassword, settings.email_from, settings.email_from_name, settings.is_enabled, settings.test_email];
+    if (stored) {
+      await query(`UPDATE smtp_settings SET smtp_host = $1, smtp_port = $2, smtp_secure = $3,
+        smtp_user = $4, smtp_pass_encrypted = $5, email_from = $6, email_from_name = $7,
+        is_enabled = $8, test_email = $9, updated_at = NOW() WHERE id = 1`, values);
     } else {
-      // Update existing settings
-      let updateQuery = `
-        UPDATE smtp_settings SET
-          smtp_host = $1,
-          smtp_port = $2,
-          smtp_secure = $3,
-          smtp_user = $4,
-          email_from = $5,
-          email_from_name = $6,
-          is_enabled = $7,
-          test_email = $8,
-          updated_at = NOW()
-        WHERE id = 1
-      `;
-      let params = [
-        smtp_host, smtp_port || 587, smtp_secure || false,
-        smtp_user, email_from, email_from_name,
-        is_enabled || false, test_email
-      ];
-
-      // Only update password if it's provided and not masked
-      if (smtp_pass && smtp_pass !== '****') {
-        updateQuery = `
-          UPDATE smtp_settings SET
-            smtp_host = $1,
-            smtp_port = $2,
-            smtp_secure = $3,
-            smtp_user = $4,
-            smtp_pass_encrypted = $5,
-            email_from = $6,
-            email_from_name = $7,
-            is_enabled = $8,
-            test_email = $9,
-            updated_at = NOW()
-          WHERE id = 1
-        `;
-        params = [
-          smtp_host, smtp_port || 587, smtp_secure || false,
-          smtp_user, encryptSecret(smtp_pass), email_from, email_from_name,
-          is_enabled || false, test_email
-        ];
-      }
-
-      await query(updateQuery, params);
+      await query(`INSERT INTO smtp_settings (id, smtp_host, smtp_port, smtp_secure, smtp_user,
+        smtp_pass_encrypted, email_from, email_from_name, is_enabled, test_email, created_at, updated_at)
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`, values);
     }
-
-    res.json({
-      success: true,
-      message: 'SMTP-Einstellungen erfolgreich gespeichert'
-    });
-
+    res.json({ success: true, message: 'Mail-Einstellungen gespeichert.' });
   } catch (error) {
-    logger.error('Error updating SMTP settings:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Fehler beim Speichern der SMTP-Einstellungen',
-      error: error.message
-    });
+    logger.error('Error updating SMTP settings', { code: error.code });
+    res.status(error.status || 500).json({ success: false,
+      message: error.status === 400 ? error.message : 'Die Mail-Einstellungen konnten nicht gespeichert werden.' });
   }
 });
 
@@ -541,122 +428,47 @@ router.post('/diagnose-smtp', async (req, res) => {
   }
 });
 
-// Test SMTP connection with database settings
+// Entwurfswerte prüfen; ein leeres Passwort behält das gespeicherte Geheimnis.
 router.post('/test-smtp', async (req, res) => {
+  let transporter;
+  let timeout;
   try {
     const { use_database_settings = true, settings = null } = req.body;
-
-    let smtpConfig;
-
+    const result = await query('SELECT * FROM smtp_settings WHERE id = 1');
+    const stored = result.rows[0];
+    let input;
+    let password;
     if (use_database_settings) {
-      // Use settings from database
-      const result = await query('SELECT * FROM smtp_settings WHERE id = 1');
-      const dbSettings = result.rows[0];
-      if (dbSettings?.is_enabled) {
-        smtpConfig = {
-          host: dbSettings.smtp_host,
-          port: dbSettings.smtp_port,
-          secure: dbSettings.smtp_secure,
-          auth: {
-            user: dbSettings.smtp_user,
-            pass: decryptSecret(dbSettings.smtp_pass_encrypted),
-          },
-        };
-      } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-        smtpConfig = {
-          host: process.env.SMTP_HOST,
-          port: parseInt(process.env.SMTP_PORT || '587', 10),
-          secure: process.env.SMTP_SECURE === 'true',
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-          },
-        };
+      if (stored?.is_enabled) {
+        input = stored;
+        password = decryptSecret(stored.smtp_pass_encrypted);
       } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Keine aktiven SMTP-Einstellungen in Datenbank oder Umgebungsvariablen gefunden'
-        });
+        input = { smtp_host: process.env.SMTP_HOST, smtp_port: process.env.SMTP_PORT || 587,
+          smtp_secure: process.env.SMTP_SECURE === 'true', smtp_user: process.env.SMTP_USER,
+          smtp_pass: process.env.SMTP_PASS };
+        password = process.env.SMTP_PASS;
       }
-    } else if (settings) {
-      // Use provided settings for testing
-      smtpConfig = {
-        host: settings.smtp_host,
-        port: settings.smtp_port,
-        secure: settings.smtp_secure,
-        auth: {
-          user: settings.smtp_user,
-          pass: settings.smtp_pass,
-        },
-      };
     } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Keine SMTP-Einstellungen zum Testen bereitgestellt'
-      });
+      input = settings;
+      password = smtpPassword(settings?.smtp_pass) || (stored?.smtp_pass_encrypted ? decryptSecret(stored.smtp_pass_encrypted) : '');
     }
-
-    // Test the connection
-    const nodemailer = await import('nodemailer');
-    
-    // Add timeout and connection options
-    const enhancedSmtpConfig = {
-      ...smtpConfig,
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000, // 10 seconds
-      socketTimeout: 30000, // 30 seconds
-      pool: false, // Don't use connection pooling for testing
-      debug: false, // Set to true for debugging
-      logger: false // Set to true for debugging
-    };
-
-    const transporter = nodemailer.createTransport(enhancedSmtpConfig);
-
-    // Test with timeout
-    const testTimeout = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('SMTP-Test-Timeout nach 30 Sekunden')), 30000);
-    });
-
-    await Promise.race([transporter.verify(), testTimeout]);
-
-    res.json({
-      success: true,
-      message: 'SMTP-Verbindung erfolgreich getestet'
-    });
-
+    const config = validateSmtpSettings(input, { hasStoredPassword: Boolean(password), forConnection: true });
+    const { default: nodemailer } = await import('nodemailer');
+    transporter = nodemailer.createTransport(smtpTransportOptions(config, password));
+    await Promise.race([
+      transporter.verify(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(Object.assign(new Error('SMTP-Test-Timeout'), { code: 'ETIMEDOUT' })), 30000);
+      }),
+    ]);
+    res.json({ success: true, message: 'Verbindung und Anmeldung erfolgreich geprüft. Dabei wurde keine E-Mail gesendet.' });
   } catch (error) {
-    logger.error('SMTP test failed:', error);
-    
-    // Provide more specific error messages
-    let errorMessage = error.message;
-    let troubleshootingTips = [];
-
-    if (error.message.includes('Greeting never received')) {
-      errorMessage = 'Keine Antwort vom SMTP-Server erhalten';
-      troubleshootingTips.push('Überprüfen Sie Host und Port');
-      troubleshootingTips.push('Stellen Sie sicher, dass der Server erreichbar ist');
-      troubleshootingTips.push('Prüfen Sie Firewall-Einstellungen');
-    } else if (error.message.includes('timeout')) {
-      errorMessage = 'Verbindungs-Timeout';
-      troubleshootingTips.push('Server antwortet nicht rechtzeitig');
-      troubleshootingTips.push('Versuchen Sie einen anderen Port (587, 465, 25)');
-    } else if (error.message.includes('ENOTFOUND')) {
-      errorMessage = 'SMTP-Server nicht gefunden';
-      troubleshootingTips.push('Überprüfen Sie den Hostnamen');
-    } else if (error.message.includes('ECONNREFUSED')) {
-      errorMessage = 'Verbindung verweigert';
-      troubleshootingTips.push('Port ist möglicherweise gesperrt oder falsch');
-    } else if (error.message.includes('Invalid login')) {
-      errorMessage = 'Ungültige Anmeldedaten';
-      troubleshootingTips.push('Überprüfen Sie Benutzername und Passwort');
-    }
-
-    res.status(500).json({
-      success: false,
-      message: `SMTP-Test fehlgeschlagen: ${errorMessage}`,
-      error: error.message,
-      troubleshooting: troubleshootingTips
-    });
+    logger.warn('SMTP test failed', { code: error.code });
+    res.status(error.status || 502).json({ success: false,
+      message: error.status === 400 ? error.message : smtpErrorMessage(error) });
+  } finally {
+    clearTimeout(timeout);
+    transporter?.close();
   }
 });
 
@@ -757,136 +569,79 @@ router.post('/test-network', async (req, res) => {
   }
 });
 
-// Send test email
+// Eine echte Testmail verwendet ausschließlich den gespeicherten SMTP-Stand.
 router.post('/send-test-email', async (req, res) => {
+  let transporter;
+  let dbSettings;
+  let recipient;
+  let subject;
   try {
     const { recipient_email, custom_subject, custom_message } = req.body;
-
-    if (!recipient_email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Empfänger-E-Mail-Adresse ist erforderlich'
-      });
+    if (!isSingleEmailAddress(recipient_email)) {
+      return res.status(400).json({ success: false, message: 'Bitte eine gültige Empfängeradresse für die Testmail eingeben.' });
     }
-
-    // Get SMTP settings from database
+    recipient = recipient_email.trim();
+    if ((custom_subject != null && (typeof custom_subject !== 'string' || custom_subject.length > 500 || /[\r\n\0]/u.test(custom_subject)))
+      || (custom_message != null && (typeof custom_message !== 'string' || custom_message.length > 10000))) {
+      return res.status(400).json({ success: false, message: 'Betreff oder Nachricht der Testmail ist ungültig.' });
+    }
+    subject = custom_subject?.trim() || 'Testmail von SoloOffice';
     const settingsResult = await query('SELECT * FROM smtp_settings WHERE id = 1');
-    
-    if (settingsResult.rows.length === 0 || !settingsResult.rows[0].is_enabled) {
-      return res.status(400).json({
-        success: false,
-        message: 'Keine aktiven SMTP-Einstellungen gefunden'
-      });
+    dbSettings = settingsResult.rows[0];
+    if (!dbSettings?.is_enabled) {
+      return res.status(400).json({ success: false, message: 'Bitte die Mail-Einstellungen zuerst speichern und den Versand aktivieren.' });
     }
-
-    const dbSettings = settingsResult.rows[0];
-
-    // Create transporter
-    const nodemailer = await import('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host: dbSettings.smtp_host,
-      port: dbSettings.smtp_port,
-      secure: dbSettings.smtp_secure,
-      auth: {
-        user: dbSettings.smtp_user,
-        pass: decryptSecret(dbSettings.smtp_pass_encrypted),
-      },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000, // 10 seconds
-      socketTimeout: 30000, // 30 seconds
-    });
-
-    // Prepare email content – same layout as every other system mail. The
-    // custom message is escaped by the template; the HTML never trusts input.
-    const subject = custom_subject || 'Test-E-Mail von SoloOffice';
+    const password = decryptSecret(dbSettings.smtp_pass_encrypted);
+    const settings = validateSmtpSettings(dbSettings, { hasStoredPassword: Boolean(password) });
+    const { default: nodemailer } = await import('nodemailer');
+    transporter = nodemailer.createTransport(smtpTransportOptions(settings, password));
     const testMail = renderSystemEmail({
-      title: 'Test-E-Mail erfolgreich',
-      preheader: 'Die E-Mail-Konfiguration von SoloOffice funktioniert.',
+      title: 'Testmail von SoloOffice',
+      preheader: 'Diese Nachricht prüft den Mailversand Ihrer SoloOffice-Instanz.',
       greeting: 'Guten Tag,',
-      paragraphs: [
-        'diese Test-E-Mail wurde von Ihrem SoloOffice-System gesendet. Wenn Sie sie lesen, funktioniert Ihre E-Mail-Konfiguration.',
-        ...(custom_message ? [String(custom_message)] : []),
-      ],
-      details: [
-        { label: 'Gesendet am', value: new Date().toLocaleString('de-DE') },
-        { label: 'SMTP-Server', value: `${dbSettings.smtp_host}:${dbSettings.smtp_port}` },
-        { label: 'Verschlüsselung', value: dbSettings.smtp_secure ? 'SSL/TLS' : 'STARTTLS' },
-      ],
-      reason: 'Sie erhalten diese E-Mail, weil in SoloOffice eine Test-E-Mail ausgelöst wurde.',
-      recipient: recipient_email,
+      paragraphs: ['diese Testmail wurde mit den gespeicherten Mail-Einstellungen von SoloOffice gesendet. Wenn Sie sie lesen, ist sie in Ihrem Postfach angekommen.',
+        ...(custom_message ? [custom_message] : [])],
+      details: [{ label: 'Gesendet am', value: new Date().toLocaleString('de-DE') }],
+      reason: 'Sie erhalten diese E-Mail, weil in SoloOffice eine Testmail ausgelöst wurde.',
+      recipient,
     });
-    const htmlContent = testMail.html;
-
-    // Send the email
-    const mailOptions = {
-      from: {
-        name: dbSettings.email_from_name || 'SoloOffice',
-        address: dbSettings.email_from || dbSettings.smtp_user
-      },
-      to: recipient_email,
-      subject: subject,
-      text: testMail.text,
-      html: htmlContent
-    };
-
-    const result = await transporter.sendMail(mailOptions);
-
-    // Log the test email in history
-    await query(`
-      INSERT INTO email_history (
-        sender_email, sender_name, recipient_email, subject, body_html,
-        message_id, email_type, status, sent_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-    `, [
-      dbSettings.email_from || dbSettings.smtp_user,
-      dbSettings.email_from_name || 'SoloOffice',
-      recipient_email,
-      subject,
-      htmlContent,
-      result.messageId,
-      'test',
-      'sent'
-    ]);
-
-    res.json({
-      success: true,
-      message: 'Test-E-Mail erfolgreich versendet',
-      messageId: result.messageId,
-      recipient: recipient_email
+    const info = await transporter.sendMail({
+      from: { name: settings.email_from_name || 'SoloOffice', address: settings.email_from },
+      to: recipient, subject, text: testMail.text, html: testMail.html,
     });
-
-  } catch (error) {
-    logger.error('Error sending test email:', error);
-    
-    // Log failed test email in history
-    try {
-      const settingsResult = await query('SELECT * FROM smtp_settings WHERE id = 1');
-      if (settingsResult.rows.length > 0) {
-        const dbSettings = settingsResult.rows[0];
-        await query(`
-          INSERT INTO email_history (
-            sender_email, sender_name, recipient_email, subject, 
-            email_type, status, error_message, sent_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-        `, [
-          dbSettings.email_from || dbSettings.smtp_user,
-          dbSettings.email_from_name || 'SoloOffice',
-          req.body.recipient_email || 'unknown',
-          req.body.custom_subject || 'Test-E-Mail von SoloOffice',
-          'test',
-          'failed',
-          error.message
-        ]);
-      }
-    } catch (logError) {
-      logger.error('Error logging failed test email:', logError);
+    if (Array.isArray(info.accepted) && !info.accepted.some(address => String(address).toLowerCase() === recipient.toLowerCase())) {
+      throw Object.assign(new Error('Testmail recipient rejected'), { code: 'EENVELOPE' });
     }
-
-    res.status(500).json({
-      success: false,
-      message: `Fehler beim Versenden der Test-E-Mail: ${error.message}`,
-      error: error.message
-    });
+    // Ein Protokollfehler darf nach erfolgreichem Versand keinen erneuten Versand auslösen.
+    let historyWarning;
+    try {
+      await query(`INSERT INTO email_history (sender_email, sender_name, recipient_email, subject, body_html,
+        body_plain, message_id, smtp_response, email_type, status, sent_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'test', 'sent', NOW())`,
+      [settings.email_from, settings.email_from_name || 'SoloOffice', recipient, subject,
+        testMail.html, testMail.text, info.messageId, JSON.stringify(info)]);
+    } catch (historyError) {
+      logger.error('Could not record sent test email', { code: historyError.code });
+      historyWarning = 'Der Versand konnte nicht im Verlauf gespeichert werden.';
+    }
+    res.json({ success: true,
+      message: `Testmail an ${recipient} wurde dem Mailserver übergeben. Bitte Posteingang und Spamordner prüfen.`,
+      messageId: info.messageId, recipient, ...(historyWarning ? { warning: historyWarning } : {}) });
+  } catch (error) {
+    logger.warn('Test email failed', { code: error.code });
+    const message = error.status === 400 ? error.message : smtpErrorMessage(error);
+    if (dbSettings && error.status !== 400) {
+      try {
+        await query(`INSERT INTO email_history (sender_email, sender_name, recipient_email, subject,
+          email_type, status, error_message, sent_at) VALUES ($1, $2, $3, $4, 'test', 'failed', $5, NOW())`,
+        [dbSettings.email_from || dbSettings.smtp_user, dbSettings.email_from_name || 'SoloOffice', recipient, subject, message]);
+      } catch (historyError) {
+        logger.error('Could not record failed test email', { code: historyError.code });
+      }
+    }
+    res.status(error.status || 502).json({ success: false, message });
+  } finally {
+    transporter?.close();
   }
 });
 
