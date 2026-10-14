@@ -9,6 +9,7 @@
 # Einrichtung siehe deploy/README-demo-server.md
 
 set -euo pipefail
+umask 077
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/solooffice-demo}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.demo.yml}"
@@ -29,7 +30,19 @@ docker compose -f "$COMPOSE_FILE" pull --quiet
 
 nachher="$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo 'keines')"
 
-if [ "$vorher" = "$nachher" ]; then
+port="${DEMO_PORT:-8081}"
+frontend_service="${DEMO_FRONTEND_SERVICE:-frontend}"
+container_id="$(docker compose -f "$COMPOSE_FILE" ps -q "$frontend_service" 2>/dev/null || true)"
+container_ok=false
+if [ -n "$container_id" ]; then
+  container_status="$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container_id" 2>/dev/null || true)"
+  case "$container_status" in
+    'running healthy'|'running no-healthcheck') container_ok=true ;;
+  esac
+fi
+
+if [ "$vorher" = "$nachher" ] && [ "$container_ok" = true ] && \
+   curl --fail --silent --max-time 10 "http://127.0.0.1:${port}/healthz" > /dev/null; then
   exit 0
 fi
 
@@ -40,7 +53,6 @@ docker compose -f "$COMPOSE_FILE" up -d
 # endet das Skript mit Fehler – systemd protokolliert das, und der Zustand ist
 # über "systemctl status" sichtbar, statt still kaputtzugehen.
 sleep 5
-port="${DEMO_PORT:-8081}"
 if ! curl --fail --silent --max-time 10 "http://127.0.0.1:${port}/healthz" > /dev/null; then
   echo "WARNUNG: Demo antwortet nach der Aktualisierung nicht auf /healthz" >&2
   exit 1
@@ -48,9 +60,5 @@ fi
 
 echo "Demo läuft."
 
-# Aufräumen: Auf dieser Maschine liegen weitere Projekte (Mattermost, n8n,
-# LiteLLM, Roomverse). Ein volllaufendes Dateisystem legt die alle mit lahm.
-# "until=168h" behält die Images der letzten Woche für mögliche Rollbacks.
-# Bewusst KEIN "system prune --volumes" – das würde Volumes fremder Projekte
-# anfassen.
-docker image prune -f --filter "until=168h" > /dev/null
+# Kein globales Image-Pruning: auf dem Server teilen sich mehrere Projekte den
+# Docker-Daemon. Alte SoloOffice-Demo-Images werden gezielt vom Betreiber entfernt.

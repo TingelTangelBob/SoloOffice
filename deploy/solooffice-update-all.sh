@@ -17,9 +17,9 @@ LAN_USER="${SOLOOFFICE_LAN_USER:-root}"
 LAN_KEY="${SOLOOFFICE_LAN_KEY:-${HOME:-}/.ssh/id_kabot_test}"
 LAN_DEPLOY_DIR="${SOLOOFFICE_LAN_DEPLOY_DIR:-/opt/solooffice-tor-s}"
 LAN_INSTANCE="${SOLOOFFICE_LAN_INSTANCE:-tor-s}"
-STAGING_HOST="${SOLOOFFICE_STAGING_HOST:-46.224.132.27}"
+STAGING_HOST="${SOLOOFFICE_STAGING_HOST:-bp-server}"
 STAGING_USER="${SOLOOFFICE_STAGING_USER:-root}"
-STAGING_KEY="${SOLOOFFICE_STAGING_KEY:-${HOME:-}/.ssh/id_kabot_test}"
+STAGING_KEY="${SOLOOFFICE_STAGING_KEY:-}"
 STAGING_DEPLOY_DIR="${SOLOOFFICE_STAGING_DEPLOY_DIR:-/opt/solooffice-staging/app}"
 STAGING_INSTANCE="${SOLOOFFICE_STAGING_INSTANCE:-staging}"
 GITHUB_WAIT_SECONDS="${SOLOOFFICE_GITHUB_WAIT_SECONDS:-1800}"
@@ -145,6 +145,8 @@ check_repository() {
 
   git -C "$REPO_ROOT" diff --check
   git -C "$REPO_ROOT" diff --cached --check
+
+  [ "$DEPLOY_LAN" = false ] || [ "$DEPLOY_STAGING" = false ] || fail "--lan und --staging können nicht gemeinsam verwendet werden."
 }
 
 commit_and_push() {
@@ -186,6 +188,7 @@ commit_and_push() {
 github_run_state() {
   local response
   local auth_header=()
+  local workflow_file="${1:?Workflow-Datei fehlt}"
 
   if [ -n "${SOLOOFFICE_GITHUB_TOKEN:-}" ]; then
     auth_header=(-H "Authorization: Bearer ${SOLOOFFICE_GITHUB_TOKEN}")
@@ -193,7 +196,7 @@ github_run_state() {
 
   response=$(curl --fail --silent --show-error --retry 2 "${auth_header[@]}" \
     -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/demo-deploy.yml/runs?head_sha=$COMMIT_SHA&per_page=5") || return 1
+    "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_file/runs?head_sha=$COMMIT_SHA&per_page=5") || return 1
 
   SOLOOFFICE_COMMIT_SHA="$COMMIT_SHA" node -e '
     const fs = require("fs");
@@ -211,24 +214,25 @@ github_run_state() {
 }
 
 wait_for_github() {
+  local workflow_file="${1:?Workflow-Datei fehlt}"
   require_command curl
   require_command node
 
   local deadline=$(( $(date +%s) + GITHUB_WAIT_SECONDS ))
   local state status conclusion url
 
-  print_info "Warte auf den erfolgreichen GitHub-Demo-Workflow für $COMMIT_SHA …"
+  print_info "Warte auf den erfolgreichen GitHub-Workflow $workflow_file für $COMMIT_SHA …"
   while true; do
-    state=$(github_run_state) || fail "GitHub Actions konnte nicht abgefragt werden."
+    state=$(github_run_state "$workflow_file") || fail "GitHub Actions konnte nicht abgefragt werden."
     IFS=$'\t' read -r status conclusion url <<< "$state"
 
     case "$status:$conclusion" in
       completed:success)
-        print_success "GitHub-Qualitätstor und Demo-Image erfolgreich: $url"
+        print_success "GitHub-Workflow erfolgreich: $url"
         return 0
         ;;
       completed:*)
-        fail "GitHub-Demo-Workflow ist fehlgeschlagen ($conclusion): ${url:-keine URL}"
+        fail "GitHub-Workflow $workflow_file ist fehlgeschlagen ($conclusion): ${url:-keine URL}"
         ;;
       in_progress:*|queued:*|waiting:*|requested:*)
         print_info "GitHub Actions: $status …"
@@ -273,20 +277,24 @@ deploy_lan() {
 deploy_staging() {
   require_command ssh
   require_command tar
+  wait_for_github ci.yml
 
-  [ -f "$STAGING_KEY" ] || fail "SSH-Schlüssel nicht gefunden: $STAGING_KEY"
+  local ssh_options=(-o BatchMode=yes -o ConnectTimeout=8 -l "$STAGING_USER")
+  if [ -n "$STAGING_KEY" ]; then
+    [ -f "$STAGING_KEY" ] || fail "SSH-Schlüssel nicht gefunden: $STAGING_KEY"
+    ssh_options+=(-i "$STAGING_KEY")
+  fi
 
   print_info "Prüfe Erreichbarkeit der Staging-Instanz …"
-  ssh -o BatchMode=yes -o ConnectTimeout=8 -i "$STAGING_KEY" \
-    "$STAGING_USER@$STAGING_HOST" 'true' || fail "SSH-Verbindung zur Staging-Instanz fehlgeschlagen."
+  ssh "${ssh_options[@]}" "$STAGING_HOST" 'true' || fail "SSH-Verbindung zur Staging-Instanz fehlgeschlagen."
 
   print_info "Übertrage Commit $COMMIT_SHA nach $STAGING_HOST:$STAGING_DEPLOY_DIR …"
   git -C "$REPO_ROOT" archive --format=tar "$COMMIT_SHA" | \
-    ssh -i "$STAGING_KEY" "$STAGING_USER@$STAGING_HOST" \
+    ssh "${ssh_options[@]}" "$STAGING_HOST" \
     "tar -xf - -C '$STAGING_DEPLOY_DIR'"
 
   print_info "Baue und prüfe die Staging-Instanz …"
-  ssh -i "$STAGING_KEY" "$STAGING_USER@$STAGING_HOST" \
+  ssh "${ssh_options[@]}" "$STAGING_HOST" \
     "cd '$STAGING_DEPLOY_DIR' && ./manage-instances.sh update '$STAGING_INSTANCE' '$COMMIT_SHA'"
 
   print_success "Staging aktualisiert: https://app.staging.solooffice.de"
@@ -298,7 +306,7 @@ main() {
   commit_and_push
 
   if [ "$DEPLOY_LAN" = true ]; then
-    wait_for_github
+    wait_for_github demo-deploy.yml
     deploy_lan
   elif [ "$DEPLOY_STAGING" = true ]; then
     deploy_staging

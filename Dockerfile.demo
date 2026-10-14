@@ -22,6 +22,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
+COPY patches ./patches
 RUN npm ci
 
 # Vite ersetzt import.meta.env.* beim Bauen; Container-Umgebungsvariablen
