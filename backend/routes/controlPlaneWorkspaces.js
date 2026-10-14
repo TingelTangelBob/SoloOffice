@@ -21,6 +21,7 @@ import {
   verifyControlPlaneRequest,
 } from '../utils/controlPlaneAuth.js';
 import logger from '../utils/logger.js';
+import { platformOverview, platformUsers, platformWorkspaces, workspaceInsight } from '../services/controlPlaneDirectory.js';
 
 /**
  * Interne Schnittstelle für den Control Plane (AP-4.4).
@@ -210,6 +211,26 @@ function suspensionHandler(suspended) {
 
 router.post('/workspaces/:workspaceId/suspend', suspensionHandler(true));
 router.post('/workspaces/:workspaceId/unsuspend', suspensionHandler(false));
+
+router.post('/platform/overview', async (req, res) => {
+  try { return res.json(await platformOverview()); }
+  catch (error) { return handleOperationError(res, req, error, 'platform-overview'); }
+});
+router.post('/platform/users', async (req, res) => {
+  try { return res.json(await platformUsers(req.body)); }
+  catch (error) { return handleOperationError(res, req, error, 'platform-users'); }
+});
+router.post('/platform/workspaces', async (req, res) => {
+  try { return res.json(await platformWorkspaces(req.body)); }
+  catch (error) { return handleOperationError(res, req, error, 'platform-workspaces'); }
+});
+router.post('/workspaces/:workspaceId/insight', async (req, res) => {
+  if (!isUuid(req.params.workspaceId)) return fail(res, 400, 'WORKSPACE_ID_INVALID', 'Die Workspace-Kennung ist ungültig.');
+  try {
+    const result = await workspaceInsight(req.params.workspaceId);
+    return result ? res.json(result) : fail(res, 404, 'WORKSPACE_NOT_FOUND', 'Workspace nicht gefunden.');
+  } catch (error) { return handleOperationError(res, req, error, 'workspace-insight'); }
+});
 
 router.use((req, res) => fail(res, 404, 'CONTROL_PLANE_ENDPOINT_NOT_FOUND', 'Endpunkt nicht gefunden.'));
 
