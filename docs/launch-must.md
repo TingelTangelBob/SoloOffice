@@ -1,10 +1,11 @@
 # Launch-Must-Liste
 
-**Stand:** 2026-09-25
+**Stand:** 2026-10-11
 
-**Geprüfte Codebasis:** `v0.9.4` · `73b1756f2794db53cca55128061731b3e93b59dc`
-**Prüfgrenze:** lokaler Quellstand; heutige GitHub-CI und Staging-Laufzeit
-wegen gesperrtem Netzwerkzugriff nicht erneut nachgewiesen.
+**Geprüfte Codebasis:** `v0.9.5` · `0674c0849e968ac1d11062a8b6568f3490ba726e`
+**Prüfgrenze:** lokaler Quellstand. Ein SSH-Lesezugriff zeigte laufende Staging-
+Container; weitere Zugriffe, aktueller BUILD_COMMIT, HTTPS und GitHub-CI konnten
+wegen Netzwerkbeschränkungen nicht nachgewiesen werden. Kein Deploy.
 **Entscheidung:** Ein öffentlicher Hosted-/SaaS-Launch ist mit diesem Stand nicht
 freigegeben. Ein begrenzter Self-Hosting-Test ist mit den unten genannten
 Einschränkungen möglich.
@@ -32,7 +33,7 @@ angegeben.
 - **Status:** offen
 - **Owner:** Steffen
 - **Nachweis / nächster Schritt:** Der Control Plane liegt als eigenes
-  lokales Repository vor (Auditbasis `5f77421`, kein Remote); ein externes
+  lokales Repository vor (Auditbasis `8f27a30`, kein Remote); ein externes
   privates Repository benötigt Betreiberfreigabe. Stripe ist als Anbieter
   bereits gewählt. Die Beta-Unterlagen nennen 14 Tage Kulanz und 30 Tage
   Lesemodus nach Vertragsende; daraus folgt keine Freigabe der Stripe-Live-
@@ -66,7 +67,9 @@ angegeben.
   Registrierung/Verifikation, Workspace-Provisionierung, Stripe-Testfluss,
   signierte Webhooks, Deduplizierung, Tariflimits, Sperre/Entsperre und
   Admin-Audit mit dem freigegebenen Control Plane durchspielen und mit Datum,
-  App-/Control-Plane-Commit und Ergebnis archivieren.
+  App-/Control-Plane-Commit und Ergebnis archivieren. Betreiber-2FA inklusive
+  bestehender Sitzungen nach Aktivierung prüfen: Einrichtung ist derzeit
+  optional, vorhandene Sitzungen werden dabei nicht widerrufen.
 
 ### T-2 AP-5.5 Export und Löschung
 
@@ -88,8 +91,10 @@ angegeben.
 - **Nachweis / nächster Schritt:** Am 2026-09-23 bestand auf dem dokumentierten
   Staging-Server der nicht verändernde Lauf
   `manage-instances.sh verify staging b6c6bb279dcd1c9807f237812c59c57de58135a3`.
-  Damit sind Healthchecks, Image-Version/Commit, RLS und Migration 044 als
-  aktueller Migrationsstand technisch nachgewiesen. Offen bleibt der isolierte
+  Damit sind Healthchecks, Image-Version/Commit, RLS und Migration 044 für
+  diesen historischen Stand technisch nachgewiesen. Der heutige Quellstand
+  registriert Migrationen bis 058; deren aktueller Staging-Stand ist damit
+  nicht belegt. Offen bleibt der isolierte
   fachliche Smoke-Test mit echter `.xlsx`-Datei je Importziel: Summenkontrolle,
   Duplikatlauf, Rückgängig/Blockierung und „Umzug abschließen“.
 
@@ -120,23 +125,25 @@ angegeben.
 - **Status:** Nachweis offen (Umgebungsblocker)
 - **Owner:** Tech
 - **Nachweis / nächster Schritt:** CI und Demo-Image müssen für den tatsächlichen
-  Release-Commit erfolgreich sein. Ein historischer grüner Lauf vom 23.09.2026
-  gehört zu `ad0f90e`; danach kamen weitere Änderungen bis `73b1756`.
-  Die Lint-/Typecheck-Fixes `d053153` und `73b1756` sind vorhanden. Der aktuelle
-  GitHub-Lauf war am 25.09. nicht abrufbar. Kein spekulativer CI-Fix und kein
-  Push ohne aktuellen Nachweis.
+  Release-Commit erfolgreich sein. Lokal liegt `main` auf `0674c08`, die
+  gespeicherte Referenz `origin/main` auf `c75ce13`. Der aktuelle GitHub-Lauf
+  war am 11.10. nicht abrufbar; weder „rot“ noch „grün“ ist bestätigt. Die
+  alten Lint-/Typecheck-Fixes vom September sind kein Nachweis für Oktober.
+  Docker fehlt lokal. Kein spekulativer CI-Fix oder Push fremder Commits.
 
 ## Aktueller technischer Stand
 
-Lokal zeigen `main` und die gespeicherte Referenz `origin/main` auf `73b1756`.
-Ohne Fetch ist das keine Bestätigung des heutigen GitHub-Stands. Der oben
-beschriebene Staging-Nachweis bleibt historisch auf `b6c6bb2` datiert; die
-behauptete heutige Staging-Revision `73b1756` wurde nicht erneut verifiziert.
+Der v0.9.4-/September-Stand ist überholt: Fachapp v0.9.5, Migrationen bis 058,
+zusätzliche Steuer-/USt-, Import- und UI-Funktionen. `README.md` nennt bereits
+v0.9.5. Die nicht versionierte `docs/Aktueller_Stand.md` ist fremde Arbeit und
+wurde nicht verändert oder als freigegebener Nachweis übernommen.
 
-Am 25.09.2026 bestanden die statischen Audit-Verträge und die Shell-Syntaxprüfung.
-Die Quellzählung ergibt 43 Frontend-, 106 Backend- und 36 PostgreSQL-
-Testdeklarationen (kein Testlauf). Einzelheiten und Prüfgrenzen stehen in
-[automated-tests.md](automated-tests.md).
+Am 11.10.2026 bestanden die statischen Audit-Verträge. Die Quellzählung ergibt
+142 Frontend-, 342 Backend-Unit- und 81 PostgreSQL-Testdeklarationen,
+**keinen Testlauf**. Historische Oktober-Testberichte ersetzen keinen heutigen
+Docker-/CI-Nachweis. Einzelheiten und Prüfgrenzen stehen in
+[automated-tests.md](automated-tests.md). Die 13 offenen manuellen Haken bleiben
+offen; bereits bestandene Haken werden nicht zurückgesetzt.
 
 Der Control Plane ist vorhanden; ältere Aussagen, er sei im Gesamtworkspace
 nicht verfügbar, sind überholt. Provisionierung und Sperrpfade existieren,
