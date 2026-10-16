@@ -106,7 +106,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const workspaceId = workspace?.id ?? null;
   const currentWorkspace = useRef(workspaceId);
   currentWorkspace.current = workspaceId;
-  const canManageSmtp = can('settings.write');
+  const canManageSmtp = can('workspace.settings');
   const terminology = getTerminology(company.terminologyProfile);
   useEffect(() => {
     if (embedded) return undefined;

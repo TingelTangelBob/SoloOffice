@@ -4,6 +4,7 @@ import logger from '../../utils/logger';
 import { apiService } from '../../services/api';
 import type { YearlyInvoiceStartNumber } from '../../types';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../../utils/invoiceNumberPattern';
+import { parsePaymentMethods } from '../../utils/paymentInformation';
 import { SettingsCard, SettingsField, type SettingsSaveMessage } from './SettingsUi';
 import { choiceCardClass, DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN, settingsInputClass } from './settingsStyles';
 import type { CompanySettingsAreaProps } from './settingsAreaProps';
@@ -83,6 +84,30 @@ function YearlyStartNumbers() {
       </div>
       {message && <p role={message.type === 'error' ? 'alert' : 'status'} className={`mt-2 text-xs ${message.type === 'error' ? 'text-red-700' : 'text-green-700'}`}>{message.text}</p>}
     </div>
+  );
+}
+
+/**
+ * Zahlungsarten als Freitext. Während der Eingabe bleibt der Rohtext stehen, damit
+ * Komma und Leerzeichen beim Tippen nicht verschwinden. Die Liste wird sofort übernommen,
+ * beim Verlassen des Feldes wird der Text bereinigt angezeigt.
+ */
+function PaymentMethodsInput({ methods, onChange }: { methods: string[]; onChange: (methods: string[]) => void }) {
+  // `null`: die gespeicherte Liste anzeigen. Ein Text steht nur, solange der Nutzer tippt.
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      id="payment-methods"
+      type="text"
+      value={draft ?? methods.join(', ')}
+      onChange={event => {
+        setDraft(event.target.value);
+        onChange(parsePaymentMethods(event.target.value));
+      }}
+      onBlur={() => setDraft(null)}
+      placeholder="z.B. Überweisung, PayPal, Barzahlung"
+      className={settingsInputClass}
+    />
   );
 }
 
@@ -176,13 +201,9 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
             />
           </SettingsField>
           <SettingsField id="payment-methods" label="Zahlungsarten" hint="Mehrere Zahlungsarten durch Komma trennen.">
-            <input
-              id="payment-methods"
-              type="text"
-              value={(formData.paymentInformation?.paymentMethods || []).join(', ')}
-              onChange={event => setPayment({ paymentMethods: event.target.value.split(',').map(method => method.trim()).filter(Boolean) })}
-              placeholder="z.B. Überweisung, PayPal, Barzahlung"
-              className={settingsInputClass}
+            <PaymentMethodsInput
+              methods={formData.paymentInformation?.paymentMethods || []}
+              onChange={paymentMethods => setPayment({ paymentMethods })}
             />
           </SettingsField>
           <SettingsField id="payment-immediate-clause" label="Sofortzahlungsklausel" info="Diese Klausel wird in Rechnungen mit 0 Tagen Zahlungsziel in den Zahlungsbedingungen angezeigt." className="md:col-span-2">

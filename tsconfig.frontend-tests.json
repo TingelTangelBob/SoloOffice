@@ -36,6 +36,7 @@
     "src/utils/hashRouter.ts",
     "src/utils/settingsNavigation.ts",
     "src/utils/settingsSearch.ts",
+    "src/utils/settingsDefaults.ts",
     "src/utils/smtpSettings.ts",
     "src/utils/navigationGuard.ts",
     "src/utils/taxProfileSteps.ts",

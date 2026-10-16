@@ -312,7 +312,7 @@ export function WorkspaceArea({
         sectionId="standardwerte"
         icon={RotateCcw}
         title="Standardwerte"
-        description="Setzt alle Firmeneinstellungen im Formular auf die Standardwerte. Übernommen wird erst mit „Speichern“."
+        description="Setzt Darstellung, Formate, Module und Begriffe auf die Standardwerte. Firmendaten bleiben unverändert. Übernommen wird erst mit „Speichern“."
         actions={(
           <button type="button" onClick={onResetToDefaults} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
             <RotateCcw className="h-4 w-4" aria-hidden="true" />

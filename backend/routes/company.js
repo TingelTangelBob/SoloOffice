@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
     const companyResult = await query("SELECT * FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
     
     if (companyResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Company information not found' });
+      return res.status(404).json({ error: 'Firmendaten wurden nicht gefunden.' });
     }
 
     const row = companyResult.rows[0];
@@ -133,7 +133,7 @@ router.put('/', async (req, res) => {
     if (req.body.locale !== undefined) {
       if (!LOCALES.has(req.body.locale)) {
         return res.status(400).json({
-          error: 'locale must be one of de-DE, en-US, fr-FR or es-ES'
+          error: 'Die Sprache muss de-DE, en-US, fr-FR oder es-ES sein.'
         });
       }
       updates.push(`locale = $${paramIndex++}`);
@@ -142,7 +142,7 @@ router.put('/', async (req, res) => {
     if (req.body.numberFormat !== undefined) {
       if (!NUMBER_FORMATS.has(req.body.numberFormat)) {
         return res.status(400).json({
-          error: 'numberFormat must be either european or american'
+          error: 'Ungültiges Zahlenformat.'
         });
       }
       updates.push(`number_format = $${paramIndex++}`);
@@ -151,7 +151,7 @@ router.put('/', async (req, res) => {
     if (req.body.currency !== undefined) {
       if (typeof req.body.currency !== 'string' || !CURRENCY_CODE_PATTERN.test(req.body.currency)) {
         return res.status(400).json({
-          error: 'currency must be a three-letter uppercase ISO 4217 code'
+          error: 'Die Währung muss ein dreistelliger ISO-4217-Code in Großbuchstaben sein.'
         });
       }
       updates.push(`currency = $${paramIndex++}`);
@@ -160,7 +160,7 @@ router.put('/', async (req, res) => {
     if (req.body.dateFormat !== undefined) {
       if (!DATE_FORMATS.has(req.body.dateFormat)) {
         return res.status(400).json({
-          error: 'dateFormat must be one of DD.MM.YYYY, DD/MM/YYYY, MM/DD/YYYY or YYYY-MM-DD'
+          error: 'Ungültiges Datumsformat.'
         });
       }
       updates.push(`date_format = $${paramIndex++}`);
@@ -168,7 +168,7 @@ router.put('/', async (req, res) => {
     }
     if (req.body.timeFormat !== undefined) {
       if (!TIME_FORMATS.has(req.body.timeFormat)) {
-        return res.status(400).json({ error: 'timeFormat must be either 24h or 12h' });
+        return res.status(400).json({ error: 'Ungültiges Zeitformat.' });
       }
       updates.push(`time_format = $${paramIndex++}`);
       values.push(req.body.timeFormat);
@@ -190,21 +190,21 @@ router.put('/', async (req, res) => {
     }
     if (req.body.themeMode !== undefined) {
       if (!THEME_MODES.has(req.body.themeMode)) {
-        return res.status(400).json({ error: 'themeMode must be system, light or dark' });
+        return res.status(400).json({ error: 'Ungültiger Farbmodus.' });
       }
       updates.push(`theme_mode = $${paramIndex++}`);
       values.push(req.body.themeMode);
     }
     if (req.body.terminologyProfile !== undefined) {
       if (!TERMINOLOGY_PROFILES.has(req.body.terminologyProfile)) {
-        return res.status(400).json({ error: 'terminologyProfile is not supported' });
+        return res.status(400).json({ error: 'Dieses Begriffsprofil wird nicht unterstützt.' });
       }
       updates.push(`terminology_profile = $${paramIndex++}`);
       values.push(req.body.terminologyProfile);
     }
     if (req.body.terminologyColorSource !== undefined) {
       if (!TERMINOLOGY_COLOR_SOURCES.has(req.body.terminologyColorSource)) {
-        return res.status(400).json({ error: 'terminologyColorSource must be appearance or profile' });
+        return res.status(400).json({ error: 'Ungültige Farbquelle für Begriffe.' });
       }
       updates.push(`terminology_color_source = $${paramIndex++}`);
       values.push(req.body.terminologyColorSource);
@@ -218,7 +218,7 @@ router.put('/', async (req, res) => {
     }
     if (req.body.paymentInformationMode !== undefined) {
       if (!PAYMENT_INFORMATION_MODES.has(req.body.paymentInformationMode)) {
-        return res.status(400).json({ error: 'paymentInformationMode must be separate or company' });
+        return res.status(400).json({ error: 'Ungültiger Modus für die Bankverbindung.' });
       }
       updates.push(`payment_information_mode = $${paramIndex++}`);
       values.push(req.body.paymentInformationMode);
@@ -265,21 +265,21 @@ router.put('/', async (req, res) => {
     }
     if (req.body.invoiceTemplates !== undefined) {
       if (!Array.isArray(req.body.invoiceTemplates)) {
-        return res.status(400).json({ error: 'invoiceTemplates must be an array' });
+        return res.status(400).json({ error: 'Rechnungsvorlagen müssen als Liste übergeben werden.' });
       }
       updates.push(`invoice_templates = $${paramIndex++}`);
       values.push(JSON.stringify(req.body.invoiceTemplates));
     }
     if (req.body.documentTemplates !== undefined) {
       if (!Array.isArray(req.body.documentTemplates)) {
-        return res.status(400).json({ error: 'documentTemplates must be an array' });
+        return res.status(400).json({ error: 'Dokumentvorlagen müssen als Liste übergeben werden.' });
       }
       updates.push(`document_templates = $${paramIndex++}`);
       values.push(JSON.stringify(req.body.documentTemplates));
     }
     if (req.body.documentTextTemplates !== undefined) {
       if (!Array.isArray(req.body.documentTextTemplates)) {
-        return res.status(400).json({ error: 'documentTextTemplates must be an array' });
+        return res.status(400).json({ error: 'Textvorlagen müssen als Liste übergeben werden.' });
       }
       updates.push(`document_text_templates = $${paramIndex++}`);
       values.push(JSON.stringify(req.body.documentTextTemplates));
@@ -382,7 +382,7 @@ router.put('/', async (req, res) => {
     }
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Company information not found' });
+      return res.status(404).json({ error: 'Firmendaten wurden nicht gefunden.' });
     }
 
     const row = result.rows[0];
@@ -391,7 +391,7 @@ router.put('/', async (req, res) => {
     res.json(company);
   } catch (error) {
     logger.error('Error updating company:', error);
-    res.status(500).json({ error: 'Failed to update company information' });
+    res.status(500).json({ error: 'Die Firmendaten konnten nicht gespeichert werden.' });
   }
 });
 

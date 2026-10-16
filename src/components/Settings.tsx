@@ -7,6 +7,9 @@ import { PageHeader } from './PageHeader';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
+import { ApiResponseError } from '../services/api';
+import { resetSettingsPreferences } from '../utils/settingsDefaults';
 import { validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { trackTelemetry } from '../services/telemetry';
 import { updateFavicon } from '../utils/faviconUtils';
@@ -49,6 +52,9 @@ interface SettingsProps {
 export function Settings({ initialTab = 'general', settingsTab, section, embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
   const { company, updateCompany } = useCompany();
+  const { can } = useAuth();
+  // Ohne das Recht „Einstellungen verwalten“ sind die Firmenformulare nur lesbar (Backend prüft dasselbe).
+  const canEditSettings = can('workspace.settings');
   const [formData, setFormData] = useState(company);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<SettingsSaveMessage | null>(null);
@@ -131,24 +137,16 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
   const selectSearchResult = (result: SettingsSearchResult) => selectArea(result.area, result.sectionId);
 
   const handleResetToDefaults = async () => {
+    if (!canEditSettings) return;
     const confirmed = await confirm({
-      title: 'Einstellungen zurücksetzen',
-      message: 'Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.',
+      title: 'Standardwerte wiederherstellen',
+      message: 'Darstellung, Farben, Sprache und Formate, Module sowie Begriffe und Belegbezeichnung werden auf die Standardwerte gesetzt. Firmendaten, Bankverbindung, Logo, Zahlungsbedingungen und Nummernkreise bleiben unverändert. Die Änderung wird erst mit „Speichern“ übernommen.',
       confirmText: 'Zurücksetzen',
+      isDestructive: true,
     });
     if (!confirmed) return;
 
-    setFormData({
-      ...defaultCompany,
-      quotesEnabled: false,
-      discountsEnabled: true,
-      remindersEnabled: false,
-      reminderDaysAfterDue: 7,
-      reminderDaysBetween: 7,
-      reminderFeeStage1: 0,
-      reminderFeeStage2: 0,
-      reminderFeeStage3: 0,
-    });
+    setFormData(previous => resetSettingsPreferences(previous, defaultCompany));
     setFeedback({ type: 'success', text: 'Standardwerte wurden im Formular gesetzt. Mit „Speichern“ übernehmen.' });
   };
 
@@ -159,7 +157,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
   };
 
   const saveCompanySettings = async () => {
-    if (isSaving) return;
+    if (isSaving || !canEditSettings) return;
     if (receiptLabelError) {
       setFeedback({ type: 'error', text: `${SETTINGS_AREA_DEFINITIONS.app.label}: ${receiptLabelError}` });
       return;
@@ -194,7 +192,11 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
       setFeedback({ type: 'success', text: 'Einstellungen wurden gespeichert.' });
     } catch (error) {
       logger.error('Error saving settings:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Einstellungen konnten nicht gespeichert werden.' });
+      // Antworten des Servers (z. B. Rechte oder Prüfung) zeigen; bei Netzwerkfehlern bleibt der allgemeine Text.
+      const text = error instanceof ApiResponseError && error.message
+        ? error.message
+        : 'Die Einstellungen konnten nicht gespeichert werden.';
+      setFeedback({ type: 'error', text });
     } finally {
       setIsSaving(false);
     }
@@ -225,6 +227,11 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
   const areaDefinition = SETTINGS_AREA_DEFINITIONS[activeArea];
   const areaProps = { formData, setFormData, terminology };
   const usesCompanyForm = COMPANY_FORM_AREAS.has(activeArea);
+  const readOnlyNotice = !canEditSettings && (usesCompanyForm || activeArea === 'system') ? (
+    <p role="status" className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+      Nur Administratoren können diese Einstellungen ändern.
+    </p>
+  ) : null;
   const dirtyLabel = dirtyAreas.map(area => SETTINGS_AREA_DEFINITIONS[area].label).join(', ');
   const navigateTo = onNavigate ? (page: string) => onNavigate(page) : undefined;
 
@@ -264,22 +271,25 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
             <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>
           </header>
 
+          {readOnlyNotice}
           {usesCompanyForm ? (
             <form onSubmit={handleSubmit} autoComplete="on" className="settings-form form-consistent-fields settings-area-body">
-              {activeArea === 'general' && <CompanyArea {...areaProps} />}
-              {activeArea === 'invoices' && <InvoicingArea {...areaProps} onNavigate={navigateTo} />}
-              {activeArea === 'app' && (
-                <WorkspaceArea
-                  {...areaProps}
-                  receiptLabelError={receiptLabelError}
-                  isDemoMode={isDemoMode}
-                  onNavigate={navigateTo}
-                  onResetToDefaults={() => void handleResetToDefaults()}
-                  onReloadDemoData={reloadDemoData}
-                  onDeleteDemoData={() => void deleteDemoData()}
-                />
-              )}
-              {activeArea === 'appearance' && <AppearanceArea {...areaProps} />}
+              <fieldset disabled={!canEditSettings} className="contents">
+                {activeArea === 'general' && <CompanyArea {...areaProps} />}
+                {activeArea === 'invoices' && <InvoicingArea {...areaProps} onNavigate={navigateTo} />}
+                {activeArea === 'app' && (
+                  <WorkspaceArea
+                    {...areaProps}
+                    receiptLabelError={receiptLabelError}
+                    isDemoMode={isDemoMode}
+                    onNavigate={navigateTo}
+                    onResetToDefaults={() => void handleResetToDefaults()}
+                    onReloadDemoData={reloadDemoData}
+                    onDeleteDemoData={() => void deleteDemoData()}
+                  />
+                )}
+                {activeArea === 'appearance' && <AppearanceArea {...areaProps} />}
+              </fieldset>
               {companySaveBar}
             </form>
           ) : (
