@@ -195,8 +195,10 @@
     overflow-x: hidden;
   }
 
-  /* iOS Safari specific fixes */
-  input, textarea, select {
+  /* iOS Safari specific fixes. Checkboxen und Radios bleiben ausgenommen:
+     `-webkit-appearance: none` entfernt in Chromium das native Kästchen, und
+     ohne eigene Klasse wäre der Haken dann unsichtbar. */
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select {
     -webkit-appearance: none;
     border-radius: 0;
   }

@@ -89,21 +89,23 @@ export function DialogShell({
         }`}
       >
         {compactHeader ? (
-          /* Schmale Dialoge (max-w-md): Symbol und Titel in einer Zeile, die
-             Beschreibung darunter. Titel und Symbol bleiben eine Stufe kleiner,
-             sonst bricht „Materialvorlage bearbeiten“ neben dem Symbol um. */
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-3">
-              {Icon && (
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-12 sm:w-12">
-                  <Icon className="h-6 w-6" />
-                </div>
-              )}
+          /* Schmale Dialoge (max-w-md): Symbol links, Titel und Beschreibung in
+             einer Spalte rechts davon. Die Beschreibung sitzt direkt unter dem
+             Titel und beginnt auf dessen Linie. Titel und Symbol bleiben eine
+             Stufe kleiner, sonst bricht „Materialvorlage bearbeiten“ neben dem
+             Symbol um. */
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            {Icon && (
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-12 sm:w-12">
+                <Icon className="h-6 w-6" />
+              </div>
+            )}
+            <div className="min-w-0">
               <h2 id={titleId} className="min-w-0 text-lg font-semibold leading-tight text-gray-900 sm:text-xl">
                 {title}
               </h2>
+              {description && <p className="mt-1 text-sm leading-5 text-gray-500 sm:text-base sm:leading-6">{description}</p>}
             </div>
-            {description && <p className="mt-2 text-sm leading-5 text-gray-500 sm:text-base sm:leading-6">{description}</p>}
           </div>
         ) : (
           <div className="flex min-w-0 flex-1 items-start gap-5">

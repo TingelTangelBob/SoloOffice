@@ -8,7 +8,7 @@ import { useInvoices } from '../context/InvoiceContext';
 import { useQuotes } from '../context/QuoteContext';
 import { useJobs } from '../context/JobContext';
 import { getTerminology } from '../utils/terminology';
-import { contentWidthClassForPage } from '../utils/contentWidth';
+import { contentAlignClassForPage, contentWidthClassForPage } from '../utils/contentWidth';
 import { useAuth } from '../context/AuthContext';
 import { DemoNotice } from './DemoNotice';
 import { WorkspaceSuspendedNotice } from './WorkspaceSuspendedNotice';
@@ -294,6 +294,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     '--sidebar-width': `${sidebarRenderWidth}px`,
   } as CSSProperties;
   const contentWidthClass = contentWidthClassForPage(currentPage);
+  const contentAlignClass = contentAlignClassForPage(currentPage);
   const accountName = user?.displayName?.trim() || 'Konto';
   const accountInitials = initialsOf(accountName);
   const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -855,7 +856,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               }`}
             >
               <PageSearchContext.Provider value={pageSearchValue}>
-              <div className={`mx-auto w-full ${contentWidthClass}`}>
+              <div className={`${contentAlignClass} w-full ${contentWidthClass}`}>
               {/* Gesperrter Arbeitsbereich: auf jeder Seite sichtbar, sonst null. */}
               <WorkspaceSuspendedNotice onNavigate={onPageChange} />
               {children}
