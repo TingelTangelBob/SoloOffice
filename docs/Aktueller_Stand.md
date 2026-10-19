@@ -1,48 +1,54 @@
 # Aktueller Stand SoloOffice
 
 **Stand:** 2026-10-19
-**Fachapp:** main · Beta-/Release-Kandidat v0.9.6 (lokal vorbereitet)
-**Git:** lokaler main-Arbeitsstand sauber; der annotierte Tag v0.9.6 ist nur lokal vorhanden. Die gespeicherte Referenz origin/main ist kein Nachweis des aktuellen Remote-Stands. Das GitHub-Token ist ungültig; Push und Remote-Prüfungen stehen aus.
+
+**Fachapp:** `main` · Beta-Pre-Release `v0.9.6` veröffentlicht
+
+**Release-Commit:** `1caddc66b86704c91583da1b810ab1346d38aef6`
+
+**GitHub-Release:** [SoloOffice v0.9.6](https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.9.6)
+
+Der Tag `v0.9.6` zeigt auf den Release-Commit. Nachgelagerte Korrekturen an Deploy-Skript und Statusdokumentation ändern diesen Release-Tag nicht. Ein öffentlicher Hosted-/SaaS-Start ist weiterhin nicht freigegeben.
 
 ## Produktstand
 
 SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Der aktuelle Stand umfasst unter anderem E-Rechnungen, Belege mit lokaler OCR, Workspace- und Rollenverwaltung, Datenübernahme, EÜR und die optionale Erweiterung „Steuern & Abgaben“.
 
-Der Stand bleibt Beta/Test. Ein öffentlicher Hosted-/SaaS-Launch ist laut launch-must.md nicht freigegeben. v0.9.6 ist lokal vorbereitet, aber weder auf GitHub veröffentlicht noch auf Staging oder Demo bestätigt.
-
-## Änderungen im lokalen Release-Kandidaten
+## Änderungen in v0.9.6
 
 - Die EÜR-Monatsübersicht kann nach Monat filtern und zeigt einen Monatsdurchschnitt.
 - Tagespauschalen lassen sich mit selbst recherchierten Beträgen, optionalen Grenzen und einer eigenen Quelle je Steuerjahr erfassen. SoloOffice liefert keine gesetzlichen Tagessätze oder Höchstgrenzen vor.
 - Arbeitstage und Tätigkeitsarten können unabhängig von Unterrichts- oder Kalenderterminen dokumentiert werden. Termine werden nicht als Arbeitstage vorausgesetzt.
 - Weitere oder besondere Pauschalen lassen sich frei beschriften und mit selbst eingetragener Berechnungsgrundlage erfassen.
-- Die Dokumentation grenzt die Funktion klar ab: SoloOffice prüft weder steuerliche Anspruchsvoraussetzungen noch Ausschlüsse oder ELSTER-Zuordnung.
-- Einstellungen und Rechte für Workspace-Daten wurden korrigiert.
-- Das Release-Skript behandelt Git-Worktrees und kann einen Push eines bereits erstellten Commits aus einem sauberen Arbeitsbaum wiederholen.
+- SoloOffice prüft weder steuerliche Anspruchsvoraussetzungen noch Ausschlüsse oder ELSTER-Zuordnung.
+- Einstellungen und Rechte für Workspace-Daten wurden korrigiert. Zusätzlich wurden Mailverwaltung, Plattformübersicht und Workspace-Einblicke erweitert.
 
-Details zur Steuererfassung stehen in docs/steuern-abgaben.md; Versionshinweise in CHANGELOG.md.
+Details zur Steuererfassung stehen in [docs/steuern-abgaben.md](steuern-abgaben.md); Versionshinweise in [CHANGELOG.md](../CHANGELOG.md).
 
-## Prüfstand und Nachweisgrenzen
+## Prüfstand und Nachweise
 
-- Lokal bestanden: git diff --check, bash -n deploy/solooffice-update-all.sh und node scripts/verify-audit-contracts.mjs.
-- Docker ist auf der Arbeitsmaschine nicht verfügbar. Für den aktuellen Stand wurden deshalb kein Docker-Build, keine vollständige Frontend-/Backend-Testsuite und kein Datenbank-Smoke-Test ausgeführt.
-- Das GitHub-Token ist ungültig. Der vorbereitete Commit wurde nicht gepusht; aktueller GitHub-CI-Status, Staging, Demo und ein GitHub-Pre-Release sind nicht bestätigt.
+- GitHub CI für den Release-Commit bestanden: [Lauf 39288082121](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39288082121). Frontend-Tests, Lint, Typprüfung, Produktionsbuild, Backend-Image und 387 Backend-Unit-Tests liefen erfolgreich; die Compose-Prüfung sowie Migrationen und Workspace-RLS gegen PostgreSQL bestanden.
+- ESLint meldet vier nicht blockierende Warnungen in `Calendar.tsx`, `TaxOverview.tsx` und `MotionProvider.tsx`.
+- Staging unter [app.staging.solooffice.de](https://app.staging.solooffice.de) wurde mit dem Release-Commit aktualisiert und die Betriebsprüfung meldete Version `0.9.6` als gesund.
+- Das Demo-Image wurde durch [Lauf 39288082067](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39288082067) gebaut und veröffentlicht. Der aktive Server-Timer übernahm es; `https://demo.solooffice.de/healthz` antwortete mit `ok`. Das ausgelieferte JavaScript enthält Version `0.9.6` und den Release-Commit.
+- Lokal bestanden: `git diff --check`, `bash -n deploy/solooffice-update-all.sh`, `node scripts/verify-audit-contracts.mjs`, `npm run typecheck` und `npm run lint`.
+- Docker ist auf der Arbeitsmaschine nicht verfügbar. Docker-Builds und die vollständigen Containerprüfungen liefen deshalb in GitHub CI.
 - Die manuelle Release-Checkliste nennt 13 offene Punkte. Sie wurden nicht erneut geprüft oder geschlossen.
-- Betriebsnachweise zu Offsite-Backup, externer Überwachung und Rückfallplan sind für den aktuellen Stand nicht erbracht.
-- Die Steuer- und Sozialwerte sind unverbindliche Schätzungen. Entwürfe für Einwilligungs-, Hilfe- und Nutzungstexte müssen vor einer öffentlichen Veröffentlichung anwaltlich geprüft werden. Das ist keine Prüfung einzelner EÜR-Buchungen und keine Voraussetzung für die interne Erfassung.
+- Betriebsnachweise zu Offsite-Backup, externer Überwachung und Rückfallplan für den Gesamtbetrieb sind weiterhin offen. Das Staging-Backup ersetzt diese Nachweise nicht.
 
 ## Umgebungen und Freigaben
 
-- solooffice.de ist die öffentliche Landingpage; ein öffentlicher SaaS-Fachapp-Endpunkt ist nicht freigegeben.
-- demo.solooffice.de ist als Demo dokumentiert, wurde in dieser Aktualisierung aber nicht live geprüft.
-- Selbsthosting ist möglich, ersetzt jedoch keine manuelle, rechtliche oder steuerliche Abnahme.
+- `solooffice.de` ist die öffentliche Landingpage.
+- `app.staging.solooffice.de` enthält den geprüften v0.9.6-Release-Commit.
+- `demo.solooffice.de` läuft als Demo und nicht als produktiver SaaS-Endpunkt.
+- Selbsthosting ist möglich, ersetzt jedoch keine manuelle, rechtliche oder steuerliche Prüfung.
+- Vor einem späteren öffentlichen Hosted-/SaaS-Start bleiben die dafür vorgesehenen Freigaben und Prüfungen offen. Das blockiert nicht die interne Erfassung eigener EÜR-Werte in SoloOffice.
 
 ## Nächste Schritte
 
-1. GitHub-Anmeldung erneuern und danach den vorbereiteten main-Stand und Tag v0.9.6 pushen.
-2. CI abwarten und den vorgesehenen Staging-Deploy samt Laufzeitprüfung durchführen.
-3. Demo-Update und GitHub-Beta-Pre-Release erst nach erfolgreicher Verifikation abschließen.
-4. Die offenen Punkte aus docs/manual-release-checklist.md mit Steffen manuell prüfen. Bestehende Haken bleiben unverändert.
-5. Backup, Überwachung und Rückfallplan für den aktuellen Betriebsstand nachweisen.
+1. Die 13 offenen Punkte aus [docs/manual-release-checklist.md](manual-release-checklist.md) mit Steffen manuell prüfen; bestehende Haken bleiben unverändert.
+2. Offsite-Backup, externe Überwachung und Rückfallplan für den Gesamtbetrieb nachweisen.
+3. Die vorbereiteten Dashboard-Zielzuordnungen aus SO-40 über Steffens Dashboard-Anmeldung anwenden.
+4. Vor einem öffentlichen SaaS-Start die dafür vorgesehenen Produkt- und Rechtsfreigaben abschließen.
 
-Ein erfolgreicher lokaler Build oder eine vorbereitete Version ist keine öffentliche Release- oder SaaS-Freigabe.
+Ein erfolgreicher Beta-Release ist keine öffentliche SaaS-Freigabe.

@@ -200,7 +200,7 @@ github_run_state() {
     auth_header=(-H "Authorization: Bearer ${SOLOOFFICE_GITHUB_TOKEN}")
   fi
 
-  response=$(curl --fail --silent --show-error --retry 2 "${auth_header[@]}" \
+  response=$(curl --fail --silent --show-error --retry 2 "${auth_header[@]+"${auth_header[@]}"}" \
     -H 'Accept: application/vnd.github+json' \
     "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_file/runs?head_sha=$COMMIT_SHA&per_page=5") || return 1
 
