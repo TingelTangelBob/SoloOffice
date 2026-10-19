@@ -48,6 +48,7 @@ const BACKUP_TABLES = [
   'job_recurrences',
   'job_entries',
   'calendar_events',
+  'work_location_days',
   'job_attachments',
   'job_time_entries',
   'company',
@@ -79,7 +80,7 @@ const RESTORE_CLEAR_TABLES = [
   'recurring_invoice_runs', 'recurring_invoices',
   'job_time_entries', 'job_attachments',
   'quote_attachments', 'quote_items',
-  'invoice_attachments', 'invoice_original_documents', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'job_entries', 'job_recurrences', 'invoices', 'quotes',
+  'invoice_attachments', 'invoice_original_documents', 'invoice_items', 'invoice_job_sources', 'calendar_events', 'work_location_days', 'job_entries', 'job_recurrences', 'invoices', 'quotes',
   'hourly_rates', 'material_templates', 'customers', 'company',
   'yearly_invoice_start_numbers', 'receipts', 'fixed_assets', 'euer_entries', 'incoming_e_invoices'
 ];
@@ -99,6 +100,7 @@ const RESTORE_ORDER = [
   'customer_specific_materials',
   'recurring_invoices',
   'calendar_events',
+  'work_location_days',
   'invoices',
   'receipts',
   'invoice_items',
@@ -141,7 +143,7 @@ const WORKSPACE_SCOPED_TABLES = new Set([
   'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'levy_payments', 'vat_payments',
   'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_original_documents', 'invoice_job_sources',
   'quotes', 'quote_items', 'quote_attachments', 'job_recurrences', 'job_entries', 'job_attachments',
-  'calendar_events', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
+  'calendar_events', 'work_location_days', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
   'yearly_invoice_start_numbers', 'euer_entries', 'euer_entry_history', 'fixed_assets',
   'receipts', 'email_history', 'smtp_settings', 'customer_hourly_rates',
   'customer_specific_hourly_rates', 'customer_specific_materials', 'incoming_e_invoices',

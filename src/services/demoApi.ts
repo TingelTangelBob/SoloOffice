@@ -46,6 +46,7 @@ interface DemoState {
   hourlyRates: DemoRecord[];
   yearlyInvoiceStartNumbers: DemoRecord[];
   calendarEvents: DemoRecord[];
+  workLocationDays: DemoRecord[];
   euerEntries: DemoRecord[];
   euerEntryHistory: DemoRecord[];
   invoiceHistory: DemoRecord[];
@@ -399,7 +400,17 @@ function seedDemoFinance(state: DemoState): void {
   state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
 }
 
-function todayLocal(): string {
+function todayLocal(timeZone?: string): string {
+  if (timeZone) {
+    try {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+        timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date()).map(part => [part.type, part.value]));
+      return `${parts.year}-${parts.month}-${parts.day}`;
+    } catch {
+      // Auf die lokale Gerätezeit zurückfallen, falls eine alte Demo-Zeitzone ungültig ist.
+    }
+  }
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -740,6 +751,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     hourlyRates: [{ id: generateUUID(), name: 'Standard', description: 'Lokaler Demo-Stundensatz', rate: 75, isDefault: true, createdAt: isoDate() }],
     yearlyInvoiceStartNumbers: [],
     calendarEvents: [],
+    workLocationDays: [],
     euerEntries: [],
     euerEntryHistory: [],
     invoiceHistory: [],
@@ -877,6 +889,7 @@ function readState(): DemoState {
       ...parsed,
       yearlyInvoiceStartNumbers: parsed.yearlyInvoiceStartNumbers || [],
       calendarEvents: parsed.calendarEvents || [],
+      workLocationDays: parsed.workLocationDays || [],
       recurringInvoices: parsed.recurringInvoices || [],
       euerEntries: parsed.euerEntries || [],
       euerEntryHistory: parsed.euerEntryHistory || [],
@@ -2017,6 +2030,50 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   currentRequestMutates = isUserEdit(method, payload(options));
   const id = parts[1];
   const data = payload(options);
+
+  if (resource === 'work-location-days') {
+    const days = state.workLocationDays || (state.workLocationDays = []);
+    if (method === 'GET' && !id) {
+      const from = queryParams.get('from') || '';
+      const to = queryParams.get('to') || '';
+      try {
+        assertDemoDate(from, 'Startdatum');
+        assertDemoDate(to, 'Enddatum');
+      } catch {
+        throw new Error('Bitte einen gültigen Zeitraum mit Start- und Enddatum angeben.');
+      }
+      if (from > to) throw new Error('Bitte einen gültigen Zeitraum mit Start- und Enddatum angeben.');
+      const count = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 + 1;
+      if (count > 400) throw new Error('Der angefragte Zeitraum darf höchstens 400 Tage umfassen.');
+      return days.filter(day => String(day.date) >= from && String(day.date) <= to) as unknown as T;
+    }
+    if (method === 'PUT' && id) {
+      assertDemoDate(id, 'Datum');
+      if (id > todayLocal(state.company.timeZone)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
+      if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
+      if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.');
+      const existing = days.find(day => day.date === id);
+      const record = {
+        id,
+        date: id,
+        dayType: data.dayType,
+        reviewedAt: isoDate(),
+        createdAt: existing?.createdAt || isoDate(),
+        updatedAt: isoDate(),
+      };
+      if (existing) days[days.indexOf(existing)] = record; else days.push(record);
+      days.sort((left, right) => String(left.date).localeCompare(String(right.date)));
+      saveState(state);
+      return record as unknown as T;
+    }
+    if (method === 'DELETE' && id) {
+      assertDemoDate(id, 'Datum');
+      state.workLocationDays = days.filter(day => day.date !== id);
+      saveState(state);
+      return undefined as T;
+    }
+    throw new Error('Ungültige Arbeitsort-Anfrage.');
+  }
 
   const financeState = () => {
     state.extensions ||= demoExtensionList({
@@ -3891,6 +3948,7 @@ export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { compan
   }
   state.yearlyInvoiceStartNumbers = options.companyProfile ? [] : (previous.yearlyInvoiceStartNumbers || []);
   state.calendarEvents = [];
+  state.workLocationDays = [];
   state.euerEntries = [];
   state.euerEntryHistory = [];
   state.extensions = options.companyProfile

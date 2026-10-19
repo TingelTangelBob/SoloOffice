@@ -35,6 +35,8 @@ import type {
   EuerEntrySourceType,
   EuerEntryType,
   EuerVatFields,
+  WorkLocationDay,
+  WorkLocationDayType,
 } from '../types';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
@@ -55,6 +57,7 @@ import { ImportWizard } from './ImportWizard';
 import { getTerminology } from '../utils/terminology';
 import { DueRecurringExpensesNotice } from './DueRecurringExpensesNotice';
 import { RecurringExpenseDialog } from './RecurringExpenseDialog';
+import { EuerAllowanceDialog } from './EuerAllowanceDialog';
 import { financeApi } from '../services/financeApi';
 import type { RecurringExpensePayload } from '../types/finance';
 import { useAuth } from '../context/AuthContext';
@@ -113,6 +116,7 @@ const categoryLabels: Record<EuerEntryCategory, string> = {
   bank_fees: 'Bankgebühren',
   rent: 'Miete und Raumkosten',
   memberships: 'Kammern und Verbände',
+  allowance: 'Pauschalen',
   other_expense: 'Sonstige Betriebsausgaben',
   vat_payment: 'Umsatzsteuer an das Finanzamt',
   vat_refund: 'Umsatzsteuer-Erstattung',
@@ -120,10 +124,11 @@ const categoryLabels: Record<EuerEntryCategory, string> = {
 
 const expenseCategories: EuerEntryCategory[] = [
   'materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle',
-  'marketing', 'professional_services', 'insurance', 'bank_fees', 'rent', 'memberships', 'other_expense',
+  'marketing', 'professional_services', 'insurance', 'bank_fees', 'rent', 'memberships', 'allowance', 'other_expense',
 ];
 
 const categorySuggestions: Array<{ category: EuerEntryCategory; words: string[] }> = [
+  { category: 'allowance', words: ['pauschale', 'pauschalen', 'homeoffice'] },
   { category: 'software', words: ['software', 'cloud', 'hosting', 'lizenz', 'saas'] },
   { category: 'telecommunications', words: ['telefon', 'internet', 'mobilfunk', 'telekommunikation'] },
   { category: 'office', words: ['büro', 'papier', 'drucker', 'schreibwaren', 'toner'] },
@@ -141,9 +146,15 @@ const suggestCategory = (description: string): EuerEntryCategory => {
   return categorySuggestions.find(item => item.words.some(word => normalized.includes(word)))?.category || 'other_expense';
 };
 
+const todayLocal = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const monthLabel = (locale: string, year: number, month: number) => new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month, 15)));
+
 const emptyDraft = (sourceType: EuerEntrySourceType = 'manual'): EntryDraft => ({
   entryType: sourceType === 'invoice_payment' ? 'income' : 'expense',
-  entryDate: new Date().toISOString().slice(0, 10),
+  entryDate: todayLocal(),
   description: '',
   category: sourceType === 'invoice_payment' ? 'other_income' : 'office',
   amount: '',
@@ -186,10 +197,15 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
   const showInlineActions = tableWidth >= EUER_TABLE_LAYOUT.inlineActionsMinWidth;
   const [year, setYear] = useState(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [vatIncompleteOnly, setVatIncompleteOnly] = useState(initialAction === 'vat-incomplete');
   const [entries, setEntries] = useState<EuerEntry[]>([]);
+  const [workLocationDays, setWorkLocationDays] = useState<WorkLocationDay[]>([]);
+  const [workLocationDaysLoading, setWorkLocationDaysLoading] = useState(true);
+  const [workLocationDaysError, setWorkLocationDaysError] = useState('');
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [entriesLoadedScope, setEntriesLoadedScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -204,9 +220,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [history, setHistory] = useState<EuerEntryHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [expenseTemplateEntry, setExpenseTemplateEntry] = useState<EuerEntry | null>(null);
+  const [allowanceDialogOpen, setAllowanceDialogOpen] = useState(false);
   const templateWorkspace = useRef(workspace?.id ?? null);
   const entryRequestVersion = useRef(0);
+  const workLocationRequestVersion = useRef(0);
   templateWorkspace.current = workspace?.id ?? null;
+  const currentEntriesScope = `${workspaceId ?? ''}:${year}`;
+  const entriesReady = !loading && entriesLoadedScope === currentEntriesScope;
 
 
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
@@ -229,6 +249,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     const request = ++entryRequestVersion.current;
     const targetWorkspace = workspaceId;
     setLoading(true);
+    setEntriesLoadedScope(null);
     setError('');
     try {
       const [entryData, creditNoteData] = await Promise.all([
@@ -238,6 +259,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       if (entryRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
       setEntries(entryData);
       setCreditNotes(creditNoteData);
+      setEntriesLoadedScope(`${targetWorkspace ?? ''}:${year}`);
     } catch (loadError) {
       if (entryRequestVersion.current === request && templateWorkspace.current === targetWorkspace) setError(loadError instanceof Error ? loadError.message : 'EÜR-Buchungen konnten nicht geladen werden.');
     } finally {
@@ -245,10 +267,36 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     }
   }, [year, workspaceId]);
 
+  const loadWorkLocationDays = useCallback(async () => {
+    const request = ++workLocationRequestVersion.current;
+    const targetWorkspace = workspaceId;
+    setWorkLocationDaysLoading(true);
+    setWorkLocationDaysError('');
+    try {
+      const days = await apiService.getWorkLocationDays(`${year}-01-01`, `${year}-12-31`);
+      if (workLocationRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
+      setWorkLocationDays(days);
+    } catch (loadError) {
+      if (workLocationRequestVersion.current === request && templateWorkspace.current === targetWorkspace) {
+        setWorkLocationDaysError(loadError instanceof Error ? loadError.message : 'Tagesaufzeichnungen konnten nicht geladen werden.');
+      }
+    } finally {
+      if (workLocationRequestVersion.current === request && templateWorkspace.current === targetWorkspace) setWorkLocationDaysLoading(false);
+    }
+  }, [year, workspaceId]);
+
   useEffect(() => {
-    entryRequestVersion.current += 1; setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
+    entryRequestVersion.current += 1; setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
     void loadEntries(); return () => { entryRequestVersion.current += 1; };
   }, [loadEntries]);
+  useEffect(() => {
+    workLocationRequestVersion.current += 1;
+    setWorkLocationDays([]);
+    setWorkLocationDaysError('');
+    setWorkLocationDaysLoading(true);
+    void loadWorkLocationDays();
+    return () => { workLocationRequestVersion.current += 1; };
+  }, [loadWorkLocationDays]);
   useEffect(() => {
     if (initialAction === 'vat-incomplete') { setVatIncompleteOnly(true); return; }
     if (initialAction !== 'new') return;
@@ -263,7 +311,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId)
       .map(entry => entry.sourceId));
     const automaticRows = [...invoices, ...creditNotes]
-      .filter(invoice => invoice.status === 'paid' && new Date(invoice.issueDate).getFullYear() === year)
+      .filter(invoice => invoice.status === 'paid' && Number(dateKey(invoice.issueDate).slice(0, 4)) === year)
       .filter(invoice => !linkedInvoiceIds.has(invoice.id))
       .map(invoice => {
         const isCreditNote = invoice.documentType === 'credit_note';
@@ -294,7 +342,9 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         taxRate: Number(entry.taxRate || 0),
         notes: entry.notes,
         automatic: false,
-        sourceLabel: sourceInvoice
+        sourceLabel: entry.category === 'allowance'
+          ? 'Pauschale'
+          : sourceInvoice
           ? `${sourceLabels.invoice_payment} · ${sourceInvoice.invoiceNumber}`
           : entry.customerId && customerNames.get(entry.customerId)
             ? `${sourceLabels[entry.sourceType || 'manual']} · ${customerNames.get(entry.customerId)}`
@@ -306,8 +356,20 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       || b.id.localeCompare(a.id, 'de-DE', { numeric: true, sensitivity: 'base' }));
   }, [creditNotes, customerNames, entries, invoiceOptions, invoices, year]);
 
-  const incompleteCount = entries.filter(entry => needsVatData(entry, Boolean(company?.isSmallBusiness))).length;
-  const visibleRows = vatIncompleteOnly ? rows.filter(row => { const entry = entriesById.get(row.id); return entry ? needsVatData(entry, Boolean(company?.isSmallBusiness)) : false; }) : rows;
+  const monthFilteredRows = selectedMonth === null
+    ? rows
+    : rows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === selectedMonth);
+  const incompleteRows = monthFilteredRows.filter(row => {
+    const entry = entriesById.get(row.id);
+    return entry ? needsVatData(entry, Boolean(company?.isSmallBusiness)) : false;
+  });
+  const incompleteCount = incompleteRows.length;
+  const visibleRows = vatIncompleteOnly ? incompleteRows : monthFilteredRows;
+  const monthPrefix = selectedMonth === null ? null : `Im ${monthLabel(locale, year, selectedMonth)}`;
+  const hasEuerYearShift = entries.some(entry => entry.euerYear && entry.euerYear !== Number(dateKey(entry.entryDate).slice(0, 4)));
+  const emptyBookingsMessage = vatIncompleteOnly
+    ? monthPrefix ? `${monthPrefix} sind keine Buchungen mit unvollständigen USt-Angaben vorhanden.` : 'Keine Buchungen mit unvollständigen USt-Angaben.'
+    : monthPrefix ? `${monthPrefix} sind keine Buchungen vorhanden.` : 'Keine Buchungen in diesem Zeitraum.';
 
   const summary = useMemo(() => {
     const income = rows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
@@ -316,11 +378,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   }, [rows]);
 
   const monthly = useMemo(() => Array.from({ length: 12 }, (_, month) => {
-    const monthRows = rows.filter(row => new Date(`${row.entryDate}T00:00:00`).getMonth() === month);
+    const monthRows = rows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === month);
     const income = monthRows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
     const expenses = monthRows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
     return { month, income, expenses, profit: income - expenses };
   }), [rows]);
+  const averageMonthCount = year === currentYear ? new Date().getMonth() + 1 : 12;
+  const monthlyAverage = {
+    income: summary.income / averageMonthCount,
+    expenses: summary.expenses / averageMonthCount,
+    profit: summary.profit / averageMonthCount,
+  };
 
   const checkHints = useMemo(() => {
     const hints: string[] = [];
@@ -341,6 +409,36 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
   const openNew = () => { setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
   const openPayment = () => { setDraft(emptyDraft('invoice_payment')); setDialogEntry(null); setError(''); };
+  const homeOfficeEntries = entries.filter(entry => entry.entryType === 'expense'
+    && entry.category === 'allowance'
+    && entry.status !== 'voided'
+    && entry.description === `Homeoffice-Tagespauschale ${year}`
+    && (entry.notes?.includes('Tagesnachweis (Datum=Art):')
+      || entry.notes?.includes('Tage mit überwiegender Tätigkeit in der häuslichen Wohnung ohne Besuch der ersten Tätigkeitsstätte:')));
+  const saveAllowance = async (payload: EuerEntryPayload, existingEntryId?: string) => {
+    if (existingEntryId) {
+      const updated = await apiService.updateEuerEntry(existingEntryId, payload);
+      setEntries(current => current.map(entry => entry.id === updated.id ? updated : entry));
+      setNotice('Homeoffice-Pauschalposten wurde anhand des aktuellen Tagesnachweises aktualisiert.');
+      return;
+    }
+    const created = await apiService.createEuerEntry(payload);
+    if (Number(dateKey(created.entryDate).slice(0, 4)) === year) setEntries(current => [created, ...current]);
+    setNotice('Pauschale wurde für das ausgewählte EÜR-Jahr erfasst.');
+  };
+  const removeHomeOfficeEntry = async (entryId: string) => {
+    await apiService.deleteEuerEntry(entryId, 'Homeoffice-Pauschale ohne gespeicherte Tagesnachweise storniert');
+    setEntries(current => current.filter(entry => entry.id !== entryId));
+    setNotice('Homeoffice-Pauschalposten wurde storniert und bleibt im Änderungsverlauf erhalten.');
+  };
+  const saveWorkLocationDay = async (date: string, dayType: WorkLocationDayType) => {
+    const saved = await apiService.saveWorkLocationDay(date, dayType);
+    setWorkLocationDays(current => [...current.filter(day => day.date !== saved.date), saved].sort((left, right) => left.date.localeCompare(right.date)));
+  };
+  const deleteWorkLocationDay = async (date: string) => {
+    await apiService.deleteWorkLocationDay(date);
+    setWorkLocationDays(current => current.filter(day => day.date !== date));
+  };
   const openCorrection = (entry: EuerEntry) => {
     const correctionType: EuerEntryType = entry.entryType === 'income' ? 'expense' : 'income';
     setDraft({
@@ -603,6 +701,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         menuClassName="min-w-60"
       >
         <ActionMenuItem icon={<Plus className="h-4 w-4" />} tone="orange" onClick={openNew}>Manuelle Buchung</ActionMenuItem>
+        {can('data.write') && <ActionMenuItem icon={<Calculator className="h-4 w-4" />} tone="indigo" disabled={!entriesReady} onClick={() => setAllowanceDialogOpen(true)}>Pauschale erfassen</ActionMenuItem>}
         <ActionMenuItem icon={<FileScan className="h-4 w-4" />} tone="blue" onClick={() => onNavigate?.('receipts')}>Beleg hinzufügen</ActionMenuItem>
         <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" onClick={openPayment}>Teilzahlung</ActionMenuItem>
         <ActionMenuItem icon={<Upload className="h-4 w-4" />} tone="indigo" onClick={() => setIsImportOpen(true)}>Aus Datei importieren</ActionMenuItem>
@@ -617,6 +716,26 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         await loadEntries();
       }}
     />
+    {allowanceDialogOpen && <EuerAllowanceDialog
+      key={year}
+      year={year}
+      locale={locale}
+      dateFormat={company?.dateFormat}
+      timeZone={company?.timeZone}
+      numberFormat={company?.numberFormat}
+      canWrite={can('data.write')}
+      entriesReady={entriesReady}
+      workLocationDays={workLocationDays}
+      workLocationDaysLoading={workLocationDaysLoading}
+      workLocationDaysError={workLocationDaysError}
+      existingHomeOfficeEntries={homeOfficeEntries}
+      onClose={() => setAllowanceDialogOpen(false)}
+      onSave={saveAllowance}
+      onRemoveExistingHomeOfficeEntry={removeHomeOfficeEntry}
+      onSaveWorkLocationDay={saveWorkLocationDay}
+      onDeleteWorkLocationDay={deleteWorkLocationDay}
+      onReloadWorkLocationDays={loadWorkLocationDays}
+    />}
 
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
@@ -640,7 +759,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2><p className="mt-1 text-sm text-gray-500">Schneller Überblick über Einnahmen, Ausgaben und Überschuss.</p></div>
+          <div><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2><p className="mt-1 text-sm text-gray-500">Schneller Überblick über Einnahmen, Ausgaben und Überschuss. Ein Klick auf einen Monat filtert die Buchungen darunter.</p>{hasEuerYearShift && <p className="mt-1 text-xs text-gray-500">Monatswerte folgen dem Buchungsdatum. Einzelne Zahlungen können nach § 11 EStG einem anderen EÜR-Jahr zugeordnet sein.</p>}</div>
           <ActionMenu ariaLabel="Steuerberater-Export öffnen" title="Steuerberater-Export" icon={<Download className="h-4 w-4" />} containerClassName="shrink-0" menuClassName="min-w-56">
             <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={exportCsv}>CSV Steuerberater</ActionMenuItem>
             <ActionMenuItem icon={<FileJson className="h-4 w-4" />} tone="indigo" onClick={exportJson}>JSON Steuerberater</ActionMenuItem>
@@ -650,23 +769,25 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <div className="mt-5 hidden overflow-x-auto tablet:block">
           <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{monthly.map(item => <tr key={item.month} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(year, item.month, 1))}</td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td></tr>)}</tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">{monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}><td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td></tr>)}</tbody>
+            <tfoot className="border-t-2 border-gray-200 bg-gray-50"><tr><td className="px-4 py-3 font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></td><td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</td><td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</td><td className={`px-4 py-3 text-right font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</td></tr></tfoot>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><div className="flex items-center justify-between gap-3"><span className="font-medium text-gray-900">{new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(year, item.month, 1))}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
+        <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}><span className="font-medium text-gray-900">{monthLabel(locale, year, item.month)}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></button><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
+        <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-900">Ø pro Monat<span className="ml-2 text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></span><span className={`font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</p></div></div></div>
       </div>
     </section>
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p></div><button type="button" onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p>{selectedMonth !== null && <p className="mt-2 text-sm text-gray-700">Nur <strong>{monthLabel(locale, year, selectedMonth)}</strong> · {monthFilteredRows.length} {monthFilteredRows.length === 1 ? 'Buchung' : 'Buchungen'} <button type="button" onClick={() => setSelectedMonth(null)} className="ml-2 font-medium text-primary-custom hover:underline">Alle Monate anzeigen</button></p>}</div><button type="button" aria-pressed={vatIncompleteOnly} onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
       {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : rows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{visibleRows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}</article>; })}</div>
+        <div className="divide-y divide-gray-100 tablet:hidden">{visibleRows.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</p>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}</article>; })}</div>
       </>}
     </section>
 
@@ -731,7 +852,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     {expenseTemplateEntry && <RecurringExpenseDialog
       key={expenseTemplateEntry.id}
       scope="business"
-      initialValues={{ name: expenseTemplateEntry.description, counterparty: '', category: expenseTemplateEntry.category, amountGross: Number(expenseTemplateEntry.amount), taxRate: expenseTemplateEntry.taxRate, interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate: new Date().toISOString().slice(0, 10), endDate: null, noticePeriodDays: 0, cancelledOn: null, status: 'active', pauses: [], priceChanges: [], automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: `Als Vorlage aus der EÜR-Buchung vom ${expenseTemplateEntry.entryDate} erstellt.` }}
+      initialValues={{ name: expenseTemplateEntry.description, counterparty: '', category: expenseTemplateEntry.category, amountGross: Number(expenseTemplateEntry.amount), taxRate: expenseTemplateEntry.taxRate, interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate: todayLocal(), endDate: null, noticePeriodDays: 0, cancelledOn: null, status: 'active', pauses: [], priceChanges: [], automaticBooking: false, scope: 'business', levyKind: null, linkedReceiptId: null, notes: `Als Vorlage aus der EÜR-Buchung vom ${expenseTemplateEntry.entryDate} erstellt.` }}
       onClose={() => setExpenseTemplateEntry(null)}
       onSave={async (payload: RecurringExpensePayload) => {
         const targetWorkspace = workspace?.id ?? null;

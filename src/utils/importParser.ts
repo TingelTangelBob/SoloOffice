@@ -123,6 +123,7 @@ const expenseCategoryLabels: Record<string, string> = {
   professional_services: 'Fremdleistungen und Beratung',
   insurance: 'Versicherungen',
   bank_fees: 'Bankgebühren',
+  allowance: 'Pauschalen',
   other_expense: 'Sonstige Betriebsausgaben',
 };
 

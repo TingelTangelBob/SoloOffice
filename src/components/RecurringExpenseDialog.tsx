@@ -18,7 +18,10 @@ const ustLegacyLabel = 'Umsatzsteuer (bitte unter Steuern → Umsatzsteuer erfas
 const levyKinds: Array<[LevyKind, string]> = [['kv', 'Krankenversicherung'], ['pv', 'Pflegeversicherung'], ['rv', 'Rentenversicherung'], ['av', 'Arbeitslosenversicherung'], ['ksk', 'Künstlersozialkasse'], ['est_vz', 'Einkommensteuer-Vorauszahlung'], ['gewst_vz', 'Gewerbesteuer-Vorauszahlung'], ['ust', ustLegacyLabel]];
 const field = 'form-input form-input-compact mt-1 w-full text-sm';
 const label = 'block min-w-0 text-sm font-medium text-gray-700';
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
 const dateOnlyLabel = (value: string) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   return match ? `${match[3]}.${match[2]}.${match[1]}` : value;

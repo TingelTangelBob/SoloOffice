@@ -12,6 +12,7 @@ import {
   Trash2,
   Download,
   CalendarDays,
+  Home,
   UserRound,
   Clock3,
   MapPin,
@@ -22,7 +23,7 @@ import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
-import { CalendarEvent, JobEntry } from '../types';
+import { CalendarEvent, JobEntry, WorkLocationDay, WorkLocationDayType } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { EmptyState } from './EmptyState';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -36,6 +37,9 @@ import { downloadCalendarIcs } from '../utils/icsExport';
 import { usePageSearch } from '../context/PageSearchContext';
 import { trackTelemetry } from '../services/telemetry';
 import { getCalendarJobTitle, hasCalendarJobTitle } from '../utils/calendarJobTitle';
+import { getWorkLocationDayLabel } from '../utils/workLocationDays';
+import { WorkLocationDayDialog } from './WorkLocationDayDialog';
+import { useAuth } from '../context/AuthContext';
 
 interface CalendarProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
@@ -205,6 +209,8 @@ function CalendarDayScroll({ enabled, children }: CalendarDayScrollProps) {
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { confirm, notify } = useFeedback();
+  const { can, workspace } = useAuth();
+  const workspaceId = workspace?.id ?? null;
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { jobEntries, addJobEntry, updateJobEntry, refreshJobEntries } = useJobs();
   const { invoices } = useInvoices();
@@ -237,6 +243,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarEventsLoading, setCalendarEventsLoading] = useState(true);
   const [calendarEventsError, setCalendarEventsError] = useState<string | null>(null);
+  const [workLocationDays, setWorkLocationDays] = useState<WorkLocationDay[]>([]);
+  const [workLocationDaysLoading, setWorkLocationDaysLoading] = useState(true);
+  const [workLocationDaysError, setWorkLocationDaysError] = useState('');
+  const [workLocationDayDialogDate, setWorkLocationDayDialogDate] = useState<string | null>(null);
+  const workLocationRequestVersion = useRef(0);
+  const workLocationWorkspaceId = useRef(workspaceId);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -595,6 +607,61 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     : viewMode === 'workweek'
       ? currentWeekDays.slice(0, 5)
       : currentWeekDays;
+
+  const workLocationRange = useMemo(() => {
+    const first = viewMode === 'month'
+      ? calendarDays[0]
+      : viewMode === 'day'
+        ? selectedDate
+        : currentWeekDays[0];
+    const last = viewMode === 'month'
+      ? calendarDays[calendarDays.length - 1]
+      : viewMode === 'day'
+        ? selectedDate
+        : viewMode === 'workweek'
+          ? currentWeekDays[4]
+          : currentWeekDays[6];
+    if (!first || !last) return null;
+    return { from: toDateKey(first), to: toDateKey(last) };
+  }, [calendarDays, currentWeekDays, selectedDate, viewMode]);
+
+  const loadWorkLocationDays = useCallback(async () => {
+    if (!workLocationRange) return;
+    const request = ++workLocationRequestVersion.current;
+    setWorkLocationDaysError('');
+    setWorkLocationDaysLoading(true);
+    try {
+      const days = await apiService.getWorkLocationDays(workLocationRange.from, workLocationRange.to);
+      if (workLocationRequestVersion.current === request) setWorkLocationDays(days);
+    } catch (error) {
+      logger.error('Error loading work location days:', error);
+      if (workLocationRequestVersion.current === request) setWorkLocationDaysError('Arbeitsort-Aufzeichnungen konnten nicht geladen werden.');
+    } finally {
+      if (workLocationRequestVersion.current === request) setWorkLocationDaysLoading(false);
+    }
+  }, [workLocationRange, workspaceId]);
+
+  useEffect(() => {
+    if (workLocationWorkspaceId.current !== workspaceId) {
+      workLocationWorkspaceId.current = workspaceId;
+      setWorkLocationDays([]);
+    }
+    void loadWorkLocationDays();
+  }, [loadWorkLocationDays, workspaceId]);
+
+  const workLocationDaysByDate = useMemo(() => new Map<string, WorkLocationDay>(workLocationDays.map(day => [day.date, day] as const)), [workLocationDays]);
+  const getWorkLocationDayForDate = (date: Date) => workLocationDaysByDate.get(toDateKey(date));
+
+  const saveWorkLocationDay = async (date: string, dayType: WorkLocationDayType) => {
+    const saved = await apiService.saveWorkLocationDay(date, dayType);
+    setWorkLocationDays(current => [...current.filter(day => day.date !== date), saved].sort((left, right) => left.date.localeCompare(right.date)));
+    setWorkLocationDaysError('');
+  };
+
+  const deleteWorkLocationDay = async (date: string) => {
+    await apiService.deleteWorkLocationDay(date);
+    setWorkLocationDays(current => current.filter(day => day.date !== date));
+  };
 
   const getJobTimeRange = (job: JobEntry) => {
     const timeEntryWithTime = job.timeEntries?.find((entry) => entry.startTime || entry.endTime);
@@ -1257,6 +1324,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Neu</span>
         </button>
+        {can('data.write') && <button
+          type="button"
+          onClick={() => setWorkLocationDayDialogDate(toDateKey(selectedDate))}
+          className="calendar-toolbar-control calendar-toolbar-button inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-w-0 sm:px-3"
+          aria-label="Arbeitsort für den ausgewählten Tag erfassen"
+          title={`Arbeitsort für ${formatDate(selectedDate, locale, company?.dateFormat)} erfassen`}
+        >
+          <Home className="h-4 w-4" />
+          <span className="hidden sm:inline">Arbeitsort</span>
+        </button>}
         <button
           type="button"
           onClick={() => setShowShareDialog(true)}
@@ -1287,6 +1364,12 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           >
             Erneut versuchen
           </button>
+        </div>
+      )}
+      {workLocationDaysError && (
+        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <p>{workLocationDaysError}</p>
+          <button type="button" onClick={() => void loadWorkLocationDays()} className="inline-flex min-h-0 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium hover:bg-amber-100">Erneut laden</button>
         </div>
       )}
 
@@ -1385,6 +1468,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             {calendarDays.map((date, index) => {
               const dayJobs = getJobsForDate(date);
               const dayEvents = getEventsForDate(date);
+              const workLocationDay = getWorkLocationDayForDate(date);
               const totalEntries = dayJobs.length + dayEvents.length;
               const isDayToday = isToday(date);
               const isInCurrentMonth = isCurrentMonth(date);
@@ -1421,7 +1505,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     `}
                     title={`Doppelklick zum Erstellen eines neuen ${terminology.work.singular}`}
                   >
-                    <div className="flex items-start">
+                    <div className="flex items-start justify-between gap-1">
                       <span className={`
                         inline-flex h-6 min-w-6 items-center justify-center rounded-full text-sm font-medium sm:h-7 sm:min-w-7 sm:text-base
                         ${isDayToday ? 'border border-primary-custom font-semibold text-primary-custom' : isSelectedDate(date) ? 'font-semibold text-primary-custom' : ''}
@@ -1429,6 +1513,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       `}>
                       {date.getDate()}
                       </span>
+                      {workLocationDay && <span className="mt-1 mr-1 shrink-0 rounded bg-primary-light-custom p-1 text-primary-custom" title={getWorkLocationDayLabel(workLocationDay.dayType)} aria-label={`Arbeitsort erfasst: ${getWorkLocationDayLabel(workLocationDay.dayType)}`}><Home className="h-3 w-3" aria-hidden="true" /></span>}
                     </div>
                   </div>
                   
@@ -1625,8 +1710,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   className="grid min-w-0"
                   style={{ gridTemplateColumns: `repeat(${timeGridDays.length}, minmax(0, 1fr))` }}
                 >
-                  {timeGridDays.map((date) => (
-                    <div
+                  {timeGridDays.map((date) => {
+                    const workLocationDay = getWorkLocationDayForDate(date);
+                    return <div
                       key={date.toISOString()}
                       onClick={() => selectCalendarDate(date)}
                       onDoubleClick={() => handleDateDoubleClick(date)}
@@ -1641,8 +1727,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       <div className="mt-1 truncate text-sm font-medium">
                         {date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
                       </div>
-                    </div>
-                  ))}
+                      {workLocationDay && <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary-custom" title={getWorkLocationDayLabel(workLocationDay.dayType)}><Home className="h-3 w-3" aria-hidden="true" /><span className="truncate">Arbeitsort</span></span>}
+                    </div>;
+                  })}
                 </div>
             </div>
 
@@ -1776,6 +1863,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           {(viewMode === 'day' ? [selectedDate] : viewMode === 'workweek' ? currentWeekDays.slice(0, 5) : currentWeekDays).map((date, index) => {
             const dayJobs = getJobsForDate(date);
             const dayEvents = getEventsForDate(date);
+            const workLocationDay = getWorkLocationDayForDate(date);
             const isDayToday = isToday(date);
             const isDragOver = dragOverDate && date.toDateString() === dragOverDate.toDateString();
             const dayName = date.toLocaleDateString(locale, { weekday: 'short' });
@@ -1822,6 +1910,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     )}
                   </div>
                 </div>
+                {workLocationDay && <p className="flex items-center gap-1 border-b border-primary-custom/15 bg-primary-light-custom px-3 py-1.5 text-xs text-primary-custom"><Home className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">Arbeitsort erfasst · {getWorkLocationDayLabel(workLocationDay.dayType)}</span></p>}
                 
                 {/* Jobs list */}
                 <div className="p-3 space-y-2">
@@ -1978,8 +2067,9 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           const { anchor, date } = dayPreview;
           const previewJobs = getJobsForDate(date);
           const previewEvents = getEventsForDate(date);
+          const previewWorkLocationDay = getWorkLocationDayForDate(date);
           // Nach unten öffnen, solange darunter Platz ist; sonst nach oben.
-          const opensDownwards = anchor.bottom + 220 <= window.innerHeight;
+          const opensDownwards = anchor.bottom + 300 <= window.innerHeight;
           const left = Math.min(
             Math.max(gap, anchor.left + anchor.width / 2 - previewWidth / 2),
             Math.max(gap, window.innerWidth - previewWidth - gap),
@@ -2010,6 +2100,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   <X className="h-4 w-4" />
                 </button>
               </div>
+
+              {previewWorkLocationDay && <p className="mt-2 flex items-start gap-2 rounded-lg bg-primary-light-custom px-2 py-1.5 text-xs text-primary-custom"><Home className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{getWorkLocationDayLabel(previewWorkLocationDay.dayType)}</span></p>}
 
               <div className="mt-2 max-h-64 space-y-1.5 overflow-y-auto">
                 {previewEvents.map((calendarEvent) => (
@@ -2054,10 +2146,21 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   );
                 })}
 
-                {previewEvents.length === 0 && previewJobs.length === 0 && (
+                {previewEvents.length === 0 && previewJobs.length === 0 && !previewWorkLocationDay && (
                   <EmptyState variant="calendar" title="Keine Einträge an diesem Tag." compact />
                 )}
               </div>
+
+              {can('data.write') && <button
+                type="button"
+                onClick={() => {
+                  setWorkLocationDayDialogDate(toDateKey(date));
+                  setDayPreview(null);
+                }}
+                className="mt-2 w-full rounded-lg border border-primary-custom px-3 py-1.5 text-sm font-medium text-primary-custom transition-colors hover:bg-primary-custom/10"
+              >
+                {previewWorkLocationDay ? 'Arbeitsort bearbeiten' : 'Arbeitsort für diesen Tag erfassen'}
+              </button>}
 
               <button
                 type="button"
@@ -2075,6 +2178,20 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         })(),
         document.getElementById('app-shell') || document.body,
       )}
+
+      {workLocationDayDialogDate && <WorkLocationDayDialog
+        date={workLocationDayDialogDate}
+        day={workLocationDaysByDate.get(workLocationDayDialogDate)}
+        locale={locale}
+        dateFormat={company?.dateFormat}
+        timeZone={company?.timeZone}
+        canWrite={can('data.write')}
+        loading={workLocationDaysLoading}
+        loadingError={Boolean(workLocationDaysError)}
+        onClose={() => setWorkLocationDayDialogDate(null)}
+        onSave={saveWorkLocationDay}
+        onDelete={deleteWorkLocationDay}
+      />}
 
       {previewingJob && (
         <div

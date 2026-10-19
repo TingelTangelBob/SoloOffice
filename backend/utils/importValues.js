@@ -271,7 +271,7 @@ export function parseEntryType(value) {
 
 export const EUER_EXPENSE_CATEGORIES = [
   'materials', 'office', 'software', 'telecommunications', 'travel', 'vehicle',
-  'marketing', 'professional_services', 'insurance', 'bank_fees', 'other_expense',
+  'marketing', 'professional_services', 'insurance', 'bank_fees', 'allowance', 'other_expense',
 ];
 
 const EUER_CATEGORY_ALIASES = {
@@ -286,6 +286,7 @@ const EUER_CATEGORY_ALIASES = {
   professionalservices: 'professional_services', steuerberatung: 'professional_services', steuerberater: 'professional_services', rechtsberatung: 'professional_services', fortbildung: 'professional_services', weiterbildung: 'professional_services',
   versicherung: 'insurance', versicherungen: 'insurance', insurance: 'insurance', beitraege: 'insurance',
   bankgebuehren: 'bank_fees', bankgebuhren: 'bank_fees', bankkosten: 'bank_fees', bankfees: 'bank_fees', kontofuehrung: 'bank_fees', gebuehren: 'bank_fees',
+  pauschale: 'allowance', pauschalen: 'allowance', allowance: 'allowance', tagespauschale: 'allowance',
   sonstige: 'other_expense', sonstiges: 'other_expense', sonstigeausgabe: 'other_expense', sonstigeausgaben: 'other_expense',
   sonstigebetriebsausgaben: 'other_expense', otherexpense: 'other_expense', other: 'other_expense',
 };

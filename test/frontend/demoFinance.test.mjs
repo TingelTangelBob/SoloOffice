@@ -152,7 +152,9 @@ test('Demo-API übernimmt Abgabenzeitraum-Updates ohne interne Laufmetadaten', a
   assert.equal(updated.period, '2026-08');
   assert.equal(updated.amount, 140);
   await assert.rejects(call(`/levy-payments/${payment.id}`, 'PUT', { year: 2026, period: '2027-01' }));
-  await assert.rejects(call('/levy-payments', 'POST', { kind: 'kv', year: 2026, period: '2026-09', paidOn: '2026-10-10', amount: 10 }));
+  // Zukünftiges Zahlungsdatum relativ zu heute, damit der Test nicht mit dem Kalender veraltet.
+  const zukunft = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  await assert.rejects(call('/levy-payments', 'POST', { kind: 'kv', year: 2026, period: '2026-09', paidOn: zukunft, amount: 10 }));
   await assert.rejects(call('/levy-payments', 'POST', { kind: 'kv', year: 2026, period: '2026-09', expenseRunId: 'forbidden', amount: 10 }));
 });
 

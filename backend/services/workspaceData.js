@@ -28,6 +28,7 @@ export const WORKSPACE_BUSINESS_DATA_DELETE_ORDER = [
   'invoices',
   'quotes',
   'calendar_events',
+  'work_location_days',
   'hourly_rates',
   'material_templates',
   'customers',

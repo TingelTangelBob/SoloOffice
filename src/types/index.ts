@@ -367,6 +367,17 @@ export interface CalendarEvent extends Timestamps {
   allDay?: boolean;
 }
 
+/** Ein selbst geprüfter Arbeitsort-Merkmal pro Person und Kalendertag. */
+export type WorkLocationDayType = 'home_majority' | 'home_no_other_workspace';
+
+export interface WorkLocationDay {
+  date: ISODateString;
+  dayType: WorkLocationDayType;
+  reviewedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface JobInvoiceGeneration {
   type: 'single' | 'daily' | 'weekly' | 'monthly';
   jobIds: UUID[];
@@ -967,6 +978,8 @@ export type EuerEntryCategory =
   | 'bank_fees'
   | 'rent'
   | 'memberships'
+  /** Nutzerseitig erfasste steuerliche Pauschalbeträge; Anspruch und Höhe werden nicht geprüft. */
+  | 'allowance'
   | 'other_expense'
   /** Nur systemseitig über USt-Zahlungen: an das Finanzamt gezahlte Umsatzsteuer. */
   | 'vat_payment'

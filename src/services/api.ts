@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, isDemoMode } from './demoApi';
 import type { DashboardPreferences } from '../utils/dashboardPreferences';
@@ -851,6 +851,22 @@ class ApiService {
 
   async deleteCalendarEvent(id: string): Promise<void> {
     await this.request(`/calendar-events/${id}`, { method: 'DELETE' });
+  }
+
+  async getWorkLocationDays(from: string, to: string): Promise<WorkLocationDay[]> {
+    const params = new URLSearchParams({ from, to });
+    return this.request<WorkLocationDay[]>(`/work-location-days?${params}`);
+  }
+
+  async saveWorkLocationDay(date: string, dayType: WorkLocationDayType): Promise<WorkLocationDay> {
+    return this.request<WorkLocationDay>(`/work-location-days/${encodeURIComponent(date)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ dayType, reviewed: true }),
+    });
+  }
+
+  async deleteWorkLocationDay(date: string): Promise<void> {
+    await this.request(`/work-location-days/${encodeURIComponent(date)}`, { method: 'DELETE' });
   }
 
   // --------------------------------------------------------------------------
