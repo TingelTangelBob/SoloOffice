@@ -137,7 +137,12 @@ jobs:
 
       - name: Compose-Prüfinstanz aufräumen
         if: always()
-        run: docker compose --env-file .env.ci -f docker-compose.yml down -v --remove-orphans
+        run: |
+          if [ -f .env.ci ] && [ -f .env.backend.ci ]; then
+            docker compose --env-file .env.ci -f docker-compose.yml down -v --remove-orphans
+          else
+            echo "Compose-Prüfinstanz wurde nicht vorbereitet; Aufräumen übersprungen."
+          fi
 
       - name: Migrationen und Workspace-RLS gegen PostgreSQL prüfen
         run: >-

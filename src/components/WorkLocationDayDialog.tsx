@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Home, Info, Trash2 } from 'lucide-react';
 import type { DateFormat, WorkLocationDay, WorkLocationDayType } from '../types';
 import { formatDate } from '../utils/formatters';
-import { getWorkLocationDayLabel, localDateKey, WORK_LOCATION_DAY_TYPES } from '../utils/workLocationDays';
+import { localDateKey, WORK_LOCATION_DAY_TYPES } from '../utils/workLocationDays';
 import { useFeedback } from '../context/FeedbackContext';
 import { DialogShell } from './DialogShell';
 
