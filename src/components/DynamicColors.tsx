@@ -867,6 +867,7 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .text-yellow-800,
         #app-shell[data-theme="dark"] .text-yellow-700,
         #app-shell[data-theme="dark"] .text-yellow-600,
+        #app-shell[data-theme="dark"] .text-amber-950,
         #app-shell[data-theme="dark"] .text-amber-900,
         #app-shell[data-theme="dark"] .text-amber-800 {
           color: #fde68a !important;

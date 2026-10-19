@@ -44,6 +44,7 @@
     "src/utils/recurringExpenseDisplay.ts",
     "src/utils/dashboardPeriod.ts",
     "src/utils/calendarJobTitle.ts",
+    "src/utils/euerAllowanceDays.ts",
     "src/utils/taxDashboardDisplay.ts"
   ]
 }

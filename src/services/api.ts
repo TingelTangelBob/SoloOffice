@@ -874,6 +874,13 @@ class ApiService {
     });
   }
 
+  async saveWorkLocationDays(dates: string[], dayType: WorkLocationDayType): Promise<WorkLocationDay[]> {
+    return this.request<WorkLocationDay[]>('/work-location-days/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ dates, dayType, reviewed: true }),
+    });
+  }
+
   async deleteWorkLocationDay(date: string): Promise<void> {
     await this.request(`/work-location-days/${encodeURIComponent(date)}`, { method: 'DELETE' });
   }

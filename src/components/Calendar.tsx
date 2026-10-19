@@ -23,7 +23,7 @@ import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
-import { CalendarEvent, JobEntry, WorkLocationDay, WorkLocationDayType } from '../types';
+import { CalendarEvent, JobEntry, WorkLocationDay } from '../types';
 import { JobEntryForm } from './JobEntryForm';
 import { EmptyState } from './EmptyState';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -38,7 +38,6 @@ import { usePageSearch } from '../context/PageSearchContext';
 import { trackTelemetry } from '../services/telemetry';
 import { getCalendarJobTitle, hasCalendarJobTitle } from '../utils/calendarJobTitle';
 import { getWorkLocationDayLabel } from '../utils/workLocationDays';
-import { WorkLocationDayDialog } from './WorkLocationDayDialog';
 import { useAuth } from '../context/AuthContext';
 
 interface CalendarProps {
@@ -209,7 +208,7 @@ function CalendarDayScroll({ enabled, children }: CalendarDayScrollProps) {
 
 export function Calendar({ onNavigate }: CalendarProps = {}) {
   const { confirm, notify } = useFeedback();
-  const { can, workspace } = useAuth();
+  const { workspace } = useAuth();
   const workspaceId = workspace?.id ?? null;
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { jobEntries, addJobEntry, updateJobEntry, refreshJobEntries } = useJobs();
@@ -244,9 +243,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
   const [calendarEventsLoading, setCalendarEventsLoading] = useState(true);
   const [calendarEventsError, setCalendarEventsError] = useState<string | null>(null);
   const [workLocationDays, setWorkLocationDays] = useState<WorkLocationDay[]>([]);
-  const [workLocationDaysLoading, setWorkLocationDaysLoading] = useState(true);
   const [workLocationDaysError, setWorkLocationDaysError] = useState('');
-  const [workLocationDayDialogDate, setWorkLocationDayDialogDate] = useState<string | null>(null);
   const workLocationRequestVersion = useRef(0);
   const workLocationWorkspaceId = useRef(workspaceId);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
@@ -629,17 +626,16 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     if (!workLocationRange) return;
     const request = ++workLocationRequestVersion.current;
     setWorkLocationDaysError('');
-    setWorkLocationDaysLoading(true);
     try {
       const days = await apiService.getWorkLocationDays(workLocationRange.from, workLocationRange.to);
-      if (workLocationRequestVersion.current === request) setWorkLocationDays(days);
+      if (workLocationRequestVersion.current === request) {
+        setWorkLocationDays(days);
+      }
     } catch (error) {
       logger.error('Error loading work location days:', error);
       if (workLocationRequestVersion.current === request) setWorkLocationDaysError('Arbeitsort-Aufzeichnungen konnten nicht geladen werden.');
-    } finally {
-      if (workLocationRequestVersion.current === request) setWorkLocationDaysLoading(false);
     }
-  }, [workLocationRange, workspaceId]);
+  }, [workLocationRange]);
 
   useEffect(() => {
     if (workLocationWorkspaceId.current !== workspaceId) {
@@ -651,17 +647,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
 
   const workLocationDaysByDate = useMemo(() => new Map<string, WorkLocationDay>(workLocationDays.map(day => [day.date, day] as const)), [workLocationDays]);
   const getWorkLocationDayForDate = (date: Date) => workLocationDaysByDate.get(toDateKey(date));
-
-  const saveWorkLocationDay = async (date: string, dayType: WorkLocationDayType) => {
-    const saved = await apiService.saveWorkLocationDay(date, dayType);
-    setWorkLocationDays(current => [...current.filter(day => day.date !== date), saved].sort((left, right) => left.date.localeCompare(right.date)));
-    setWorkLocationDaysError('');
-  };
-
-  const deleteWorkLocationDay = async (date: string) => {
-    await apiService.deleteWorkLocationDay(date);
-    setWorkLocationDays(current => current.filter(day => day.date !== date));
-  };
 
   const getJobTimeRange = (job: JobEntry) => {
     const timeEntryWithTime = job.timeEntries?.find((entry) => entry.startTime || entry.endTime);
@@ -1324,16 +1309,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Neu</span>
         </button>
-        {can('data.write') && <button
-          type="button"
-          onClick={() => setWorkLocationDayDialogDate(toDateKey(selectedDate))}
-          className="calendar-toolbar-control calendar-toolbar-button inline-flex h-10 min-h-0 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 sm:min-w-0 sm:px-3"
-          aria-label="Arbeitsort für den ausgewählten Tag erfassen"
-          title={`Arbeitsort für ${formatDate(selectedDate, locale, company?.dateFormat)} erfassen`}
-        >
-          <Home className="h-4 w-4" />
-          <span className="hidden sm:inline">Arbeitsort</span>
-        </button>}
         <button
           type="button"
           onClick={() => setShowShareDialog(true)}
@@ -2151,17 +2126,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 )}
               </div>
 
-              {can('data.write') && <button
-                type="button"
-                onClick={() => {
-                  setWorkLocationDayDialogDate(toDateKey(date));
-                  setDayPreview(null);
-                }}
-                className="mt-2 w-full rounded-lg border border-primary-custom px-3 py-1.5 text-sm font-medium text-primary-custom transition-colors hover:bg-primary-custom/10"
-              >
-                {previewWorkLocationDay ? 'Arbeitsort bearbeiten' : 'Arbeitsort für diesen Tag erfassen'}
-              </button>}
-
               <button
                 type="button"
                 onClick={() => {
@@ -2178,20 +2142,6 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         })(),
         document.getElementById('app-shell') || document.body,
       )}
-
-      {workLocationDayDialogDate && <WorkLocationDayDialog
-        date={workLocationDayDialogDate}
-        day={workLocationDaysByDate.get(workLocationDayDialogDate)}
-        locale={locale}
-        dateFormat={company?.dateFormat}
-        timeZone={company?.timeZone}
-        canWrite={can('data.write')}
-        loading={workLocationDaysLoading}
-        loadingError={Boolean(workLocationDaysError)}
-        onClose={() => setWorkLocationDayDialogDate(null)}
-        onSave={saveWorkLocationDay}
-        onDelete={deleteWorkLocationDay}
-      />}
 
       {previewingJob && (
         <div

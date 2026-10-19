@@ -2,6 +2,23 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.7 – EÜR-Jahreszuordnung, Steuerprognose und Datenübernahme
+
+- EÜR-Buchungen lassen sich in der Steuerprognose dem erfassten Steuerjahr
+  zuordnen. Überjährige Buchungen erscheinen im passenden Abschlussmonat statt
+  im Zahlungsjahr; USt-Zahlungen und Erstattungen werden nach Steuerjahr
+  berücksichtigt.
+- Arbeitstage können gesammelt für tatsächlich geleistete Tage erfasst werden.
+  Die Berechnung der EÜR-Tagespauschale berücksichtigt Zeitraum, übliche
+  Wochentage, Urlaub und weitere freie Tage.
+- Rechnungen und Kurszuordnungen aus der Datenübernahme werden als Importlauf
+  protokolliert und können mit Schutz vor späteren Änderungen rückgängig gemacht
+  werden. Eine Wiederherstellung setzt überholten Importfortschritt zurück.
+- Restore und Import-Rücknahme verwenden eine einheitliche Sperrreihenfolge,
+  damit parallele Vorgänge nicht durch einen Datenbank-Deadlock abbrechen.
+- Steuerübersicht, EÜR-Ansichten, Kalender und Demo-Daten wurden ergänzt und
+  für kleinere Ansichten angepasst.
+
 ## v0.9.6 – EÜR-Pauschalen, Einstellungen und Mailversand
 
 - Pauschalen lassen sich in der EÜR mit frei recherchierten Jahreswerten und

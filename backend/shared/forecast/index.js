@@ -12,17 +12,32 @@ const validYear = date => /^\d{4}-\d{2}-\d{2}$/.test(date) ? Number(date.slice(0
 const monthOf = date => Number(date.slice(5, 7));
 const monthKey = (year, month) => `${year}-${String(month).padStart(2, '0')}`;
 const monthEnd = (year, month) => new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+const attributedYear = entry => {
+  const value = entry.euerYear ?? entry.euer_year;
+  return value == null ? validYear(datePart(entry.entryDate ?? entry.entry_date)) : Number(value);
+};
+function attributedMonthIndex(entry, year) {
+  const date = datePart(entry.entryDate ?? entry.entry_date);
+  const calendarYear = validYear(date);
+  if (calendarYear === year) return monthOf(date) - 1;
+  // Überjährige EÜR-Zuordnungen werden im Abschlussmonat des EÜR-Jahres
+  // gezeigt; der Zahlungsmonat darf nicht als Monat 13 oder im falschen Jahr
+  // erscheinen.
+  return calendarYear > year ? 11 : 0;
+}
 
 function activeEntry(entry) {
   return (entry.status || 'active') === 'active';
 }
 
-function totals(entries, year, cutoff, startDate = null) {
+function totals(entries, year, cutoff, startDate = null, asOfDate = cutoff) {
   const monthly = Array.from({ length: 12 }, () => ({ revenue: 0, expenses: 0, fixed: 0, vatIncome: 0, vatExpense: 0 }));
   for (const entry of entries || []) {
     const date = datePart(entry.entryDate ?? entry.entry_date);
-    if (validYear(date) !== year || date > cutoff || (startDate && date < startDate) || !activeEntry(entry)) continue;
-    const month = monthly[monthOf(date) - 1];
+    const hasYearOverride = entry.euerYear != null || entry.euer_year != null;
+    if (attributedYear(entry) !== year || date > asOfDate || (!hasYearOverride && date > cutoff)
+      || (startDate && date < startDate) || !activeEntry(entry)) continue;
+    const month = monthly[attributedMonthIndex(entry, year)];
     const value = Math.max(0, amount(entry.amount));
     const rate = Math.max(0, amount(entry.taxRate ?? entry.tax_rate));
     if ((entry.entryType ?? entry.entry_type) === 'income') {
@@ -136,9 +151,48 @@ function distribute(total, weights, eligible) {
 function historicalComplete(entries, year, months) {
   // Saisonale Gewichte werden nur verwendet, wenn Transaktionen alle zwölf
   // Kalendermonate abdecken; fehlende Monatsdaten werden nicht als Null gelesen.
-  const covered = new Set((entries || []).filter(activeEntry).map(item => datePart(item.entryDate ?? item.entry_date))
-    .filter(date => validYear(date) === year).map(date => monthOf(date)));
+  const covered = new Set((entries || []).filter(activeEntry).filter(item => attributedYear(item) === year)
+    .map(item => attributedMonthIndex(item, year) + 1));
   return covered.size === months;
+}
+
+function vatPaymentBelongsToYear(payment, year) {
+  return Number(payment.taxYear ?? payment.tax_year) === year
+    || String(payment.periodKey ?? payment.period_key ?? '').startsWith(String(year));
+}
+
+function paidVatPayments(vat, year, nowDate) {
+  const payments = Array.isArray(vat?.payments) ? vat.payments : null;
+  if (!payments) {
+    const periodPaid = (vat?.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.paid)), 0);
+    const periodRefunded = (vat?.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.refunded)), 0);
+    const paid = vat?.annual?.paid == null ? periodPaid : Math.max(0, amount(vat.annual.paid));
+    const refunded = vat?.annual?.refunded == null ? periodRefunded : Math.max(0, amount(vat.annual.refunded));
+    return { paid, refunded, specialPaid: Math.max(0, amount(vat?.annual?.specialPrepayment?.paid)),
+      periodTotals: new Map(), paymentsAvailable: false };
+  }
+
+  const periodTotals = new Map();
+  let paid = 0;
+  let refunded = 0;
+  let specialPaid = 0;
+  for (const payment of payments) {
+    if (!vatPaymentBelongsToYear(payment, year) || !payment.paidOn || datePart(payment.paidOn) > nowDate) continue;
+    const value = Math.max(0, amount(payment.amount));
+    if (payment.kind === 'refund') refunded = round(refunded + value);
+    else {
+      paid = round(paid + value);
+      if (payment.kind === 'special_prepayment') specialPaid = round(specialPaid + value);
+    }
+    const key = payment.periodKey ?? payment.period_key;
+    if (key) {
+      const totals = periodTotals.get(key) || { paid: 0, refunded: 0 };
+      if (payment.kind === 'refund') totals.refunded = round(totals.refunded + value);
+      else totals.paid = round(totals.paid + value);
+      periodTotals.set(key, totals);
+    }
+  }
+  return { paid, refunded, specialPaid, periodTotals, paymentsAvailable: true };
 }
 
 function forecastSocial(profit, profile, params) {
@@ -195,7 +249,7 @@ function estimateAnnual({ current, previous, previousEntries, year, nowDate, par
       let weight = 0;
       for (const entry of previousEntries || []) {
         const date = datePart(entry.entryDate ?? entry.entry_date);
-        if (validYear(date) !== historicalYear || monthOf(date) !== month || !activeEntry(entry)) continue;
+        if (attributedYear(entry) !== historicalYear || attributedMonthIndex(entry, historicalYear) !== index || !activeEntry(entry)) continue;
         if (from && date <= from) continue;
         if ((entry.entryType ?? entry.entry_type) !== source) continue;
         if (key === 'variable' && (entry.sourceType ?? entry.source_type) === 'recurring_expense') continue;
@@ -210,7 +264,11 @@ function estimateAnnual({ current, previous, previousEntries, year, nowDate, par
   const historicalCutoff = `${historicalYear}-${String(currentDay).padStart(2, '0')}-${String(historicalDay).padStart(2, '0')}`;
   const historicalYtd = (key) => (previousEntries || []).filter(entry => {
     const date = datePart(entry.entryDate ?? entry.entry_date);
-    return validYear(date) === historicalYear && date <= historicalCutoff && activeEntry(entry)
+    const monthIndex = attributedMonthIndex(entry, historicalYear);
+    const monthWithinYtd = monthIndex < currentDay - 1
+      || (monthIndex === currentDay - 1
+        && (validYear(date) !== historicalYear || date <= historicalCutoff));
+    return attributedYear(entry) === historicalYear && monthWithinYtd && date <= nowDate && activeEntry(entry)
       && (entry.entryType ?? entry.entry_type) === (key === 'revenue' ? 'income' : 'expense')
       && (key !== 'variable' || (entry.sourceType ?? entry.source_type) !== 'recurring_expense');
   }).reduce((sum, entry) => sum + Math.max(0, amount(entry.amount)), 0);
@@ -274,8 +332,9 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   const yearStartDate = startedOn && validYear(startedOn) > year ? `${year + 1}-01-01`
     : startedOn && validYear(startedOn) === year ? startedOn : null;
   const currentMonths = totals(entries, year, year < calendarNow ? monthEnd(year, params.forecast.monthsPerYear) : year > calendarNow ? `${year}-00-00` : nowDate,
-    yearStartDate);
-  const previousMonths = totals(previousEntries, year - 1, `${year - 1}-${String(params.forecast.monthsPerYear).padStart(2, '0')}-${String(monthEnd(year - 1, params.forecast.monthsPerYear).slice(8, 10)).padStart(2, '0')}`);
+    yearStartDate, nowDate);
+  const previousMonths = totals(previousEntries, year - 1, `${year - 1}-${String(params.forecast.monthsPerYear).padStart(2, '0')}-${String(monthEnd(year - 1, params.forecast.monthsPerYear).slice(8, 10)).padStart(2, '0')}`,
+    null, nowDate);
   const annual = estimateAnnual({ current: currentMonths, previous: previousMonths, previousEntries, year, nowDate, params, startedOn });
   const actual = ytdTotals(currentMonths);
   const schedule = fixedSchedule(expenses, runs, year, nowDate, warnings);
@@ -286,7 +345,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     && (!profile.educationCertificateUntil || profile.educationCertificateUntil < nowDate)) warnings.push('Die Bescheinigung zur Bildungsbefreiung fehlt oder ist abgelaufen; die individuelle Einordnung ist nicht geprüft.');
   if (expenses.some(item => (item.scope || 'business') === 'business')
     && entries.some(item => (item.entryType ?? item.entry_type) === 'expense' && activeEntry(item)
-      && (item.sourceType ?? item.source_type) !== 'recurring_expense' && validYear(datePart(item.entryDate ?? item.entry_date)) === year)) {
+      && (item.sourceType ?? item.source_type) !== 'recurring_expense' && attributedYear(item) === year)) {
     warnings.push('Manuelle oder andere EÜR-Ausgaben können wiederkehrende Fixkosten bereits enthalten; mögliche Doppelzählungen sind nicht automatisch erkennbar.');
   }
   const plannedFixedAnnual = schedule.monthly.reduce((sum, value) => sum + value, 0);
@@ -309,7 +368,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   if (['teacher', 'craft', 'single_client'].includes(profile.pensionStatus) && ['standard', 'half', 'notice'].includes(profile.pensionMode)) {
     warnings.push('Der Rentenbeitrag wird nach dem gewählten Regel-, halben oder Bescheidwert angesetzt; eine gewinnabhängige Stufe wird daraus nicht abgeleitet.');
   }
-  const hasPreviousYearData = (previousEntries || []).some(entry => validYear(datePart(entry.entryDate ?? entry.entry_date)) === year - 1);
+  const hasPreviousYearData = (previousEntries || []).some(entry => attributedYear(entry) === year - 1);
   const inferredPreviousRevenue = effectiveProfile.previousYearRevenue ?? (hasPreviousYearData ? ytdTotals(previousMonths).revenue : null);
   const companyProfile = findProfileMissing({ ...effectiveProfile, previousYearRevenue: inferredPreviousRevenue }, profile.legalForm,
     profileMissing({ ...effectiveProfile, previousYearRevenue: inferredPreviousRevenue }));
@@ -328,9 +387,10 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     if (!item) return 0;
     return amount(item.complete ? item.liability : item.estimatedLiability);
   });
+  const vatPaymentsPaid = vatApplicable ? paidVatPayments(vat, year, nowDate) : { paid: 0, refunded: 0, specialPaid: 0, periodTotals: new Map() };
   const vatFutureMonthly = Array(params.forecast.monthsPerYear).fill(0);
   let vatAnnual = roughVatAnnual;
-  let paidUst = 0;
+  let paidUst = vatPaymentsPaid.paid;
   if (vatApplicable) {
     const remainingRevenue = Math.max(0, revenueAnnual - actual.revenue);
     const remainingExpenses = Math.max(0, expensesAnnual - actual.expenses);
@@ -343,11 +403,13 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     for (const index of futureMonths) vatFutureMonthly[index] = projected[index];
     const recordedMonths = pastVatMonthly.map(value => value === null ? 0 : value);
     vatAnnual = round(recordedMonths.reduce((sum, value) => sum + value, 0) + futureEstimate);
-    paidUst = round((vat.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.paid)), 0));
   }
+  const specialKz39Included = vatApplicable && pastVatMonthly[11] !== null
+    ? round((vat.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.kennzahlen?.kz39)), 0))
+    : 0;
   const vatRemainingReserve = vatApplicable
-    ? round(pastVatMonthly.reduce((sum, value) => sum + (value ?? 0), 0) - paidUst
-      + Math.max(0, amount(vat.annual?.refunded ?? (vat.periods || []).reduce((sum, period) => sum + Math.max(0, amount(period.refunded)), 0)))
+    ? round(pastVatMonthly.reduce((sum, value) => sum + (value ?? 0), 0) - paidUst + specialKz39Included
+      + vatPaymentsPaid.refunded
       + vatFutureMonthly.reduce((sum, value) => sum + value, 0))
     : vat ? 0 : vatAnnual;
   const paid = levyPayments.filter(item => Number(item.year) === year && item.paidOn && datePart(item.paidOn) <= nowDate);
@@ -370,6 +432,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   paidAdvances.ust = paidUst;
   for (const payment of vat?.payments || []) {
     if (!vatApplicable || payment.kind === 'refund' || !payment.paidOn || datePart(payment.paidOn) > nowDate) continue;
+    if (!vatPaymentBelongsToYear(payment, year)) continue;
     const paidDate = datePart(payment.paidOn);
     if (validYear(paidDate) !== year) continue;
     const month = paidAdvanceMonths[monthOf(paidDate) - 1];
@@ -465,7 +528,10 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
   for (const period of vat?.periods || []) {
     if (!vatApplicable || !['closed', 'running'].includes(period.state) || !period.dueDate) continue;
     const expected = period.complete ? amount(period.liability) : amount(period.estimatedLiability);
-    const openAmount = round(expected - amount(period.paid) + amount(period.refunded));
+    const recorded = vatPaymentsPaid.periodTotals.get(period.key);
+    const periodPaid = recorded?.paid ?? (vatPaymentsPaid.paymentsAvailable ? 0 : amount(period.paid));
+    const periodRefunded = recorded?.refunded ?? (vatPaymentsPaid.paymentsAvailable ? 0 : amount(period.refunded));
+    const openAmount = round(expected - periodPaid + periodRefunded);
     if (openAmount <= 0.01) continue;
     upcomingLevies.push({ id: `forecast:ust:${period.key}`, kind: 'ust', year, period: period.key,
       dueDate: period.dueDate, paidOn: null, amount: openAmount, source: 'notice', expenseRunId: null,

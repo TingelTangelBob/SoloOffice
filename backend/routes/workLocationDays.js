@@ -60,6 +60,38 @@ router.get('/', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.post('/bulk', async (req, res, next) => {
+  if (!canWrite(req, res)) return;
+  const rawDates = req.body?.dates;
+  const dayType = String(req.body?.dayType || '');
+  if (!Array.isArray(rawDates) || rawDates.length < 1 || rawDates.length > 400) {
+    return res.status(400).json({ error: 'Bitte zwischen 1 und 400 tatsächliche Arbeitstage auswählen.' });
+  }
+  if (!dayTypes.has(dayType)) return res.status(400).json({ error: 'Ungültige Tagesart.' });
+  if (req.body?.reviewed !== true) {
+    return res.status(400).json({ error: 'Bitte bestätige, dass du die ausgewählten Tage und die Tagesart geprüft hast.' });
+  }
+
+  const workDates = rawDates.map(value => parseDate(value));
+  if (workDates.some(date => !date)) return res.status(400).json({ error: 'Die Auswahl enthält ein ungültiges Datum.' });
+  if (new Set(workDates).size !== workDates.length) return res.status(400).json({ error: 'Ein Datum wurde mehrfach ausgewählt.' });
+
+  try {
+    const today = await workspaceToday();
+    if (workDates.some(date => date > today)) {
+      return res.status(400).json({ error: 'Zukünftige Arbeitstage können erst nach der tatsächlichen Tätigkeit erfasst werden.' });
+    }
+    const result = await query(`
+      INSERT INTO work_location_days (work_date, day_type, reviewed_at)
+      SELECT selected.work_date, $2, NOW()
+      FROM unnest($1::date[]) AS selected(work_date)
+      ON CONFLICT (workspace_id, work_date) DO NOTHING
+      RETURNING work_date, day_type, reviewed_at, created_at, updated_at
+    `, [workDates, dayType]);
+    return res.json(result.rows.map(mapDay).sort((left, right) => left.date.localeCompare(right.date)));
+  } catch (error) { return next(error); }
+});
+
 router.put('/:date', async (req, res, next) => {
   if (!canWrite(req, res)) return;
   const workDate = parseDate(req.params.date);

@@ -26,13 +26,13 @@ router.get('/:year', async (req, res, next) => {
   try {
     const [profile, entryRows, expenses, runs, levyRows, previousRows, company, extension, legacyPaidRows] = await Promise.all([
       getTaxProfile(year),
-      query(`SELECT entry_type,entry_date,description,category,amount,tax_rate,source_type,status
-        FROM euer_entries WHERE entry_date >= make_date($1,1,1) AND entry_date < make_date($1+1,1,1)`, [year]),
+      query(`SELECT entry_type,entry_date,description,category,amount,tax_rate,source_type,status,euer_year
+        FROM euer_entries WHERE (entry_date >= make_date($1,1,1) AND entry_date < make_date($1+1,1,1)) OR euer_year=$1`, [year]),
       listExpenses(query),
       listRuns(query, { year }),
       query(`SELECT * FROM levy_payments WHERE period_start >= make_date($1,1,1) AND period_start < make_date($1+1,1,1)`, [year]),
-      query(`SELECT entry_type,entry_date,description,category,amount,tax_rate,source_type,status
-        FROM euer_entries WHERE entry_date >= make_date($1,1,1) AND entry_date < make_date($1+1,1,1)`, [year - 1]),
+      query(`SELECT entry_type,entry_date,description,category,amount,tax_rate,source_type,status,euer_year
+        FROM euer_entries WHERE (entry_date >= make_date($1,1,1) AND entry_date < make_date($1+1,1,1)) OR euer_year=$1`, [year - 1]),
       query('SELECT legal_form FROM company LIMIT 1'),
       query("SELECT accepted_at FROM workspace_extensions WHERE extension_id='taxes' AND enabled=TRUE LIMIT 1"),
       query(`SELECT COUNT(*)::int AS count FROM invoices i
@@ -42,9 +42,11 @@ router.get('/:year', async (req, res, next) => {
     const disclaimerAcceptedAt = profile.disclaimerAcceptedAt || extension.rows[0]?.accepted_at || null;
     if (!disclaimerAcceptedAt) return res.status(403).json({ error: 'Bitte bestätige zuerst die Erweiterungsbedingungen für Steuern & Abgaben.', code: 'DISCLAIMER_REQUIRED' });
     const entries = entryRows.rows.map(row => ({ entryType: row.entry_type, entryDate: row.entry_date, description: row.description,
-      category: row.category, amount: Number(row.amount), taxRate: Number(row.tax_rate), sourceType: row.source_type, status: row.status }));
+      category: row.category, amount: Number(row.amount), taxRate: Number(row.tax_rate), sourceType: row.source_type, status: row.status,
+      euerYear: row.euer_year == null ? null : Number(row.euer_year) }));
     const previousEntries = previousRows.rows.map(row => ({ entryType: row.entry_type, entryDate: row.entry_date,
-      amount: Number(row.amount), taxRate: Number(row.tax_rate), sourceType: row.source_type, status: row.status }));
+      amount: Number(row.amount), taxRate: Number(row.tax_rate), sourceType: row.source_type, status: row.status,
+      euerYear: row.euer_year == null ? null : Number(row.euer_year) }));
     const levyPayments = levyRows.rows.map(mapPayment);
     const now = new Date();
     let vat = null;

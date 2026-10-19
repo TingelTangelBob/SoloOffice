@@ -31,6 +31,9 @@ Programm nach SoloOffice. Sie richtet sich an drei Fälle:
   ausdrücklicher Übernahme, in einer Transaktion.
 - **Rückgängig bis zum Abschluss.** Jeder Import ist ein Importlauf. Bis der
   Umzug abgeschlossen wird, lässt er sich vollständig zurücknehmen.
+  Auch der separat bestätigte Kursnachschritt bekommt einen eigenen Lauf mit
+  Protokoll. Zuerst diesen Kurslauf zurücknehmen, danach den Rechnungsimport.
+  Spätere Änderungen und zusätzliche Verknüpfungen bleiben dabei geschützt.
 
 ## Ablauf für Anwender
 
@@ -289,7 +292,11 @@ Import, Zellen bis 100.000 Zeichen). Weitere Optionen im Rumpf:
   Anteil „ohne Rechnung“ aus. Auswertungen und EÜR bieten zehn Jahre zur Wahl.
 - **Backup:** `invoice_original_documents` gehört zum Backup. `import_runs` und
   `import_run_items` gehören nicht dazu und werden bei jeder Wiederherstellung
-  verworfen. Ein Backup aus einem anderen Workspace wird nach ausdrücklicher
+  verworfen. In einer noch offenen Umzugssitzung werden außerdem die
+  Kategorie-Freigaben und Vorschauen ungültig; die Kategorien können anhand des
+  wiederhergestellten Bestands neu geprüft werden. Der einmalige Sitzungs-Claim
+  bleibt erhalten, abgeschlossene Sitzungen werden nicht wieder geöffnet.
+  Ein Backup aus einem anderen Workspace wird nach ausdrücklicher
   Bestätigung übernommen (`allowWorkspaceTransfer`); existieren dieselben
   Datensätze auf diesem Server bereits in einem anderen Workspace, lehnt der
   Server mit einer klaren Meldung ab.

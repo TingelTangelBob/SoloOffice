@@ -1914,6 +1914,16 @@
     --accent-edge: rgba(37, 99, 235, 0.55);
   }
 
+  /* Steuerliche Hinweise tragen eigene Vordergrundfarben, damit sie auch im
+     dunklen Modus auf der abgedunkelten Warnfläche lesbar bleiben. */
+  #app-shell .euer-allowance-review {
+    color: #451a03;
+  }
+
+  #app-shell[data-theme="dark"] .euer-allowance-review {
+    color: #fde68a !important;
+  }
+
   /* Neutrale Grautöne im Hellmodus. Tailwinds Standardskala ist blaustichig
      und wirkt neben der schwarzweißen Anmutung kühl. */
   #app-shell .bg-gray-50 {

@@ -11,6 +11,7 @@ import {
   parseBackupArchive,
   validateBackupData,
 } from '../utils/backupArchive.js';
+import { lockWorkspaceMigrationState } from '../utils/workspaceMigrationLock.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -259,12 +260,30 @@ async function getTableColumns(client, table) {
 }
 
 export async function clearWorkspaceData(client, workspaceId) {
+  // Mit Umzugsstart, Kategorieübernahme und Abschluss serialisieren. Die
+  // Sitzung bleibt bestehen; ihr Fortschritt bezieht sich nach dem Restore
+  // aber auf einen anderen Datenbestand.
+  await lockWorkspaceMigrationState(client, workspaceId);
   // Importläufe beziehen sich auf den bisherigen Datenbestand. Nach einer
   // Wiederherstellung lassen sie sich nicht mehr sinnvoll rückgängig machen.
   // migration_sessions gehören dagegen zur Workspace-Identität und bleiben
   // bei Restore erhalten, damit der monotone Umzugs-Claim nicht zurückspringt.
   await client.query('DELETE FROM import_run_items WHERE workspace_id = $1', [workspaceId]);
   await client.query('DELETE FROM import_runs WHERE workspace_id = $1', [workspaceId]);
+  await client.query(`
+    UPDATE migration_categories AS category
+    SET status = 'open', preview_digest = NULL, idempotency_key = NULL,
+        completed_at = NULL, updated_at = NOW()
+    FROM migration_sessions AS session
+    WHERE category.workspace_id = $1
+      AND session.workspace_id = $1 AND category.session_id = session.id
+      AND session.status = 'open' AND session.legacy_backfill = FALSE
+  `, [workspaceId]);
+  await client.query(`
+    UPDATE migration_sessions
+    SET progress_revision = progress_revision + 1, updated_at = NOW()
+    WHERE workspace_id = $1 AND status = 'open' AND legacy_backfill = FALSE
+  `, [workspaceId]);
   for (const table of RESTORE_CLEAR_TABLES) {
     if (!WORKSPACE_SCOPED_TABLES.has(table)) continue;
     await client.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);

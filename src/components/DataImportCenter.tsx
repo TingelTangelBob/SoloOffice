@@ -150,12 +150,12 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const refreshData = useCallback(async (resource?: ImportResource) => {
+  const refreshData = useCallback(async (resource?: ImportRun['resource']) => {
     const tasks: Array<Promise<unknown>> = [];
     if (!resource || ['customers', 'jobs', 'quotes', 'euerEntries', 'invoices'].includes(resource)) tasks.push(refreshCustomers());
-    if (!resource || ['invoices', 'invoicePayments', 'euerEntries'].includes(resource)) tasks.push(refreshInvoices());
+    if (!resource || ['invoices', 'invoicePayments', 'euerEntries', 'invoiceCourses'].includes(resource)) tasks.push(refreshInvoices());
     if (!resource || ['invoices', 'invoicePayments', 'euerEntries'].includes(resource)) tasks.push(apiService.getEuerEntries().then(setScannedEuerEntries));
-    if (!resource || ['jobs', 'invoices'].includes(resource)) tasks.push(refreshJobEntries());
+    if (!resource || ['jobs', 'invoices', 'invoiceCourses'].includes(resource)) tasks.push(refreshJobEntries());
     if (!resource || resource === 'quotes') tasks.push(refreshQuotes());
     if (!resource || resource === 'hourlyRates') tasks.push(apiService.getHourlyRates().then(setHourlyRates));
     if (!resource || resource === 'materials') tasks.push(apiService.getMaterialTemplates().then(setMaterialTemplates));
@@ -175,8 +175,8 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     try {
       const result = await apiService.planImportedInvoiceCourses(false);
       setCoursePreview(null);
-      notify({ variant: 'success', message: `${result.summary.created} Kurse angelegt, ${result.summary.assigned} zugeordnet.` });
-      await refreshData('invoices');
+      notify({ variant: 'success', message: `${result.summary.created} Kurse angelegt, ${result.summary.assigned} zugeordnet.${result.runId ? ' Der Kurslauf kann im Importverlauf rückgängig gemacht werden.' : ''}` });
+      await Promise.all([load(), refreshData('invoiceCourses')]);
     } catch (error) { notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Kurse konnten nicht angelegt werden.' }); }
     finally { setCourseBusy(false); }
   };

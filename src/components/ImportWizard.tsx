@@ -1036,9 +1036,10 @@ function SummaryCard({ label, value, tone = 'gray' }: { label: string; value: nu
   return <div className={`rounded-xl border p-3 ${tones[tone]}`}><p className="text-xs uppercase tracking-wide opacity-70">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>;
 }
 
-const previewColumns: Record<ImportResource, Array<{ key: string; label: string; kind?: 'money' | 'date' | 'boolean' | 'percent' }>> = {
+const previewColumns: Record<ImportRun['resource'], Array<{ key: string; label: string; kind?: 'money' | 'date' | 'boolean' | 'percent' }>> = {
   customers: [{ key: 'name', label: 'Name' }, { key: 'city', label: 'Ort' }, { key: 'email', label: 'E-Mail' }, { key: 'type', label: 'Art' }],
   jobs: [{ key: 'date', label: 'Datum', kind: 'date' }, { key: 'title', label: 'Titel' }, { key: 'customer', label: 'Kunde' }, { key: 'hours', label: 'Stunden' }, { key: 'rate', label: 'Satz', kind: 'money' }],
+  invoiceCourses: [{ key: 'date', label: 'Datum', kind: 'date' }, { key: 'title', label: 'Titel' }, { key: 'customer', label: 'Kunde' }, { key: 'hoursWorked', label: 'Stunden' }, { key: 'hourlyRate', label: 'Satz', kind: 'money' }],
   quotes: [{ key: 'number', label: 'Angebot' }, { key: 'date', label: 'Datum', kind: 'date' }, { key: 'customer', label: 'Kunde' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'itemCount', label: 'Positionen' }],
   positions: [{ key: 'name', label: 'Name' }, { key: 'price', label: 'Preis', kind: 'money' }, { key: 'taxRate', label: 'Steuer', kind: 'percent' }, { key: 'unit', label: 'Einheit' }, { key: 'isDefault', label: 'Standard', kind: 'boolean' }],
   hourlyRates: [{ key: 'name', label: 'Name' }, { key: 'price', label: 'Satz', kind: 'money' }, { key: 'taxRate', label: 'Steuer', kind: 'percent' }, { key: 'isDefault', label: 'Standard', kind: 'boolean' }],
@@ -1048,7 +1049,7 @@ const previewColumns: Record<ImportResource, Array<{ key: string; label: string;
   invoices: [{ key: 'number', label: 'Rechnung' }, { key: 'date', label: 'Datum', kind: 'date' }, { key: 'customer', label: 'Kunde' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'itemCount', label: 'Positionen' }],
 };
 
-export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[]; resource: ImportResource }) {
+export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[]; resource: ImportRun['resource'] }) {
   const counts = useMemo(() => rows.reduce<Record<string, number>>((result, row) => {
     result[row.status] = (result[row.status] || 0) + 1;
     return result;

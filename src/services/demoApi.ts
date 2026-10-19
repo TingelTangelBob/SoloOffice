@@ -1122,10 +1122,17 @@ interface DemoImportRunItem {
   oldData?: DemoRecord | null;
 }
 
+function demoImportedCourseSnapshot(job: DemoRecord): DemoRecord {
+  const snapshot = { ...job };
+  delete snapshot.createdAt;
+  delete snapshot.updatedAt;
+  return snapshot;
+}
+
 const DEMO_IMPORT_RESOURCE_LABELS: Record<string, string> = {
   customers: 'Kunden', jobs: 'Aufträge', quotes: 'Angebote', positions: 'Positionsvorlagen',
   hourlyRates: 'Stundensätze', materials: 'Materialien', euerEntries: 'Einnahmen und Ausgaben',
-  invoicePayments: 'Zahlungseingänge', invoices: 'Rechnungen',
+  invoicePayments: 'Zahlungseingänge', invoices: 'Rechnungen', invoiceCourses: 'Rechnungen · Kurszuordnung',
 };
 
 const DEMO_WORK_TITLES: Record<string, string> = {
@@ -1421,7 +1428,9 @@ function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, f
           track('job_entries', String(job.id), 'created');
         }
         job.invoiceId = invoice.id;
-        invoice.jobSources = [...((invoice.jobSources || []) as DemoRecord[]), { id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date }];
+        const source = { id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date };
+        invoice.jobSources = [...((invoice.jobSources || []) as DemoRecord[]), source];
+        track('invoice_job_sources', source.id, 'created');
       }
       const payment = data.payment as DemoRecord | null;
       if (payment) {
@@ -1543,6 +1552,14 @@ function demoRevertImport(state: DemoState, run: DemoRecord): void {
   if (blockedCustomers.length > 0) blockers.push(`Für ${blockedCustomers.slice(0, 10).map(customer => `„${customer.name}“`).join(', ')} gibt es inzwischen weitere Dokumente oder Buchungen`);
   const invoices = created('invoices');
   const jobs = new Set(items.filter(item => item.tableName === 'job_entries').map(item => item.recordId));
+  const ownLinks = created('invoice_job_sources');
+  const links: DemoRecord[] = state.invoices.flatMap(invoice => ((invoice.jobSources || invoice.sourceJobs || []) as DemoRecord[])
+    .map(source => ({ ...source, invoiceId: invoice.id })));
+  // Ältere Demo-Läufe haben ihre eigenen Verknüpfungen noch nicht einzeln
+  // gespeichert. Nur Links zwischen Rechnungen und Jobs desselben Laufs
+  // dürfen daraus abgeleitet werden.
+  links.filter(link => invoices.has(String(link.invoiceId)) && jobs.has(String(link.jobId)))
+    .forEach(link => ownLinks.add(String(link.id)));
   const blockedInvoices = state.invoices.filter(invoice => invoices.has(invoice.id) && (
     state.euerEntries.some(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id && entry.status !== 'voided' && !own.has(entry.id))
     || state.invoices.some(other => other.referenceInvoiceId === invoice.id)
@@ -1550,13 +1567,36 @@ function demoRevertImport(state: DemoState, run: DemoRecord): void {
     || Boolean(invoice.lastReminderSentAt)
   ));
   if (blockedInvoices.length > 0) blockers.push(`Zu ${blockedInvoices.slice(0, 10).map(invoice => invoice.invoiceNumber).join(', ')} wurden inzwischen Zahlungen, Gutschriften oder Mahnungen erfasst`);
-  const billedJobs = state.invoices.flatMap(invoice => (Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs as DemoRecord[] : [])).filter(source => jobs.has(String(source.jobId)));
-  if (billedJobs.length > 0) blockers.push(`${billedJobs.length} importierte Termine wurden inzwischen abgerechnet`);
+  const externalLinks = links.filter(source => jobs.has(String(source.jobId)) && !ownLinks.has(String(source.id)));
+  if (externalLinks.length > 0) blockers.push(`${externalLinks.length} importierte Termine wurden inzwischen zusätzlich abgerechnet`);
+  if (run.resource === 'invoiceCourses') {
+    for (const item of items.filter(candidate => candidate.tableName === 'job_entries')) {
+      const job = state.jobs.find(candidate => candidate.id === item.recordId);
+      if (!job) continue;
+      if (item.action === 'updated' && (job.status !== 'invoiced'
+        || !links.some(link => link.jobId === job.id && ownLinks.has(String(link.id))))) {
+        blockers.push('Ein zugeordneter Kurs wurde inzwischen verändert');
+      }
+      const expected = item.oldData?.expected as DemoRecord | undefined;
+      if (item.action === 'created' && (expected
+        && JSON.stringify(stableDemoValue(demoImportedCourseSnapshot(job))) !== JSON.stringify(stableDemoValue(expected))
+        || (Array.isArray(job.timeEntries) && job.timeEntries.length > 0)
+        || (Array.isArray(job.attachments) && job.attachments.length > 0)
+        || (Array.isArray(job.materials) && job.materials.length > 0)
+        || Boolean(job.signature) || Boolean(job.notes) || Boolean(job.location))) {
+        blockers.push('Ein angelegter Kurs wurde inzwischen verändert oder ergänzt');
+      }
+    }
+  }
   const quotes = created('quotes');
   const convertedQuotes = state.quotes.filter(quote => quotes.has(quote.id) && quote.convertedToInvoiceId);
   if (convertedQuotes.length > 0) blockers.push(`${convertedQuotes.length} importierte Angebote wurden inzwischen in Rechnungen umgewandelt`);
   if (blockers.length > 0) throw new Error(`Der Import kann nicht mehr rückgängig gemacht werden: ${blockers.join('. ')}. Machen Sie gegebenenfalls zuerst spätere Importe rückgängig.`);
 
+  for (const invoice of state.invoices) {
+    if (Array.isArray(invoice.jobSources)) invoice.jobSources = (invoice.jobSources as DemoRecord[]).filter(source => !ownLinks.has(String(source.id)));
+    if (Array.isArray(invoice.sourceJobs)) invoice.sourceJobs = (invoice.sourceJobs as DemoRecord[]).filter(source => !ownLinks.has(String(source.id)));
+  }
   const touchedInvoices = new Set<string>();
   const remove = (collection: DemoRecord[], id: string) => {
     const index = collection.findIndex(item => item.id === id);
@@ -1659,18 +1699,20 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
 
   if (parts[1] === 'invoice-courses' && method === 'POST') {
     const dryRun = data.dryRun !== false;
+    const items: DemoImportRunItem[] = [];
     const candidates = state.invoices.filter(invoice => invoice.origin === 'imported' && !(Array.isArray(invoice.jobSources) && invoice.jobSources.length));
     const jobs = state.jobs.map(job => ({ id: job.id, customerId: job.customerId, title: job.title, date: dateOnly(job.date), status: job.status, invoiceId: job.invoiceId || null }));
     const preview = candidates.map(invoice => {
-      const actions: DemoCourseAction[] = planInvoiceCourses({ customerId: String(invoice.customerId || ''), date: dateOnly(invoice.serviceDate || invoice.issueDate), items: ((invoice.items || []) as DemoRecord[]).map((item, index) => ({ description: String(item.description || ''), quantity: Number(item.quantity || 1), unitPrice: Number(item.unitPrice || 0), order: Number(item.order || index + 1), unit: typeof item.unit === 'string' ? item.unit : null })) }, jobs);
+      const actions: DemoCourseAction[] = planInvoiceCourses({ customerId: String(invoice.customerId || ''), date: dateOnly(invoice.serviceDate || invoice.issueDate), items: ((invoice.items || []) as DemoRecord[]).map((item, index) => ({ description: String(item.description || ''), courseName: typeof item.courseName === 'string' ? item.courseName : null, quantity: Number(item.quantity || 1), unitPrice: Number(item.unitPrice || 0), order: Number(item.order || index + 1), unit: typeof item.unit === 'string' ? item.unit : null })) }, jobs);
       actions.filter(action => action.action === 'assign').forEach(action => {
         const job = jobs.find(candidate => candidate.id === action.jobId);
         if (job) job.invoiceId = `planned:${invoice.id}`;
       });
-      return { invoiceId: invoice.id, invoiceNumber: String(invoice.invoiceNumber || ''), actions };
+      return { invoiceId: invoice.id, invoiceNumber: String(invoice.invoiceNumber || ''), customerName: String(invoice.customerName || ''), actions };
     });
     const created = preview.reduce((sum, invoice) => sum + invoice.actions.filter(action => action.action === 'create').length, 0);
     const assigned = preview.reduce((sum, invoice) => sum + invoice.actions.filter(action => action.action === 'assign').length, 0);
+    let runId: string | null = null;
     if (!dryRun) {
       for (const invoicePlan of preview) {
         const invoice = state.invoices.find(item => item.id === invoicePlan.invoiceId);
@@ -1680,17 +1722,42 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
         for (const action of invoicePlan.actions) {
           let job = state.jobs.find(item => item.id === action.jobId);
           if (!job) {
-            const number = state.jobs.filter(item => String(item.jobNumber || '').startsWith(`AB-${action.date.slice(0, 4)}-`)).length + 1;
-            job = { id: generateUUID(), jobNumber: `AB-${action.date.slice(0, 4)}-${String(number).padStart(3, '0')}`, customerId: invoice.customerId, title: action.title, description: action.description, date: action.date, hoursWorked: action.hoursWorked, hourlyRate: action.hourlyRate, status: 'invoiced', materials: [], timeEntries: [] };
+            const existingNumbers = new Set(state.jobs.map(item => String(item.jobNumber || '')));
+            let number = 1;
+            while (existingNumbers.has(`AB-${action.date.slice(0, 4)}-${String(number).padStart(3, '0')}`)) number += 1;
+            job = { id: generateUUID(), jobNumber: `AB-${action.date.slice(0, 4)}-${String(number).padStart(3, '0')}`, customerId: invoice.customerId, title: action.title, description: action.description, date: action.date, hoursWorked: action.hoursWorked, hourlyRate: action.hourlyRate, status: 'invoiced', invoiceId: invoice.id, materials: [], timeEntries: [] };
             state.jobs.push(job);
-          } else job.status = 'invoiced';
+            const expected = demoImportedCourseSnapshot(job);
+            items.push({ tableName: 'job_entries', recordId: String(job.id), action: 'created', oldData: { id: String(job.id), expected } });
+          } else {
+            items.push({ tableName: 'job_entries', recordId: String(job.id), action: 'updated', oldData: { id: String(job.id), status: job.status, invoiceId: job.invoiceId || null } });
+            job.status = 'invoiced';
+          }
           job.invoiceId = invoice.id;
-          sources.push({ id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date });
+          const source = { id: generateUUID(), jobId: job.id, jobNumber: job.jobNumber, title: job.title, jobDate: action.date };
+          sources.push(source);
+          items.push({ tableName: 'invoice_job_sources', recordId: source.id, action: 'created' });
         }
+      }
+      if (created + assigned > 0) {
+        runId = generateUUID();
+        const takeover = readDemoTakeover(state);
+        let rowNumber = 0;
+        const report = preview.flatMap(invoice => invoice.actions.map(action => ({
+          rowNumber: ++rowNumber, status: 'imported', message: `${invoice.invoiceNumber} · ${action.action === 'create' ? 'Neu' : 'Zuordnung'}`,
+          values: { customer: invoice.customerName, title: action.title, date: action.date, hoursWorked: action.hoursWorked, hourlyRate: action.hourlyRate },
+        })));
+        runs.unshift({
+          id: runId, resource: 'invoiceCourses', resourceLabel: DEMO_IMPORT_RESOURCE_LABELS.invoiceCourses,
+          fileName: 'Kurszuordnung zu übernommenen Rechnungen', sourceHeaders: [], settings: { source: 'invoice-courses' },
+          summary: { invoices: preview.length, created, assigned, imported: created + assigned, total: rowNumber, records: rowNumber },
+          report, items, status: 'pending', createdAt: new Date().toISOString(), createdByName: 'Demo',
+          migrationSessionId: takeover?.status === 'open' ? takeover.id : null, migrationCategoryId: null,
+        });
       }
       saveState(state);
     }
-    return { dryRun, summary: { invoices: preview.length, created, assigned }, preview, demoMode: true } as unknown as T;
+    return { dryRun, runId, summary: { invoices: preview.length, created, assigned, ...(!dryRun ? { imported: created + assigned } : {}) }, preview, demoMode: true } as unknown as T;
   }
 
   if (parts[1] === 'settings') {
@@ -2046,6 +2113,30 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const count = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 + 1;
       if (count > 400) throw new Error('Der angefragte Zeitraum darf höchstens 400 Tage umfassen.');
       return days.filter(day => String(day.date) >= from && String(day.date) <= to) as unknown as T;
+    }
+    if (method === 'POST' && id === 'bulk') {
+      if (!Array.isArray(data.dates) || data.dates.length < 1 || data.dates.length > 400) throw new Error('Bitte zwischen 1 und 400 tatsächliche Arbeitstage auswählen.');
+      if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
+      if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die ausgewählten Tage und die Tagesart geprüft hast.');
+      const dates = data.dates.map((value: unknown) => String(value || ''));
+      dates.forEach(date => assertDemoDate(date, 'Datum'));
+      if (new Set(dates).size !== dates.length) throw new Error('Ein Datum wurde mehrfach ausgewählt.');
+      const today = todayLocal(typeof state.company.timeZone === 'string' ? state.company.timeZone : undefined);
+      if (dates.some(date => date > today)) throw new Error('Zukünftige Arbeitstage können erst nach der tatsächlichen Tätigkeit erfasst werden.');
+      const created = dates
+        .filter(date => !days.some(day => day.date === date))
+        .map(date => ({
+          id: date,
+          date,
+          dayType: data.dayType,
+          reviewedAt: isoDate(),
+          createdAt: isoDate(),
+          updatedAt: isoDate(),
+        }));
+      days.push(...created);
+      days.sort((left, right) => String(left.date).localeCompare(String(right.date)));
+      saveState(state);
+      return created as unknown as T;
     }
     if (method === 'PUT' && id) {
       assertDemoDate(id, 'Datum');
@@ -2411,6 +2502,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (!profile.disclaimerAcceptedAt && !extensionAcceptedAt) throw new Error('Bitte bestätigen Sie zuerst den Hinweis zur Steuerschätzung.');
     const entries = state.euerEntries.map(entry => ({ entryType: entry.entryType === 'expense' ? 'expense' as const : 'income' as const,
       entryDate: String(entry.entryDate || ''), amount: Number(entry.amount || 0), taxRate: Number(entry.taxRate || 0),
+      euerYear: entry.euerYear == null ? null : Number(entry.euerYear),
       sourceType: typeof entry.sourceType === 'string' ? entry.sourceType : undefined,
       status: typeof entry.status === 'string' ? entry.status : undefined,
       description: typeof entry.description === 'string' ? entry.description : undefined,
@@ -2431,7 +2523,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       now: todayLocal() });
     const forecast = buildForecast({ year, profile: profile as Partial<TaxProfile> & Record<string, unknown>, entries, expenses: state.recurringExpenses || [],
       runs: state.recurringExpenseRuns || [], levyPayments: state.levyPayments || [],
-      previousEntries: entries.filter(entry => entry.entryDate.slice(0, 4) === String(year - 1)), vat, now: new Date() }) as ForecastResult as unknown as T;
+      previousEntries: entries.filter(entry => (entry.euerYear ?? Number(entry.entryDate.slice(0, 4))) === year - 1),
+      vat: { ...vat, payments: (state.vatPayments || []) as never }, now: new Date() }) as ForecastResult as unknown as T;
     const companyBusiness = state.company.taxBusinessType;
     if (companyBusiness && companyBusiness !== profile.businessKind && forecast && typeof forecast === 'object'
       && 'warnings' in forecast && Array.isArray(forecast.warnings)) {

@@ -5,6 +5,7 @@ import logger from '../utils/logger.js';
 import { hasPermission } from '../middleware/auth.js';
 import { captureInvoiceSnapshot } from '../services/invoiceSnapshot.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
+import { lockWorkspaceMigrationState } from '../utils/workspaceMigrationLock.js';
 import {
   IMPORT_RESOURCES,
   MAX_IMPORT_CELL_LENGTH,
@@ -34,7 +35,7 @@ const TERMINOLOGY = {
 const RESOURCE_LABELS = {
   customers: 'Kunden', jobs: 'Aufträge', quotes: 'Angebote', positions: 'Positionsvorlagen',
   hourlyRates: 'Stundensätze', materials: 'Materialien', euerEntries: 'Einnahmen und Ausgaben',
-  invoicePayments: 'Zahlungseingänge', invoices: 'Rechnungen',
+  invoicePayments: 'Zahlungseingänge', invoices: 'Rechnungen', invoiceCourses: 'Rechnungen · Kurszuordnung',
 };
 
 const workspaceCondition = "workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid";
@@ -642,6 +643,7 @@ async function applyInvoices(client, entries, customerIdFor, tracker, source) {
         ON CONFLICT (workspace_id, job_id) DO NOTHING RETURNING id
       `, [invoiceId, jobId, action.title, action.date]);
       if (!linked.rows.length) throw httpError(409, 'Der Kurs wurde zwischenzeitlich einer anderen Rechnung zugeordnet.');
+      tracker.track('invoice_job_sources', linked.rows[0].id, 'created');
     }
     // Erst nach den Positionen ausstellen: Danach ist die Rechnung unveränderbar.
     await client.query('UPDATE invoices SET status = $1 WHERE id = $2', [data.status, invoiceId]);
@@ -771,6 +773,11 @@ router.post('/invoice-courses', async (req, res) => {
       await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
       await workspaceLock(client, 'imported-invoice-courses');
     }
+    const openSession = !dryRun ? await client.query(`
+      SELECT id FROM migration_sessions
+      WHERE ${workspaceCondition} AND status = 'open'
+      LIMIT 1 FOR UPDATE
+    `) : { rows: [] };
     const invoiceResult = await client.query(`
       SELECT i.id, i.invoice_number, i.customer_id, i.customer_name, i.issue_date, i.service_date
       FROM invoices i
@@ -801,7 +808,9 @@ router.post('/invoice-courses', async (req, res) => {
     }
     const created = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'create').length, 0);
     const assigned = preview.reduce((count, invoice) => count + invoice.actions.filter(action => action.action === 'assign').length, 0);
+    let runId = null;
     if (!dryRun) {
+      const tracker = createTracker();
       const years = new Set(preview.flatMap(invoice => invoice.actions.filter(action => action.action === 'create').map(action => Number(action.date.slice(0, 4)))));
       for (const year of [...years].sort((a, b) => a - b)) await lockDocumentNumber(client, 'job', year);
       const numbers = await client.query('SELECT job_number FROM job_entries');
@@ -811,15 +820,17 @@ router.post('/invoice-courses', async (req, res) => {
           let jobId = action.jobId;
           if (action.action === 'create') {
             const inserted = await client.query(`
-              INSERT INTO job_entries (job_number, customer_id, title, description, date, hours_worked, hourly_rate, status)
+              INSERT INTO job_entries AS created_job (job_number, customer_id, title, description, date, hours_worked, hourly_rate, status)
               SELECT $1, i.customer_id, $2, $3, $4, $5, $6, 'invoiced' FROM invoices i WHERE i.id = $7
-              RETURNING id, job_number
+              RETURNING id, job_number, to_jsonb(created_job) - 'created_at' - 'updated_at' AS expected
             `, [allocate(null, action.date), action.title, action.description, action.date, action.hoursWorked, action.hourlyRate, invoice.invoiceId]);
             jobId = inserted.rows[0].id;
             action.jobNumber = inserted.rows[0].job_number;
+            tracker.track('job_entries', jobId, 'created', { expected: inserted.rows[0].expected });
           } else {
-            const matched = await client.query("SELECT job_number FROM job_entries WHERE id = $1 AND status <> 'invoiced' FOR UPDATE", [jobId]);
+            const matched = await client.query("SELECT job_number, status FROM job_entries WHERE id = $1 AND status <> 'invoiced' FOR UPDATE", [jobId]);
             if (!matched.rows[0]) throw httpError(409, 'Ein passender Kurs wurde zwischenzeitlich abgerechnet. Vorschau erneut prüfen.');
+            tracker.track('job_entries', jobId, 'updated', { status: matched.rows[0].status });
             await client.query("UPDATE job_entries SET status = 'invoiced' WHERE id = $1", [jobId]);
             action.jobNumber = matched.rows[0].job_number;
           }
@@ -829,11 +840,37 @@ router.post('/invoice-courses', async (req, res) => {
             ON CONFLICT (workspace_id, job_id) DO NOTHING RETURNING id
           `, [invoice.invoiceId, jobId, action.title, action.date]);
           if (!linked.rows.length) throw httpError(409, 'Ein Kurs wurde zwischenzeitlich einer anderen Rechnung zugeordnet. Vorschau erneut prüfen.');
+          tracker.track('invoice_job_sources', linked.rows[0].id, 'created');
         }
+      }
+      if (created + assigned > 0) {
+        let rowNumber = 0;
+        const report = preview.flatMap(invoice => invoice.actions.map(action => ({
+          rowNumber: ++rowNumber,
+          status: 'imported',
+          message: `${invoice.invoiceNumber} · ${action.action === 'create' ? 'Neu' : 'Zuordnung'}`,
+          values: {
+            customer: invoice.customerName,
+            title: action.title,
+            date: action.date,
+            hoursWorked: action.hoursWorked,
+            hourlyRate: action.hourlyRate,
+          },
+        })));
+        runId = await saveRun(client, {
+          resource: 'invoiceCourses',
+          file: { name: 'Kurszuordnung zu übernommenen Rechnungen' },
+          settings: { source: 'invoice-courses' },
+          summary: { invoices: preview.length, created, assigned, imported: created + assigned, total: created + assigned, records: created + assigned },
+          report,
+          items: tracker.items,
+          userId: req.auth?.userId,
+          sessionId: openSession.rows[0]?.id || null,
+        });
       }
       await client.query('COMMIT');
     }
-    res.json({ dryRun, summary: { invoices: preview.length, created, assigned }, preview });
+    res.json({ dryRun, runId, summary: { invoices: preview.length, created, assigned, ...(!dryRun ? { imported: created + assigned } : {}) }, preview });
   } catch (error) {
     if (!dryRun) await client.query('ROLLBACK').catch(() => undefined);
     if (error.code === '40001') return res.status(409).json({ error: 'Der Bestand hat sich während der Vorschau geändert. Bitte erneut prüfen.' });
@@ -855,6 +892,9 @@ router.get('/runs/:id', async (req, res) => {
 });
 
 async function lockPendingRun(client, runId, auth) {
+  if (!hasPermission(auth, 'data.write')) {
+    throw httpError(403, 'Für diese Aktion fehlt die Schreibberechtigung.', 'FORBIDDEN');
+  }
   const result = await client.query('SELECT id, resource, status, migration_category_id, migration_session_id FROM import_runs WHERE id = $1 FOR UPDATE', [runId]);
   const run = result.rows[0];
   if (!run) throw httpError(404, 'Import nicht gefunden.');
@@ -867,7 +907,7 @@ async function lockPendingRun(client, runId, auth) {
   return run;
 }
 
-async function findRevertBlockers(client, itemsByTable, runRecordIds) {
+async function findRevertBlockers(client, itemsByTable, runRecordIds, createdJobSnapshots = []) {
   const blockers = [];
   const ownIds = [...runRecordIds];
   const created = table => itemsByTable.get(`${table}:created`) || [];
@@ -888,6 +928,7 @@ async function findRevertBlockers(client, itemsByTable, runRecordIds) {
   }
   const invoiceIds = created('invoices');
   const jobIdsForRun = [...new Set([...created('job_entries'), ...(itemsByTable.get('job_entries:updated') || [])])];
+  const createdLinkIds = created('invoice_job_sources');
   if (invoiceIds.length > 0) {
     const result = await client.query(`
       SELECT DISTINCT i.invoice_number FROM invoices i
@@ -902,9 +943,45 @@ async function findRevertBlockers(client, itemsByTable, runRecordIds) {
     if (result.rows.length > 0) blockers.push(`Zu ${result.rows.map(row => row.invoice_number).join(', ')} wurden inzwischen Zahlungen, Gutschriften oder Mahnungen erfasst`);
   }
   const jobIds = created('job_entries');
+  const updatedJobIds = itemsByTable.get('job_entries:updated') || [];
+  const affectedJobIds = [...new Set([...jobIds, ...updatedJobIds])];
+  if (affectedJobIds.length > 0) {
+    const result = await client.query(`
+      SELECT COUNT(*)::int AS count FROM invoice_job_sources
+      WHERE job_id = ANY($1::uuid[])
+        AND NOT (id::text = ANY($2::text[]))
+    `, [affectedJobIds, createdLinkIds]);
+    if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} Kurse wurden inzwischen zusätzlich Rechnungen zugeordnet`);
+  }
+  if (updatedJobIds.length > 0) {
+    const result = await client.query(`
+      SELECT COUNT(*)::int AS count FROM job_entries j
+      WHERE j.id = ANY($1::uuid[])
+        AND (j.status <> 'invoiced' OR NOT EXISTS (
+          SELECT 1 FROM invoice_job_sources ijs
+          WHERE ijs.job_id = j.id AND ijs.id::text = ANY($2::text[])
+        ))
+    `, [updatedJobIds, createdLinkIds]);
+    if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} bestehende Kurse wurden nach der Zuordnung verändert`);
+  }
   if (jobIds.length > 0) {
-    const result = await client.query('SELECT COUNT(*)::int AS count FROM invoice_job_sources WHERE job_id = ANY($1::uuid[]) AND NOT (invoice_id::text = ANY($2::text[]))', [jobIds, ownIds]);
-    if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} importierte Termine wurden inzwischen abgerechnet`);
+    const result = await client.query(`
+      SELECT COUNT(*)::int AS count FROM job_entries j
+      WHERE j.id = ANY($1::uuid[]) AND (
+        EXISTS (SELECT 1 FROM job_time_entries t WHERE t.job_id = j.id)
+        OR EXISTS (SELECT 1 FROM job_attachments a WHERE a.job_id = j.id)
+      )
+    `, [jobIds]);
+    if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} angelegte Kurse enthalten inzwischen zusätzliche Zeiten oder Anhänge`);
+  }
+  if (createdJobSnapshots.length > 0) {
+    const result = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM jsonb_to_recordset($1::jsonb) AS expected(id uuid, expected jsonb)
+      JOIN job_entries j ON j.id = expected.id
+      WHERE (to_jsonb(j) - 'created_at' - 'updated_at') IS DISTINCT FROM expected.expected
+    `, [JSON.stringify(createdJobSnapshots.map(({ id, expected }) => ({ id, expected })))]);
+    if (result.rows[0].count > 0) blockers.push(`${result.rows[0].count} angelegte Kurse wurden nach dem Import verändert`);
   }
   const quoteIds = created('quotes');
   if (quoteIds.length > 0) {
@@ -927,17 +1004,48 @@ async function restoreCustomer(client, recordId, oldData) {
 }
 
 async function revertRun(client, runId, auth) {
+  await lockWorkspaceMigrationState(client, auth?.workspaceId);
   const run = await lockPendingRun(client, runId, auth);
   const itemResult = await client.query('SELECT table_name, record_id, action, old_data FROM import_run_items WHERE run_id = $1 ORDER BY seq DESC', [runId]);
   const items = itemResult.rows;
   const itemsByTable = new Map();
   const runRecordIds = new Set();
+  const createdJobSnapshots = [];
   for (const item of items) {
     const key = `${item.table_name}:${item.action}`;
     itemsByTable.set(key, [...(itemsByTable.get(key) || []), item.record_id]);
     if (item.action === 'created') runRecordIds.add(item.record_id);
+    if (item.table_name === 'job_entries' && item.action === 'created' && item.old_data?.expected) {
+      createdJobSnapshots.push({ id: item.record_id, expected: item.old_data.expected });
+    }
   }
-  const blockers = await findRevertBlockers(client, itemsByTable, runRecordIds);
+  // Vor dieser Änderung enthielten Rechnungsimporte ihre automatisch angelegten
+  // invoice_job_sources nicht im Item-Tracker. Leite nur Links ab, deren Rechnung
+  // und Kurs beide nachweislich von genau diesem Lauf angelegt/bearbeitet wurden.
+  const legacyInvoiceIds = itemsByTable.get('invoices:created') || [];
+  const legacyJobIds = [...new Set([
+    ...(itemsByTable.get('job_entries:created') || []),
+    ...(itemsByTable.get('job_entries:updated') || []),
+  ])];
+  if (legacyInvoiceIds.length > 0 && legacyJobIds.length > 0) {
+    const legacyLinks = await client.query(`
+      SELECT id FROM invoice_job_sources
+      WHERE invoice_id = ANY($1::uuid[]) AND job_id = ANY($2::uuid[])
+    `, [legacyInvoiceIds, legacyJobIds]);
+    const trackedLinks = itemsByTable.get('invoice_job_sources:created') || [];
+    const mergedLinks = [...new Set([...trackedLinks, ...legacyLinks.rows.map(row => row.id)])];
+    itemsByTable.set('invoice_job_sources:created', mergedLinks);
+  }
+  // Hold affected job rows while checking blockers and applying the inverse, so
+  // a concurrent assignment or job edit cannot slip between those operations.
+  const affectedJobIds = [...new Set([
+    ...(itemsByTable.get('job_entries:created') || []),
+    ...(itemsByTable.get('job_entries:updated') || []),
+  ])];
+  if (affectedJobIds.length > 0) {
+    await client.query('SELECT id FROM job_entries WHERE id = ANY($1::uuid[]) FOR UPDATE', [affectedJobIds]);
+  }
+  const blockers = await findRevertBlockers(client, itemsByTable, runRecordIds, createdJobSnapshots);
   if (blockers.length > 0) {
     const error = httpError(409, `Der Import kann nicht mehr rückgängig gemacht werden: ${blockers.join('. ')}. Machen Sie gegebenenfalls zuerst spätere Importe rückgängig.`, 'IMPORT_REVERT_BLOCKED');
     error.details = blockers;
@@ -945,8 +1053,9 @@ async function revertRun(client, runId, auth) {
   }
 
   await client.query("SELECT set_config('app.import_revert', 'true', true)");
-  if (itemsByTable.has('invoices:created')) {
-    await client.query('DELETE FROM invoice_job_sources WHERE invoice_id = ANY($1::uuid[])', [itemsByTable.get('invoices:created')]);
+  const ownSourceIds = itemsByTable.get('invoice_job_sources:created') || [];
+  if (ownSourceIds.length > 0) {
+    await client.query('DELETE FROM invoice_job_sources WHERE id = ANY($1::uuid[])', [ownSourceIds]);
   }
   const touchedInvoices = new Set();
   const templateChanges = [];
@@ -956,6 +1065,7 @@ async function revertRun(client, runId, auth) {
       templateChanges.push(item);
       continue;
     }
+    if (table === 'invoice_job_sources') continue;
     if (action === 'created') {
       if (table === 'euer_entries') {
         const voided = await client.query(`
@@ -1019,6 +1129,7 @@ router.post('/runs/:id/revert', async (req, res) => {
 });
 
 router.post('/runs/confirm-all', async (req, res) => {
+  if (!hasPermission(req.auth, 'data.write')) return res.status(403).json({ error: 'Für diese Aktion fehlt die Schreibberechtigung.', code: 'FORBIDDEN' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

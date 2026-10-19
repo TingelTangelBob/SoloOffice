@@ -16,6 +16,49 @@ interface TaxOverviewProps {
   onNavigate: (page: string, filter?: string) => void;
 }
 
+function TaxProfileIllustration() {
+  return (
+    <svg viewBox="0 0 120 84" className="dashboard-empty-illustration h-20 w-28 shrink-0" aria-hidden="true" focusable="false">
+      <path className="empty-fill" d="M27 7h43l15 15v54H27a6 6 0 0 1-6-6V13a6 6 0 0 1 6-6Z" />
+      <path className="empty-line" d="M27 7h43l15 15v48a6 6 0 0 1-6 6H27a6 6 0 0 1-6-6V13a6 6 0 0 1 6-6Z" />
+      <path className="empty-line" d="M70 7v10a5 5 0 0 0 5 5h10" />
+      <path className="empty-muted" d="M34 34h36M34 45h25" />
+      <circle className="empty-surface" cx="43" cy="59" r="5" />
+      <circle className="empty-line" cx="43" cy="59" r="5" />
+      <path className="empty-muted" d="M55 59h16" />
+      <circle className="empty-surface" cx="86" cy="60" r="15" />
+      <circle className="empty-line" cx="86" cy="60" r="15" />
+      <path className="empty-line" d="M86 54v12M80 60h12" />
+    </svg>
+  );
+}
+
+function TaxProfilePrompt({ missingFields, onOpen }: { missingFields: string[]; onOpen: () => void }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-5 md:flex-row md:items-center md:gap-6">
+      <TaxProfileIllustration />
+      <div className="min-w-0 flex-1">
+        <h3 className="font-semibold text-gray-900">Steuerprofil vervollständigen</h3>
+        <p className="mt-1 text-sm leading-5 text-gray-600">
+          {missingFields.length > 0
+            ? 'Ergänze noch diese Angaben für eine unverbindliche Schätzung:'
+            : 'Das Profil ist noch nicht vollständig. Prüfe die Angaben im Steuerprofil.'}
+        </p>
+        {missingFields.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-2" aria-label="Noch fehlende Angaben">
+            {missingFields.map(field => (
+              <li key={field} className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700">{field}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <button type="button" onClick={onOpen} className="action-button shrink-0 self-start md:self-auto">
+        Steuerprofil öffnen <ArrowRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   const { can, workspace } = useAuth();
   const { invoices } = useInvoices();
@@ -30,8 +73,6 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   const workspaceId = workspace?.id ?? null;
   const sourceDataKey = `${workspaceId ?? 'none'}:${year}`;
   const [sourceData, setSourceData] = useState<{ key: string; creditNotes: CreditNote[]; euerEntries: EuerEntry[] }>({ key: '', creditNotes: [], euerEntries: [] });
-  const creditNotes = sourceData.key === sourceDataKey ? sourceData.creditNotes : [];
-  const euerEntries = sourceData.key === sourceDataKey ? sourceData.euerEntries : [];
   const locale = company?.locale || 'de-DE';
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
 
@@ -59,6 +100,8 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   }, [invoices, sourceDataKey, year, workspaceId]);
 
   const paidInvoiceSummary = useMemo(() => {
+    const creditNotes = sourceData.key === sourceDataKey ? sourceData.creditNotes : [];
+    const euerEntries = sourceData.key === sourceDataKey ? sourceData.euerEntries : [];
     const payments = euerEntries.filter(entry => entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId);
     const linkedInvoiceIds = new Set(payments.map(entry => entry.sourceId));
     const legacyPaidInvoices = invoices.filter(invoice => (
@@ -71,7 +114,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
       + legacyPaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
       - paidCreditNotes.reduce((sum, note) => sum + Math.abs(Number(note.total || 0)), 0);
     return { count: linkedInvoiceIds.size + legacyPaidInvoices.length, income };
-  }, [creditNotes, euerEntries, invoices, year]);
+  }, [sourceData, sourceDataKey, invoices, year]);
 
   const forecastContent = extensionsLoading ? (
     <p role="status" className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">Steuereinstellungen werden geladen …</p>
@@ -88,12 +131,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   ) : !forecast ? (
     <p className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">Für dieses Steuerjahr liegt noch keine Schätzung vor.</p>
   ) : !forecast.profileComplete ? (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-      <p className="font-medium">Das Steuerprofil ist noch nicht vollständig.</p>
-      <p className="mt-1">Ergänze diese Angaben, um eine Schätzung zu erhalten:</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5">{forecast.missingFields.map(field => <li key={field}>{field}</li>)}</ul>
-      <button type="button" onClick={() => onNavigate('settings', 'taxes')} className="action-button mt-3">Steuerprofil öffnen <ArrowRight className="h-4 w-4" /></button>
-    </div>
+    <TaxProfilePrompt missingFields={forecast.missingFields} onOpen={() => onNavigate('settings', 'taxes')} />
   ) : (
     <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

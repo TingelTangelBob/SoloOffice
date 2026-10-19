@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
+  Eye,
   FileJson,
   FileScan,
   FileText,
@@ -35,8 +36,6 @@ import type {
   EuerEntrySourceType,
   EuerEntryType,
   EuerVatFields,
-  WorkLocationDay,
-  WorkLocationDayType,
 } from '../types';
 import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
@@ -58,9 +57,15 @@ import { getTerminology } from '../utils/terminology';
 import { DueRecurringExpensesNotice } from './DueRecurringExpensesNotice';
 import { RecurringExpenseDialog } from './RecurringExpenseDialog';
 import { EuerAllowanceDialog } from './EuerAllowanceDialog';
+import { isHomeOfficeAllowanceEntry } from '../utils/euerAllowanceDays';
 import { financeApi } from '../services/financeApi';
 import type { RecurringExpensePayload } from '../types/finance';
 import { useAuth } from '../context/AuthContext';
+import { DocumentPreview } from './DocumentPreview';
+import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocuments';
+import type { PreviewDocument } from '../utils/previewDocuments';
+import { loadImportedInvoiceOriginal } from '../utils/pdfGenerator';
+import { blobToBase64 } from '../utils/blobUtils';
 
 /** Feste Spaltenbreiten inklusive Innenabstand; die Beschreibung nimmt den Rest ein. */
 const EUER_COLUMN_WIDTHS = { date: 120, category: 176, source: 160, amount: 144 } as const;
@@ -98,6 +103,7 @@ interface EuerRow {
   automatic: boolean;
   sourceLabel?: string;
   sourceId?: string;
+  invoiceId?: string;
 }
 
 const categoryLabels: Record<EuerEntryCategory, string> = {
@@ -185,7 +191,7 @@ interface EuerManagementProps {
 }
 
 export function EuerManagement({ onNavigate, initialAction }: EuerManagementProps) {
-  const { confirm } = useFeedback();
+  const { confirm, notify } = useFeedback();
   const { can, workspace } = useAuth();
   const workspaceId = workspace?.id ?? null;
   const { invoices } = useInvoices();
@@ -198,9 +204,6 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [vatIncompleteOnly, setVatIncompleteOnly] = useState(initialAction === 'vat-incomplete');
   const [entries, setEntries] = useState<EuerEntry[]>([]);
-  const [workLocationDays, setWorkLocationDays] = useState<WorkLocationDay[]>([]);
-  const [workLocationDaysLoading, setWorkLocationDaysLoading] = useState(true);
-  const [workLocationDaysError, setWorkLocationDaysError] = useState('');
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [entriesLoadedScope, setEntriesLoadedScope] = useState<string | null>(null);
@@ -213,15 +216,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const customerNames = useMemo(() => new Map(customers.map(customer => [customer.id, customer.name])), [customers]);
   const [infoNoticeDismissed, setInfoNoticeDismissed] = useState(() => isNoticeDismissed(getEuerInfoNoticeId(currentYear)));
   const [dialogEntry, setDialogEntry] = useState<EuerEntry | null | undefined>(undefined);
+  const [quickExpenseMonth, setQuickExpenseMonth] = useState<number | null>(null);
   const [draft, setDraft] = useState<EntryDraft>(emptyDraft());
   const [historyEntry, setHistoryEntry] = useState<EuerEntry | null>(null);
   const [history, setHistory] = useState<EuerEntryHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [expenseTemplateEntry, setExpenseTemplateEntry] = useState<EuerEntry | null>(null);
   const [allowanceDialogOpen, setAllowanceDialogOpen] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<{ isOpen: boolean; documents: PreviewDocument[] }>({ isOpen: false, documents: [] });
+  const [previewLoadingInvoiceId, setPreviewLoadingInvoiceId] = useState<string | null>(null);
   const templateWorkspace = useRef(workspace?.id ?? null);
   const entryRequestVersion = useRef(0);
-  const workLocationRequestVersion = useRef(0);
   templateWorkspace.current = workspace?.id ?? null;
   const currentEntriesScope = `${workspaceId ?? ''}:${year}`;
   const entriesReady = !loading && entriesLoadedScope === currentEntriesScope;
@@ -265,36 +270,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     }
   }, [year, workspaceId]);
 
-  const loadWorkLocationDays = useCallback(async () => {
-    const request = ++workLocationRequestVersion.current;
-    const targetWorkspace = workspaceId;
-    setWorkLocationDaysLoading(true);
-    setWorkLocationDaysError('');
-    try {
-      const days = await apiService.getWorkLocationDays(`${year}-01-01`, `${year}-12-31`);
-      if (workLocationRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
-      setWorkLocationDays(days);
-    } catch (loadError) {
-      if (workLocationRequestVersion.current === request && templateWorkspace.current === targetWorkspace) {
-        setWorkLocationDaysError(loadError instanceof Error ? loadError.message : 'Tagesaufzeichnungen konnten nicht geladen werden.');
-      }
-    } finally {
-      if (workLocationRequestVersion.current === request && templateWorkspace.current === targetWorkspace) setWorkLocationDaysLoading(false);
-    }
-  }, [year, workspaceId]);
-
   useEffect(() => {
-    entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
+    entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setQuickExpenseMonth(null); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
     void loadEntries(); return () => { entryRequestVersion.current += 1; };
   }, [loadEntries]);
-  useEffect(() => {
-    workLocationRequestVersion.current += 1;
-    setWorkLocationDays([]);
-    setWorkLocationDaysError('');
-    setWorkLocationDaysLoading(true);
-    void loadWorkLocationDays();
-    return () => { workLocationRequestVersion.current += 1; };
-  }, [loadWorkLocationDays]);
   useEffect(() => {
     if (initialAction === 'vat-incomplete') { setVatIncompleteOnly(true); return; }
     if (initialAction !== 'new') return;
@@ -326,6 +305,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
           automatic: true,
           sourceLabel: isCreditNote ? 'Automatisch · Gutschrift' : 'Automatisch · Bezahlt',
           sourceId: invoice.id,
+          invoiceId: invoice.id,
         };
       });
     const manualRows = entries.map(entry => {
@@ -348,6 +328,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             ? `${sourceLabels[entry.sourceType || 'manual']} · ${customerNames.get(entry.customerId)}`
             : sourceLabels[entry.sourceType || 'manual'],
         sourceId: entry.sourceId,
+        invoiceId: sourceInvoice?.id,
       };
     });
     return [...automaticRows, ...manualRows].sort((a, b) => b.entryDate.localeCompare(a.entryDate)
@@ -379,13 +360,53 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     const monthRows = rows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === month);
     const income = monthRows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
     const expenses = monthRows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
-    return { month, income, expenses, profit: income - expenses };
+    return { month, income, expenses, profit: income - expenses, bookingCount: monthRows.length };
   }), [rows]);
-  const averageMonthCount = year === currentYear ? new Date().getMonth() + 1 : 12;
-  const monthlyAverage = {
-    income: summary.income / averageMonthCount,
-    expenses: summary.expenses / averageMonthCount,
-    profit: summary.profit / averageMonthCount,
+  const activeAverageMonthCount = year === currentYear
+    ? new Date().getMonth() + 1
+    : monthly.filter(item => item.bookingCount > 0).length;
+  const yearlyMonthlyAverage = {
+    income: summary.income / 12,
+    expenses: summary.expenses / 12,
+    profit: summary.profit / 12,
+  };
+  const activeMonthlyAverage = activeAverageMonthCount > 0 ? {
+    income: summary.income / activeAverageMonthCount,
+    expenses: summary.expenses / activeAverageMonthCount,
+    profit: summary.profit / activeAverageMonthCount,
+  } : null;
+  const activeAverageLabel = activeAverageMonthCount === 0
+    ? 'Noch keine Buchungsmonate'
+    : year === currentYear
+      ? `Bisher · über ${activeAverageMonthCount} ${activeAverageMonthCount === 1 ? 'Monat' : 'Monate'}`
+      : `Mit Buchungen · über ${activeAverageMonthCount} ${activeAverageMonthCount === 1 ? 'Monat' : 'Monate'}`;
+
+  const openInvoicePreview = async (invoiceId: string) => {
+    const invoice = invoices.find(item => item.id === invoiceId) || creditNotes.find(item => item.id === invoiceId);
+    if (!invoice) {
+      notify({ variant: 'warning', message: 'Die zugehörige Rechnung ist nicht mehr verfügbar.' });
+      return;
+    }
+    if (invoice.origin === 'imported') {
+      if (!invoice.hasOriginalDocument) {
+        notify({ variant: 'warning', message: `Für die übernommene Rechnung ${invoice.invoiceNumber} ist kein Original-PDF hinterlegt.` });
+        return;
+      }
+      setPreviewLoadingInvoiceId(invoice.id);
+      try {
+        const { blob, name } = await loadImportedInvoiceOriginal(invoice);
+        setDocumentPreview({
+          isOpen: true,
+          documents: [{ id: `original-${invoice.id}`, name, type: 'attachment', content: await blobToBase64(blob), contentType: blob.type, size: blob.size }],
+        });
+      } catch (previewError) {
+        notify({ variant: 'error', message: previewError instanceof Error ? previewError.message : 'Das Rechnungsoriginal konnte nicht geladen werden.' });
+      } finally {
+        setPreviewLoadingInvoiceId(null);
+      }
+      return;
+    }
+    setDocumentPreview({ isOpen: true, documents: createInvoiceAttachmentPreviewDocuments(invoice) });
   };
 
   const checkHints = useMemo(() => {
@@ -405,19 +426,36 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     return hints;
   }, [entries, invoiceOptions]);
 
-  const openNew = () => { setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
-  const openPayment = () => { setDraft(emptyDraft('invoice_payment')); setDialogEntry(null); setError(''); };
-  const homeOfficeEntries = entries.filter(entry => entry.entryType === 'expense'
-    && entry.category === 'allowance'
-    && entry.status !== 'voided'
-    && entry.description === `Homeoffice-Tagespauschale ${year}`
-    && (entry.notes?.includes('Tagesnachweis (Datum=Art):')
-      || entry.notes?.includes('Tage mit überwiegender Tätigkeit in der häuslichen Wohnung ohne Besuch der ersten Tätigkeitsstätte:')));
+  const openNew = () => { setQuickExpenseMonth(null); setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
+  const openExpenseForMonth = (month: number) => {
+    setSelectedMonth(month);
+    setQuickExpenseMonth(month);
+    setDraft({ ...emptyDraft(), entryDate: '' });
+    setDialogEntry(null);
+    setError('');
+  };
+  const openPayment = () => { setQuickExpenseMonth(null); setDraft(emptyDraft('invoice_payment')); setDialogEntry(null); setError(''); };
+  const addExpenseAction = (month: number, mobile = false) => can('data.write') && (
+    <button
+      type="button"
+      aria-label={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`}
+      title={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`}
+      disabled={!entriesReady || busy}
+      onClick={() => openExpenseForMonth(month)}
+      className={mobile
+        ? 'inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 text-primary-custom transition hover:border-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5'
+        : 'pointer-events-none absolute inset-y-0 right-0 inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-md border border-primary-custom bg-white px-2 text-sm font-medium text-primary-custom opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 2xl:whitespace-nowrap'}
+    >
+      <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className={mobile ? 'hidden sm:inline' : 'hidden 2xl:inline'}>Ausgaben hinzufügen</span>
+    </button>
+  );
+  const homeOfficeEntries = entries.filter(entry => isHomeOfficeAllowanceEntry(entry, year));
   const saveAllowance = async (payload: EuerEntryPayload, existingEntryId?: string) => {
     if (existingEntryId) {
       const updated = await apiService.updateEuerEntry(existingEntryId, payload);
       setEntries(current => current.map(entry => entry.id === updated.id ? updated : entry));
-      setNotice('Homeoffice-Pauschalposten wurde anhand des aktuellen Tagesnachweises aktualisiert.');
+      setNotice('Homeoffice-Pauschalposten wurde aktualisiert.');
       return;
     }
     const created = await apiService.createEuerEntry(payload);
@@ -425,19 +463,12 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setNotice('Pauschale wurde für das ausgewählte EÜR-Jahr erfasst.');
   };
   const removeHomeOfficeEntry = async (entryId: string) => {
-    await apiService.deleteEuerEntry(entryId, 'Homeoffice-Pauschale ohne gespeicherte Tagesnachweise storniert');
+    await apiService.deleteEuerEntry(entryId, 'Homeoffice-Pauschale auf Wunsch storniert');
     setEntries(current => current.filter(entry => entry.id !== entryId));
     setNotice('Homeoffice-Pauschalposten wurde storniert und bleibt im Änderungsverlauf erhalten.');
   };
-  const saveWorkLocationDay = async (date: string, dayType: WorkLocationDayType) => {
-    const saved = await apiService.saveWorkLocationDay(date, dayType);
-    setWorkLocationDays(current => [...current.filter(day => day.date !== saved.date), saved].sort((left, right) => left.date.localeCompare(right.date)));
-  };
-  const deleteWorkLocationDay = async (date: string) => {
-    await apiService.deleteWorkLocationDay(date);
-    setWorkLocationDays(current => current.filter(day => day.date !== date));
-  };
   const openCorrection = (entry: EuerEntry) => {
+    setQuickExpenseMonth(null);
     const correctionType: EuerEntryType = entry.entryType === 'income' ? 'expense' : 'income';
     setDraft({
       entryType: correctionType,
@@ -458,6 +489,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   };
   const openEdit = (entry: EuerEntry) => {
     if (entry.sourceType === 'vat_payment') return;
+    setQuickExpenseMonth(null);
     setDraft({
       entryType: entry.entryType,
       entryDate: dateKey(entry.entryDate),
@@ -475,7 +507,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setDialogEntry(entry);
     setError('');
   };
-  const closeDialog = () => setDialogEntry(undefined);
+  const closeDialog = () => { setDialogEntry(undefined); setQuickExpenseMonth(null); };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -715,24 +747,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       }}
     />
     {allowanceDialogOpen && <EuerAllowanceDialog
-      key={year}
+      key={`${workspaceId ?? 'none'}:${year}`}
       year={year}
       locale={locale}
-      dateFormat={company?.dateFormat}
       timeZone={company?.timeZone}
       numberFormat={company?.numberFormat}
       canWrite={can('data.write')}
       entriesReady={entriesReady}
-      workLocationDays={workLocationDays}
-      workLocationDaysLoading={workLocationDaysLoading}
-      workLocationDaysError={workLocationDaysError}
       existingHomeOfficeEntries={homeOfficeEntries}
       onClose={() => setAllowanceDialogOpen(false)}
       onSave={saveAllowance}
       onRemoveExistingHomeOfficeEntry={removeHomeOfficeEntry}
-      onSaveWorkLocationDay={saveWorkLocationDay}
-      onDeleteWorkLocationDay={deleteWorkLocationDay}
-      onReloadWorkLocationDays={loadWorkLocationDays}
     />}
 
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
@@ -767,12 +792,49 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <div className="mt-5 hidden overflow-x-auto tablet:block">
           <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}><td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td></tr>)}</tbody>
-            <tfoot className="border-t-2 border-gray-200 bg-gray-50"><tr><td className="px-4 py-3 font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></td><td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</td><td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</td><td className={`px-4 py-3 text-right font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</td></tr></tfoot>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}>
+                <td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td>
+                <td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td>
+                <td className="px-4 py-3 text-right text-rose-700">
+                  <div className="group relative flex min-h-8 items-center justify-end">
+                    <span className={can('data.write') ? 'transition-opacity group-hover:opacity-0 group-focus-within:opacity-0' : ''}>{formatAmount(item.expenses)}</span>
+                    {addExpenseAction(item.month)}
+                  </div>
+                </td>
+                <td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td>
+              </tr>)}
+            </tbody>
+            <tfoot className="border-t-2 border-gray-200 bg-gray-50">
+              <tr>
+                <td className="px-4 py-3 font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über 12 Monate</span></td>
+                <td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(yearlyMonthlyAverage.income)}</td>
+                <td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(yearlyMonthlyAverage.expenses)}</td>
+                <td className={`px-4 py-3 text-right font-semibold ${yearlyMonthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(yearlyMonthlyAverage.profit)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 pb-3 pl-4 text-xs font-normal text-gray-500">{activeAverageLabel}</td>
+                <td className="px-4 pb-3 text-right text-xs font-medium text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.income) : '–'}</td>
+                <td className="px-4 pb-3 text-right text-xs font-medium text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.expenses) : '–'}</td>
+                <td className="px-4 pb-3 text-right text-xs font-medium text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.profit) : '–'}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}><span className="font-medium text-gray-900">{monthLabel(locale, year, item.month)}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></button><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
-        <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-900">Ø pro Monat<span className="ml-2 text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></span><span className={`font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</p></div></div></div>
+        <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}><span className="font-medium text-gray-900">{monthLabel(locale, year, item.month)}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></button><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div className="min-w-0"><p className="text-xs text-gray-500">Ausgaben</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><p className="shrink-0 whitespace-nowrap text-rose-700">{formatAmount(item.expenses)}</p>{addExpenseAction(item.month, true)}</div></div></div></article>)}</div>
+        <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden">
+          <div className="flex items-start justify-between gap-3">
+            <span className="font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über 12 Monate</span><span className="mt-1 block text-xs font-normal text-gray-500">{activeAverageLabel}</span></span>
+            <span className="text-right">
+              <span className={`block font-semibold ${yearlyMonthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(yearlyMonthlyAverage.profit)}</span>
+              <span className="mt-1 block text-xs font-normal text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.profit) : '–'}</span>
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 font-semibold text-emerald-700">{formatAmount(yearlyMonthlyAverage.income)}</p><p className="mt-1 text-xs text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.income) : '–'}</p></div>
+            <div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 font-semibold text-rose-700">{formatAmount(yearlyMonthlyAverage.expenses)}</p><p className="mt-1 text-xs text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.expenses) : '–'}</p></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -790,10 +852,57 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
               <col style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} />
             </colgroup>
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}
+              {visibleRows.map(row => {
+                const entry = entriesById.get(row.id);
+                return <tr key={row.id} className="group hover:bg-gray-50">
+                  <td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td>
+                  <td className="max-w-0 px-3 py-4 text-sm">
+                    <div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>
+                    {row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}
+                    {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={`PDF-Vorschau öffnen: ${row.description}`} title={`PDF-Vorschau öffnen: ${row.description}`} className="mt-1 inline-flex min-h-7 items-center gap-1 text-xs font-medium text-primary-custom hover:underline disabled:opacity-60"><Eye className="h-3.5 w-3.5" aria-hidden="true" />{previewLoadingInvoiceId === row.invoiceId ? 'Öffnet …' : 'PDF-Vorschau'}</button>}
+                    {entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}
+                    {entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}
+                  </td>
+                  <td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td>
+                  <td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td>
+                  <td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td>
+                  <td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>
+                    {entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}
+                  </td>
+                </tr>;
+              })}
+            </tbody>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{visibleRows.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</p>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}</article>; })}</div>
+        <div className="divide-y divide-gray-100 tablet:hidden">
+          {visibleRows.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</p>}
+          {visibleRows.map(row => {
+            const entry = entriesById.get(row.id);
+            return <article key={row.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p>
+                </div>
+                <div className="flex shrink-0 items-start gap-2">
+                  <p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>
+                  {entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                <span className="min-w-0 truncate">{row.sourceLabel || 'Manuell'}</span>
+                <div className="flex items-center gap-3">
+                  {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={`PDF-Vorschau öffnen: ${row.description}`} className="inline-flex min-h-9 items-center gap-1 font-medium text-primary-custom hover:underline disabled:opacity-60"><Eye className="h-4 w-4" aria-hidden="true" />{previewLoadingInvoiceId === row.invoiceId ? 'Öffnet …' : 'PDF-Vorschau'}</button>}
+                  {row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}
+                </div>
+              </div>
+              {row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}
+              {entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}
+            </article>;
+          })}
+        </div>
       </>}
     </section>
 
@@ -801,8 +910,8 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       <DialogShell
         titleId="euer-entry-dialog-title"
         icon={dialogEntry ? Pencil : draft.sourceType === 'correction' ? RotateCcw : Plus}
-        title={dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Teilzahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
-        description="Beträge werden als Bruttobeträge erfasst. Änderungen werden protokolliert."
+        title={quickExpenseMonth !== null && !dialogEntry ? `Ausgabe für ${monthLabel(locale, year, quickExpenseMonth)} ${year} erfassen` : dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Teilzahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
+        description={quickExpenseMonth !== null && !dialogEntry ? 'Bitte das tatsächliche Buchungsdatum auswählen. Es wird nicht automatisch aus dem Monat übernommen.' : 'Beträge werden als Bruttobeträge erfasst. Änderungen werden protokolliert.'}
         onClose={closeDialog}
         onSubmit={submit}
         size="xl"
@@ -853,6 +962,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             </div>
       </DialogShell>
     )}
+
+    <DocumentPreview
+      isOpen={documentPreview.isOpen}
+      onClose={() => setDocumentPreview({ isOpen: false, documents: [] })}
+      documents={documentPreview.documents}
+      initialIndex={0}
+    />
 
     {historyEntry && <div className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-gray-900">Änderungsverlauf</h2><p className="mt-1 text-sm text-gray-500">{historyEntry.description}</p></div><button type="button" onClick={() => setHistoryEntry(null)} aria-label="Historie schließen"><X className="h-5 w-5 text-gray-500" /></button></div>{historyLoading ? <div className="py-10 text-center text-sm text-gray-500">Historie wird geladen …</div> : history.length === 0 ? <div className="py-10 text-center text-sm text-gray-500">Noch keine Historieneinträge vorhanden.</div> : <div className="mt-5 space-y-3">{history.map(item => <article key={item.id} className="rounded-lg border border-gray-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2 font-medium text-gray-900"><CheckCircle2 className="h-4 w-4 text-primary-custom" />{item.action === 'created' ? 'Erstellt' : item.action === 'updated' ? 'Geändert' : 'Storniert'}</span><span className="text-xs text-gray-500">{formatDate(item.changedAt, locale, company?.dateFormat)}</span></div>{item.reason && <p className="mt-2 text-sm text-gray-700">Grund: {item.reason}</p>}{(item.oldData || item.newData) && <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-gray-500">Technische Werte anzeigen</summary><pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">{JSON.stringify({ vorher: item.oldData, nachher: item.newData }, null, 2)}</pre></details>}</article>)}</div>}</section></div>}
     {expenseTemplateEntry && <RecurringExpenseDialog

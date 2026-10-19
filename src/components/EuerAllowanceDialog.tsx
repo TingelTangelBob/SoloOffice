@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Calculator, Home, Info, Trash2 } from 'lucide-react';
-import type { DateFormat, EuerEntry, EuerEntryPayload, NumberFormat, WorkLocationDay, WorkLocationDayType } from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import { getCompletedWorkLocationDays, getWorkLocationDayLabel, localDateKey, WORK_LOCATION_DAY_TYPES } from '../utils/workLocationDays';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Calculator } from 'lucide-react';
+import type { EuerEntry, EuerEntryPayload, NumberFormat } from '../types';
+import { formatCurrency } from '../utils/formatters';
+import { localDateKey } from '../utils/workLocationDays';
+import { calculateAllowanceWorkdays, getAllowanceYearRange, parseAllowanceDayBasis, readLegacyAllowanceDayCount, serializeAllowanceDayBasis, type AllowanceDayBasis } from '../utils/euerAllowanceDays';
 import { useFeedback } from '../context/FeedbackContext';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { DialogShell } from './DialogShell';
@@ -10,495 +11,233 @@ import { DialogShell } from './DialogShell';
 interface EuerAllowanceDialogProps {
   year: number;
   locale: string;
-  dateFormat?: DateFormat;
   timeZone?: string;
   numberFormat?: NumberFormat;
   canWrite: boolean;
   entriesReady: boolean;
-  workLocationDays: WorkLocationDay[];
-  workLocationDaysLoading: boolean;
-  workLocationDaysError: string;
   existingHomeOfficeEntries: EuerEntry[];
   onClose: () => void;
   onSave: (payload: EuerEntryPayload, existingEntryId?: string) => Promise<void>;
   onRemoveExistingHomeOfficeEntry: (entryId: string) => Promise<void>;
-  onSaveWorkLocationDay: (date: string, dayType: WorkLocationDayType) => Promise<void>;
-  onDeleteWorkLocationDay: (date: string) => Promise<void>;
-  onReloadWorkLocationDays: () => Promise<void>;
 }
 
 type AllowanceMode = 'home_office' | 'manual';
+const weekdays = [
+  { value: 1, label: 'Mo' }, { value: 2, label: 'Di' }, { value: 3, label: 'Mi' },
+  { value: 4, label: 'Do' }, { value: 5, label: 'Fr' }, { value: 6, label: 'Sa' }, { value: 0, label: 'So' },
+];
 
-function dateFromKey(value: string): Date {
-  return new Date(`${value}T12:00:00`);
-}
-
-function readSavedDailyParameters(notes: string | null | undefined, year: number) {
+function readSavedParameters(notes: string | null | undefined, year: number) {
   const line = notes?.split('\n').find(item => item.startsWith(`Berechnungswerte für ${year} (vom Nutzer erfasst): `));
   const match = line?.match(/^Berechnungswerte für (\d{4}) \(vom Nutzer erfasst\): ([\d.]+) EUR je Tag; Tagesgrenze=(keine|\d+); Betragsgrenze=(keine|[\d.]+) EUR; Quelle=(.*)$/);
   if (!match || Number(match[1]) !== year) return null;
   const rate = Number(match[2]);
-  const amountLimit: number | '' = match[4] === 'keine' ? '' : Number(match[4]);
   const maxDays: number | '' = match[3] === 'keine' ? '' : Number(match[3]);
+  const maxAmount: number | '' = match[4] === 'keine' ? '' : Number(match[4]);
   if (!Number.isFinite(rate) || rate <= 0 || !match[5]) return null;
-  if (amountLimit !== '' && !Number.isFinite(amountLimit)) return null;
-  return {
-    dailyRate: rate,
-    maxDays,
-    maxAmount: amountLimit,
-    source: match[5],
-  };
+  if (maxAmount !== '' && !Number.isFinite(maxAmount)) return null;
+  return { rate, maxDays, maxAmount, source: match[5] };
 }
 
 export function EuerAllowanceDialog({
-  year,
-  locale,
-  dateFormat,
-  timeZone,
-  numberFormat,
-  canWrite,
-  entriesReady,
-  workLocationDays,
-  workLocationDaysLoading,
-  workLocationDaysError,
-  existingHomeOfficeEntries,
-  onClose,
-  onSave,
-  onRemoveExistingHomeOfficeEntry,
-  onSaveWorkLocationDay,
-  onDeleteWorkLocationDay,
-  onReloadWorkLocationDays,
+  year, locale, timeZone, numberFormat, canWrite, entriesReady, existingHomeOfficeEntries,
+  onClose, onSave, onRemoveExistingHomeOfficeEntry,
 }: EuerAllowanceDialogProps) {
   const { confirm } = useFeedback();
+  const today = localDateKey(new Date(), timeZone);
+  const range = getAllowanceYearRange(year, today);
   const [mode, setMode] = useState<AllowanceMode>('home_office');
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedDayType, setSelectedDayType] = useState<WorkLocationDayType>('home_majority');
-  const [dayReviewed, setDayReviewed] = useState(false);
-  const [dayBusy, setDayBusy] = useState(false);
-  const [dayError, setDayError] = useState('');
-  const [removingHomeOfficeEntry, setRemovingHomeOfficeEntry] = useState(false);
-  const [reviewed, setReviewed] = useState(false);
-  const [manualDescription, setManualDescription] = useState('');
-  const [manualAmount, setManualAmount] = useState<number | ''>('');
-  const [manualBasis, setManualBasis] = useState('');
+  const [dayMethod, setDayMethod] = useState<'annual' | 'weekly'>('annual');
+  const [annualDays, setAnnualDays] = useState<number | ''>('');
+  const [from, setFrom] = useState(range.from);
+  const [to, setTo] = useState(range.maxDays ? range.to : range.from);
+  const [selectedWeekdays, setSelectedWeekdays] = useState([1, 2, 3, 4, 5]);
+  const [vacationDays, setVacationDays] = useState<number | ''>(0);
+  const [otherDays, setOtherDays] = useState<number | ''>(0);
   const [dailyRate, setDailyRate] = useState<number | ''>('');
   const [maxDays, setMaxDays] = useState<number | ''>('');
   const [maxAmount, setMaxAmount] = useState<number | ''>('');
   const [parameterSource, setParameterSource] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [manualAmount, setManualAmount] = useState<number | ''>('');
+  const [manualBasis, setManualBasis] = useState('');
+  const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const edited = useRef(false);
+  const hydrated = useRef<string | null>(null);
+  const existingEntry = existingHomeOfficeEntries.length === 1 ? existingHomeOfficeEntries[0] : undefined;
+  const duplicates = existingHomeOfficeEntries.length > 1;
+  const disabled = !canWrite || !entriesReady || saving || removing;
 
-  const today = localDateKey(new Date(), timeZone);
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
-  const selectedDay = workLocationDays.find(day => day.date === selectedDate);
-  const completedDays = useMemo(() => getCompletedWorkLocationDays(workLocationDays, year, today), [today, workLocationDays, year]);
-  const predominantDays = completedDays.filter(day => day.dayType === 'home_majority').length;
-  const noOtherWorkplaceDays = completedDays.filter(day => day.dayType === 'home_no_other_workspace').length;
-  const parsedDailyRate = dailyRate === '' ? Number.NaN : Number(dailyRate);
-  const parsedMaxDays = maxDays === '' ? undefined : Number(maxDays);
-  const parsedMaxAmount = maxAmount === '' ? undefined : Number(maxAmount);
-  const normalizedParameterSource = parameterSource.trim().replace(/\s+/g, ' ');
-  const hasTwoDecimals = (value: number) => Math.abs(value - Math.round((value + Number.EPSILON) * 100) / 100) < 0.000001;
-  const hasValidDailyRate = Number.isFinite(parsedDailyRate) && parsedDailyRate > 0 && parsedDailyRate < 10_000_000_000 && hasTwoDecimals(parsedDailyRate);
-  const hasValidMaxDays = parsedMaxDays === undefined || (Number.isInteger(parsedMaxDays) && parsedMaxDays > 0);
-  const hasValidMaxAmount = parsedMaxAmount === undefined || (Number.isFinite(parsedMaxAmount) && parsedMaxAmount > 0 && parsedMaxAmount < 10_000_000_000 && hasTwoDecimals(parsedMaxAmount));
-  const countedDays = parsedMaxDays === undefined || !hasValidMaxDays
-    ? completedDays.length
-    : Math.min(completedDays.length, parsedMaxDays);
-  const rawCalculatedAmount = hasValidDailyRate && hasValidMaxDays ? countedDays * parsedDailyRate : Number.NaN;
-  const cappedAmount = Number.isFinite(rawCalculatedAmount) && parsedMaxAmount !== undefined && hasValidMaxAmount
-    ? Math.min(rawCalculatedAmount, parsedMaxAmount)
-    : rawCalculatedAmount;
-  const calculatedAmount = hasValidMaxAmount && Number.isFinite(cappedAmount) && cappedAmount < 10_000_000_000
-    ? Math.round((cappedAmount + Number.EPSILON) * 100) / 100
-    : null;
-  const hasValidDailyCalculation = hasValidDailyRate
-    && hasValidMaxDays
-    && hasValidMaxAmount
-    && Boolean(normalizedParameterSource)
-    && calculatedAmount !== null;
-  const pendingDays = workLocationDays.filter(day => day.date > today).length;
-  const existingHomeOfficeEntry = existingHomeOfficeEntries.length === 1 ? existingHomeOfficeEntries[0] : undefined;
-  const duplicateHomeOfficeEntries = existingHomeOfficeEntries.length > 1;
-  const savedDailyParameters = useMemo(
-    () => readSavedDailyParameters(existingHomeOfficeEntry?.notes, year),
-    [existingHomeOfficeEntry?.notes, year],
-  );
   useEffect(() => {
-    if (!existingHomeOfficeEntry || !savedDailyParameters) return;
-    setDailyRate(savedDailyParameters.dailyRate);
-    setMaxDays(savedDailyParameters.maxDays);
-    setMaxAmount(savedDailyParameters.maxAmount);
-    setParameterSource(savedDailyParameters.source);
-  }, [existingHomeOfficeEntry, savedDailyParameters]);
-  const currentEvidenceLine = `Tagesnachweis (Datum=Art): ${completedDays.map(day => `${day.date}=${day.dayType}`).join(', ')}.`;
-  const currentParametersLine = hasValidDailyCalculation && calculatedAmount !== null
-    ? `Berechnungswerte für ${year} (vom Nutzer erfasst): ${parsedDailyRate.toFixed(2)} EUR je Tag; Tagesgrenze=${parsedMaxDays ?? 'keine'}; Betragsgrenze=${parsedMaxAmount === undefined ? 'keine' : parsedMaxAmount.toFixed(2)} EUR; Quelle=${normalizedParameterSource}`
-    : '';
-  const existingHomeOfficeEntryIsStale = Boolean(existingHomeOfficeEntry && (
-    hasValidDailyCalculation
-    && calculatedAmount !== null
-    && (Number(existingHomeOfficeEntry.amount) !== calculatedAmount
-      || !existingHomeOfficeEntry.notes?.includes(currentEvidenceLine)
-      || !existingHomeOfficeEntry.notes?.includes(currentParametersLine))
-  ));
+    if (!entriesReady || edited.current) return;
+    const key = `${year}:${existingEntry?.id ?? 'new'}:${existingEntry?.notes ?? ''}`;
+    if (hydrated.current === key) return;
+    hydrated.current = key;
+    if (!existingEntry) return;
+    const basis = parseAllowanceDayBasis(existingEntry.notes, year);
+    if (basis) {
+      setDayMethod(basis.mode);
+      setAnnualDays(basis.days);
+      setFrom(basis.from);
+      setTo(basis.to);
+      setSelectedWeekdays(basis.weekdays);
+      setVacationDays(basis.vacationDays);
+      setOtherDays(basis.otherDays);
+    } else {
+      const legacyCount = readLegacyAllowanceDayCount(existingEntry.notes, year, today);
+      if (legacyCount !== null) setAnnualDays(legacyCount);
+    }
+    const parameters = readSavedParameters(existingEntry.notes, year);
+    if (parameters) {
+      setDailyRate(parameters.rate);
+      setMaxDays(parameters.maxDays);
+      setMaxAmount(parameters.maxAmount);
+      setParameterSource(parameters.source);
+    }
+  }, [entriesReady, existingEntry, today, year]);
+
+  const markEdited = () => { edited.current = true; setReviewed(false); setError(''); };
+  const weekly = useMemo(() => calculateAllowanceWorkdays({
+    year, from, to, weekdays: selectedWeekdays,
+    vacationDays: vacationDays === '' ? 0 : vacationDays,
+    otherDays: otherDays === '' ? 0 : otherDays, today,
+  }), [year, from, to, selectedWeekdays, vacationDays, otherDays, today]);
+  const days = dayMethod === 'weekly' ? weekly.days : annualDays;
+  const validDays = typeof days === 'number' && Number.isInteger(days) && days > 0 && days <= range.maxDays
+    && (dayMethod !== 'weekly' || !weekly.error);
+  const validMoney = (value: number | '') => typeof value === 'number' && Number.isFinite(value)
+    && value > 0 && value < 10_000_000_000 && Math.abs(value - Math.round((value + Number.EPSILON) * 100) / 100) < 0.000001;
+  const validMaxDays = maxDays === '' || (Number.isInteger(maxDays) && maxDays > 0);
+  const validMaxAmount = maxAmount === '' || validMoney(maxAmount);
+  const validParameters = validMoney(dailyRate) && validMaxDays && validMaxAmount && Boolean(parameterSource.trim());
+  const countedDays = typeof days === 'number' ? Math.min(days, maxDays === '' || !validMaxDays ? days : maxDays) : 0;
+  const rawAmount = validDays && validParameters ? countedDays * Number(dailyRate) : null;
+  const calculatedAmount = rawAmount === null ? null : Math.round((Math.min(rawAmount, maxAmount === '' ? rawAmount : maxAmount) + Number.EPSILON) * 100) / 100;
   const currency = (amount: number) => formatCurrency(amount, locale, numberFormat, 'EUR');
-  const dayTypeSummary = WORK_LOCATION_DAY_TYPES
-    .map(option => `${option.label}: ${completedDays.filter(day => day.dayType === option.value).length}`)
-    .join('; ');
-
-  const selectDate = (date: string) => {
-    setSelectedDate(date);
-    setSelectedDayType(workLocationDays.find(day => day.date === date)?.dayType || 'home_majority');
-    setDayReviewed(false);
-    setDayError('');
-  };
-
-  const saveDay = async () => {
-    setDayError('');
-    if (!canWrite) {
-      setDayError('Für diese Aktion fehlt die Schreibberechtigung.');
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate) || selectedDate < yearStart || selectedDate > yearEnd) {
-      setDayError(`Bitte ein Datum im Steuerjahr ${year} auswählen.`);
-      return;
-    }
-    if (selectedDate > today) {
-      setDayError('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
-      return;
-    }
-    if (!dayReviewed) {
-      setDayError('Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.');
-      return;
-    }
-    setDayBusy(true);
-    setReviewed(false);
-    try {
-      await onSaveWorkLocationDay(selectedDate, selectedDayType);
-      setDayReviewed(false);
-    } catch (saveError) {
-      setDayError(saveError instanceof Error ? saveError.message : 'Der Tag konnte nicht gespeichert werden.');
-    } finally {
-      setDayBusy(false);
-    }
-  };
-
-  const deleteDay = async (date: string) => {
-    if (!canWrite) return;
-    const accepted = await confirm({
-      title: 'Tagesmerkmal entfernen',
-      message: `Die Arbeitsort-Erfassung für ${formatDate(dateFromKey(date), locale, dateFormat)} entfernen?`,
-      confirmText: 'Entfernen',
-      isDestructive: true,
-    });
-    if (!accepted) return;
-    setDayBusy(true);
-    setDayError('');
-    setReviewed(false);
-    try {
-      await onDeleteWorkLocationDay(date);
-      if (selectedDate === date) setSelectedDate('');
-    } catch (deleteError) {
-      setDayError(deleteError instanceof Error ? deleteError.message : 'Der Tag konnte nicht entfernt werden.');
-    } finally {
-      setDayBusy(false);
-    }
+  const dailyBasis: AllowanceDayBasis = {
+    version: 1, year, mode: dayMethod, days: typeof days === 'number' ? days : 0,
+    from: dayMethod === 'weekly' ? from : range.from,
+    to: dayMethod === 'weekly' ? to : range.to,
+    weekdays: dayMethod === 'weekly' ? selectedWeekdays : [],
+    vacationDays: dayMethod === 'weekly' ? Number(vacationDays || 0) : 0,
+    otherDays: dayMethod === 'weekly' ? Number(otherDays || 0) : 0,
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
-    if (!canWrite) {
-      setError('Für diese Aktion fehlt die Schreibberechtigung.');
-      return;
-    }
-    if (!entriesReady) {
-      setError('Die EÜR-Buchungen für dieses Jahr sind noch nicht zuverlässig geladen. Bitte lade die EÜR erneut, bevor du eine Pauschale speicherst.');
-      return;
-    }
-
+    if (disabled) return;
     let description: string;
     let amount: number;
     let notes: string;
-    let existingEntryId: string | undefined;
-
     if (mode === 'home_office') {
-      if (duplicateHomeOfficeEntries) {
-        setError('Für dieses Jahr sind mehrere Homeoffice-Pauschalposten vorhanden. Bitte bereinige die doppelten Buchungen zuerst.');
-        return;
+      if (duplicates) { setError('Bitte zuerst die doppelten Homeoffice-Posten bereinigen.'); return; }
+      if (!validDays) { setError(dayMethod === 'weekly' && weekly.error ? weekly.error : `Bitte eine ganze Tagesanzahl von 1 bis ${range.maxDays} eintragen.`); return; }
+      if (!validParameters || calculatedAmount === null || calculatedAmount <= 0 || calculatedAmount >= 10_000_000_000) {
+        setError('Bitte Tagessatz, Quelle und optionale Grenzen prüfen.'); return;
       }
-      if (!completedDays.length) {
-        setError('Für dieses Jahr ist noch kein geleisteter und geprüfter Tag erfasst.');
-        return;
-      }
-      if (!hasValidDailyCalculation || calculatedAmount === null) {
-        setError('Bitte trage für dieses Steuerjahr einen gültigen Tagessatz und eine Quelle ein. Optionale Grenzen müssen gültig sein.');
-        return;
-      }
-      if (!reviewed) {
-        setError('Bitte bestätige, dass du die Werte, ihre Quelle, die Tagesaufstellung, Voraussetzungen und mögliche Ausschlüsse selbst geprüft hast.');
-        return;
-      }
-      description = `Homeoffice-Tagespauschale ${year}`;
+      if (!reviewed) { setError('Bitte die Angaben und Berechnung bestätigen.'); return; }
       amount = calculatedAmount;
-      existingEntryId = existingHomeOfficeEntry?.id;
+      description = `Homeoffice-Tagespauschale ${year}`;
+      const source = parameterSource.trim().replace(/\s+/g, ' ');
       notes = [
         `Steuerjahr ${year}; Jahresansatz zum 31.12.`,
-        `Tagearten: ${dayTypeSummary}.`,
-        `Tagesnachweis (Datum=Art): ${completedDays.map(day => `${day.date}=${day.dayType}`).join(', ')}.`,
-        currentParametersLine,
-        pendingDays > 0 ? `${pendingDays} zukünftige Erfassungen sind nicht im Betrag enthalten.` : '',
-        `Rechenweg laut eingegebenen Werten: ${countedDays} von ${completedDays.length} erfassten Tagen × ${parsedDailyRate.toFixed(2)} EUR = ${Math.round((countedDays * parsedDailyRate + Number.EPSILON) * 100) / 100} EUR${parsedMaxAmount === undefined ? '' : `; Betragsgrenze ${parsedMaxAmount.toFixed(2)} EUR`}; gespeicherter Betrag ${amount.toFixed(2)} EUR.`,
-        'Arbeitssituation, aktuelle Voraussetzungen, mögliche Ausschlüsse und Zuordnung wurden von dir selbst geprüft. SoloOffice nimmt keine steuerliche Einzelfallprüfung vor.',
-        'Keine Umsatzsteuer oder Vorsteuer erfasst. ELSTER-Zuordnung bitte passend zum Steuerjahr selbst prüfen.',
-      ].filter(Boolean).join('\n');
-    } else {
-      const parsedAmount = manualAmount === '' ? Number.NaN : Number(manualAmount);
-      if (!manualDescription.trim()) {
-        setError('Bitte die Pauschale benennen.');
-        return;
-      }
-      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount >= 10_000_000_000) {
-        setError('Bitte einen gültigen Betrag größer als 0 € eintragen.');
-        return;
-      }
-      if (!manualBasis.trim()) {
-        setError('Bitte die Berechnungsgrundlage oder einen Hinweis zur eigenen Aufstellung eintragen.');
-        return;
-      }
-      if (!reviewed) {
-        setError('Bitte bestätige, dass du Anspruch, Betrag und Zuordnung selbst geprüft hast.');
-        return;
-      }
-      description = `${manualDescription.trim()} ${year}`;
-      const roundedAmount = Math.round((parsedAmount + Number.EPSILON) * 100) / 100;
-      if (Math.abs(parsedAmount - roundedAmount) > 0.000001) {
-        setError('Der Betrag darf höchstens zwei Nachkommastellen haben.');
-        return;
-      }
-      amount = roundedAmount;
-      notes = [
-        `Steuerjahr ${year}; Jahresansatz zum 31.12.`,
-        `Eigene Berechnungsgrundlage: ${manualBasis.trim()}`,
-        'Betrag, Abziehbarkeit und Zuordnung wurden von dir geprüft; SoloOffice nimmt keine steuerliche Einzelfallprüfung vor.',
-        'Keine Umsatzsteuer oder Vorsteuer erfasst. ELSTER-Zuordnung bitte passend zum Steuerjahr selbst prüfen.',
+        serializeAllowanceDayBasis(dailyBasis),
+        dayMethod === 'weekly'
+          ? `Wochenberechnung ${from} bis ${to}; Wochentage: ${weekdays.filter(day => selectedWeekdays.includes(day.value)).map(day => day.label).join(', ')}; ${weekly.baseDays} Arbeitstage abzüglich ${Number(vacationDays || 0)} Urlaubstage und ${Number(otherDays || 0)} weiterer freier Tage = ${days} Tage.`
+          : `Tagesanzahl für das Jahr: ${days}; vom Nutzer anhand eigener Aufzeichnungen eingetragen.`,
+        `Berechnungswerte für ${year} (vom Nutzer erfasst): ${Number(dailyRate).toFixed(2)} EUR je Tag; Tagesgrenze=${maxDays === '' ? 'keine' : maxDays}; Betragsgrenze=${maxAmount === '' ? 'keine' : maxAmount.toFixed(2)} EUR; Quelle=${source}`,
+        `Berechnung: ${countedDays} berücksichtigte Tage × ${Number(dailyRate).toFixed(2)} EUR${maxAmount === '' ? '' : `; begrenzt auf ${maxAmount.toFixed(2)} EUR`}; Jahresbetrag ${amount.toFixed(2)} EUR.`,
+        'Angaben, steuerliche Voraussetzungen und Zuordnung vom Nutzer geprüft. Keine Umsatzsteuer oder Vorsteuer.',
       ].join('\n');
+    } else {
+      if (!manualDescription.trim() || !validMoney(manualAmount) || !manualBasis.trim()) {
+        setError('Bitte Bezeichnung, Betrag und Berechnungsgrundlage eintragen.'); return;
+      }
+      if (!reviewed) { setError('Bitte die Angaben und Berechnung bestätigen.'); return; }
+      description = `${manualDescription.trim()} ${year}`;
+      amount = Number(manualAmount);
+      notes = `Steuerjahr ${year}; Jahresansatz zum 31.12.\nEigene Berechnungsgrundlage: ${manualBasis.trim()}\nAngaben und steuerliche Zuordnung vom Nutzer geprüft. Keine Umsatzsteuer oder Vorsteuer.`;
     }
-
-    const payload: EuerEntryPayload = {
-      entryType: 'expense',
-      entryDate: `${year}-12-31`,
-      description,
-      category: 'allowance',
-      amount,
-      taxRate: 0,
-      notes,
-      sourceType: 'manual',
-      vatTreatment: 'no_vat',
-      netAmount: amount,
-      vatAmount: 0,
-      inputTaxDeductible: false,
-      documentDate: null,
-    };
-
     setSaving(true);
     try {
-      await onSave(payload, existingEntryId);
+      await onSave({
+        entryType: 'expense', entryDate: `${year}-12-31`, description, category: 'allowance', amount, taxRate: 0,
+        notes, sourceType: 'manual', vatTreatment: 'no_vat', netAmount: amount, vatAmount: 0,
+        inputTaxDeductible: false, documentDate: null,
+      }, mode === 'home_office' ? existingEntry?.id : undefined);
       onClose();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Die Pauschale konnte nicht gespeichert werden.');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  const removeHomeOfficeEntry = async () => {
-    if (!canWrite || workLocationDaysLoading || workLocationDaysError || !existingHomeOfficeEntry || completedDays.length > 0) return;
-    const accepted = await confirm({
-      title: 'Homeoffice-Pauschalposten stornieren',
-      message: 'Es sind keine geprüften Arbeitstage mehr gespeichert. Den vorhandenen EÜR-Posten stornieren? Die Buchung bleibt im Änderungsverlauf erhalten.',
-      confirmText: 'Posten stornieren',
-      isDestructive: true,
-    });
-    if (!accepted) return;
-    setRemovingHomeOfficeEntry(true);
+  const removeExisting = async () => {
+    if (disabled || !existingEntry) return;
+    if (!await confirm({ title: 'Pauschale stornieren', message: 'Den gespeicherten Jahresposten stornieren? Er bleibt im Änderungsverlauf erhalten.', confirmText: 'Stornieren', isDestructive: true })) return;
+    setRemoving(true);
     setError('');
-    try {
-      await onRemoveExistingHomeOfficeEntry(existingHomeOfficeEntry.id);
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : 'Der Homeoffice-Pauschalposten konnte nicht storniert werden.');
-    } finally {
-      setRemovingHomeOfficeEntry(false);
-    }
+    try { await onRemoveExistingHomeOfficeEntry(existingEntry.id); onClose(); }
+    catch (removeError) { setError(removeError instanceof Error ? removeError.message : 'Die Pauschale konnte nicht storniert werden.'); }
+    finally { setRemoving(false); }
   };
 
-  const workLocationEditor = (
-    <section className="rounded-xl border border-gray-200 bg-white p-4" aria-labelledby="work-location-records-heading">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2">
-          <Home className="mt-0.5 h-4 w-4 shrink-0 text-primary-custom" />
-          <div>
-            <h3 id="work-location-records-heading" className="text-sm font-semibold text-gray-900">Arbeitstage für {year}</h3>
-            <p className="mt-1 text-xs leading-5 text-gray-600">Tage einzeln erfassen. Termine werden nicht gezählt; Vorbereitung und andere Arbeit ohne Termin können berücksichtigt werden.</p>
-          </div>
-        </div>
-        {workLocationDaysLoading && <span role="status" className="shrink-0 text-xs text-gray-500">Lädt …</span>}
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-        <label className="text-sm font-medium text-gray-700">Arbeitstag
-          <input type="date" value={selectedDate} min={yearStart} max={yearEnd < today ? yearEnd : today} onChange={event => selectDate(event.target.value)} className="form-input mt-1 w-full" disabled={!canWrite || dayBusy || workLocationDaysLoading || Boolean(workLocationDaysError)} />
-        </label>
-        <label className="text-sm font-medium text-gray-700">Tagesart
-          <select value={selectedDayType} onChange={event => { setSelectedDayType(event.target.value as WorkLocationDayType); setDayReviewed(false); }} className="form-input mt-1 w-full" disabled={!canWrite || dayBusy || workLocationDaysLoading || Boolean(workLocationDaysError)}>
-            {WORK_LOCATION_DAY_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>
-      </div>
-      {selectedDay && <p className="mt-2 text-xs text-gray-600">Für dieses Datum ist bereits „{getWorkLocationDayLabel(selectedDay.dayType)}“ gespeichert. Die neue Auswahl ersetzt diesen Eintrag.</p>}
-      <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-gray-600"><Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-custom" />Diese Erfassung beschreibt nur die Arbeitssituation. Steuerliche Voraussetzungen, Ausschlüsse und Zuordnung hängen von Steuerjahr und Einzelfall ab und werden von SoloOffice nicht geprüft.</p>
-      <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
-        <input type="checkbox" checked={dayReviewed} onChange={event => setDayReviewed(event.target.checked)} disabled={!canWrite || !selectedDate || selectedDate > today || dayBusy || workLocationDaysLoading || Boolean(workLocationDaysError)} className="mt-1 h-4 w-4 accent-primary-custom" />
-        <span>Ich habe die tatsächliche Arbeitssituation für diesen Tag korrekt erfasst.</span>
-      </label>
-      {dayError && <p role="alert" className="mt-2 text-sm text-red-700">{dayError}</p>}
-      {selectedDate > today && <p className="mt-2 text-xs text-amber-800">Zukünftige Arbeitstage können erst nach der tatsächlichen Tätigkeit erfasst werden.</p>}
-      <button type="button" onClick={() => void saveDay()} disabled={!canWrite || dayBusy || workLocationDaysLoading || Boolean(workLocationDaysError) || !selectedDate || selectedDate > today || !dayReviewed} className="mt-3 min-h-10 rounded-lg border border-primary-custom px-3 py-2 text-sm font-medium text-primary-custom hover:bg-primary-custom/10 disabled:cursor-not-allowed disabled:opacity-50">{dayBusy ? 'Wird gespeichert …' : selectedDay ? 'Tagesart aktualisieren' : 'Tag hinzufügen'}</button>
-
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-sm font-semibold text-gray-900">Erfasste Tage: {completedDays.length}</p>
-          {pendingDays > 0 && <p className="text-xs text-gray-500">{pendingDays} zukünftige Tage nicht berücksichtigt</p>}
-        </div>
-        {workLocationDays.length === 0 ? <p className="mt-2 text-xs text-gray-500">Noch keine Tagesmerkmale gespeichert.</p> : (
-          <ul className="mt-2 max-h-40 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-100" aria-label={`Erfasste Arbeitstage ${year}`}>
-            {workLocationDays.map(day => (
-              <li key={day.date} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-                <button type="button" onClick={() => selectDate(day.date)} className="min-w-0 flex-1 text-left hover:text-primary-custom">
-                  <span className="font-medium text-gray-900">{formatDate(dateFromKey(day.date), locale, dateFormat)}</span>
-                  <span className="ml-2 text-gray-600">{getWorkLocationDayLabel(day.dayType)}</span>
-                  {day.date > today && <span className="ml-2 text-amber-700">(zukünftig)</span>}
-                </button>
-                {canWrite && <button type="button" onClick={() => void deleteDay(day.date)} disabled={dayBusy} className="shrink-0 rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50" aria-label={`Erfassung vom ${formatDate(dateFromKey(day.date), locale, dateFormat)} entfernen`} title="Tagesmerkmal entfernen"><Trash2 className="h-4 w-4" /></button>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
-  );
-
-  return <DialogShell
-    titleId="euer-allowance-dialog-title"
-    icon={Calculator}
-    title="Pauschale für die EÜR erfassen"
-    description={`Steuerjahr ${year} · Der Jahresansatz wird dem 31.12. zugeordnet.`}
-    onClose={onClose}
-    onSubmit={submit}
-    size="lg"
-    footer={<>
-      <button type="button" onClick={onClose} className="min-h-12 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50" disabled={saving || dayBusy || removingHomeOfficeEntry}>Abbrechen</button>
-      {canWrite && <button type="submit" disabled={saving || dayBusy || removingHomeOfficeEntry || !entriesReady || (mode === 'home_office' && (completedDays.length === 0 || duplicateHomeOfficeEntries || workLocationDaysLoading || Boolean(workLocationDaysError)))} className="btn-primary min-h-12 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90 disabled:opacity-50">{saving ? 'Speichern …' : mode === 'home_office' && existingHomeOfficeEntry ? 'Pauschale aktualisieren' : 'Pauschale speichern'}</button>}
-    </>}
-  >
-    {error && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
-    {!canWrite && <p role="status" className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">Du kannst die Aufzeichnungen ansehen, aber nicht ändern.</p>}
-    {!entriesReady && <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Die EÜR-Buchungen für dieses Jahr sind noch nicht zuverlässig geladen. Eine Pauschale kann erst danach gespeichert werden.</p>}
+  return <DialogShell titleId="euer-allowance-dialog-title" icon={Calculator} title="Pauschale erfassen" description={`Steuerjahr ${year}`} onClose={onClose} onSubmit={submit} size="lg" fitContent footer={<>
+    <button type="button" onClick={onClose} disabled={saving || removing} className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Abbrechen</button>
+    {canWrite && <button type="submit" disabled={disabled || (mode === 'home_office' && (duplicates || !validDays || !validParameters))} className="btn-primary min-h-11 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Speichern …' : mode === 'home_office' && existingEntry ? 'Pauschale aktualisieren' : 'Pauschale speichern'}</button>}
+  </>}>
     <div className="space-y-4 pb-2">
-      <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Art der Pauschale">
-        <button type="button" aria-pressed={mode === 'home_office'} onClick={() => { setMode('home_office'); setReviewed(false); setError(''); }} className={`min-h-11 rounded-lg border px-4 py-2 text-left text-sm font-medium ${mode === 'home_office' ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 bg-white text-gray-700'}`}>Tagespauschale – eigene Werte</button>
-        <button type="button" aria-pressed={mode === 'manual'} onClick={() => { setMode('manual'); setReviewed(false); setError(''); }} className={`min-h-11 rounded-lg border px-4 py-2 text-left text-sm font-medium ${mode === 'manual' ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 bg-white text-gray-700'}`}>Andere Pauschale – eigener Betrag</button>
+      {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      {!entriesReady && <p role="status" className="text-sm text-gray-600">EÜR-Buchungen werden geladen …</p>}
+      {!canWrite && <p role="status" className="text-sm text-gray-600">Du kannst die Angaben ansehen.</p>}
+      <div role="group" aria-label="Art der Pauschale" className="grid grid-cols-2 gap-2">
+        {([{ value: 'home_office', label: 'Tagespauschale' }, { value: 'manual', label: 'Andere Pauschale' }] as const).map(option => <button key={option.value} type="button" aria-pressed={mode === option.value} disabled={disabled} onClick={() => { setMode(option.value); setReviewed(false); setError(''); }} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium ${mode === option.value ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 bg-white text-gray-700'}`}>{option.label}</button>)}
       </div>
-
-      {mode === 'home_office' ? (
-        <>
-          <section className="rounded-xl border border-gray-200 bg-white p-4" aria-labelledby="home-office-allowance-heading">
-            <div className="flex items-start gap-3">
-              <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" />
-              <div>
-                <h3 id="home-office-allowance-heading" className="font-semibold text-gray-900">Tagesberechnung für {year}</h3>
-                <p className="mt-1 text-sm leading-6 text-gray-600">Trage die für dieses Steuerjahr recherchierten Werte selbst ein. SoloOffice zählt nur gespeicherte Tage bis einschließlich heute und wendet ausschließlich deine Eingaben an. Die Werte werden mit Quelle im EÜR-Posten dokumentiert; für ein anderes Steuerjahr bitte neu prüfen.</p>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                  <a href="https://www.gesetze-im-internet.de/estg/__4.html" target="_blank" rel="noreferrer" className="font-medium text-primary-custom underline">§ 4 EStG, Nr. 6c</a>
-                  <a href="https://www.bundesfinanzministerium.de/Web/DE/Service/Publikationen/AMTHB/amthb.htm" target="_blank" rel="noreferrer" className="font-medium text-primary-custom underline">BMF: Amtliche Handbücher</a>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {existingHomeOfficeEntry && !workLocationDaysLoading && !workLocationDaysError && <div role={existingHomeOfficeEntryIsStale || !savedDailyParameters ? 'alert' : 'status'} className={`rounded-lg border p-3 text-sm ${existingHomeOfficeEntryIsStale || !savedDailyParameters ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
-            {!savedDailyParameters
-              ? `Der gespeicherte Homeoffice-Posten über ${currency(existingHomeOfficeEntry.amount)} enthält keine dokumentierten, von dir eingegebenen Jahreswerte und Quelle. Recherchiere die Werte für ${year}, prüfe den Tagesnachweis und speichere den Posten neu.`
-              : existingHomeOfficeEntryIsStale
-                ? `Der gespeicherte Homeoffice-Posten über ${currency(existingHomeOfficeEntry.amount)} passt nicht mehr zu den aktuellen Werten oder zum Tagesnachweis. ${completedDays.length ? 'Speichere die geprüfte aktuelle Aufstellung, um den Posten zu aktualisieren.' : 'Storniere den alten Posten, wenn du keine Tage mehr ansetzen möchtest.'}`
-                : `Es gibt bereits einen Homeoffice-Pauschalposten über ${currency(existingHomeOfficeEntry.amount)}. Beim Speichern wird dieser vorhandene Posten mit den aktuellen Werten und dem Tagesnachweis aktualisiert.`}
-            {canWrite && completedDays.length === 0 && <button type="button" onClick={() => void removeHomeOfficeEntry()} disabled={removingHomeOfficeEntry || saving || dayBusy || workLocationDaysLoading || Boolean(workLocationDaysError)} className="mt-2 block rounded border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">{removingHomeOfficeEntry ? 'Wird storniert …' : 'Vorhandenen Posten stornieren'}</button>}
-          </div>}
-          {duplicateHomeOfficeEntries && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Für dieses Jahr sind mehrere Homeoffice-Pauschalposten vorhanden. Bereinige sie vor einer Neuberechnung.</div>}
-          {workLocationDaysError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{workLocationDaysError}</span><button type="button" onClick={() => void onReloadWorkLocationDays()} className="rounded border border-red-300 bg-white px-3 py-1.5 font-medium hover:bg-red-100">Erneut laden</button></div>}
-
-          {workLocationEditor}
-
-          <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2">
-            <label className="text-sm font-medium text-gray-700">Eigener Tagessatz für {year} (EUR)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={dailyRate} onValueChange={value => { setDailyRate(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Je recherchiertem Steuerjahr eingeben" disabled={!canWrite} />
-              {dailyRate !== '' && hasValidDailyRate === false && <span className="mt-1 block text-xs font-normal text-red-700">Bitte einen Betrag größer als 0 mit höchstens zwei Nachkommastellen eintragen.</span>}
-            </label>
-            <label className="text-sm font-medium text-gray-700">Tagesgrenze (optional)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxDays} onValueChange={value => { setMaxDays(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
-              {maxDays !== '' && !hasValidMaxDays && <span className="mt-1 block text-xs font-normal text-red-700">Bitte eine ganze Zahl größer als 0 eintragen.</span>}
-            </label>
-            <label className="text-sm font-medium text-gray-700">Betragsgrenze in EUR (optional)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxAmount} onValueChange={value => { setMaxAmount(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
-              {maxAmount !== '' && !hasValidMaxAmount && <span className="mt-1 block text-xs font-normal text-red-700">Bitte einen Betrag größer als 0 mit höchstens zwei Nachkommastellen eintragen.</span>}
-            </label>
-            <label className="text-sm font-medium text-gray-700 sm:col-span-2">Quelle oder Verweis auf die eigene Recherche für diese Werte
-              <textarea maxLength={1000} rows={2} value={parameterSource} onChange={event => { setParameterSource(event.target.value); setReviewed(false); }} className="form-input mt-1 w-full" placeholder="z. B. amtliche Quelle, URL und Stand des Steuerjahrs" disabled={!canWrite} />
-            </label>
-            <p className="text-xs leading-5 text-gray-500 sm:col-span-2">Die Grenzfelder bleiben leer, wenn du keine Grenze anwenden möchtest. SoloOffice prüft weder, ob die Quelle aktuell ist, noch ob die Werte oder deine Berechtigung steuerlich zutreffen.</p>
+      {mode === 'home_office' ? <>
+        {duplicates && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Für {year} gibt es mehrere Homeoffice-Posten. Bitte zuerst bereinigen.</p>}
+        {existingEntry && <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600"><span>Gespeichert: {currency(existingEntry.amount)} · wird beim Speichern aktualisiert.</span><button type="button" onClick={() => void removeExisting()} disabled={disabled} className="font-medium text-red-700 underline disabled:opacity-50">{removing ? 'Wird storniert …' : 'Posten stornieren'}</button></div>}
+        <div role="group" aria-label="Tagesanzahl ermitteln" className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={dayMethod === 'annual'} disabled={disabled} onClick={() => { if (dayMethod === 'weekly' && !weekly.error) setAnnualDays(weekly.days); setDayMethod('annual'); markEdited(); }} className={`min-h-10 rounded-lg border px-3 py-2 text-sm ${dayMethod === 'annual' ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 text-gray-700'}`}>Jahresanzahl eingeben</button>
+          <button type="button" aria-pressed={dayMethod === 'weekly'} disabled={disabled} onClick={() => { setDayMethod('weekly'); markEdited(); }} className={`min-h-10 rounded-lg border px-3 py-2 text-sm ${dayMethod === 'weekly' ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 text-gray-700'}`}>Mit Wochen berechnen</button>
+        </div>
+        {dayMethod === 'annual' ? <label className="block text-sm font-medium text-gray-700">Tage im Jahr {year}
+          <LocalizedNumberInput locale={locale} numberFormat={numberFormat} inputMode="numeric" value={annualDays} onValueChange={value => { setAnnualDays(value); markEdited(); }} min={0} max={range.maxDays} placeholder="Anzahl aus deiner Aufstellung" disabled={disabled} className="mt-1 w-full" />
+          {annualDays !== '' && !validDays && <span className="mt-1 block text-xs font-normal text-red-700">Bitte eine ganze Zahl von 1 bis {range.maxDays} eingeben.</span>}
+        </label> : <div className="space-y-3 rounded-lg border border-gray-200 p-3 sm:p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="min-w-0 text-sm font-medium text-gray-700">Von<input type="date" value={from} min={range.from} max={range.to} disabled={disabled} onChange={event => { setFrom(event.target.value); markEdited(); }} className="form-input mt-1 w-full min-w-0" /></label>
+            <label className="min-w-0 text-sm font-medium text-gray-700">Bis<input type="date" value={to} min={from} max={range.to} disabled={disabled} onChange={event => { setTo(event.target.value); markEdited(); }} className="form-input mt-1 w-full min-w-0" /></label>
           </div>
-
-          <div className="rounded-xl border border-primary-custom/30 bg-primary-light-custom p-4">
-            <div className="flex items-center justify-between gap-4 text-sm text-gray-700"><span>Berücksichtigte Tage</span><strong>{parsedMaxDays === undefined || !hasValidMaxDays ? `${countedDays} von ${completedDays.length}` : `${countedDays} von höchstens ${parsedMaxDays}`}</strong></div>
-            <div className="mt-1 flex items-center justify-between gap-4 text-xs text-gray-600"><span>Überwiegende Arbeit zu Hause</span><span>{predominantDays}</span></div>
-            <div className="mt-1 flex items-center justify-between gap-4 text-xs text-gray-600"><span>Dauerhaft kein anderer Arbeitsplatz</span><span>{noOtherWorkplaceDays}</span></div>
-            <div className="mt-2 flex items-center justify-between gap-4 border-t border-primary-custom/20 pt-2 text-sm text-gray-700"><span>Berechneter Jahresbetrag</span><strong className="text-lg text-gray-900">{calculatedAmount === null ? hasValidDailyRate ? 'Grenzen prüfen' : 'Tagessatz eingeben' : currency(calculatedAmount)}</strong></div>
-            {parsedMaxAmount !== undefined && calculatedAmount !== null && rawCalculatedAmount > parsedMaxAmount && <p className="mt-2 text-xs text-gray-600">Der Betrag ist gemäß deiner Eingabe auf {currency(parsedMaxAmount)} begrenzt. Alle erfassten Tage bleiben im Tagesnachweis erhalten.</p>}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-sm font-medium text-gray-700">Tage pro KW<select value={selectedWeekdays.length} disabled={disabled} onChange={event => { setSelectedWeekdays(weekdays.slice(0, Number(event.target.value)).map(day => day.value)); markEdited(); }} className="form-input mt-1 w-full">{!selectedWeekdays.length && <option value={0}>Auswählen</option>}{weekdays.map((_, index) => <option key={index + 1} value={index + 1}>{index + 1} {index === 0 ? 'Tag' : 'Tage'}</option>)}</select></label>
+            <label className="text-sm font-medium text-gray-700">Urlaubstage<LocalizedNumberInput locale={locale} numberFormat={numberFormat} inputMode="numeric" value={vacationDays} onValueChange={value => { setVacationDays(value); markEdited(); }} min={0} disabled={disabled} className="mt-1 w-full" /></label>
+            <label className="text-sm font-medium text-gray-700">Weitere freie Tage<LocalizedNumberInput locale={locale} numberFormat={numberFormat} inputMode="numeric" value={otherDays} onValueChange={value => { setOtherDays(value); markEdited(); }} min={0} disabled={disabled} className="mt-1 w-full" /></label>
           </div>
-
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-            <p className="font-medium">Vor dem Jahresansatz selbst prüfen</p>
-            <p className="mt-1">Prüfe die aktuelle gesetzliche Grundlage, Voraussetzungen, mögliche Ausschlüsse und Zuordnung für dieses Steuerjahr anhand der verlinkten amtlichen Quellen. SoloOffice bewertet deine Tagesarten nicht als steuerlich abzugsfähig.</p>
-            <label className="mt-3 flex items-start gap-3 border-t border-amber-200 pt-3 font-medium">
-              <input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} disabled={!canWrite || !completedDays.length || !hasValidDailyCalculation || duplicateHomeOfficeEntries} className="mt-1 h-4 w-4 accent-primary-custom" />
-              <span>Ich habe die Werte, die angegebene Quelle, meine Tagesaufstellung, Anspruch und Zuordnung selbst geprüft. SoloOffice berechnet keine steuerlichen Vorgaben und bestätigt keinen Anspruch.</span>
-            </label>
-          </div>
-        </>
-      ) : (
-        <>
-          <section className="rounded-xl border border-gray-200 bg-white p-4">
-            <p className="text-sm leading-6 text-gray-600">Für weitere oder besondere Pauschalen kannst du Beschreibung, Betrag und eigene Berechnungsgrundlage eintragen. SoloOffice berechnet und bewertet diese Fälle nicht und nimmt keine ELSTER-Zuordnung vor.</p>
-          </section>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium text-gray-700 sm:col-span-2">Bezeichnung
-            <input maxLength={180} value={manualDescription} onChange={event => { setManualDescription(event.target.value); setReviewed(false); }} className="form-input mt-1 w-full" placeholder="z. B. eigene Pauschale" disabled={!canWrite} />
-            </label>
-            <label className="text-sm font-medium text-gray-700">Betrag
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={manualAmount} onValueChange={value => { setManualAmount(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="0,00" disabled={!canWrite} />
-            </label>
-            <label className="text-sm font-medium text-gray-700 sm:col-span-2">Eigene Berechnungsgrundlage oder Verweis auf die Aufstellung
-              <textarea maxLength={2000} rows={3} value={manualBasis} onChange={event => { setManualBasis(event.target.value); setReviewed(false); }} className="form-input mt-1 w-full" placeholder="Erkläre, wie du den Betrag ermittelt hast." disabled={!canWrite} />
-            </label>
-          </div>
-          <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-            <input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} disabled={!canWrite} className="mt-1 h-4 w-4 accent-primary-custom" />
-            <span>Ich habe Anspruch, Betrag und Zuordnung selbst geprüft. SoloOffice nimmt keine steuerliche Einzelfallprüfung vor.</span>
-          </label>
-        </>
-      )}
+          <details className="text-xs text-gray-600"><summary className="cursor-pointer py-1">Wochentage anpassen · {weekdays.filter(day => selectedWeekdays.includes(day.value)).map(day => day.label).join(', ') || 'keine'}</summary><div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Wochentage">{weekdays.map(day => <button key={day.value} type="button" aria-pressed={selectedWeekdays.includes(day.value)} disabled={disabled} onClick={() => { setSelectedWeekdays(current => current.includes(day.value) ? current.filter(value => value !== day.value) : [...current, day.value]); markEdited(); }} className={`min-h-10 min-w-10 rounded-lg border px-2 font-medium ${selectedWeekdays.includes(day.value) ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 text-gray-700'}`}>{day.label}</button>)}</div></details>
+          <p className="text-xs leading-5 text-gray-600">Nur freie Tage abziehen, die auf deine Arbeitstage fallen, z. B. Urlaub, Feiertage oder Krankheit.</p>
+          {weekly.error ? <p role="alert" className="text-sm text-red-700">{weekly.error}</p> : <p role="status" className="text-sm text-gray-700">{weekly.baseDays} Arbeitstage − {Number(vacationDays || 0)} Urlaub − {Number(otherDays || 0)} weitere freie Tage = <strong>{weekly.days} Tage</strong></p>}
+        </div>}
+        {range.maxDays === 0 && <p role="status" className="text-sm text-gray-600">Für dieses Jahr können noch keine geleisteten Tage angesetzt werden.</p>}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium text-gray-700">Eigener Tagessatz (EUR)<LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={dailyRate} onValueChange={value => { setDailyRate(value); markEdited(); }} min={0} disabled={disabled} placeholder="0,00" className="mt-1 w-full" /></label>
+          <label className="text-sm font-medium text-gray-700">Quelle / eigene Aufstellung<input value={parameterSource} onChange={event => { setParameterSource(event.target.value); markEdited(); }} maxLength={1000} disabled={disabled} placeholder="Verweis zu Werten und Nachweis" className="form-input mt-1 w-full" /></label>
+        </div>
+        <details className="text-sm text-gray-600"><summary className="cursor-pointer py-1">Optionale Höchstgrenzen{maxDays !== '' || maxAmount !== '' ? ' · gesetzt' : ''}</summary><div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium text-gray-700">Höchstens Tage<LocalizedNumberInput locale={locale} numberFormat={numberFormat} inputMode="numeric" value={maxDays} onValueChange={value => { setMaxDays(value); markEdited(); }} min={0} disabled={disabled} placeholder="Keine Grenze" className="mt-1 w-full" /></label>
+          <label className="text-sm font-medium text-gray-700">Höchstens EUR<LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxAmount} onValueChange={value => { setMaxAmount(value); markEdited(); }} min={0} disabled={disabled} placeholder="Keine Grenze" className="mt-1 w-full" /></label>
+          {(!validMaxDays || !validMaxAmount) && <p role="alert" className="text-xs text-red-700 sm:col-span-2">Grenzen müssen positiv sein; die Tagesgrenze muss eine ganze Zahl sein.</p>}
+        </div></details>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg bg-primary-light-custom px-4 py-3"><span className="text-sm text-gray-700">{typeof days === 'number' ? `${countedDays} Tage × ${dailyRate === '' ? '…' : currency(dailyRate)}${maxAmount !== '' && rawAmount !== null && rawAmount > maxAmount ? ` · max. ${currency(maxAmount)}` : ''}` : 'Jahresbetrag'}</span><strong className="text-xl text-gray-900">{calculatedAmount === null ? '—' : currency(calculatedAmount)}</strong></div>
+      </> : <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm font-medium text-gray-700 sm:col-span-2">Bezeichnung<input maxLength={180} value={manualDescription} onChange={event => { setManualDescription(event.target.value); markEdited(); }} disabled={disabled} placeholder="Name der Pauschale" className="form-input mt-1 w-full" /></label>
+        <label className="text-sm font-medium text-gray-700">Betrag (EUR)<LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={manualAmount} onValueChange={value => { setManualAmount(value); markEdited(); }} min={0} disabled={disabled} placeholder="0,00" className="mt-1 w-full" /></label>
+        <label className="text-sm font-medium text-gray-700 sm:col-span-2">Berechnungsgrundlage<textarea value={manualBasis} onChange={event => { setManualBasis(event.target.value); markEdited(); }} maxLength={2000} rows={2} disabled={disabled} placeholder="Eigene Berechnung oder Verweis" className="form-input mt-1 w-full" /></label>
+      </div>}
+      <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} disabled={disabled} className="mt-1 h-4 w-4 shrink-0 accent-primary-custom" /><span>Angaben, Berechnung und steuerliche Voraussetzungen selbst geprüft.</span></label>
+      <details className="text-xs leading-5 text-gray-500"><summary className="cursor-pointer py-1">Hinweise und Quellen</summary><p className="mt-1">SoloOffice verwendet deine Angaben und prüft keinen steuerlichen Anspruch. Der Jahresbetrag wird zum 31.12. ohne Umsatzsteuer gespeichert. Bewahre deine Aufstellung auf.</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1"><a href="https://www.gesetze-im-internet.de/estg/__4.html" target="_blank" rel="noreferrer" className="text-primary-custom underline">§ 4 EStG</a><a href="https://www.bundesfinanzministerium.de/Web/DE/Service/Publikationen/AMTHB/amthb.htm" target="_blank" rel="noreferrer" className="text-primary-custom underline">BMF-Handbücher</a></div></details>
     </div>
   </DialogShell>;
 }

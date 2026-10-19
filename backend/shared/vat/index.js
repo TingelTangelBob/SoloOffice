@@ -390,5 +390,5 @@ export function computeVat(input = {}) {
   return { year, applicable, vatStatus: status, accounting, accountingSource, periodType, permanentExtension, parameterYear, paramsVersion: params.version,
     paramsAsOf: params.asOf, periods, months, annual, completeness: { complete: periods.every(period => period.complete), incompleteEntries: incompleteIds.size,
       incompleteEntryIds: [...incompleteIds], suggestions: suggestions.map(({ entryType, ...suggestion }) => suggestion), legacyPaidInvoices, zeroRatedUnclassified },
-    euer, nextDue, warnings, limitations };
+    euer, nextDue, warnings, limitations, payments };
 }

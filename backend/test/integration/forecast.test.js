@@ -64,3 +64,22 @@ test('RLS beschränkt EÜR-Daten auf den Workspace und der GET-Endpunkt verände
   const ownAfter = await inWorkspace(workspaceId, () => query('SELECT id FROM euer_entries WHERE description=$1', [seededDescription]));
   assert.deepEqual(ownAfter.rows, ownBefore.rows);
 });
+
+test('Forecast lädt eine bezahlte USt-Buchung über euer_year auch für das Vorjahr', async () => {
+  const attributedYear = forecastYear - 1;
+  const payment = await inWorkspace(workspaceId, () => query(`INSERT INTO vat_payments
+    (kind,tax_year,paid_on,amount,source,notes) VALUES ('advance',$1,$2,40,'manual','Forecast Jahreszuordnung') RETURNING id`,
+  [forecastYear, `${forecastYear}-01-05`]));
+  const entry = await inWorkspace(workspaceId, () => query(`INSERT INTO euer_entries
+    (entry_type,entry_date,description,category,amount,tax_rate,source_type,source_id,euer_year)
+    VALUES ('expense',$1,$2,'vat_payment',40,0,'vat_payment',$3,$4) RETURNING id`,
+  [`${forecastYear}-01-05`, `Forecast EÜR-Jahr ${suffix}`, payment.rows[0].id, attributedYear]));
+  await inWorkspace(workspaceId, () => query('UPDATE vat_payments SET euer_entry_id=$1 WHERE id=$2', [entry.rows[0].id, payment.rows[0].id]));
+
+  const result = await invoke(routeHandler, workspaceId, { params: { year: String(attributedYear) } });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.profitYtd, -40);
+  assert.equal(result.payload.monthly[11].expenses, 40);
+  assert.equal(result.payload.monthly.reduce((sum, month) => sum + month.expenses, 0), 40);
+});

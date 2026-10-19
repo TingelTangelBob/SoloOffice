@@ -720,7 +720,8 @@ export interface ImportResponse {
 
 export interface ImportedInvoiceCoursesResponse {
   dryRun: boolean;
-  summary: { invoices: number; created: number; assigned: number };
+  runId?: UUID | null;
+  summary: { invoices: number; created: number; assigned: number; imported?: number };
   preview: Array<{ invoiceId: UUID; invoiceNumber: string; customerName: string; actions: Array<{ action: 'create' | 'assign'; title: string; date: string; hoursWorked: number; hourlyRate: number; jobId?: UUID | null }> }>;
   demoMode?: true;
 }
@@ -756,7 +757,7 @@ export type ImportRunStatus = 'pending' | 'confirmed' | 'reverted';
 
 export interface ImportRun {
   id: UUID;
-  resource: ImportResource;
+  resource: ImportResource | 'invoiceCourses';
   resourceLabel: string;
   fileName: string;
   fileHash?: string | null;

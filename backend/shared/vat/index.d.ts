@@ -194,6 +194,8 @@ export interface VatEuerAttribution {
 
 export interface VatComputationResult {
   year: number;
+  /** Optionale Einzelzahlungen für stichtagsbezogene Prognosen. */
+  payments?: VatPaymentInput[];
   applicable: boolean;
   vatStatus: VatStatus | null;
   accounting: VatAccounting;
