@@ -2049,7 +2049,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (method === 'PUT' && id) {
       assertDemoDate(id, 'Datum');
-      if (id > todayLocal(state.company.timeZone)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
+      if (id > todayLocal(typeof state.company.timeZone === 'string' ? state.company.timeZone : undefined)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
       if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
       if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.');
       const existing = days.find(day => day.date === id);

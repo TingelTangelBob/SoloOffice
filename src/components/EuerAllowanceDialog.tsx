@@ -38,12 +38,13 @@ function readSavedDailyParameters(notes: string | null | undefined, year: number
   const match = line?.match(/^Berechnungswerte für (\d{4}) \(vom Nutzer erfasst\): ([\d.]+) EUR je Tag; Tagesgrenze=(keine|\d+); Betragsgrenze=(keine|[\d.]+) EUR; Quelle=(.*)$/);
   if (!match || Number(match[1]) !== year) return null;
   const rate = Number(match[2]);
-  const amountLimit = match[4] === 'keine' ? '' : Number(match[4]);
+  const amountLimit: number | '' = match[4] === 'keine' ? '' : Number(match[4]);
+  const maxDays: number | '' = match[3] === 'keine' ? '' : Number(match[3]);
   if (!Number.isFinite(rate) || rate <= 0 || !match[5]) return null;
   if (amountLimit !== '' && !Number.isFinite(amountLimit)) return null;
   return {
     dailyRate: rate,
-    maxDays: match[3] === 'keine' ? '' : Number(match[3]),
+    maxDays,
     maxAmount: amountLimit,
     source: match[5],
   };
@@ -442,15 +443,15 @@ export function EuerAllowanceDialog({
 
           <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2">
             <label className="text-sm font-medium text-gray-700">Eigener Tagessatz für {year} (EUR)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={dailyRate} onValueChange={value => { setDailyRate(value); setReviewed(false); }} min={0} allowNegative={false} className="form-input mt-1 w-full" placeholder="Je recherchiertem Steuerjahr eingeben" disabled={!canWrite} />
+              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={dailyRate} onValueChange={value => { setDailyRate(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Je recherchiertem Steuerjahr eingeben" disabled={!canWrite} />
               {dailyRate !== '' && hasValidDailyRate === false && <span className="mt-1 block text-xs font-normal text-red-700">Bitte einen Betrag größer als 0 mit höchstens zwei Nachkommastellen eintragen.</span>}
             </label>
             <label className="text-sm font-medium text-gray-700">Tagesgrenze (optional)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxDays} onValueChange={value => { setMaxDays(value); setReviewed(false); }} min={0} allowNegative={false} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
+              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxDays} onValueChange={value => { setMaxDays(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
               {maxDays !== '' && !hasValidMaxDays && <span className="mt-1 block text-xs font-normal text-red-700">Bitte eine ganze Zahl größer als 0 eintragen.</span>}
             </label>
             <label className="text-sm font-medium text-gray-700">Betragsgrenze in EUR (optional)
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxAmount} onValueChange={value => { setMaxAmount(value); setReviewed(false); }} min={0} allowNegative={false} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
+              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={maxAmount} onValueChange={value => { setMaxAmount(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="Keine Grenze" disabled={!canWrite} />
               {maxAmount !== '' && !hasValidMaxAmount && <span className="mt-1 block text-xs font-normal text-red-700">Bitte einen Betrag größer als 0 mit höchstens zwei Nachkommastellen eintragen.</span>}
             </label>
             <label className="text-sm font-medium text-gray-700 sm:col-span-2">Quelle oder Verweis auf die eigene Recherche für diese Werte
@@ -486,7 +487,7 @@ export function EuerAllowanceDialog({
             <input maxLength={180} value={manualDescription} onChange={event => { setManualDescription(event.target.value); setReviewed(false); }} className="form-input mt-1 w-full" placeholder="z. B. eigene Pauschale" disabled={!canWrite} />
             </label>
             <label className="text-sm font-medium text-gray-700">Betrag
-              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={manualAmount} onValueChange={value => { setManualAmount(value); setReviewed(false); }} min={0} allowNegative={false} className="form-input mt-1 w-full" placeholder="0,00" disabled={!canWrite} />
+              <LocalizedNumberInput locale={locale} numberFormat={numberFormat} value={manualAmount} onValueChange={value => { setManualAmount(value); setReviewed(false); }} min={0} className="form-input mt-1 w-full" placeholder="0,00" disabled={!canWrite} />
             </label>
             <label className="text-sm font-medium text-gray-700 sm:col-span-2">Eigene Berechnungsgrundlage oder Verweis auf die Aufstellung
               <textarea maxLength={2000} rows={3} value={manualBasis} onChange={event => { setManualBasis(event.target.value); setReviewed(false); }} className="form-input mt-1 w-full" placeholder="Erkläre, wie du den Betrag ermittelt hast." disabled={!canWrite} />
