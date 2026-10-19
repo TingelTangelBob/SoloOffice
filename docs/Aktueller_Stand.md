@@ -1,39 +1,48 @@
 # Aktueller Stand SoloOffice
 
-**Stand:** 2026-10-04  
-**Fachapp:** `main` · `e72685f4685aeebfc40a6f22941130dd8ed2bf17` · `v0.9.4-21-ge72685f`  
-**Arbeitsbaum:** sauber; `main` und gespeicherte Referenz `origin/main` zeigen auf denselben Commit. Kein Fetch, daher keine Aussage zum tatsächlichen Remote-Stand.
+**Stand:** 2026-10-19
+**Fachapp:** main · Beta-/Release-Kandidat v0.9.6 (lokal vorbereitet)
+**Git:** lokaler main-Arbeitsstand sauber; der annotierte Tag v0.9.6 ist nur lokal vorhanden. Die gespeicherte Referenz origin/main ist kein Nachweis des aktuellen Remote-Stands. Das GitHub-Token ist ungültig; Push und Remote-Prüfungen stehen aus.
 
 ## Produktstand
 
-SoloOffice ist eine deutschsprachige Fachanwendung für Rechnungen, Angebote, Aufträge, E-Rechnungen und vorbereitende Buchhaltung. Der aktuelle Code enthält unter anderem lokale OCR, EÜR, Anlagen, Workspace-/Rollenverwaltung, Datenübernahme sowie die technischen Grundlagen für einen SaaS-Betrieb. Der Stand ist weiterhin Beta `0.9.4`; ein öffentlicher Hosted-/SaaS-Launch ist nicht freigegeben. Die Versionsnummer wurde seit dem Release nicht erhöht.
+SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Der aktuelle Stand umfasst unter anderem E-Rechnungen, Belege mit lokaler OCR, Workspace- und Rollenverwaltung, Datenübernahme, EÜR und die optionale Erweiterung „Steuern & Abgaben“.
 
-Seit dem in älteren Dokumenten genannten Commit `73b1756` kamen 7 Commits hinzu. Sichtbare jüngere Änderungen umfassen Verbesserungen für mobile Suche und Overlay-Scroll, die Ersteinrichtung und Datenübernahme sowie eine gehärtete `braces`-Abhängigkeit und stabilisierte parallele Migration-Session-Tests. Der Migrationsbestand reicht bis 048; die Migrationen 045–048 ergänzen Workspace-Einrichtung, Migration-Sessions, Kategorien und die Motion-Einstellung.
+Der Stand bleibt Beta/Test. Ein öffentlicher Hosted-/SaaS-Launch ist laut launch-must.md nicht freigegeben. v0.9.6 ist lokal vorbereitet, aber weder auf GitHub veröffentlicht noch auf Staging oder Demo bestätigt.
 
-## Prüfung und Nachweisgrenzen
+## Änderungen im lokalen Release-Kandidaten
 
-- Git: lokal sauber auf `main`; `origin/main` ist nur die gespeicherte Referenz. Netzwerkzugriff, aktueller GitHub-CI-Status und Live-Revision wurden nicht geprüft.
-- Code/Dokumentation: lokaler HEAD, Commitverlauf, Migrationen sowie README, Launch-Must-Liste, manuelle Release-Checkliste und Testdokumentation wurden eingesehen.
-- Tests/Build: in diesem Audit nicht ausgeführt. Vorhandene Zahlen in `docs/automated-tests.md` gelten für den älteren Stand `73b1756`; sie sind keine Aussage über aktuelle Testläufe oder den neuesten Zählstand.
-- Staging: der dokumentierte technische Laufzeitnachweis ist historisch und bezieht sich auf `b6c6bb2` vom 23.09.2026. Er belegt nicht den aktuellen HEAD. Der fachliche Import-Smoke bleibt offen.
-- Die manuelle Release-Checkliste nennt 13 offene Prüfpunkte; diese wurden hier nicht erneut manuell geprüft oder abgehakt.
+- Die EÜR-Monatsübersicht kann nach Monat filtern und zeigt einen Monatsdurchschnitt.
+- Tagespauschalen lassen sich mit selbst recherchierten Beträgen, optionalen Grenzen und einer eigenen Quelle je Steuerjahr erfassen. SoloOffice liefert keine gesetzlichen Tagessätze oder Höchstgrenzen vor.
+- Arbeitstage und Tätigkeitsarten können unabhängig von Unterrichts- oder Kalenderterminen dokumentiert werden. Termine werden nicht als Arbeitstage vorausgesetzt.
+- Weitere oder besondere Pauschalen lassen sich frei beschriften und mit selbst eingetragener Berechnungsgrundlage erfassen.
+- Die Dokumentation grenzt die Funktion klar ab: SoloOffice prüft weder steuerliche Anspruchsvoraussetzungen noch Ausschlüsse oder ELSTER-Zuordnung.
+- Einstellungen und Rechte für Workspace-Daten wurden korrigiert.
+- Das Release-Skript behandelt Git-Worktrees und kann einen Push eines bereits erstellten Commits aus einem sauberen Arbeitsbaum wiederholen.
 
-## Wichtigste offene Punkte
+Details zur Steuererfassung stehen in docs/steuern-abgaben.md; Versionshinweise in CHANGELOG.md.
 
-1. **Manuelle Fachabnahme und Datenübernahme:** offene Punkte aus `docs/manual-release-checklist.md`, besonders echte SMTP-Zustellung, vollständiger Import-Smoke mit PostgreSQL und `.xlsx`, Fachabläufe, OCR/EÜR, Responsive-Prüfung und externe E-Rechnungsvalidierung.
-2. **SaaS-Freigabe und gemeinsamer Control-Plane-Ablauf:** Betreiber-/Rechtsfreigaben, Stripe-/Tarif-E2E, sowie gemeinsamer Workspace-Export und Löschung sind laut `docs/launch-must.md` nicht nachgewiesen.
-3. **Aktueller Produktions- und Buildnachweis:** CI für HEAD, aktueller Staging-Stand und Betriebsnachweise wie Offsite-Backup, Überwachung/Alarmierung und Rückfallplan fehlen in diesem Audit.
+## Prüfstand und Nachweisgrenzen
 
-## URLs und Umgebungen
+- Lokal bestanden: git diff --check, bash -n deploy/solooffice-update-all.sh und node scripts/verify-audit-contracts.mjs.
+- Docker ist auf der Arbeitsmaschine nicht verfügbar. Für den aktuellen Stand wurden deshalb kein Docker-Build, keine vollständige Frontend-/Backend-Testsuite und kein Datenbank-Smoke-Test ausgeführt.
+- Das GitHub-Token ist ungültig. Der vorbereitete Commit wurde nicht gepusht; aktueller GitHub-CI-Status, Staging, Demo und ein GitHub-Pre-Release sind nicht bestätigt.
+- Die manuelle Release-Checkliste nennt 13 offene Punkte. Sie wurden nicht erneut geprüft oder geschlossen.
+- Betriebsnachweise zu Offsite-Backup, externer Überwachung und Rückfallplan sind für den aktuellen Stand nicht erbracht.
+- Die Steuer- und Sozialwerte sind unverbindliche Schätzungen. Entwürfe für Einwilligungs-, Hilfe- und Nutzungstexte müssen vor einer öffentlichen Veröffentlichung anwaltlich geprüft werden. Das ist keine Prüfung einzelner EÜR-Buchungen und keine Voraussetzung für die interne Erfassung.
 
-- **Test:** gemeinsamer LAN-Testserver auf Port `8090` laut Projekteinstieg. Die konkrete Serveradresse liegt in der zentralen Serververwaltung außerhalb des hier verfügbaren Projektpfads und wurde nicht verifiziert; daher ist keine vollständige Test-URL belastbar.
-- **Live:** `https://solooffice.de` ist die öffentliche Landingpage, nicht als Live-Fachapp belegt. Ein öffentlicher SaaS-App-Endpunkt ist in den geprüften Fachapp-Dokumenten nicht freigegeben.
-- **Demo:** `https://demo.solooffice.de` (laut README und Demo-Server-Dokumentation; in diesem Audit nicht live abgerufen).
+## Umgebungen und Freigaben
 
-## Abgrenzung zum Parent-Ordner
+- solooffice.de ist die öffentliche Landingpage; ein öffentlicher SaaS-Fachapp-Endpunkt ist nicht freigegeben.
+- demo.solooffice.de ist als Demo dokumentiert, wurde in dieser Aktualisierung aber nicht live geprüft.
+- Selbsthosting ist möglich, ersetzt jedoch keine manuelle, rechtliche oder steuerliche Abnahme.
 
-Der Parent enthält neben der Fachapp eine separate Landingpage und ein separates Control-Plane-Repository. Beim Audit waren beide ebenfalls auf `main`; die Landingpage stand auf `e86bd43` und hatte uncommittete Änderungen. Das Control Plane stand auf `8f27a30`. Diese Schwester-Repositories wurden nicht verändert. Die im Parent liegende Go-Live-Statustafel datiert auf 25.09.2026 und beschreibt selbst veraltete/ historische Fortschrittsnachweise; sie ist keine aktuelle Live-Verifikation.
+## Nächste Schritte
 
-## Maßgebliche nächste Schritte
+1. GitHub-Anmeldung erneuern und danach den vorbereiteten main-Stand und Tag v0.9.6 pushen.
+2. CI abwarten und den vorgesehenen Staging-Deploy samt Laufzeitprüfung durchführen.
+3. Demo-Update und GitHub-Beta-Pre-Release erst nach erfolgreicher Verifikation abschließen.
+4. Die offenen Punkte aus docs/manual-release-checklist.md mit Steffen manuell prüfen. Bestehende Haken bleiben unverändert.
+5. Backup, Überwachung und Rückfallplan für den aktuellen Betriebsstand nachweisen.
 
-Manuelle Release-Checkliste und Launch-Must-Liste vor einem öffentlichen Release wieder aufnehmen. Bestehende Haken nicht erneut prüfen und keinen offenen Haken ohne Datum, Commit und Ergebnis schließen. Siehe [`manual-release-checklist.md`](manual-release-checklist.md), [`launch-must.md`](launch-must.md) und [`CONTEXT.md`](../CONTEXT.md).
+Ein erfolgreicher lokaler Build oder eine vorbereitete Version ist keine öffentliche Release- oder SaaS-Freigabe.

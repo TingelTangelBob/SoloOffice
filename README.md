@@ -8,7 +8,7 @@
 
 SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Sie richtet sich an Selbstständige und kleine Betriebe, die ihre Geschäftsabläufe und Belege in einem eigenen Workspace verwalten möchten. SoloOffice kann selbst gehostet werden; eine öffentliche SaaS-Freigabe ist derzeit nicht erteilt.
 
-Der aktuelle Versionsstand ist **v0.9.5**, ein Beta-/Testrelease für Tests und Feedback. Die Anwendung ersetzt keine Steuer-, Rechts- oder Datenschutzberatung und ist nicht als uneingeschränkt produktiver Steuerabschluss freigegeben. Steuerliche Auswertungen und Abschreibungen sind vorbereitende Arbeitsunterlagen. OCR-Ergebnisse müssen vor der Übernahme geprüft werden. Eine ELSTER-Übertragung ist nicht enthalten. Die Versionsnummer folgt SemVer; v1.0.0 ist an einen praktisch nachgewiesenen Self-Hosting-Betrieb einschließlich Migrationen, Mandantentrennung und Wiederherstellung gebunden.
+Der aktuelle Versionsstand ist **v0.9.6**, ein Beta-/Testrelease für Tests und Feedback. Die Anwendung ersetzt keine Steuer-, Rechts- oder Datenschutzberatung und ist nicht als uneingeschränkt produktiver Steuerabschluss freigegeben. Steuerliche Auswertungen und Abschreibungen sind vorbereitende Arbeitsunterlagen. OCR-Ergebnisse müssen vor der Übernahme geprüft werden. Eine ELSTER-Übertragung ist nicht enthalten. Die Versionsnummer folgt SemVer; v1.0.0 ist an einen praktisch nachgewiesenen Self-Hosting-Betrieb einschließlich Migrationen, Mandantentrennung und Wiederherstellung gebunden.
 
 ## Funktionen
 
@@ -34,6 +34,7 @@ Die lokale Prüfung von E-Rechnungen ersetzt keine Validierung mit den offiziell
 ### EÜR, Steuern und Auswertungen
 
 - Einnahmenüberschussrechnung mit Einnahmen, Ausgaben, Teilzahlungen, Korrekturen, Stornierungen und Änderungshistorie
+- Flexible EÜR-Pauschalen: Arbeitstage unabhängig von Kalenderterminen dokumentieren, eigene Jahreswerte und Quellen angeben sowie weitere Pauschalen frei benennen. Es werden keine Steuerbeträge vorgegeben.
 - Anlagenverzeichnis mit vorbereitender linearer Abschreibungsübersicht
 - Steuerprofil und Rechnungsjournal sowie Umsatz-, Jahres- und Kundenübersichten mit Exportmöglichkeiten
 - Keine ELSTER-Übertragung

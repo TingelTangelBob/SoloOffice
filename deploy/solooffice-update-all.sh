@@ -132,8 +132,9 @@ parse_arguments() {
 }
 
 check_repository() {
-  [ -d "$REPO_ROOT/.git" ] || fail "Kein Git-Repository gefunden: $REPO_ROOT"
   require_command git
+  git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "Kein Git-Repository gefunden: $REPO_ROOT"
 
   local branch
   branch=$(git -C "$REPO_ROOT" branch --show-current)
@@ -151,34 +152,39 @@ check_repository() {
 
 commit_and_push() {
   local worktree_status
+  local action_question
   worktree_status=$(git -C "$REPO_ROOT" status --short)
 
   print_info "Aktueller Arbeitsstand:"
   printf '%s\n' "$worktree_status"
 
-  if [ -z "$worktree_status" ]; then
-    fail "Es gibt keine Änderungen zum Committen."
-  fi
-
-  if [ -z "$COMMIT_MESSAGE" ]; then
-    if [ -t 0 ]; then
-      printf 'Commit-Nachricht [SoloOffice aktualisieren]: '
-      read -r COMMIT_MESSAGE
+  if [ -n "$worktree_status" ]; then
+    if [ -z "$COMMIT_MESSAGE" ]; then
+      if [ -t 0 ]; then
+        printf 'Commit-Nachricht [SoloOffice aktualisieren]: '
+        read -r COMMIT_MESSAGE
+      fi
+      COMMIT_MESSAGE="${COMMIT_MESSAGE:-SoloOffice aktualisieren}"
     fi
-    COMMIT_MESSAGE="${COMMIT_MESSAGE:-SoloOffice aktualisieren}"
+    print_warning "Es werden alle angezeigten Änderungen in diesem Repository gestaged."
+    action_question="Änderungen committen und nach origin/$TARGET_BRANCH pushen?"
+  else
+    print_info "Keine Dateänderungen; der vorhandene Commit wird erneut übertragen."
+    action_question="Den vorhandenen Commit nach origin/$TARGET_BRANCH pushen?"
   fi
 
-  print_warning "Es werden alle angezeigten Änderungen in diesem Repository gestaged."
-  confirm "Änderungen committen und nach origin/$TARGET_BRANCH pushen?" || fail "Abgebrochen."
+  confirm "$action_question" || fail "Abgebrochen."
 
-  git -C "$REPO_ROOT" add -A
-  git -C "$REPO_ROOT" diff --cached --check
+  if [ -n "$worktree_status" ]; then
+    git -C "$REPO_ROOT" add -A
+    git -C "$REPO_ROOT" diff --cached --check
 
-  if git -C "$REPO_ROOT" diff --cached --quiet; then
-    fail "Nach dem Staging gibt es keine Änderungen zum Committen."
+    if git -C "$REPO_ROOT" diff --cached --quiet; then
+      fail "Nach dem Staging gibt es keine Änderungen zum Committen."
+    fi
+
+    git -C "$REPO_ROOT" commit -m "$COMMIT_MESSAGE"
   fi
-
-  git -C "$REPO_ROOT" commit -m "$COMMIT_MESSAGE"
   git -C "$REPO_ROOT" push origin "$TARGET_BRANCH"
 
   COMMIT_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD)

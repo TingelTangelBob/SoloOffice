@@ -2,6 +2,23 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.6 – EÜR-Pauschalen, Einstellungen und Mailversand
+
+- Pauschalen lassen sich in der EÜR mit frei recherchierten Jahreswerten und
+  Quellen erfassen. Arbeitstage werden unabhängig von Kalenderterminen
+  gespeichert; weitere Pauschalen können mit eigener Bezeichnung,
+  Berechnungsgrundlage und Betrag eingetragen werden. SoloOffice gibt keine
+  gesetzlichen Pauschalbeträge vor.
+- Die EÜR bietet Monatsfilter und Monatsdurchschnitte sowie eine verbesserte
+  Tabellenansicht für unterschiedliche Bildschirmbreiten.
+- Einstellungen wurden in Bereiche mit Suche, Navigation und Schutz vor dem
+  Verlust ungespeicherter Änderungen gegliedert. Das Steuerprofil führt in
+  übersichtlichen Schritten durch seine Angaben.
+- Mailverwaltung unterstützt eigene SMTP-Einstellungen und Kundenkopien beim
+  Versand. Versanddialoge und zugehörige Prüfungen wurden ergänzt.
+- Plattformübersicht und Workspace-Einblicke wurden erweitert. Demo-Updates
+  prüfen den Containerzustand vor dem Wechsel.
+
 ## v0.9.3 – Rechnungen, Importe und Hintergrundaufgaben
 
 - Rückwirkende Rechnungen können erstellt und mit einer eigenen Rechnungsnummer

@@ -1,6 +1,6 @@
 # Steuern & Abgaben und Fixkosten
 
-Implementierungsstand 09.10.2026. Die Steuer- und Sozialwerte sind unverbindliche Schätzungen für vorbereitende Unterlagen. Die Entwürfe in `backend/shared/taxTexts.js` (Aktivierungs- und Einwilligungshinweise, Hilfe sowie Haftungs-/Nutzungsbedingungen) sind vor einer öffentlichen Veröffentlichung anwaltlich zu prüfen. Das ist keine Prüfung einzelner EÜR-Buchungen und keine Voraussetzung für die interne Erfassung; dieses Paket ist keine öffentliche Release-Freigabe.
+Implementierungsstand 19.10.2026. Die Steuer- und Sozialwerte sind unverbindliche Schätzungen für vorbereitende Unterlagen. Die Entwürfe in `backend/shared/taxTexts.js` (Aktivierungs- und Einwilligungshinweise, Hilfe sowie Haftungs-/Nutzungsbedingungen) sind vor einer öffentlichen Veröffentlichung anwaltlich zu prüfen. Das ist keine Prüfung einzelner EÜR-Buchungen und keine Voraussetzung für die interne Erfassung; dieses Paket ist keine öffentliche Release-Freigabe.
 
 ## Bedienung
 
