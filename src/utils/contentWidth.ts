@@ -14,3 +14,10 @@ export function contentWidthClassForPage(page: string): string {
   if (fullWidthPages.has(page)) return 'max-w-none';
   return compactPages.has(page) ? contentWidth.compact : contentWidth.wide;
 }
+
+/** Einstellungen beginnen am linken Seitenrand, die Bereichsleiste steht dort wie die Seitenleiste im BP-Dashboard. */
+const leftAlignedPages = new Set(['settings']);
+
+export function contentAlignClassForPage(page: string): string {
+  return leftAlignedPages.has(page) ? '' : 'mx-auto';
+}

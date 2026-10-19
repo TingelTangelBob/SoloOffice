@@ -62,12 +62,10 @@ import { financeApi } from '../services/financeApi';
 import type { RecurringExpensePayload } from '../types/finance';
 import { useAuth } from '../context/AuthContext';
 
-/**
- * Spaltenmaße der Buchungstabelle: Datum 112, Kategorie 160, Quelle 144 und
- * Betrag 128 Pixel. Eine Zeile zeigt höchstens vier Icon-Aktionen.
- */
+/** Feste Spaltenbreiten inklusive Innenabstand; die Beschreibung nimmt den Rest ein. */
+const EUER_COLUMN_WIDTHS = { date: 120, category: 176, source: 160, amount: 144 } as const;
 const EUER_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 112 + 160 + 144 + 128,
+  baseColumnsWidth: EUER_COLUMN_WIDTHS.date + EUER_COLUMN_WIDTHS.category + EUER_COLUMN_WIDTHS.source + EUER_COLUMN_WIDTHS.amount,
   flexibleColumnMinWidth: 200,
   maxActions: 5,
 });
@@ -286,7 +284,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   }, [year, workspaceId]);
 
   useEffect(() => {
-    entryRequestVersion.current += 1; setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
+    entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
     void loadEntries(); return () => { entryRequestVersion.current += 1; };
   }, [loadEntries]);
   useEffect(() => {
@@ -783,6 +781,14 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : rows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
+            <colgroup>
+              <col style={{ width: EUER_COLUMN_WIDTHS.date }} />
+              <col />
+              <col style={{ width: EUER_COLUMN_WIDTHS.category }} />
+              <col style={{ width: EUER_COLUMN_WIDTHS.source }} />
+              <col style={{ width: EUER_COLUMN_WIDTHS.amount }} />
+              <col style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} />
+            </colgroup>
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>

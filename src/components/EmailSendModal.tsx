@@ -201,6 +201,7 @@ export function EmailSendModal(props: EmailSendModalProps) {
         </div>
         
         <div className="form-consistent-fields p-4 lg:p-6 space-y-4 lg:space-y-6 flex-1 min-h-0 overflow-y-auto">
+          <p className="text-xs leading-5 text-gray-600">Eine Kopie geht automatisch per BCC an die in der E-Mail-Einrichtung gespeicherte Absenderadresse.</p>
           {/* E-Mail Details */}
           <div className="bg-primary-custom/10 border border-primary-custom/30 rounded-lg p-3 lg:p-4">
             <h4 className="text-sm font-semibold text-primary-custom mb-2">

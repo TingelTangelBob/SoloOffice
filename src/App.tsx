@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useState, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useRef, useState, useEffect } from 'react';
 import { AppProvider } from './context/AppContext';
 import { useLoading } from './context/LoadingContext';
 import { Layout } from './components/Layout';
@@ -11,6 +11,8 @@ import { FeedbackProvider } from './context/FeedbackProvider';
 import { AuthPage } from './components/AuthPage';
 import { trackTelemetry } from './services/telemetry';
 import { navigatePage, readPageState, type PageState } from './utils/hashRouter';
+import { confirmNavigation, guardScopeForNavigation, isNavigationBlocked } from './utils/navigationGuard';
+import { normalizeSettingsArea } from './utils/settingsNavigation';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
 const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
@@ -167,7 +169,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reminders':
         return <ReminderManagement />;
       case 'settings':
-        return <Settings initialTab={currentPageState.filter === 'general' ? 'general' : currentPageState.filter === 'invoices' ? 'invoices' : currentPageState.filter === 'app' ? 'app' : currentPageState.filter === 'system' ? 'system' : currentPageState.filter === 'appearance' ? 'appearance' : currentPageState.filter === 'extensions' ? 'extensions' : currentPageState.filter === 'taxes' ? 'taxes' : 'general'} onNavigate={onPageChange} />;
+        return <Settings initialTab={normalizeSettingsArea(currentPageState.filter)} section={currentPageState.searchTerm} onNavigate={onPageChange} />;
       case 'profile':
         return <ProfileManagement />;
       case 'workspace':
@@ -217,20 +219,38 @@ function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps)
 
 function App() {
   const [currentPageState, setCurrentPageState] = useState<PageState>(() => readPageState(new URL(window.location.href)));
+  // Zuletzt angezeigte Adresse; Ziel, wenn ein Verlassen abgebrochen wird.
+  const lastHref = useRef(window.location.href);
+  const guardPending = useRef(false);
 
   const handlePageChange = useCallback((page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => {
-    setCurrentPageState(navigatePage(window.history, window.location.href, page, filter, searchTerm, invoiceId, jobSeriesId));
+    const navigate = () => {
+      const nextState = navigatePage(window.history, window.location.href, page, filter, searchTerm, invoiceId, jobSeriesId);
+      lastHref.current = window.location.href;
+      setCurrentPageState(nextState);
+    };
+    const scope = guardScopeForNavigation(readPageState(new URL(window.location.href)), { page, filter });
+    if (!scope || !isNavigationBlocked(scope)) {
+      navigate();
+      return;
+    }
+    if (guardPending.current) return;
+    guardPending.current = true;
+    void confirmNavigation(scope)
+      .then(confirmed => { if (confirmed) navigate(); })
+      .finally(() => { guardPending.current = false; });
   }, []);
 
   // URL ist die gemeinsame Quelle für Hauptseite und Einstellungs-Unterbereich.
   useEffect(() => {
-    const syncFromLocation = () => {
+    const applyLocation = () => {
       const url = new URL(window.location.href);
       const nextState = readPageState(url);
       if (nextState.page !== 'settings' && url.searchParams.has('settingsTab')) {
         url.searchParams.delete('settingsTab');
         window.history.replaceState(window.history.state, '', url);
       }
+      lastHref.current = window.location.href;
       setCurrentPageState(previous => (
         previous.page === nextState.page
         && previous.filter === nextState.filter
@@ -242,7 +262,29 @@ function App() {
       ));
     };
 
-    syncFromLocation();
+    // Zurück/Vor oder geänderte Adresse: Bei ungespeicherten Änderungen bleibt
+    // die Seite stehen, bis die Nachfrage beantwortet ist.
+    const syncFromLocation = () => {
+      const target = new URL(window.location.href);
+      const previous = new URL(lastHref.current);
+      const scope = guardScopeForNavigation(readPageState(previous), readPageState(target));
+      if (!scope || !isNavigationBlocked(scope)) {
+        applyLocation();
+        return;
+      }
+      window.history.pushState(window.history.state, '', previous);
+      if (guardPending.current) return;
+      guardPending.current = true;
+      void confirmNavigation(scope)
+        .then(confirmed => {
+          if (!confirmed) return;
+          window.history.replaceState(window.history.state, '', target);
+          applyLocation();
+        })
+        .finally(() => { guardPending.current = false; });
+    };
+
+    applyLocation();
     window.addEventListener('hashchange', syncFromLocation);
     window.addEventListener('popstate', syncFromLocation);
     return () => {

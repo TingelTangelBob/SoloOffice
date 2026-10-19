@@ -536,6 +536,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       
       try {
         let successCount = 0;
+        const deliveryWarnings: string[] = [];
         let errorCount = 0;
         let missingRecipientCount = 0;
         
@@ -577,6 +578,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
               throw new Error(result.message || 'Der E-Mail-Versand wurde abgelehnt.');
             }
 
+            if (result.warning) deliveryWarnings.push(`${quote.quoteNumber}: ${result.warning}`);
+
             // Update quote status if it's draft
             if (quote.status === 'draft') {
               await apiService.updateQuote(quote.id, { status: 'sent' });
@@ -599,8 +602,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         ].filter(Boolean).join(', ');
         if (successCount === 0) {
           notify({ variant: 'error', message: `Keine der ${formatCountLabel(emailModal.bulkQuotes.length, 'Angebot', 'Angebote')} konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.` });
-        } else if (failedCount > 0) {
-          notify({ variant: 'warning', message: `${formatCountLabel(successCount, 'Angebot', 'Angebote')} versendet; ${failureInfo}.` });
+        } else if (failedCount > 0 || deliveryWarnings.length > 0) {
+          notify({ variant: 'warning', message: [`${formatCountLabel(successCount, 'Angebot', 'Angebote')} versendet.${failureInfo ? ` ${failureInfo}.` : ''}`, ...deliveryWarnings].join(' ') });
         } else {
           notify({ variant: 'success', message: `Alle ${formatCountLabel(successCount, 'Angebot', 'Angebote')} erfolgreich per E-Mail versendet!` });
         }
@@ -691,7 +694,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         ? ` mit ${totalAttachments} Anhang${totalAttachments > 1 ? 'en' : ''}`
         : '';
       
-      notify({ variant: 'success', message: `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}` });
+      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}` });
       setEmailModal({ isOpen: false, quote: null, customer: null });
     } catch (error) {
       logger.error('Error sending quote email:', error);

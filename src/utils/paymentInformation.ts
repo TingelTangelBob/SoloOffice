@@ -21,3 +21,8 @@ export function getEffectivePaymentInformation(company: Company): PaymentInforma
       : (configured.bic || company.bic),
   };
 }
+
+/** Zerlegt den Eingabetext der Zahlungsarten an Kommas. Leere Einträge entfallen. */
+export function parsePaymentMethods(text: string): string[] {
+  return text.split(',').map(method => method.trim()).filter(Boolean);
+}

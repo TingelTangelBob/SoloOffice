@@ -57,7 +57,8 @@ router.post('/send-invoice-multi', requireCompanyReadiness, async (req, res) => 
     for (const email of customerEmails) {
       try {
         const result = await sendInvoiceEmailMultiFormat(email, processedFormats, invoiceData, customText, processedAttachments, companySettings);
-        results.push({ email, success: true, messageId: result.messageId });
+        results.push({ email, success: true, messageId: result.messageId,
+          copyRecipient: result.copyRecipient, copyAccepted: result.copyAccepted, warning: result.warning });
       } catch (error) {
         logger.error(`Error sending to ${email}:`, error);
         results.push({ email, success: false, error: error.message });
@@ -66,13 +67,16 @@ router.post('/send-invoice-multi', requireCompanyReadiness, async (req, res) => 
 
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
+    const warnings = [...new Set(results.flatMap(result => result.warning ? [result.warning] : []))];
+    if (failureCount) warnings.push(`${failureCount} Empfänger konnten nicht angeschrieben werden. Bitte den Versandverlauf prüfen.`);
 
     res.json({
       success: successCount > 0,
       message: `Rechnung versendet: ${successCount} erfolgreich, ${failureCount} fehlgeschlagen`,
       results,
       successCount,
-      failureCount
+      failureCount,
+      ...(warnings.length ? { warning: warnings.join(' ') } : {})
     });
     
   } catch (error) {
@@ -120,7 +124,10 @@ router.post('/send-invoice', requireCompanyReadiness, async (req, res) => {
     res.json({
       success: true,
       message: 'Rechnung erfolgreich per E-Mail versendet',
-      messageId: result.messageId
+      messageId: result.messageId,
+      copyRecipient: result.copyRecipient,
+      copyAccepted: result.copyAccepted,
+      ...(result.warning ? { warning: result.warning } : {})
     });
     
   } catch (error) {

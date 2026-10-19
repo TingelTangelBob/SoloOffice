@@ -38,6 +38,33 @@ Für einen schnellen Standardablauf gilt daher:
 2. `git push origin main` direkt mit Netzwerkfreigabe ausführen;
 3. denselben Commit zur gewünschten Instanz übertragen und prüfen.
 
+## Mailversand einrichten und prüfen
+
+Unter **Einstellungen → E-Mail & Backup → Einrichten & testen** wird ein
+Mailanbieter oder ein eigener SMTP-Server eingerichtet. Die Vorlagen füllen
+Server, Port und Verschlüsselung aus; die Werte bleiben anpassbar. Ein bereits
+gespeichertes Passwort wird nicht zurückgegeben. Ein leeres Passwortfeld
+behält es bei; eine neue Eingabe ersetzt es verschlüsselt.
+
+**Verbindung prüfen** verwendet die sichtbaren Eingaben und prüft Verbindung
+und Anmeldung, ohne eine Nachricht zu senden. Bei STARTTLS ist die
+verschlüsselte Verbindung verpflichtend. Anschließend die Einrichtung speichern
+und den Versand aktivieren. **Testmail senden** verwendet den gespeicherten
+Stand; als Empfänger ist die eigene Absenderadresse vorbelegt. Die erfolgreiche
+Antwort bestätigt die Annahme durch den Mailserver. Der Empfang einschließlich
+Spamordner wird anschließend im echten Postfach geprüft.
+
+Rechnungen, Angebote und Zahlungserinnerungen erhalten automatisch eine
+BCC-Kopie an die gespeicherte Absenderadresse mit denselben Inhalten und
+Anhängen. Ist diese Adresse bereits Empfänger, wird keine zusätzliche Kopie
+hinzugefügt. Lehnt der Mailserver nur die Kopie oder einzelne Empfänger ab,
+zeigt SoloOffice eine Warnung und behandelt bereits angenommene Nachrichten
+weiter als versendet. So führt eine Kopie-Warnung nicht zum Doppelversand.
+
+Der reale Zustellnachweis aus der manuellen Release-Prüfung bleibt erforderlich:
+SMTP-Annahme und automatisierte Tests ersetzen keinen Empfangsnachweis bei
+GMX/Gmail und keinen SPF-/DKIM-Nachweis.
+
 ## Lastprüfung bei großen Rechnungsläufen
 
 Am 21.09.2026 wurde die Staging-Maschine bei der Analyse eines großen

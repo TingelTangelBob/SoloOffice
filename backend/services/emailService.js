@@ -5,6 +5,8 @@ import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { decryptSecret } from '../utils/secretBox.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
+import { customerEmailCopy, customerEmailDeliveryResult } from '../utils/customerEmailCopy.js';
+import { smtpTransportOptions } from '../utils/smtpSettings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -90,36 +92,19 @@ const createTransporter = async () => {
     
     if (result.rows.length > 0) {
       const settings = result.rows[0];
-      return nodemailer.createTransport({
-        host: settings.smtp_host,
-        port: settings.smtp_port,
-        secure: settings.smtp_secure,
-        auth: {
-          user: settings.smtp_user,
-          pass: decryptSecret(settings.smtp_pass_encrypted),
-        },
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 10000, // 10 seconds
-        socketTimeout: 30000, // 30 seconds
-      });
+      return nodemailer.createTransport(smtpTransportOptions(settings, decryptSecret(settings.smtp_pass_encrypted)));
     }
   } catch (error) {
     logger.warn('Could not load SMTP settings from database, falling back to environment variables:', error.message);
   }
 
   // Fallback to environment variables
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000, // 10 seconds
-    socketTimeout: 30000, // 30 seconds
-  });
+  return nodemailer.createTransport(smtpTransportOptions({
+    smtp_host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    smtp_port: parseInt(process.env.SMTP_PORT || '587', 10),
+    smtp_secure: process.env.SMTP_SECURE === 'true',
+    smtp_user: process.env.SMTP_USER,
+  }, process.env.SMTP_PASS));
 };
 
 // Function to save email to history
@@ -154,7 +139,7 @@ const saveEmailToHistory = async (emailData, status = 'sent', errorMessage = nul
       customerId,
       customer_name,
       customerName,
-      email_type = 'invoice',
+      email_type,
       emailType,
       reminder_stage,
       reminderStage
@@ -561,6 +546,7 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
         address: senderInfo.email
       },
       to: customerEmail,
+      bcc: customerEmailCopy(senderInfo.email, customerEmail),
       subject: `Rechnung ${invoiceData.invoiceNumber}`,
       html: emailHTML,
       attachments: emailAttachments
@@ -586,6 +572,8 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
     };
 
     const result = await transporter.sendMail(mailOptions);
+    emailHistoryData.smtp_response = result;
+    const delivery = customerEmailDeliveryResult(result, senderInfo.email, customerEmail);
     logger.info('E-Mail erfolgreich versendet:', result.messageId);
     
     // Save successful email to history
@@ -595,7 +583,7 @@ export const sendInvoiceEmailMultiFormat = async (customerEmail, invoiceFormats,
       smtp_response: result
     }, 'sent');
 
-    return { success: true, messageId: result.messageId };
+    return { success: true, messageId: result.messageId, ...delivery };
     
   } catch (error) {
     logger.error('Fehler beim E-Mail-Versand:', error);
@@ -749,6 +737,7 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
         address: senderInfo.email
       },
       to: customerEmail,
+      bcc: customerEmailCopy(senderInfo.email, customerEmail),
       subject: `Rechnung ${invoiceData.invoiceNumber}`,
       html: emailHTML,
       attachments: emailAttachments
@@ -774,6 +763,8 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
     };
 
     const result = await transporter.sendMail(mailOptions);
+    emailHistoryData.smtp_response = result;
+    const delivery = customerEmailDeliveryResult(result, senderInfo.email, customerEmail);
     logger.info('E-Mail erfolgreich versendet:', result.messageId);
     
     // Save successful email to history
@@ -783,7 +774,7 @@ export const sendInvoiceEmail = async (customerEmail, invoicePDF, invoiceData, f
       smtp_response: result
     }, 'sent');
     
-    return { success: true, messageId: result.messageId };
+    return { success: true, messageId: result.messageId, ...delivery };
     
   } catch (error) {
     logger.error('Fehler beim E-Mail-Versand:', error);
@@ -1057,11 +1048,13 @@ ${companySettings.name}
     const info = await transporter.sendMail({
       from: `"${senderInfo.name}" <${senderInfo.email}>`,
       to: validEmails.join(', '),
+      bcc: customerEmailCopy(senderInfo.email, validEmails),
       subject: `Angebot ${quoteData.quoteNumber} - ${companySettings.name}`,
       text: defaultText,
       html: htmlContent,
       attachments,
     });
+    const delivery = customerEmailDeliveryResult(info, senderInfo.email, validEmails);
 
     // Save to email history
     await saveEmailToHistory({
@@ -1091,6 +1084,7 @@ ${companySettings.name}
       success: true,
       message: 'Angebot erfolgreich per E-Mail versendet',
       messageId: info.messageId,
+      ...delivery,
     };
   } catch (error) {
     logger.error('Error sending quote email:', error);
@@ -1375,6 +1369,7 @@ ${senderInfo.name}
     const mailOptions = {
       from: `"${senderInfo.name}" <${senderInfo.email}>`,
       to: customerEmails.join(', '),
+      bcc: customerEmailCopy(senderInfo.email, customerEmails),
       subject: subject,
       text: plainBody,
       html: htmlBody,
@@ -1383,6 +1378,7 @@ ${senderInfo.name}
 
     // Send email
     const info = await transporter.sendMail(mailOptions);
+    const delivery = customerEmailDeliveryResult(info, senderInfo.email, customerEmails);
     logger.info('Reminder email sent successfully', { messageId: info.messageId, invoiceNumber: invoiceData.invoiceNumber, stage });
 
     // Save to email history
@@ -1403,7 +1399,7 @@ ${senderInfo.name}
         bodyPlain: plainBody,
         attachments: historyAttachments,
         messageId: info.messageId,
-        smtpResponse: info.response,
+        smtpResponse: info,
         invoiceId: invoiceData.id,
         invoiceNumber: invoiceData.invoiceNumber,
         customerId: invoiceData.customerId,
@@ -1419,6 +1415,7 @@ ${senderInfo.name}
       success: true,
       message: `${stageText} erfolgreich per E-Mail versendet`,
       messageId: info.messageId,
+      ...delivery,
     };
   } catch (error) {
     logger.error('Error sending reminder email:', error);

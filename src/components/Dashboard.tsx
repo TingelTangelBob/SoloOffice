@@ -457,7 +457,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
         : '';
       
-      notify({ variant: 'success', message: `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
+      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
       
       // Automatically mark as sent if it was draft
       if (emailModal.invoice.status === 'draft') {

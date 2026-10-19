@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import logger from '../utils/logger';
 import {
   Mail,
@@ -21,6 +21,7 @@ import {
   Database
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { isDemoMode } from '../services/demoApi';
 import { useCompany } from '../context/CompanyContext';
 import { formatDate as formatDateValue, formatTime } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
@@ -28,6 +29,24 @@ import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { ThemeTabBar } from './ThemeTabBar';
 import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 import { EmptyState } from './EmptyState';
+import { useAuth } from '../context/AuthContext';
+import { useFeedback } from '../context/FeedbackContext';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
+import { SMTP_SETTINGS_GUARD_ID } from '../utils/navigationGuard';
+import { SettingsCard, SettingsField, SettingsSaveBar, SettingsToggleRow } from './settings/SettingsUi';
+import {
+  defaultTestEmailRecipient,
+  isSingleEmailAddress,
+  SMTP_PROVIDERS,
+  smtpProviderForSettings,
+  smtpFormFromSettings,
+  smtpSettingsDirty,
+  smtpSettingsPayload,
+  validateSmtpSettings,
+  type SmtpFieldErrors,
+  type SmtpFormSettings,
+  type SmtpProvider,
+} from '../utils/smtpSettings';
 
 interface EmailAttachment {
   filename: string;
@@ -73,27 +92,21 @@ interface EmailStatistics {
   }>;
 }
 
-interface SmtpSettings {
-  smtp_host: string;
-  smtp_port: number;
-  smtp_secure: boolean;
-  smtp_user: string;
-  smtp_pass: string;
-  email_from: string;
-  email_from_name: string;
-  is_enabled: boolean;
-  test_email: string;
-}
-
 interface EmailManagementProps {
   onClose?: () => void;
   embedded?: boolean;
 }
 
-type EmailManagementTab = 'notifications' | 'activity' | 'settings' | 'test';
+type EmailManagementTab = 'notifications' | 'activity' | 'settings';
 
 export function EmailManagement({ onClose, embedded = false }: EmailManagementProps) {
   const { company } = useCompany();
+  const { workspace, can } = useAuth();
+  const { confirm } = useFeedback();
+  const workspaceId = workspace?.id ?? null;
+  const currentWorkspace = useRef(workspaceId);
+  currentWorkspace.current = workspaceId;
+  const canManageSmtp = can('workspace.settings');
   const terminology = getTerminology(company.terminologyProfile);
   useEffect(() => {
     if (embedded) return undefined;
@@ -103,7 +116,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     return () => { document.body.style.overflow = prev; };
   }, [embedded]);
 
-  const [activeTab, setActiveTab] = useState<EmailManagementTab>('notifications');
+  const [activeTab, setActiveTab] = useState<EmailManagementTab>('settings');
   
   // Email History State
   const [emails, setEmails] = useState<EmailHistoryItem[]>([]);
@@ -118,24 +131,34 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const [statistics, setStatistics] = useState<EmailStatistics | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
 
-  // SMTP Settings State
-  const [smtpSettings, setSmtpSettings] = useState<SmtpSettings>({
-    smtp_host: '',
-    smtp_port: 587,
-    smtp_secure: false,
-    smtp_user: '',
-    smtp_pass: '',
-    email_from: '',
-    email_from_name: '',
-    is_enabled: false,
-    test_email: ''
-  });
+  // Zugangsdaten werden nur als neuer Entwurf im Arbeitsspeicher gehalten.
+  const [smtpSettings, setSmtpSettings] = useState<SmtpFormSettings>(() => smtpFormFromSettings());
+  const [savedSmtpSettings, setSavedSmtpSettings] = useState<SmtpFormSettings | null>(null);
+  const [smtpProvider, setSmtpProvider] = useState<SmtpProvider>('eigen');
+  const [smtpUserManuallyEdited, setSmtpUserManuallyEdited] = useState(false);
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null | undefined>(undefined);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [smtpErrors, setSmtpErrors] = useState<SmtpFieldErrors>({});
+  const [connectionResult, setConnectionResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [smtpSaveMessage, setSmtpSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
   const [testEmailRecipient, setTestEmailRecipient] = useState('');
   const [testEmailSubject, setTestEmailSubject] = useState('');
   const [testEmailMessage, setTestEmailMessage] = useState('');
+  const [testRecipientError, setTestRecipientError] = useState<string | undefined>();
+  const settingsLoadVersion = useRef(0);
+  const smtpBusy = isSavingSettings || isTestingConnection || isSendingTest;
+  const smtpReady = savedSmtpSettings !== null && loadedWorkspaceId === workspaceId && !isLoadingSettings && !settingsLoadError;
+  const smtpDirty = smtpReady && smtpSettingsDirty(savedSmtpSettings, smtpSettings);
+  useUnsavedChangesGuard({
+    id: SMTP_SETTINGS_GUARD_ID,
+    isDirty: smtpDirty || smtpBusy,
+    message: 'Die E-Mail-Einrichtung enthält ungespeicherte Änderungen. Diese beim Verlassen verwerfen?',
+  });
 
   // Messages State
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
@@ -184,111 +207,197 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   }, []);
 
   const loadSmtpSettings = useCallback(async () => {
+    const requestedWorkspace = workspaceId;
+    const version = ++settingsLoadVersion.current;
+    setIsLoadingSettings(true);
+    setSettingsLoadError(null);
+    setSavedSmtpSettings(null);
+    setLoadedWorkspaceId(undefined);
+    setIsSavingSettings(false);
+    setIsTestingConnection(false);
+    setIsSendingTest(false);
+    setTestRecipientError(undefined);
+    setSmtpSettings(smtpFormFromSettings());
+    setSmtpProvider('eigen');
+    setSmtpUserManuallyEdited(false);
+    setSmtpErrors({});
+    setConnectionResult(null);
+    setSmtpSaveMessage(null);
+    setTestResult(null);
+    setTestEmailRecipient('');
+    setTestEmailSubject('');
+    setTestEmailMessage('');
     try {
-      const data = await apiService.getSmtpSettings<SmtpSettings>();
-      
-      if (data.success) {
-        setSmtpSettings(data.settings);
-        setTestEmailRecipient(data.settings.test_email || '');
-      } else {
-        setMessage({ type: 'error', text: 'Fehler beim Laden der SMTP-Einstellungen' });
-      }
+      const data = await apiService.getSmtpSettings<Record<string, unknown>>();
+      if (version !== settingsLoadVersion.current || requestedWorkspace !== currentWorkspace.current) return;
+      if (!data.success) throw new Error(data.message || 'Die E-Mail-Einrichtung konnte nicht geladen werden.');
+      const settings = smtpFormFromSettings(data.settings);
+      setSmtpSettings(settings);
+      setSmtpProvider(smtpProviderForSettings(settings));
+      setSmtpUserManuallyEdited(!!settings.smtp_user && settings.smtp_user !== settings.email_from);
+      setSavedSmtpSettings(settings);
+      setLoadedWorkspaceId(requestedWorkspace);
+      setTestEmailRecipient(defaultTestEmailRecipient(settings));
     } catch (error) {
-      logger.error('Error loading SMTP settings:', error);
-      setMessage({ type: 'error', text: 'Fehler beim Laden der SMTP-Einstellungen' });
+      if (version !== settingsLoadVersion.current || requestedWorkspace !== currentWorkspace.current) return;
+      setSettingsLoadError(error instanceof Error ? error.message : 'Die E-Mail-Einrichtung konnte nicht geladen werden.');
+    } finally {
+      if (version === settingsLoadVersion.current && requestedWorkspace === currentWorkspace.current) setIsLoadingSettings(false);
     }
-  }, []);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    void loadSmtpSettings();
+    return () => { settingsLoadVersion.current += 1; };
+  }, [loadSmtpSettings]);
 
   useEffect(() => {
     if (activeTab === 'activity') {
       void loadEmails();
       void loadStatistics();
-    } else if (activeTab === 'settings') {
-      void loadSmtpSettings();
     }
-  }, [activeTab, loadEmails, loadSmtpSettings, loadStatistics]);
+  }, [activeTab, loadEmails, loadStatistics]);
 
   const refreshActivity = async () => {
     await Promise.all([loadEmails(1), loadStatistics()]);
   };
 
+  const changeSmtpSettings = (changes: Partial<SmtpFormSettings>) => {
+    setSmtpSettings(current => ({ ...current, ...changes }));
+    setSmtpErrors(current => {
+      const next = { ...current };
+      for (const field of Object.keys(changes) as Array<keyof SmtpFormSettings>) delete next[field];
+      return next;
+    });
+    setSmtpSaveMessage(null);
+    setConnectionResult(null);
+    setTestResult(null);
+  };
+
+  const changeSmtpProvider = (provider: SmtpProvider) => {
+    setSmtpProvider(provider);
+    if (provider === 'eigen') return;
+    const preset = SMTP_PROVIDERS[provider];
+    changeSmtpSettings({ smtp_host: preset.smtp_host, smtp_port: preset.smtp_port, smtp_secure: preset.smtp_secure });
+  };
+
+  const changeSenderAddress = (email_from: string) => {
+    changeSmtpSettings({ email_from, ...(!smtpUserManuallyEdited ? { smtp_user: email_from } : {}) });
+  };
+
+  const validateSmtpForm = (requireConnection: boolean) => {
+    const errors = validateSmtpSettings(smtpSettings, requireConnection);
+    setSmtpErrors(errors);
+    const firstError = Object.keys(errors)[0];
+    if (firstError) document.getElementById(`smtp-${firstError}`)?.focus();
+    return !firstError;
+  };
+
   const saveSmtpSettings = async () => {
+    if (!canManageSmtp || smtpBusy || !smtpReady || !savedSmtpSettings || !validateSmtpForm(smtpSettings.is_enabled)) return;
+    const requestedWorkspace = workspaceId;
+    const requestedSettingsVersion = settingsLoadVersion.current;
     setIsSavingSettings(true);
+    setSmtpSaveMessage(null);
     try {
-      const data = await apiService.saveSmtpSettings({
-        ...smtpSettings,
-        test_email: testEmailRecipient
-      });
-      
-      if (data.success) {
-        setMessage({ type: 'success', text: 'SMTP-Einstellungen erfolgreich gespeichert' });
-      } else {
-        setMessage({ type: 'error', text: data.message || 'Fehler beim Speichern der SMTP-Einstellungen' });
+      const payload = smtpSettingsPayload(smtpSettings);
+      const data = await apiService.saveSmtpSettings(payload);
+      if (requestedSettingsVersion !== settingsLoadVersion.current || requestedWorkspace !== currentWorkspace.current) return;
+      if (!data.success) throw new Error(data.message || 'Die E-Mail-Einrichtung konnte nicht gespeichert werden.');
+      const saved = smtpFormFromSettings({ ...payload, smtp_pass_set: !!smtpSettings.smtp_pass || smtpSettings.smtp_pass_set });
+      setSmtpSettings(saved);
+      setSavedSmtpSettings(saved);
+      if (!testEmailRecipient.trim() || testEmailRecipient.trim() === defaultTestEmailRecipient(savedSmtpSettings)) {
+        setTestEmailRecipient(defaultTestEmailRecipient(saved));
       }
+      setSmtpSaveMessage({ type: 'success', text: 'E-Mail-Einrichtung gespeichert.' });
+      setTestResult(null);
     } catch (error) {
-      logger.error('Error saving SMTP settings:', error);
-      setMessage({ type: 'error', text: 'Fehler beim Speichern der SMTP-Einstellungen' });
+      if (requestedSettingsVersion === settingsLoadVersion.current && requestedWorkspace === currentWorkspace.current) {
+        setSmtpSaveMessage({ type: 'error', text: error instanceof Error ? error.message : 'Die E-Mail-Einrichtung konnte nicht gespeichert werden.' });
+      }
     } finally {
-      setIsSavingSettings(false);
+      if (requestedSettingsVersion === settingsLoadVersion.current) setIsSavingSettings(false);
     }
   };
 
+  const discardSmtpSettings = () => {
+    if (!savedSmtpSettings || smtpBusy) return;
+    setSmtpSettings(savedSmtpSettings);
+    setSmtpProvider(smtpProviderForSettings(savedSmtpSettings));
+    setSmtpUserManuallyEdited(!!savedSmtpSettings.smtp_user && savedSmtpSettings.smtp_user !== savedSmtpSettings.email_from);
+    setSmtpErrors({});
+    setConnectionResult(null);
+    setSmtpSaveMessage(null);
+    setTestResult(null);
+  };
+
   const testSmtpConnection = async () => {
+    if (!canManageSmtp || smtpBusy || !smtpReady || !savedSmtpSettings || !validateSmtpForm(true)) return;
+    const requestedWorkspace = workspaceId;
+    const requestedSettingsVersion = settingsLoadVersion.current;
     setIsTestingConnection(true);
+    setConnectionResult(null);
     try {
-      const useDatabaseSettings = smtpSettings.smtp_pass === '****' || !smtpSettings.smtp_host;
-      const data = await apiService.testSmtpConnection(
-        useDatabaseSettings,
-        useDatabaseSettings ? null : smtpSettings,
-      );
-      
-      if (data.success) {
-        setMessage({ type: 'success', text: data.message });
-      } else {
-        setMessage({ type: 'error', text: data.message });
-      }
+      // Auch bei einem gespeicherten Passwort werden die sichtbaren Entwurfswerte geprüft.
+      const data = await apiService.testSmtpConnection(false, smtpSettingsPayload(smtpSettings));
+      if (requestedSettingsVersion !== settingsLoadVersion.current || requestedWorkspace !== currentWorkspace.current) return;
+      setConnectionResult({
+        type: data.success ? 'success' : 'error',
+        text: data.success && !isDemoMode ? 'Verbindung und Anmeldung erfolgreich geprüft. Es wurde keine E-Mail versendet.' : data.message,
+      });
     } catch (error) {
-      logger.error('Error testing SMTP:', error);
-      setMessage({ type: 'error', text: 'Fehler beim Testen der SMTP-Verbindung' });
+      if (requestedSettingsVersion === settingsLoadVersion.current && requestedWorkspace === currentWorkspace.current) {
+        setConnectionResult({ type: 'error', text: error instanceof Error ? error.message : 'Die Verbindung konnte nicht geprüft werden.' });
+      }
     } finally {
-      setIsTestingConnection(false);
+      if (requestedSettingsVersion === settingsLoadVersion.current) setIsTestingConnection(false);
     }
   };
 
   const sendTestEmail = async () => {
-    if (!testEmailRecipient) {
-      setMessage({ type: 'error', text: 'Bitte geben Sie eine Empfänger-E-Mail-Adresse ein' });
+    if (!canManageSmtp || smtpBusy || !smtpReady || !savedSmtpSettings) return;
+    if (smtpDirty || !savedSmtpSettings.is_enabled) {
+      setTestResult({ type: 'error', text: smtpDirty ? 'Bitte die Änderungen zuerst speichern. Die Testmail nutzt die gespeicherte Einrichtung.' : 'Bitte den E-Mail-Versand aktivieren und speichern.' });
       return;
     }
-
-    setIsSendingTest(true);
-    try {
-      const data = await apiService.sendTestEmail(
-        testEmailRecipient,
-        testEmailSubject || undefined,
-        testEmailMessage || undefined
-      );
-      
-      if (data.success) {
-        setMessage({ 
-          type: 'success', 
-          text: `Test-E-Mail erfolgreich an ${testEmailRecipient} versendet` 
-        });
-        setTestEmailSubject('');
-        setTestEmailMessage('');
-        // Reload email history to show the test email
-        if (activeTab === 'activity') {
-          loadEmails();
-        }
-      } else {
-        setMessage({ type: 'error', text: data.message });
-      }
-    } catch (error) {
-      logger.error('Error sending test email:', error);
-      setMessage({ type: 'error', text: 'Fehler beim Versenden der Test-E-Mail' });
-    } finally {
-      setIsSendingTest(false);
+    if (!isSingleEmailAddress(testEmailRecipient)) {
+      setTestRecipientError('Bitte eine gültige Empfängeradresse eintragen.');
+      document.getElementById('smtp-test-recipient')?.focus();
+      return;
     }
+    const requestedWorkspace = workspaceId;
+    const requestedSettingsVersion = settingsLoadVersion.current;
+    const recipient = testEmailRecipient.trim();
+    setIsSendingTest(true);
+    setTestResult(null);
+    setTestRecipientError(undefined);
+    try {
+      const data = await apiService.sendTestEmail(recipient, testEmailSubject.trim() || undefined, testEmailMessage.trim() || undefined);
+      if (requestedSettingsVersion !== settingsLoadVersion.current || requestedWorkspace !== currentWorkspace.current) return;
+      setTestResult({
+        type: data.success ? (data.warning ? 'warning' : 'success') : 'error',
+        text: `${data.message}${data.success && data.warning ? ` ${data.warning}` : ''}`,
+      });
+    } catch (error) {
+      if (requestedSettingsVersion === settingsLoadVersion.current && requestedWorkspace === currentWorkspace.current) {
+        setTestResult({ type: 'error', text: error instanceof Error ? error.message : 'Die Testmail konnte nicht versendet werden.' });
+      }
+    } finally {
+      if (requestedSettingsVersion === settingsLoadVersion.current) setIsSendingTest(false);
+    }
+  };
+
+  const closeManagement = async () => {
+    if (smtpBusy) return;
+    if (smtpDirty && !await confirm({
+      title: 'Ungespeicherte E-Mail-Einrichtung',
+      message: 'Die Änderungen an der E-Mail-Einrichtung beim Schließen verwerfen?',
+      confirmText: 'Änderungen verwerfen',
+      cancelText: 'Weiter bearbeiten',
+      isDestructive: true,
+    })) return;
+    onClose?.();
   };
 
   const formatDate = (dateString: string): string => {
@@ -323,13 +432,14 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
       <div
         role={embedded ? 'region' : 'dialog'}
         aria-modal={embedded ? undefined : true}
-        aria-labelledby="email-management-title"
+        aria-labelledby={embedded ? undefined : 'email-management-title'}
+        aria-label={embedded ? 'E-Mail-Versand' : undefined}
         className={embedded
           ? 'flex w-full flex-col overflow-hidden'
           : 'flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg bg-white shadow-xl'}
       >
-        {/* Header */}
-        <div className={`flex flex-shrink-0 items-center justify-between border-b border-gray-200 ${embedded ? 'px-0 py-4' : 'p-6'}`}>
+        {/* Der eingebettete Bereich verwendet die Überschrift seiner Einstellungskarte. */}
+        {!embedded && <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 p-6">
           <div className="flex items-center">
             <Mail className="h-6 w-6 text-primary-custom mr-3" />
             <h2 id="email-management-title" className="text-lg font-semibold text-gray-900">E-Mail-Verwaltung</h2>
@@ -337,13 +447,15 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
           {onClose && (
             <button
               type="button"
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={() => void closeManagement()}
+              className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+              disabled={smtpBusy}
+              aria-label="E-Mail-Verwaltung schließen"
             >
               <X className="h-6 w-6" />
             </button>
           )}
-        </div>
+        </div>}
 
         {/* Messages */}
         {message && (
@@ -375,10 +487,9 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
             activeTab={activeTab}
             onChange={setActiveTab}
             tabs={[
-              { id: 'notifications' as const, label: 'E-Mail-Benachrichtigungen', icon: BellRing },
-              { id: 'activity' as const, label: 'Statistiken & Historie', icon: TrendingUp },
-              { id: 'settings' as const, label: 'SMTP-Konfiguration', icon: Settings },
-              { id: 'test' as const, label: 'Test-E-Mail', icon: TestTube },
+              { id: 'settings' as const, label: 'Einrichten & testen', icon: Settings },
+              { id: 'notifications' as const, label: 'Benachrichtigungen', icon: BellRing },
+              { id: 'activity' as const, label: 'Versandverlauf', icon: TrendingUp },
             ]}
           />
 
@@ -627,247 +738,126 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
             </div>
           )}
 
-          {/* SMTP Settings Tab */}
+          {/* E-Mail-Einrichtung und echte Testmail gehören in denselben Ablauf. */}
           {activeTab === 'settings' && (
-            <div className="p-6">
-              <div className="max-w-2xl mx-auto space-y-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <label className="text-sm font-medium text-gray-700">
-                      SMTP-Konfiguration aktivieren
-                    </label>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={smtpSettings.is_enabled}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, is_enabled: e.target.checked }))}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-                    </label>
+            <div className={embedded ? '' : 'p-4 sm:p-6'}>
+              <div className="mx-auto max-w-3xl space-y-4">
+                {!smtpReady && !settingsLoadError ? (
+                  <p role="status" className="flex items-center gap-2 py-6 text-sm text-gray-600">
+                    <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> E-Mail-Einrichtung wird geladen …
+                  </p>
+                ) : settingsLoadError ? (
+                  <div className="space-y-3">
+                    <p role="alert" className="text-sm text-red-600">{settingsLoadError}</p>
+                    <button type="button" onClick={() => void loadSmtpSettings()} className="btn-secondary rounded-lg px-4 py-2 text-sm">Erneut laden</button>
                   </div>
+                ) : (
+                  <>
+                    <SettingsCard title="Postfach einrichten" icon={Mail} description="Das Postfach für Rechnungen, Angebote und Mahnungen einrichten.">
+                      <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-4 disabled:opacity-70">
+                        <SettingsToggleRow
+                          label="E-Mail-Versand aktivieren"
+                          description="Nach dem Speichern steht dieses Postfach für den Versand bereit."
+                          checked={smtpSettings.is_enabled}
+                          onChange={is_enabled => changeSmtpSettings({ is_enabled })}
+                          disabled={smtpBusy || !canManageSmtp}
+                        />
+                        <SettingsField id="smtp-provider" label="Mailanbieter" hint="Server, Port und Verschlüsselung werden vorbelegt und können angepasst werden.">
+                          <select id="smtp-provider" value={smtpProvider} onChange={e => changeSmtpProvider(e.target.value as SmtpProvider)} aria-describedby="smtp-provider-message" className="form-input form-input-compact w-full">
+                            {Object.entries(SMTP_PROVIDERS).map(([value, provider]) => <option key={value} value={value}>{provider.label}</option>)}
+                          </select>
+                        </SettingsField>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <SettingsField id="smtp-email_from" label="Absenderadresse" required hint="An diese Adresse geht auch Ihre Kopie jeder Kundenmail." error={smtpErrors.email_from}>
+                            <input id="smtp-email_from" type="email" value={smtpSettings.email_from} onChange={e => changeSenderAddress(e.target.value)} autoComplete="email" placeholder="buero@example.de" aria-invalid={!!smtpErrors.email_from} aria-describedby="smtp-email_from-message" className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                          <SettingsField id="smtp-email_from_name" label="Absendername" hint="Zum Beispiel Ihr Name oder Firmenname.">
+                            <input id="smtp-email_from_name" type="text" value={smtpSettings.email_from_name} onChange={e => changeSmtpSettings({ email_from_name: e.target.value })} autoComplete="organization" aria-describedby="smtp-email_from_name-message" className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                          <SettingsField id="smtp-smtp_user" label="Benutzername" required hint="Meist die vollständige E-Mail-Adresse des Postfachs." error={smtpErrors.smtp_user}>
+                            <input id="smtp-smtp_user" type="text" value={smtpSettings.smtp_user} onChange={e => { setSmtpUserManuallyEdited(true); changeSmtpSettings({ smtp_user: e.target.value }); }} autoComplete="off" spellCheck={false} aria-invalid={!!smtpErrors.smtp_user} aria-describedby="smtp-smtp_user-message" className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                          <SettingsField id="smtp-smtp_pass" label={smtpSettings.smtp_pass_set ? 'Passwort ändern' : 'Passwort'} required={!smtpSettings.smtp_pass_set} hint={smtpSettings.smtp_pass_set ? 'Passwort gespeichert. Leer lassen, um es beizubehalten.' : SMTP_PROVIDERS[smtpProvider].hint} error={smtpErrors.smtp_pass}>
+                            <input id="smtp-smtp_pass" type="password" value={smtpSettings.smtp_pass} onChange={e => changeSmtpSettings({ smtp_pass: e.target.value })} autoComplete="new-password" placeholder={smtpSettings.smtp_pass_set ? 'Gespeichertes Passwort beibehalten' : ''} aria-invalid={!!smtpErrors.smtp_pass} aria-describedby="smtp-smtp_pass-message" className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <SettingsField id="smtp-smtp_host" label="SMTP-Server" required error={smtpErrors.smtp_host}>
+                            <input id="smtp-smtp_host" type="text" value={smtpSettings.smtp_host} onChange={e => changeSmtpSettings({ smtp_host: e.target.value })} autoComplete="off" spellCheck={false} placeholder="smtp.example.de" aria-invalid={!!smtpErrors.smtp_host} aria-describedby={smtpErrors.smtp_host ? 'smtp-smtp_host-message' : undefined} className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                          <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
+                            <SettingsField id="smtp-smtp_port" label="Port" required error={smtpErrors.smtp_port}>
+                              <input id="smtp-smtp_port" type="text" inputMode="numeric" value={smtpSettings.smtp_port} onChange={e => changeSmtpSettings({ smtp_port: e.target.value })} aria-invalid={!!smtpErrors.smtp_port} aria-describedby={smtpErrors.smtp_port ? 'smtp-smtp_port-message' : undefined} className="form-input form-input-compact w-full" />
+                            </SettingsField>
+                            <SettingsField id="smtp-smtp_secure" label="Verschlüsselung" hint="Die Werte stehen bei Ihrem Mailanbieter.">
+                              <select id="smtp-smtp_secure" value={smtpSettings.smtp_secure ? 'tls' : 'starttls'} onChange={e => {
+                                const smtp_secure = e.target.value === 'tls';
+                                const defaultPort = smtpSettings.smtp_port === '465' || smtpSettings.smtp_port === '587';
+                                changeSmtpSettings({ smtp_secure, ...(defaultPort ? { smtp_port: smtp_secure ? '465' : '587' } : {}) });
+                              }} aria-describedby="smtp-smtp_secure-message" className="form-input form-input-compact w-full">
+                                <option value="starttls">STARTTLS (meist 587)</option>
+                                <option value="tls">SSL/TLS (meist 465)</option>
+                              </select>
+                            </SettingsField>
+                          </div>
+                        </div>
+                      </fieldset>
+                      <div className="mt-4 border-t border-gray-200 pt-4">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button type="button" onClick={() => void testSmtpConnection()} disabled={smtpBusy || !canManageSmtp} className="btn-secondary inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                            {isTestingConnection ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTube className="h-4 w-4" aria-hidden="true" />}
+                            {isTestingConnection ? 'Prüft …' : 'Verbindung prüfen'}
+                          </button>
+                          <p className="text-xs text-gray-600">Prüft Server und Anmeldung mit den eingetragenen Werten.</p>
+                        </div>
+                        {connectionResult && <p role={connectionResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${connectionResult.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>{connectionResult.text}</p>}
+                      </div>
+                      <p className="mt-4 text-xs leading-5 text-gray-600">Bei jeder Kundenmail wird automatisch eine unsichtbare Kopie (BCC) an die gespeicherte Absenderadresse geschickt. Die Kunden sehen diese Kopie nicht.</p>
+                    </SettingsCard>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        SMTP-Server *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={smtpSettings.smtp_host}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_host: e.target.value }))}
-                        placeholder="smtp.gmail.com"
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Port *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min="1"
-                        max="65535"
-                        value={smtpSettings.smtp_port}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 587 }))}
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="smtp_secure"
-                      checked={smtpSettings.smtp_secure}
-                      onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_secure: e.target.checked }))}
-                      className="custom-checkbox"
-                    />
-                    <label htmlFor="smtp_secure" className="ml-3 text-sm font-medium text-gray-700 cursor-pointer">
-                      SSL/TLS verwenden (für Port 465)
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Benutzername *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={smtpSettings.smtp_user}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_user: e.target.value }))}
-                        placeholder="ihr-email@example.com"
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Passwort *
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        value={smtpSettings.smtp_pass}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, smtp_pass: e.target.value }))}
-                        placeholder={smtpSettings.smtp_pass ? '****' : 'Ihr SMTP-Passwort'}
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Absender-E-Mail *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={smtpSettings.email_from}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, email_from: e.target.value }))}
-                        placeholder="noreply@example.com"
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Absender-Name
-                      </label>
-                      <input
-                        type="text"
-                        value={smtpSettings.email_from_name}
-                        onChange={(e) => setSmtpSettings(prev => ({ ...prev, email_from_name: e.target.value }))}
-                        placeholder="SoloOffice"
-                        className="form-input form-input-compact"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Test-E-Mail-Adresse
-                    </label>
-                    <input
-                      type="email"
-                      value={testEmailRecipient}
-                      onChange={(e) => setTestEmailRecipient(e.target.value)}
-                      placeholder="test@example.com"
-                      className="form-input form-input-compact"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Standard-Empfänger für Test-E-Mails
-                    </p>
-                  </div>
-
-                  <div className="flex items-center space-x-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={saveSmtpSettings}
-                      disabled={isSavingSettings}
-                      className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isSavingSettings ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Settings className="h-4 w-4" />
-                      )}
-                      <span>{isSavingSettings ? 'Speichert...' : 'Speichern'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={testSmtpConnection}
-                      disabled={isTestingConnection}
-                      className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isTestingConnection ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <TestTube className="h-4 w-4" />
-                      )}
-                      <span>{isTestingConnection ? 'Teste...' : 'Verbindung testen'}</span>
-                    </button>
-                  </div>
+                    <SettingsCard title="Testmail senden" icon={Send} description={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : 'Eine echte E-Mail mit der gespeicherten Einrichtung versenden und den Empfang im Postfach prüfen.'}>
+                      {smtpDirty ? <p className="mb-3 text-sm text-gray-600">Bitte die Änderungen zuerst speichern. Die Testmail nutzt die gespeicherte Einrichtung.</p>
+                        : !savedSmtpSettings?.is_enabled && <p className="mb-3 text-sm text-gray-600">Bitte oben den E-Mail-Versand aktivieren und speichern.</p>}
+                      <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-3 disabled:opacity-70">
+                        <SettingsField id="smtp-test-recipient" label="Empfänger der Testmail" required hint="Am besten das eigene Postfach verwenden." error={testRecipientError}>
+                          <input id="smtp-test-recipient" type="email" value={testEmailRecipient} onChange={e => { setTestEmailRecipient(e.target.value); setTestRecipientError(undefined); setTestResult(null); }} autoComplete="email" placeholder={savedSmtpSettings?.email_from || 'buero@example.de'} aria-invalid={!!testRecipientError} aria-describedby="smtp-test-recipient-message" className="form-input form-input-compact w-full" />
+                        </SettingsField>
+                        <details>
+                          <summary className="cursor-pointer text-sm text-gray-700">Betreff und Nachricht anpassen (optional)</summary>
+                          <div className="mt-3 space-y-3">
+                            <SettingsField id="smtp-test-subject" label="Betreff">
+                              <input id="smtp-test-subject" type="text" value={testEmailSubject} onChange={e => setTestEmailSubject(e.target.value)} placeholder="Test-E-Mail von SoloOffice" className="form-input form-input-compact w-full" />
+                            </SettingsField>
+                            <SettingsField id="smtp-test-message" label="Nachricht">
+                              <textarea id="smtp-test-message" value={testEmailMessage} onChange={e => setTestEmailMessage(e.target.value)} rows={3} className="form-input w-full" />
+                            </SettingsField>
+                          </div>
+                        </details>
+                      </fieldset>
+                      <button type="button" onClick={() => void sendTestEmail()} disabled={smtpBusy || smtpDirty || !savedSmtpSettings?.is_enabled || !canManageSmtp} className="btn-primary mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
+                        {isSendingTest ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                        {isSendingTest ? 'Sendet …' : 'Testmail senden'}
+                      </button>
+                      {testResult && <p role={testResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${testResult.type === 'error' ? 'text-red-600' : testResult.type === 'warning' ? 'text-yellow-700' : 'text-green-700'}`}>{testResult.text}</p>}
+                    </SettingsCard>
+                  </>
+                )}
               </div>
             </div>
           )}
 
-          {/* Test Email Tab */}
-          {activeTab === 'test' && (
-            <div className="p-6">
-              <div className="max-w-2xl mx-auto space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Empfänger-E-Mail-Adresse *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={testEmailRecipient}
-                      onChange={(e) => setTestEmailRecipient(e.target.value)}
-                      placeholder="empfaenger@example.com"
-                      className="form-input form-input-compact"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Betreff (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={testEmailSubject}
-                      onChange={(e) => setTestEmailSubject(e.target.value)}
-                        placeholder="Test-E-Mail von SoloOffice"
-                      className="form-input form-input-compact"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nachricht (optional)
-                    </label>
-                    <textarea
-                      value={testEmailMessage}
-                      onChange={(e) => setTestEmailMessage(e.target.value)}
-                      placeholder="Zusätzliche Nachricht für die Test-E-Mail..."
-                      rows={4}
-                      className="form-input"
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={sendTestEmail}
-                      disabled={isSendingTest || !testEmailRecipient}
-                      className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isSendingTest ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4" />
-                      )}
-                      <span>{isSendingTest ? 'Sendet...' : 'Test-E-Mail senden'}</span>
-                    </button>
-                  </div>
-
-                  <div className="guidance-panel p-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Hinweise:</h4>
-                    <ul className="text-xs text-gray-600 space-y-1">
-                      <li>• Die Test-E-Mail wird mit der aktuellen SMTP-Konfiguration versendet</li>
-                      <li>• Stellen Sie sicher, dass die SMTP-Einstellungen gespeichert und aktiviert sind</li>
-                      <li>• Die Test-E-Mail wird in der E-Mail-Historie gespeichert</li>
-                      <li>• Bei Fehlern überprüfen Sie die SMTP-Konfiguration und Verbindung</li>
-                    </ul>
-                  </div>
-              </div>
-            </div>
-          )}
         </div>
         </div>
+
+        <SettingsSaveBar
+          dirty={smtpDirty}
+          saving={isSavingSettings}
+          dirtyLabel="E-Mail-Einrichtung"
+          message={smtpSaveMessage}
+          saveDisabled={smtpBusy || !canManageSmtp}
+          onSave={() => void saveSmtpSettings()}
+          onDiscard={smtpBusy ? undefined : discardSmtpSettings}
+        />
 
         {/* Email Detail Modal */}
         {selectedEmail && (

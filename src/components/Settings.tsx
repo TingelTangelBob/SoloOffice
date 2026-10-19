@@ -1,306 +1,173 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import logger from '../utils/logger';
-import { ArrowRight, ArrowRightLeft, Save, Building2, Mail, Globe, CreditCard, Upload, X, Palette, Briefcase, FileText, Plus, Trash2, Database, Package, Settings as SettingsIcon, Home, Search, Calculator, BarChart3, Users, Monitor, Sun, Moon } from 'lucide-react';
+import { Settings as SettingsIcon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
-import { ColorPicker } from './ColorPicker';
-import { BackupManagement } from './BackupManagement';
-import { EmailManagement } from './EmailManagement';
-import { apiService } from '../services/api';
-import { updateFavicon } from '../utils/faviconUtils';
-import { YearlyInvoiceStartNumber, NumberFormat, DateFormat, TimeFormat, ThemeMode, TaxBusinessType, LegalForm } from '../types';
 import { PageHeader } from './PageHeader';
-import { ToggleSwitch } from './ToggleSwitch';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
-import { getCurrencySymbol } from '../utils/formatters';
-import { getTerminology, terminologyProfiles } from '../utils/terminology';
-import type { TerminologyDefinition } from '../utils/terminology';
-import { ThemeTabBar } from './ThemeTabBar';
-import { InfoTooltip } from './InfoTooltip';
-import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
+import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
-import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
+import { useAuth } from '../context/AuthContext';
+import { ApiResponseError } from '../services/api';
+import { resetSettingsPreferences } from '../utils/settingsDefaults';
+import { validateInvoiceNumberPattern } from '../utils/invoiceNumberPattern';
 import { trackTelemetry } from '../services/telemetry';
-import { useMotionPreference } from '../context/MotionProvider';
+import { updateFavicon } from '../utils/faviconUtils';
 import { ExtensionsSettings } from './ExtensionsSettings';
 import { TaxProfileSettings } from './TaxProfileSettings';
 import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
+import { COMPANY_SETTINGS_GUARD_ID } from '../utils/navigationGuard';
+import {
+  SETTINGS_AREA_DEFINITIONS,
+  changedFields,
+  dirtySettingsAreas,
+  findSettingsSection,
+  normalizeSettingsArea,
+  settingsSectionElementId,
+  type SettingsArea,
+} from '../utils/settingsNavigation';
+import type { SettingsSearchResult } from '../utils/settingsSearch';
+import { SettingsNav } from './settings/SettingsNav';
+import { SettingsSaveBar, type SettingsSaveMessage } from './settings/SettingsUi';
+import { DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN } from './settings/settingsStyles';
+import { CompanyArea } from './settings/CompanyArea';
+import { InvoicingArea } from './settings/InvoicingArea';
+import { WorkspaceArea } from './settings/WorkspaceArea';
+import { AppearanceArea } from './settings/AppearanceArea';
+import { SystemArea } from './settings/SystemArea';
 
-type SettingsTab = 'app' | 'general' | 'invoices' | 'appearance' | 'system' | 'extensions' | 'taxes';
+/** Bereiche, die das gemeinsame Firmenformular bearbeiten. */
+const COMPANY_FORM_AREAS: ReadonlySet<SettingsArea> = new Set(['general', 'invoices', 'app', 'appearance']);
 
 interface SettingsProps {
-  initialTab?: SettingsTab;
-  settingsTab?: SettingsTab;
+  initialTab?: SettingsArea;
+  settingsTab?: SettingsArea;
+  /** Abschnitt innerhalb des Bereichs, z. B. aus `#settings/invoices/nummernkreise`. */
+  section?: string;
   embedded?: boolean;
-  onNavigate?: (page: string, filter?: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string) => void;
 }
 
-const colorPresets = [
-  { name: 'Klassisch Blau', primary: '#2563eb', secondary: '#64748b' },
-  { name: 'Waldgrün', primary: '#15803d', secondary: '#475569' },
-  { name: 'Violett', primary: '#7c3aed', secondary: '#64748b' },
-  { name: 'Koralle', primary: '#ea580c', secondary: '#475569' },
-] as const;
-
-function TerminologyPreview({ profile, receiptLabel, previewOverride }: { profile: TerminologyDefinition; receiptLabel: string; previewOverride?: NonNullable<TerminologyDefinition['preview']> }) {
-  const preview = previewOverride || profile.preview || { accent: '#2563eb', secondary: '#64748b', accentSoft: '#dbeafe', accentWash: '#eff6ff' };
-  const menuItems = [
-    { label: 'Übersicht', icon: Home },
-    { label: profile.work.navLabel, icon: Briefcase, active: true },
-    { label: 'Rechnungen', icon: FileText },
-    { label: receiptLabel, icon: FileText },
-    { label: 'Bank', icon: CreditCard },
-    { label: 'Steuern', icon: Calculator },
-    { label: 'Auswertungen', icon: BarChart3 },
-    { label: profile.entity.navLabel, icon: Users, section: 'Verwalten' },
-    { label: 'Leistungen', icon: Package },
-    { label: 'Erweiterungen', icon: Palette },
-    { label: 'Einstellungen', icon: SettingsIcon },
-  ];
-
-  return (
-    <div
-      className="terminology-preview mt-2 overflow-hidden rounded-lg border bg-white text-left shadow-sm"
-      style={{ borderColor: preview.accentSoft }}
-    >
-      <div className="terminology-preview-header flex items-center gap-1.5 border-b px-2 py-1.5" style={{ backgroundColor: preview.accentWash, borderColor: preview.accentSoft }}>
-        <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: preview.accentSoft, color: preview.accent }}>
-          <Building2 className="h-3 w-3" />
-        </span>
-        <span className="truncate text-[9px] font-bold tracking-wide text-gray-800">SoloOffice</span>
-      </div>
-      <div className="space-y-0.5 p-1.5">
-        <div className="terminology-preview-search mb-1 flex items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5 py-1 text-[8px] text-gray-400">
-          <Search className="h-2.5 w-2.5 shrink-0" />
-          <span>Suchen...</span>
-        </div>
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <React.Fragment key={`${profile.id}-${item.label}`}>
-              {item.section && (
-                <div className="px-1 pb-0.5 pt-1.5 text-[7px] font-bold uppercase tracking-[0.12em]" style={{ color: preview.accent }}>
-                  {item.section}
-                </div>
-              )}
-              <div
-                className={`flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[8px] font-medium ${item.active ? 'terminology-preview-active' : 'text-gray-700'}`}
-                style={item.active ? { backgroundColor: preview.accentWash, color: preview.accent } : undefined}
-              >
-                <Icon className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export function Settings({ initialTab = 'app', settingsTab, embedded = false, onNavigate }: SettingsProps) {
+export function Settings({ initialTab = 'general', settingsTab, section, embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
   const { company, updateCompany } = useCompany();
-  const { animationsEnabled, setAnimationsEnabled } = useMotionPreference();
-  const [motionError, setMotionError] = useState(false);
+  const { can } = useAuth();
+  // Ohne das Recht „Einstellungen verwalten“ sind die Firmenformulare nur lesbar (Backend prüft dasselbe).
+  const canEditSettings = can('workspace.settings');
   const [formData, setFormData] = useState(company);
   const [isSaving, setIsSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [yearlyStartNumbers, setYearlyStartNumbers] = useState<YearlyInvoiceStartNumber[]>([]);
-  const [newYear, setNewYear] = useState<number>(new Date().getFullYear());
-  const [newStartNumber, setNewStartNumber] = useState<number>(1);
-  const [showBackupManagement, setShowBackupManagement] = useState(false);
-  
-  
-  const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTab || initialTab);
-  const terminologyScrollerRef = useRef<HTMLDivElement>(null);
-  const terminologyDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false, pointerId: -1 });
-  const [isDraggingTerminology, setIsDraggingTerminology] = useState(false);
-  const currencySymbol = getCurrencySymbol(formData.locale || 'de-DE', formData.numberFormat, formData.currency);
+  const [feedback, setFeedback] = useState<SettingsSaveMessage | null>(null);
+  const [localArea, setLocalArea] = useState<SettingsArea>(normalizeSettingsArea(settingsTab || initialTab));
+  const [localSection, setLocalSection] = useState<{ id: string; nonce: number } | null>(null);
+  const routedArea = normalizeSettingsArea(settingsTab || initialTab);
+  // Eingebettet ohne URL-Steuerung führt die Komponente den Bereich selbst.
+  const activeArea = onNavigate && !embedded ? routedArea : localArea;
   const terminology = getTerminology(formData.terminologyProfile);
-  const hasUnsavedChanges = JSON.stringify(formData) !== JSON.stringify(company);
-  const terminologyColorSource = formData.terminologyColorSource || 'profile';
-  const invoiceNumberPattern = formData.invoiceNumberPattern || 'RE-{YYYY}-{NNN}';
-  const creditNoteNumberPattern = formData.creditNoteNumberPattern || 'GS-{YYYY}-{NNN}';
-  const invoiceNumberPatternError = validateInvoiceNumberPattern(invoiceNumberPattern);
-  const creditNoteNumberPatternError = validateInvoiceNumberPattern(creditNoteNumberPattern);
+  const changed = useMemo(() => changedFields(company, formData), [company, formData]);
+  const hasUnsavedChanges = changed.length > 0;
+  const dirtyAreas = useMemo(() => dirtySettingsAreas(company, formData), [company, formData]);
+  const dirtyAreaSet = useMemo(() => new Set(dirtyAreas), [dirtyAreas]);
   const normalizedReceiptLabel = formData.receiptLabel?.trim() || '';
   const receiptLabelError = normalizedReceiptLabel.length === 0
     ? 'Bitte eine Bezeichnung für den Belegbereich eingeben.'
     : normalizedReceiptLabel.length > 40
       ? 'Die Bezeichnung darf höchstens 40 Zeichen enthalten.'
       : '';
+  const invoiceNumberPatternError = validateInvoiceNumberPattern(formData.invoiceNumberPattern || DEFAULT_INVOICE_NUMBER_PATTERN);
+  const creditNoteNumberPatternError = validateInvoiceNumberPattern(formData.creditNoteNumberPattern || DEFAULT_CREDIT_NOTE_NUMBER_PATTERN);
 
-  const handleTerminologyProfileSelect = (profile: typeof terminologyProfiles[number]) => {
-    setFormData(previous => {
-      const next = { ...previous, terminologyProfile: profile.id };
-      if ((previous.terminologyColorSource || 'profile') === 'profile' && profile.preview) {
-        next.primaryColor = profile.preview.accent;
-        next.secondaryColor = profile.preview.secondary;
-      }
-      return next;
-    });
-  };
-
-  const handleTerminologyColorSourceChange = (source: 'appearance' | 'profile') => {
-    setFormData(previous => {
-      const next = { ...previous, terminologyColorSource: source };
-      if (source === 'profile') {
-        const profile = terminologyProfiles.find(item => item.id === (previous.terminologyProfile || 'customers')) || terminologyProfiles[0];
-        if (profile.preview) {
-          next.primaryColor = profile.preview.accent;
-          next.secondaryColor = profile.preview.secondary;
-        }
-      }
-      return next;
-    });
-  };
-
-  const handleTerminologyPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    const scroller = terminologyScrollerRef.current;
-    if (!scroller) return;
-
-    terminologyDragRef.current = {
-      active: true,
-      startX: event.clientX,
-      startScrollLeft: scroller.scrollLeft,
-      moved: false,
-      pointerId: event.pointerId,
-    };
-  };
-
-  const handleTerminologyPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = terminologyDragRef.current;
-    const scroller = terminologyScrollerRef.current;
-    if (!drag.active || !scroller) return;
-
-    const delta = event.clientX - drag.startX;
-    if (Math.abs(delta) > 8) {
-      if (!drag.moved) {
-        drag.moved = true;
-        setIsDraggingTerminology(true);
-        event.currentTarget.setPointerCapture(drag.pointerId);
-      }
-      event.preventDefault();
-    }
-    if (!drag.moved) return;
-    scroller.scrollLeft = drag.startScrollLeft - delta;
-  };
-
-  const handleTerminologyPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = terminologyDragRef.current;
-    drag.active = false;
-    setIsDraggingTerminology(false);
-    if (event.currentTarget.hasPointerCapture(drag.pointerId)) {
-      event.currentTarget.releasePointerCapture(drag.pointerId);
-    }
-  };
-
-  const handleTerminologyClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!terminologyDragRef.current.moved) return;
-    event.preventDefault();
-    event.stopPropagation();
-    terminologyDragRef.current.moved = false;
-  };
-
-  useEffect(() => {
-    const nextTab = settingsTab || initialTab;
-    setActiveTab(nextTab);
-    if (embedded) return;
-    const url = new URL(window.location.href);
-    if (url.hash.slice(1).split('/')[0] !== 'settings') return;
-    if (url.searchParams.get('settingsTab') !== nextTab) {
-      url.searchParams.set('settingsTab', nextTab);
-      window.history.replaceState(window.history.state, '', url);
-    }
-  }, [initialTab, settingsTab, embedded]);
-
-  const changeSettingsTab = (tab: SettingsTab) => {
-    setActiveTab(tab);
-    if (embedded) return;
-    const url = new URL(window.location.href);
-    if (url.hash.slice(1).split('/')[0] !== 'settings') return;
-    url.searchParams.set('settingsTab', tab);
-    window.history.replaceState(window.history.state, '', url);
-  };
-
-  const handleResetToDefaults = async () => {
-    const confirmed = await confirm({
-      title: 'Einstellungen zurücksetzen',
-      message: 'Alle aktuellen Einstellungen im Formular auf die Standardwerte zurücksetzen? Die Änderung wird erst mit „Speichern“ übernommen.',
-      confirmText: 'Zurücksetzen',
-    });
-    if (!confirmed) return;
-
-    setFormData({
-      ...defaultCompany,
-      quotesEnabled: false,
-      discountsEnabled: true,
-      remindersEnabled: false,
-      reminderDaysAfterDue: 7,
-      reminderDaysBetween: 7,
-      reminderFeeStage1: 0,
-      reminderFeeStage2: 0,
-      reminderFeeStage3: 0,
-    });
-    setFeedback({ type: 'success', text: 'Standardeinstellungen wurden im Formular gesetzt. Mit „Speichern“ übernehmen.' });
-  };
+  useUnsavedChangesGuard({
+    id: COMPANY_SETTINGS_GUARD_ID,
+    isDirty: hasUnsavedChanges,
+    message: 'Die Einstellungen enthalten ungespeicherte Änderungen. Möchten Sie diese verwerfen?',
+  });
 
   useEffect(() => {
     setFormData(company);
   }, [company]);
 
+  // Erfolgsmeldungen verschwinden von selbst, Fehler bleiben stehen.
   useEffect(() => {
-    loadYearlyStartNumbers();
-  }, []);
+    if (feedback?.type !== 'success') return;
+    const timer = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
 
-  const loadYearlyStartNumbers = async () => {
-    try {
-      const numbers = await apiService.getYearlyInvoiceStartNumbers();
-      setYearlyStartNumbers(numbers);
-    } catch (error) {
-      logger.error('Error loading yearly start numbers:', { error: error instanceof Error ? error.message : String(error) });
+  // Alte Lesezeichen mit `?settingsTab=` bleiben gültig und zeigen den aktuellen Bereich.
+  useEffect(() => {
+    if (embedded) return;
+    const url = new URL(window.location.href);
+    if (url.hash.slice(1).split('/')[0] !== 'settings') return;
+    if (url.searchParams.get('settingsTab') !== activeArea) {
+      url.searchParams.set('settingsTab', activeArea);
+      window.history.replaceState(window.history.state, '', url);
     }
+  }, [activeArea, embedded]);
+
+  // Abschnitt aus Suche oder Deep-Link anspringen und kurz hervorheben.
+  const targetSection = localSection?.id ?? section;
+  useEffect(() => {
+    if (!findSettingsSection(activeArea, targetSection)) return;
+    const element = document.getElementById(settingsSectionElementId(targetSection!));
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('settings-card-highlight');
+    const timer = window.setTimeout(() => element.classList.remove('settings-card-highlight'), 1600);
+    return () => {
+      window.clearTimeout(timer);
+      element.classList.remove('settings-card-highlight');
+    };
+  }, [activeArea, targetSection, localSection?.nonce]);
+
+  const selectArea = (area: SettingsArea, sectionId?: string) => {
+    if (onNavigate && !embedded) {
+      if (area === activeArea && sectionId) {
+        setLocalSection({ id: sectionId, nonce: Date.now() });
+        return;
+      }
+      setLocalSection(null);
+      onNavigate('settings', area, sectionId);
+      return;
+    }
+    setLocalArea(area);
+    setLocalSection(sectionId ? { id: sectionId, nonce: Date.now() } : null);
   };
 
-  const handleAddYearlyStartNumber = async () => {
-    try {
-      await apiService.createOrUpdateYearlyInvoiceStartNumber(newYear, newStartNumber);
-      await loadYearlyStartNumbers();
-      setNewYear(new Date().getFullYear() + 1);
-      setNewStartNumber(1);
-      setFeedback({ type: 'success', text: 'Jahresnummer wurde gespeichert.' });
-    } catch (error) {
-      logger.error('Error adding yearly start number:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Jahresnummer konnte nicht gespeichert werden.' });
-    }
+  const selectSearchResult = (result: SettingsSearchResult) => selectArea(result.area, result.sectionId);
+
+  const handleResetToDefaults = async () => {
+    if (!canEditSettings) return;
+    const confirmed = await confirm({
+      title: 'Standardwerte wiederherstellen',
+      message: 'Darstellung, Farben, Sprache und Formate, Module sowie Begriffe und Belegbezeichnung werden auf die Standardwerte gesetzt. Firmendaten, Bankverbindung, Logo, Zahlungsbedingungen und Nummernkreise bleiben unverändert. Die Änderung wird erst mit „Speichern“ übernommen.',
+      confirmText: 'Zurücksetzen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+
+    setFormData(previous => resetSettingsPreferences(previous, defaultCompany));
+    setFeedback({ type: 'success', text: 'Standardwerte wurden im Formular gesetzt. Mit „Speichern“ übernehmen.' });
   };
 
-  const handleDeleteYearlyStartNumber = async (year: number) => {
-    try {
-      await apiService.deleteYearlyInvoiceStartNumber(year);
-      await loadYearlyStartNumbers();
-      setFeedback({ type: 'success', text: 'Jahresnummer wurde gelöscht.' });
-    } catch (error) {
-      logger.error('Error deleting yearly start number:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Jahresnummer konnte nicht gelöscht werden.' });
-    }
+  const handleDiscard = () => {
+    setFormData(company);
+    updateFavicon(company.icon ?? null);
+    setFeedback(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (activeTab === 'extensions' || activeTab === 'taxes') return;
+  const saveCompanySettings = async () => {
+    if (isSaving || !canEditSettings) return;
     if (receiptLabelError) {
-      setFeedback({ type: 'error', text: receiptLabelError });
+      setFeedback({ type: 'error', text: `${SETTINGS_AREA_DEFINITIONS.app.label}: ${receiptLabelError}` });
       return;
     }
     if (invoiceNumberPatternError || creditNoteNumberPatternError) {
-      setFeedback({ type: 'error', text: invoiceNumberPatternError || creditNoteNumberPatternError || 'Bitte die Nummernmuster prüfen.' });
+      setFeedback({ type: 'error', text: `${SETTINGS_AREA_DEFINITIONS.invoices.label}: ${invoiceNumberPatternError || creditNoteNumberPatternError}` });
       return;
     }
     setIsSaving(true);
-    
+
     try {
       const companySettings = { ...formData, receiptLabel: normalizedReceiptLabel };
       const terminologyProfileChanged = company.terminologyProfile !== formData.terminologyProfile;
@@ -325,1384 +192,116 @@ export function Settings({ initialTab = 'app', settingsTab, embedded = false, on
       setFeedback({ type: 'success', text: 'Einstellungen wurden gespeichert.' });
     } catch (error) {
       logger.error('Error saving settings:', { error: error instanceof Error ? error.message : String(error) });
-      setFeedback({ type: 'error', text: 'Die Einstellungen konnten nicht gespeichert werden.' });
+      // Antworten des Servers (z. B. Rechte oder Prüfung) zeigen; bei Netzwerkfehlern bleibt der allgemeine Text.
+      const text = error instanceof ApiResponseError && error.message
+        ? error.message
+        : 'Die Einstellungen konnten nicht gespeichert werden.';
+      setFeedback({ type: 'error', text });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFormData(prev => ({
-          ...prev,
-          logo: e.target?.result as string
-        }));
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void saveCompanySettings();
   };
 
-  const handleLogoRemove = () => {
-    setFormData(prev => ({ ...prev, logo: null }));
+  const reloadDemoData = () => {
+    seedDemoData(formData.terminologyProfile);
+    window.location.reload();
   };
 
-  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const iconUrl = e.target?.result as string;
-        setFormData(prev => ({
-          ...prev,
-          icon: iconUrl
-        }));
-        // Update favicon immediately for instant feedback
-        updateFavicon(iconUrl);
-      };
-      reader.readAsDataURL(file);
-    }
+  const deleteDemoData = async () => {
+    const confirmed = await confirm({
+      title: 'Demo-Daten löschen',
+      message: 'Alle lokalen Demo-Daten wirklich löschen? Die Anwendung wird anschließend neu geladen.',
+      confirmText: 'Löschen',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    resetDemoData();
+    window.location.reload();
   };
 
-  const handleIconRemove = () => {
-    setFormData(prev => ({ ...prev, icon: null }));
-    // Update favicon immediately to remove the custom icon
-    updateFavicon(null);
-  };
+  const areaDefinition = SETTINGS_AREA_DEFINITIONS[activeArea];
+  const areaProps = { formData, setFormData, terminology };
+  const usesCompanyForm = COMPANY_FORM_AREAS.has(activeArea);
+  const readOnlyNotice = !canEditSettings && (usesCompanyForm || activeArea === 'system') ? (
+    <p role="status" className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+      Nur Administratoren können diese Einstellungen ändern.
+    </p>
+  ) : null;
+  const dirtyLabel = dirtyAreas.map(area => SETTINGS_AREA_DEFINITIONS[area].label).join(', ');
+  const navigateTo = onNavigate ? (page: string) => onNavigate(page) : undefined;
+
+  const companySaveBar = (
+    <SettingsSaveBar
+      dirty={hasUnsavedChanges}
+      saving={isSaving}
+      dirtyLabel={dirtyLabel}
+      message={feedback}
+      onDiscard={handleDiscard}
+      onSave={usesCompanyForm ? undefined : () => void saveCompanySettings()}
+    />
+  );
 
   return (
     <div className="page-root flex flex-col gap-3">
-      {/* Header */}
       {!embedded && (
-        <div className="page-header-slot order-1">
+        <div className="page-header-slot">
           <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
         </div>
       )}
 
-      {/* Der Demo-Hinweis gehört zu den allgemeinen Einstellungen. Auf den
-          übrigen Reitern stand er nur im Weg, ohne dort etwas zu erklären. */}
-      {isDemoMode && activeTab === 'app' && (
-        <div className={`${embedded ? 'hidden' : ''} order-3 rounded-xl border border-gray-200 bg-gray-50 p-4`}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-gray-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Lokaler Demo-Modus</h3>
-              </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Testdaten und Änderungen werden nur in diesem Browser gespeichert.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => { seedDemoData(formData.terminologyProfile); window.location.reload(); }}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Testdaten neu laden
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const confirmed = await confirm({
-                    title: 'Demo-Daten löschen',
-                    message: 'Alle lokalen Demo-Daten wirklich löschen? Die Anwendung wird anschließend neu geladen.',
-                    confirmText: 'Löschen',
-                    isDestructive: true,
-                  });
-                  if (!confirmed) return;
-                  resetDemoData();
-                  window.location.reload();
-                }}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:border-red-200 hover:bg-red-50"
-              >
-                Demo-Daten löschen
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="settings-layout">
+        <aside className="settings-layout-nav">
+          <SettingsNav
+            activeArea={activeArea}
+            dirtyAreas={dirtyAreaSet}
+            badges={{ taxes: TAX_TEXTS.badge }}
+            onSelectArea={area => selectArea(area)}
+            onSelectResult={selectSearchResult}
+          />
+        </aside>
 
-      <div className={`${embedded ? '' : 'theme-tab-group order-2'}`}>
-        <ThemeTabBar
-          className={`${embedded ? 'hidden ' : ''}theme-tab-bar-attached w-full`}
-          ariaLabel="Einstellungsbereiche"
-          activeTab={activeTab}
-          onChange={changeSettingsTab}
-          tabs={[
-            { id: 'app' as const, label: 'Allgemein' },
-            { id: 'general' as const, label: 'Firmendaten' },
-            { id: 'invoices' as const, label: 'Rechnungen' },
-            { id: 'appearance' as const, label: 'Darstellung' },
-            { id: 'system' as const, label: 'E-Mail & Backup' },
-            { id: 'extensions' as const, label: 'Erweiterungen' },
-            { id: 'taxes' as const, label: <span className="inline-flex items-center gap-1.5">Steuern &amp; Abgaben<span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{TAX_TEXTS.badge}</span></span> },
-          ]}
-        />
+        <section className="settings-layout-content" aria-labelledby="settings-area-title">
+          <header className="settings-area-header">
+            <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
+            <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>
+          </header>
 
-      <form onSubmit={handleSubmit} autoComplete="on" className={`${embedded ? '' : 'theme-tab-panel'} settings-form form-consistent-fields space-y-8`}>
-        {activeTab === 'app' && (
-          <div className="space-y-8">
-        <section className="settings-section flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h3 className="text-base font-semibold text-gray-900">Ersteinrichtung</h3><p className="mt-1 text-sm text-gray-600">Firmendaten, Rechnungseinstellungen und Module geführt prüfen.</p></div>
-          <button type="button" onClick={() => onNavigate?.('setup')} className="btn-secondary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"><ArrowRight className="h-4 w-4" />Einrichtung öffnen</button>
-        </section>
-        {/* Terminology Settings */}
-        <div className="settings-section">
-          <div className="flex items-start gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <SettingsIcon className="h-5 w-5 text-primary-custom" />
-                <h3 className="text-lg font-semibold text-gray-900">Begriffe &amp; Fachsprache</h3>
-                <InfoTooltip text="Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert." />
-              </div>
-            </div>
-          </div>
-
-          <div
-            ref={terminologyScrollerRef}
-            onPointerDown={handleTerminologyPointerDown}
-            onPointerMove={handleTerminologyPointerMove}
-            onPointerUp={handleTerminologyPointerUp}
-            onPointerCancel={handleTerminologyPointerUp}
-            onClickCapture={handleTerminologyClickCapture}
-            className={`theme-scrollbar mt-4 overflow-x-auto px-1 pb-2 pt-3 touch-pan-x ${isDraggingTerminology ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
-          >
-            <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:min-w-[920px] md:grid-cols-5 xl:min-w-0">
-            {terminologyProfiles.map(profile => {
-              const selected = (formData.terminologyProfile || 'customers') === profile.id;
-              const preview = terminologyColorSource === 'appearance'
-                ? {
-                    ...profile.preview,
-                    accent: formData.primaryColor || '#2563eb',
-                    secondary: formData.secondaryColor || '#64748b',
-                    accentSoft: `color-mix(in srgb, ${formData.primaryColor || '#2563eb'} 20%, white)`,
-                    accentWash: `color-mix(in srgb, ${formData.primaryColor || '#2563eb'} 8%, white)`,
-                  }
-                : profile.preview;
-              return (
-                <button
-                  key={profile.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => handleTerminologyProfileSelect(profile)}
-                  className={`terminology-profile-card group relative flex h-full min-h-0 flex-col rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${selected ? 'terminology-profile-card-selected' : ''}`}
-                  style={{
-                    borderColor: selected ? preview.accent : '#e5e7eb',
-                    backgroundColor: selected ? preview.accentWash : '#f9fafb',
-                    boxShadow: selected ? `0 0 0 3px ${preview.accentSoft}` : undefined,
-                  }}
-                >
-                  {selected && (
-                    <span
-                      className="terminology-profile-selected-label absolute -top-2 left-1/2 z-10 -translate-x-1/2 rounded-full px-2 py-0.5 text-[9px] font-semibold"
-                      style={{ backgroundColor: preview.accentSoft, color: preview.accent }}
-                    >
-                      Ausgewählt
-                    </span>
-                  )}
-                  <span className="flex min-h-[2.75rem] items-start justify-center pt-1 text-center">
-                    <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
-                  </span>
-                  <TerminologyPreview profile={profile} receiptLabel={normalizedReceiptLabel || 'Belege'} previewOverride={preview} />
-                </button>
-              );
-            })}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center gap-2">
-              <label htmlFor="receipt-label" className="block text-sm font-semibold text-gray-900">
-                Bezeichnung für den Belegbereich
-              </label>
-              <InfoTooltip text="Dieser Name erscheint in der Navigation und als Überschrift, zum Beispiel „Belege“, „Ausgabenbelege“ oder „Dokumente“." />
-            </div>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
-              <div className="flex-1">
-                <input
-                  id="receipt-label"
-                  type="text"
-                  maxLength={40}
-                  value={formData.receiptLabel ?? 'Belege'}
-                  onChange={(event) => setFormData(previous => ({ ...previous, receiptLabel: event.target.value }))}
-                  aria-invalid={Boolean(receiptLabelError)}
-                  aria-describedby="receipt-label-help"
-                  className={`w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-primary-custom ${receiptLabelError ? 'border-red-300' : 'border-gray-300'}`}
-                />
-                <p id="receipt-label-help" className={`mt-1 text-xs ${receiptLabelError ? 'text-red-600' : 'text-gray-500'}`}>
-                  {receiptLabelError || `${(formData.receiptLabel ?? 'Belege').length} von 40 Zeichen`}
-                </p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 sm:min-w-48">
-                Vorschau: <span className="font-semibold">{normalizedReceiptLabel || 'Belege'}</span>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-              <span>Vorschläge:</span>
-              {['Belege', 'Dokumente', 'Ausgabenbelege', 'Einkauf'].map(option => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setFormData(previous => ({ ...previous, receiptLabel: option }))}
-                  className="min-h-0 rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-primary-custom hover:text-primary-custom"
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Module Settings */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <Briefcase className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Module</h3>
-            <InfoTooltip text="Aktivieren Sie nur die Bereiche, die Sie in der Anwendung benötigen. Deaktivierte Module verschwinden aus der Navigation." />
-          </div>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  {terminology.work.managementLabel}
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Aktiviert das Tracking von {terminology.work.plural} und Arbeitszeiten
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.jobTrackingEnabled || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, jobTrackingEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Reporting & Auswertungen
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Aktiviert Rechnungsjournale, Statistiken und Auswertungen
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.reportingEnabled || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, reportingEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Angebote
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Aktiviert die Erstellung und Verwaltung von Angeboten
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.quotesEnabled || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, quotesEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Rabatt-Funktion
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Ermöglicht Rabatte auf Positions- und Gesamt-Ebene in Rechnungen, Angeboten und {terminology.work.plural}
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.discountsEnabled !== false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, discountsEnabled: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-
-          </div>
-        </div>
-
-        </div>
-      )}
-
-        {activeTab === 'general' && (
-          <div className="space-y-8">
-        {onNavigate && (
-          <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between lg:p-5">
-            <div>
-              <h3 className="text-base font-semibold text-gray-900">Dokumentvorlagen</h3>
-              <p className="mt-1 text-sm text-gray-600">
-                PDF-Layouts, Farben, Logos und Dokumenttexte werden separat in den Vorlagen verwaltet.
-              </p>
-            </div>
-            <button type="button" onClick={() => onNavigate('templates')} className="inline-flex shrink-0 items-center justify-center gap-2 btn-primary rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-              Vorlagen öffnen
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Company Information */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <Building2 className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.dataLabel}</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {terminology.organization.nameLabel} *
-              </label>
-              <input
-                type="text"
-                required
-                name="organization"
-                autoComplete="section-company organization"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Adresse *
-              </label>
-              <input
-                type="text"
-                required
-                name="street-address"
-                autoComplete="section-company street-address"
-                value={formData.address}
-                onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Postleitzahl *
-              </label>
-              <input
-                type="text"
-                required
-                name="postal-code"
-                autoComplete="section-company postal-code"
-                value={formData.postalCode}
-                onChange={(e) => setFormData(prev => ({ ...prev, postalCode: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Stadt *
-              </label>
-              <input
-                type="text"
-                required
-                name="address-level2"
-                autoComplete="section-company address-level2"
-                value={formData.city}
-                onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Land *
-              </label>
-              <input
-                type="text"
-                required
-                name="country-name"
-                autoComplete="section-company country-name"
-                value={formData.country}
-                onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                USt-IdNr.
-              </label>
-              <input
-                type="text"
-                name="tax-id"
-                autoComplete="off"
-                value={formData.taxId}
-                onChange={(e) => setFormData(prev => ({ ...prev, taxId: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                placeholder="z.B. DE123456789"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Steuernummer
-              </label>
-              <input
-                type="text"
-                name="tax-identification-number"
-                autoComplete="off"
-                value={formData.taxIdentificationNumber || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, taxIdentificationNumber: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                placeholder="z.B. 123/456/78910"
-              />
-            </div>
-          </div>
-          <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <h4 className="font-medium text-gray-900">Steuerprofil</h4>
-            <p className="mt-1 text-xs leading-5 text-gray-600">Betriebsart und Rechtsform werden in Prüfhinweisen und Exporten verwendet. Sie blenden keine Kernmenüpunkte aus.</p>
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium text-gray-900">
-                Betriebsart *
-                <select required value={formData.taxBusinessType || ''} onChange={(event) => setFormData(prev => ({ ...prev, taxBusinessType: event.target.value ? event.target.value as TaxBusinessType : undefined }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
-                  <option value="" disabled>Bitte wählen …</option>
-                  <option value="freelance">Freiberuflich</option>
-                  <option value="commercial">Gewerblich</option>
-                  <option value="agriculture">Land- und Forstwirtschaft</option>
-                  <option value="nonprofit">Gemeinnützig</option>
-                  <option value="other">Sonstige</option>
-                </select>
-              </label>
-              <label className="block text-sm font-medium text-gray-900">
-                Rechtsform *
-                <select required value={formData.legalForm || ''} onChange={(event) => setFormData(prev => ({ ...prev, legalForm: event.target.value ? event.target.value as LegalForm : undefined }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-custom">
-                  <option value="" disabled>Bitte wählen …</option>
-                  <option value="sole_proprietorship">Einzelunternehmen</option>
-                  <option value="partnership">Personengesellschaft</option>
-                  <option value="gbr">GbR</option>
-                  <option value="ug">UG (haftungsbeschränkt)</option>
-                  <option value="gmbh">GmbH</option>
-                  <option value="ag">AG</option>
-                  <option value="eg">eG</option>
-                  <option value="nonprofit">Verein / gemeinnützige Organisation</option>
-                  <option value="other">Sonstige</option>
-                </select>
-              </label>
-            </div>
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
-              <div>
-                <label className="text-sm font-medium text-gray-900">
-                  Kleinunternehmerregelung (§ 19 UStG)
-                </label>
-                <p className="mt-1 text-xs text-gray-600">
-                  Deaktiviert alle MwSt.-Berechnungen und zeigt entsprechende Klausel auf Rechnungen an
-                </p>
-              </div>
-              <label className="relative inline-flex cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.isSmallBusiness || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, isSmallBusiness: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-custom"></div>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Contact Information */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <Mail className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Kontaktdaten</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                E-Mail *
-              </label>
-              <input
-                type="email"
-                required
-                name="email"
-                autoComplete="section-company email"
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Telefon *
-              </label>
-              <input
-                type="tel"
-                required
-                name="tel"
-                autoComplete="section-company tel"
-                value={formData.phone}
-                onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Website
-              </label>
-              <input
-                type="url"
-                name="url"
-                autoComplete="section-company url"
-                value={formData.website || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Payment Information - Enhanced Section */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <CreditCard className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Zahlungsinformationen</h3>
-          </div>
-          
-          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <h4 className="font-medium text-gray-900 mb-2">💡 Verwaltung der Zahlungsdaten</h4>
-            <p className="text-sm text-gray-600">
-              Wählen Sie, ob der Kontoinhaber automatisch dem {terminology.organization.nameInDativeLabel} folgen oder unabhängig davon gepflegt werden soll.
-            </p>
-          </div>
-
-          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {[
-              { id: 'separate', title: 'Getrennt verwalten', text: `Kontoinhaber kann vom ${terminology.organization.nameInDativeLabel} abweichen.` },
-              { id: 'company', title: `Mit ${terminology.organization.dataLabel} verknüpfen`, text: `Kontoinhaber wird aus dem ${terminology.organization.nameInDativeLabel} übernommen.` },
-            ].map(option => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, paymentInformationMode: option.id as 'separate' | 'company' }))}
-                className={`rounded-lg border p-3 text-left transition ${formData.paymentInformationMode === option.id
-                  ? 'border-primary-custom bg-primary-custom/5 ring-1 ring-primary-custom/30'
-                  : 'border-gray-200 hover:border-gray-300'}`}
-              >
-                <span className="block text-sm font-medium text-gray-900">{option.title}</span>
-                <span className="mt-1 block text-xs text-gray-500">{option.text}</span>
-              </button>
-            ))}
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Kontoinhaber
-              </label>
-              <input
-                type="text"
-                name="account-holder"
-                autoComplete="section-company name"
-                value={formData.paymentInformationMode === 'company'
-                  ? formData.name
-                  : (formData.paymentInformation?.accountHolder || formData.name)}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  paymentInformation: { 
-                    ...prev.paymentInformation, 
-                    accountHolder: e.target.value 
-                  }
-                }))}
-                disabled={formData.paymentInformationMode === 'company'}
-                placeholder={`${formData.name} (${terminology.organization.nameLabel} als Standard)`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom disabled:cursor-not-allowed disabled:bg-gray-100"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {formData.paymentInformationMode === 'company'
-                  ? `Der Kontoinhaber wird automatisch aus dem aktuellen ${terminology.organization.nameInDativeLabel} gebildet.`
-                  : `Kann vom ${terminology.organization.nameInDativeLabel} abweichen (z. B. Geschäftsführer oder Inhaber).`}
-              </p>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                IBAN *
-              </label>
-              <input
-                type="text"
-                name="iban"
-                autoComplete="off"
-                value={formData.paymentInformation?.bankAccount || formData.bankAccount || ''}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  paymentInformation: { 
-                    ...prev.paymentInformation, 
-                    bankAccount: e.target.value 
-                  }
-                }))}
-                placeholder="DE89 3704 0044 0532 0130 00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                BIC
-              </label>
-              <input
-                type="text"
-                name="bic"
-                autoComplete="off"
-                value={formData.paymentInformation?.bic || formData.bic || ''}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  paymentInformation: { 
-                    ...prev.paymentInformation, 
-                    bic: e.target.value 
-                  }
-                }))}
-                placeholder="COBADEFFXXX"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Bankname
-              </label>
-              <input
-                type="text"
-                name="bank-name"
-                autoComplete="off"
-                value={formData.paymentInformation?.bankName || ''}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  paymentInformation: { 
-                    ...prev.paymentInformation, 
-                    bankName: e.target.value 
-                  }
-                }))}
-                placeholder="z.B. Commerzbank AG"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Zusätzliche Zahlungsbedingungen
-              </label>
-              <textarea
-                value={formData.paymentInformation?.paymentTerms || ''}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  paymentInformation: { 
-                    ...prev.paymentInformation, 
-                    paymentTerms: e.target.value 
-                  }
-                }))}
-                placeholder="z.B. Bei Zahlungsrückstand werden Verzugszinsen berechnet"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                rows={3}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Diese Bedingungen werden in Rechnungen und Angeboten angezeigt
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Zahlungsarten
-              </label>
-              <input
-                type="text"
-                value={(formData.paymentInformation?.paymentMethods || []).join(', ')}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  paymentInformation: {
-                    ...prev.paymentInformation,
-                    paymentMethods: e.target.value.split(',').map(method => method.trim()).filter(Boolean),
-                  }
-                }))}
-                placeholder="z.B. Überweisung, PayPal, Barzahlung"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-              <p className="text-xs text-gray-500 mt-1">Mehrere Zahlungsarten durch Komma trennen.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Logo & Icon Upload */}
-        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2">
-        {/* Logo Upload */}
-        <div className="settings-section h-full">
-          <div className="flex items-center mb-4">
-            <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.logoLabel}</h3>
-          </div>
-
-          <div className="space-y-4">
-            {formData.logo ? (
-              <div className="relative inline-block">
-                <img
-                  src={formData.logo}
-                  alt="Company Logo"
-                  className="h-20 lg:h-24 object-contain border border-gray-200 rounded-lg"
-                />
-                <button
-                  type="button"
-                  onClick={handleLogoRemove}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Kein Logo hochgeladen</p>
-              </div>
-            )}
-
-            <div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                className="hidden"
-                id="logo-upload"
-              />
-              <label
-                htmlFor="logo-upload"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Logo hochladen
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Unterstützte Formate: JPG, PNG, GIF. Maximale Größe: 2MB
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Icon Upload */}
-        <div className="settings-section h-full">
-          <div className="flex items-center mb-4">
-            <Upload className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">{terminology.organization.iconLabel}</h3>
-          </div>
-
-          <div className="space-y-4">
-            {formData.icon ? (
-              <div className="relative inline-block">
-                <img
-                  src={formData.icon}
-                  alt="Company Icon"
-                  className="h-16 w-16 lg:h-20 lg:w-20 object-contain border border-gray-200 rounded-lg"
-                />
-                <button
-                  type="button"
-                  onClick={handleIconRemove}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Kein Icon hochgeladen</p>
-              </div>
-            )}
-
-            <div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleIconUpload}
-                className="hidden"
-                id="icon-upload"
-              />
-              <label
-                htmlFor="icon-upload"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Icon hochladen
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Unterstützte Formate: JPG, PNG, GIF. Empfohlen: 64x64px oder 128x128px. Maximale Größe: 1MB
-              </p>
-            </div>
-          </div>
-        </div>
-
-        </div>
-
-          </div>
-        )}
-
-        {activeTab === 'invoices' && (
-          <div className="space-y-8">
-        {/* Invoice Settings */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <FileText className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Rechnungseinstellungen</h3>
-          </div>
-          
-          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <h4 className="font-medium text-gray-900 mb-2">💡 Hinweis zur Start-Rechnungsnummer</h4>
-            <p className="text-sm text-gray-600">
-              Die Start-Rechnungsnummer wird nur bei neuen Systemen oder beim Jahreswechsel verwendet. 
-              Bereits vergebene Nummern werden weitergezählt und auch nach dem Löschen eines Entwurfs nicht erneut verwendet.
-              Das Muster kann unten angepasst werden.
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2 grid gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 md:grid-cols-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Muster für Rechnungen
-                <input
-                  value={invoiceNumberPattern}
-                  maxLength={50}
-                  onChange={event => setFormData(previous => ({ ...previous, invoiceNumberPattern: event.target.value }))}
-                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom ${invoiceNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
-                  aria-invalid={Boolean(invoiceNumberPatternError)}
-                />
-                <span className={`mt-1 block text-xs ${invoiceNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{invoiceNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(invoiceNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
-              </label>
-              <label className="block text-sm font-medium text-gray-700">
-                Muster für Gutschriften
-                <input
-                  value={creditNoteNumberPattern}
-                  maxLength={50}
-                  onChange={event => setFormData(previous => ({ ...previous, creditNoteNumberPattern: event.target.value }))}
-                  className={`mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-custom ${creditNoteNumberPatternError ? 'border-red-300' : 'border-gray-300'}`}
-                  aria-invalid={Boolean(creditNoteNumberPatternError)}
-                />
-                <span className={`mt-1 block text-xs ${creditNoteNumberPatternError ? 'text-red-600' : 'text-gray-500'}`}>{creditNoteNumberPatternError || `Vorschau: ${formatInvoiceNumberPattern(creditNoteNumberPattern, new Date(), formData.invoiceStartNumber || 1)}`}</span>
-              </label>
-              <p className="text-xs leading-5 text-gray-500 md:col-span-2">Platzhalter: <code>{'{YYYY}'}</code> Jahr, <code>{'{YY}'}</code> Kurzjahr, <code>{'{MM}'}</code> Monat und genau ein fortlaufender Zähler von <code>{'{N}'}</code> bis <code>{'{NNNNNNNN}'}</code>. Mehrere N bestimmen die Mindestbreite.</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Standard-Zahlungsziel (Tage) *
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                max="365"
-                value={formData.defaultPaymentDays !== undefined ? formData.defaultPaymentDays : 30}
-                onChange={(e) => {
-                  const value = parseInt(e.target.value);
-                  setFormData(prev => ({ ...prev, defaultPaymentDays: isNaN(value) ? 30 : value }));
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Anzahl der Tage, nach denen eine Rechnung fällig wird. Bei 0 Tagen ist die Rechnung sofort fällig.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fallback-Startnummer *
-              </label>
-              <input
-                type="number"
-                required
-                min="1"
-                max="999999"
-                value={formData.invoiceStartNumber ?? 1}
-                onChange={(e) => setFormData(prev => ({ ...prev, invoiceStartNumber: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              />
-              <p className="text-xs text-gray-500 mt-1">Wird verwendet, wenn für das Rechnungsjahr keine eigene Startnummer hinterlegt ist.</p>
-            </div>
-          </div>
-
-          {/* Immediate Payment Clause Settings */}
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Sofortzahlungsklausel (bei 0 Tagen Zahlungsziel)
-            </label>
-            <textarea
-              value={formData.immediatePaymentClause || 'Rechnung ist per sofort fällig, ohne Abzug'}
-              onChange={(e) => setFormData(prev => ({ ...prev, immediatePaymentClause: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              rows={2}
-              placeholder="Text, der bei sofortiger Zahlung in der Rechnung angezeigt wird"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Diese Klausel wird in Rechnungen mit 0 Tagen Zahlungsziel in den Zahlungsbedingungen angezeigt.
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-primary-custom/30 bg-primary-custom/10 p-4">
-          <h4 className="mb-1 text-sm font-semibold text-primary-custom">eRechnung</h4>
-          <p className="text-sm text-primary-custom">
-            ZUGFeRD und XRechnung stehen beim Export zur Verfügung. Prüfen Sie vor dem Versand Ihre {terminology.organization.dataLabel},
-            Zahlungsinformationen und die Leitweg-ID des Empfängers.
-          </p>
-        </div>
-
-
-        {/* Yearly Invoice Start Numbers */}
-        <div className="settings-section">
-          <div className="flex items-center mb-4">
-            <FileText className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Rechnungsnummern</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Jährliche Start-Rechnungsnummern
-              </label>
-              
-              {/* Existing yearly start numbers */}
-              <div className="space-y-3 mb-4">
-                {yearlyStartNumbers.map((entry) => (
-                  <div key={entry.year} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <span className="font-medium text-gray-900">{entry.year}</span>
-                      <span className="text-gray-600">startet bei {entry.start_number}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteYearlyStartNumber(entry.year)}
-                      className="text-red-600 hover:text-red-800 p-1"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add new yearly start number */}
-              <div className="flex items-end space-x-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Jahr</label>
-                  <input
-                    type="number"
-                    min="2000"
-                    max="2100"
-                    value={newYear}
-                    onChange={(e) => setNewYear(parseInt(e.target.value) || new Date().getFullYear())}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
+          {readOnlyNotice}
+          {usesCompanyForm ? (
+            <form onSubmit={handleSubmit} autoComplete="on" className="settings-form form-consistent-fields settings-area-body">
+              <fieldset disabled={!canEditSettings} className="contents">
+                {activeArea === 'general' && <CompanyArea {...areaProps} />}
+                {activeArea === 'invoices' && <InvoicingArea {...areaProps} onNavigate={navigateTo} />}
+                {activeArea === 'app' && (
+                  <WorkspaceArea
+                    {...areaProps}
+                    receiptLabelError={receiptLabelError}
+                    isDemoMode={isDemoMode}
+                    onNavigate={navigateTo}
+                    onResetToDefaults={() => void handleResetToDefaults()}
+                    onReloadDemoData={reloadDemoData}
+                    onDeleteDemoData={() => void deleteDemoData()}
                   />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Start-Nummer</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="9999"
-                    value={newStartNumber}
-                    onChange={(e) => setNewStartNumber(parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddYearlyStartNumber}
-                  className="btn-primary rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-custom"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-              
-              <p className="text-xs text-gray-500 mt-2">
-                Definieren Sie spezifische Startnummern für bestimmte Jahre. Alle anderen Jahre verwenden die Fallback-Startnummer oben.
-              </p>
-            </div>
-          </div>
-        </div>
-
-          </div>
-        )}
-
-        {activeTab === 'appearance' && (
-          <div className="flex flex-col gap-8">
-        {/* Color Settings */}
-        <div className="settings-section order-3">
-          <div className="flex items-center mb-4">
-            <Palette className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Farbschema</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ColorPicker
-              label="Primärfarbe"
-              value={formData.primaryColor || '#2563eb'}
-              onChange={(color) => setFormData(prev => ({ ...prev, primaryColor: color }))}
-              defaultColor="#2563eb"
-            />
-            <ColorPicker
-              label="Sekundärfarbe"
-              value={formData.secondaryColor || '#64748b'}
-              onChange={(color) => setFormData(prev => ({ ...prev, secondaryColor: color }))}
-              defaultColor="#64748b"
-            />
-          </div>
-
-          <div className="mt-6">
-            <h4 className="mb-2 text-sm font-medium text-gray-700">Vorlagen für das Farbschema</h4>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {colorPresets.map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, primaryColor: preset.primary, secondaryColor: preset.secondary }))}
-                  className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition hover:border-primary-custom"
-                >
-                  <span className="mb-2 block text-xs font-medium text-gray-700">{preset.name}</span>
-                  <span className="flex gap-2">
-                    <span className="h-6 w-6 rounded-full" style={{ backgroundColor: preset.primary }} />
-                    <span className="h-6 w-6 rounded-full" style={{ backgroundColor: preset.secondary }} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Vorschau</h4>
-            <div className="flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                className="px-4 py-2 rounded-lg text-white font-medium"
-                style={{ backgroundColor: formData.primaryColor || '#2563eb' }}
-              >
-                Primäre Aktion
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded-lg text-white font-medium"
-                style={{ backgroundColor: formData.secondaryColor || '#64748b' }}
-              >
-                Sekundäre Aktion
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Diese Farben gelten nur für die App-Oberfläche. Dokumente und E-Mails behalten ihre eigene Darstellung.
-            </p>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-start gap-3">
-              <Palette className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" />
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">Farbschema für Fachbegriffe</h4>
-                <p className="mt-1 text-xs leading-5 text-gray-500">
-                  Entscheiden Sie, ob die gewählte Fachsprache eigene App-Farben verwenden oder das oben gepflegte Farbschema übernehmen soll.
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 grid items-stretch gap-3 min-[480px]:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => handleTerminologyColorSourceChange('appearance')}
-                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'appearance'
-                  ? 'border-primary-custom bg-primary-custom/10'
-                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
-              >
-                <span className="block text-sm font-semibold text-gray-900">Aus Farbschema übernehmen</span>
-                <span className="mt-1 block text-xs text-gray-500">Fachbegriffe verwenden die oben gewählte Primär- und Sekundärfarbe.</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTerminologyColorSourceChange('profile')}
-                className={`h-full min-h-0 rounded-lg border p-3 text-left transition ${terminologyColorSource === 'profile'
-                  ? 'border-primary-custom bg-primary-custom/10'
-                  : 'border-gray-200 bg-white hover:border-primary-custom/50'}`}
-              >
-                <span className="block text-sm font-semibold text-gray-900">Profilfarben verwenden</span>
-                <span className="mt-1 block text-xs text-gray-500">Die Auswahl übernimmt die passende Akzent- und Sekundärfarbe.</span>
-                <span className="mt-2 flex h-7 items-center gap-2" aria-hidden="true">
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.accent }} />
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: terminologyProfiles.find(profile => profile.id === (formData.terminologyProfile || 'customers'))?.preview?.secondary }} />
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Locale Settings */}
-        <div className="settings-section order-1">
-          <div className="flex items-center mb-4">
-            <Globe className="h-5 w-5 text-primary-custom mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Sprache und Formatierung</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sprache
-              </label>
-              <select
-                value={formData.locale || 'de-DE'}
-                onChange={(e) => setFormData(prev => ({ ...prev, locale: e.target.value as 'de-DE' | 'en-US' | 'fr-FR' | 'es-ES' }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                <option value="de-DE">Deutsch (Deutschland) - 1.234,56 {currencySymbol}</option>
-                <option value="en-US">English (United States) - $1,234.56</option>
-                <option value="fr-FR">Français (France) - 1 234,56 {currencySymbol}</option>
-                <option value="es-ES">Español (España) - 1.234,56 {currencySymbol}</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Bestimmt die Sprache der Benutzeroberfläche
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Zahlenformat
-              </label>
-              <select
-                value={formData.numberFormat || 'european'}
-                onChange={(e) => setFormData(prev => ({ ...prev, numberFormat: e.target.value as NumberFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                <option value="european">Europäisch – 1.234,56</option>
-                <option value="american">Amerikanisch – 1,234.56</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Legt Dezimal- und Tausendertrennzeichen in der Anwendung fest
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Währung
-              </label>
-              <select
-                value={formData.currency || 'EUR'}
-                onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                <option value="EUR">Euro (EUR)</option>
-                <option value="USD">US-Dollar (USD)</option>
-                <option value="CHF">Schweizer Franken (CHF)</option>
-                <option value="GBP">Pfund Sterling (GBP)</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">Wird in Beträgen, PDFs und eRechnungen verwendet.</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Datumsformat
-              </label>
-              <select
-                value={formData.dateFormat || 'DD.MM.YYYY'}
-                onChange={(e) => setFormData(prev => ({ ...prev, dateFormat: e.target.value as DateFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                <option value="DD.MM.YYYY">31.12.2025</option>
-                <option value="DD/MM/YYYY">31/12/2025</option>
-                <option value="MM/DD/YYYY">12/31/2025</option>
-                <option value="YYYY-MM-DD">2025-12-31</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Zeitformat
-              </label>
-              <select
-                value={formData.timeFormat || '24h'}
-                onChange={(e) => setFormData(prev => ({ ...prev, timeFormat: e.target.value as TimeFormat }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                <option value="24h">24-Stunden-Format</option>
-                <option value="12h">12-Stunden-Format</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Workspace-Zeitzone
-              </label>
-              <select
-                value={formData.timeZone || DEFAULT_TIME_ZONE}
-                onChange={(e) => setFormData(prev => ({ ...prev, timeZone: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-custom"
-              >
-                {TIME_ZONE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Wird standardmäßig für neue Kurse und Termine verwendet.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="settings-section order-2">
-          <div className="mb-4 flex items-center">
-            <Palette className="mr-2 h-5 w-5 text-primary-custom" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Darstellung</h3>
-              <p className="text-xs text-gray-500">Die Einstellung betrifft nur die App-Oberfläche.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {([
-              { id: 'system', label: 'System', description: 'Betriebssystem übernehmen', icon: Monitor },
-              { id: 'light', label: 'Hell', description: 'Helles Design verwenden', icon: Sun },
-              { id: 'dark', label: 'Dunkel', description: 'Dunkles Design verwenden', icon: Moon },
-            ] as const).map((mode) => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, themeMode: mode.id as ThemeMode }))}
-                className={`rounded-lg border p-3 text-left transition ${formData.themeMode === mode.id
-                  ? 'border-primary-custom bg-primary-custom/10 text-primary-custom'
-                  : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-custom'}`}
-              >
-                <mode.icon className="h-5 w-5" aria-hidden="true" />
-                <span className="mt-2 block text-sm font-medium">{mode.label}</span>
-                <span className="mt-1 block text-xs opacity-80">{mode.description}</span>
-              </button>
-            ))}
-          </div>
-          <div className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div>
-              <h4 className="text-sm font-medium text-gray-900">Animationen</h4>
-              <p className="mt-1 text-xs text-gray-600">Bewegungen in der Oberfläche ein- oder ausschalten. Die Einstellung gilt für dein Benutzerkonto auf allen Geräten.</p>
-              <p className="mt-1 text-xs text-gray-500">„Bewegung reduzieren“ im Betriebssystem schaltet Animationen zusätzlich aus.</p>
-              {motionError && <p role="alert" className="mt-2 text-xs text-red-700">Die Einstellung konnte nicht gespeichert werden.</p>}
-            </div>
-            <ToggleSwitch checked={animationsEnabled} label="Animationen" showLabel={false} onChange={() => {
-              setMotionError(false);
-              void setAnimationsEnabled(!animationsEnabled).catch(() => setMotionError(true));
-            }} className="h-7 w-12 min-h-0 justify-start rounded-full border-0 bg-transparent p-0 hover:border-0 hover:bg-transparent" />
-          </div>
-        </div>
-
-          </div>
-        )}
-
-        {activeTab === 'system' && (
-          <div className="mx-auto w-full max-w-5xl space-y-5">
-        {isDemoMode ? (
-          <section className="settings-section">
-            <div className="mb-3 flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary-custom" />
-              <h3 className="text-lg font-semibold text-gray-900">E-Mail</h3>
-            </div>
-            <p className="text-sm text-gray-600">Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.</p>
-          </section>
-        ) : (
-          <section className="settings-section">
-            <div className="mb-1 flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary-custom" />
-              <h3 className="text-lg font-semibold text-gray-900">E-Mail</h3>
-            </div>
-            <EmailManagement embedded />
-          </section>
-        )}
-
-        <section className="settings-section">
-          <div className="mb-3 flex items-center gap-2">
-            <Database className="h-5 w-5 text-primary-custom" />
-            <h3 className="text-lg font-semibold text-gray-900">Sicherung</h3>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-2xl text-sm text-gray-600">
-              JSON- und ZIP-Sicherungen erstellen, verwalten oder wiederherstellen.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowBackupManagement(true)}
-              disabled={isDemoMode}
-              className="btn-primary inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Sicherungen verwalten
-            </button>
-            {isDemoMode && <span className="text-xs text-gray-500">Im Demo-Modus nicht verfügbar.</span>}
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="mb-3 flex items-center gap-2">
-            <ArrowRightLeft className="h-5 w-5 text-primary-custom" />
-            <h3 className="text-lg font-semibold text-gray-900">Datenübernahme</h3>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-gray-600">Datenübernahme öffnen, um den aktuellen Status einzusehen und fortzufahren.</p>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('data-import')}
-              className="btn-secondary inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-4 py-2"
-            >
-              Datenübernahme öffnen
-            </button>
-          </div>
-        </section>
-
-          </div>
-        )}
-
-        {activeTab === 'extensions' && <div className="mx-auto w-full max-w-5xl"><ExtensionsSettings /></div>}
-        {activeTab === 'taxes' && <div className="mx-auto w-full max-w-5xl"><TaxProfileSettings onNavigate={onNavigate} /></div>}
-
-        {/* Save Button */}
-        {!['extensions', 'taxes'].includes(activeTab) && <div className="settings-save-bar form-action-bar sticky bottom-0 z-10 -mx-3 border-t border-gray-200 px-3 py-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
-          {feedback && (
-            <div className={`w-full text-sm sm:w-auto sm:mr-auto ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {feedback.text}
+                )}
+                {activeArea === 'appearance' && <AppearanceArea {...areaProps} />}
+              </fieldset>
+              {companySaveBar}
+            </form>
+          ) : (
+            <div className="settings-area-body">
+              {activeArea === 'system' && <SystemArea isDemoMode={isDemoMode} onNavigate={navigateTo} />}
+              {activeArea === 'extensions' && <ExtensionsSettings />}
+              {activeArea === 'taxes' && <TaxProfileSettings onNavigate={onNavigate} />}
+              {activeArea !== 'taxes' && companySaveBar}
             </div>
           )}
-          <button
-            type="button"
-            onClick={handleResetToDefaults}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 lg:px-6"
-          >
-            Zurücksetzen
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving || !hasUnsavedChanges}
-            className="btn-primary rounded-lg px-4 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50 lg:px-6"
-          >
-            <Save className="h-4 w-4 shrink-0" />
-            <span>{isSaving ? 'Speichert...' : 'Speichern'}</span>
-          </button>
-        </div>}
-      </form>
+        </section>
       </div>
-
-      {/* Backup Management Modal */}
-      {showBackupManagement && (
-        <BackupManagement onClose={() => setShowBackupManagement(false)} />
-      )}
     </div>
   );
 }

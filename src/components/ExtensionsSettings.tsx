@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Calculator, Info } from 'lucide-react';
+import { Calculator, Info, Puzzle } from 'lucide-react';
+import { SettingsCard } from './settings/SettingsUi';
 import { DialogShell } from './DialogShell';
 import { ToggleSwitch } from './ToggleSwitch';
 import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
@@ -46,18 +47,14 @@ export function ExtensionsSettings() {
   };
 
   return (
-    <section className="settings-section space-y-4" aria-labelledby="extensions-settings-title">
-      <div>
-        <h2 id="extensions-settings-title" className="text-lg font-semibold text-gray-900">Erweiterungen</h2>
-        <p className="mt-1 text-sm text-gray-600">Zusätzliche Bereiche für dieses Unternehmen aktivieren.</p>
-      </div>
-
+    <SettingsCard sectionId="verfuegbar" icon={Puzzle} title="Verfügbare Erweiterungen" description="Änderungen werden sofort übernommen.">
+      <div className="space-y-4">
       {loading ? <p className="text-sm text-gray-500" role="status">Erweiterungen werden geladen …</p> : (
-        <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <Calculator className="mt-0.5 h-5 w-5 shrink-0 text-primary-custom" aria-hidden="true" />
             <div className="min-w-0">
-              <h3 className="font-medium text-gray-900">Steuern &amp; Abgaben</h3>
+              <h4 className="font-medium text-gray-900">Steuern &amp; Abgaben</h4>
               <p className="mt-1 text-sm text-gray-600">Steuerprofil, private Abgaben und Schätzungen zur voraussichtlichen Belastung.</p>
               <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-gray-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{TAX_TEXTS.badge}</p>
             </div>
@@ -88,6 +85,7 @@ export function ExtensionsSettings() {
           </div>
         </DialogShell>
       )}
-    </section>
+      </div>
+    </SettingsCard>
   );
 }

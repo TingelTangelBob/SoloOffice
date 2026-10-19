@@ -11,6 +11,7 @@ import {
   validatePassword,
   verifyPassword,
 } from '../utils/auth.js';
+import { authorizeLegacyRequest } from '../middleware/auth.js';
 
 test('E-Mail-Adressen und Passwörter werden konsistent validiert', () => {
   assert.equal(normaliseEmail('  Test@Example.COM '), 'test@example.com');
@@ -38,4 +39,37 @@ test('Sitzungs- und Workspace-Helfer erzeugen sichere, stabile Werte', () => {
     token: 'a=b=c',
   });
   assert.match(createWorkspaceSlug('Ärger & Öl GmbH'), /^arger-ol-gmbh-[a-f0-9]{6}$/);
+});
+
+function runLegacyPolicy(method, path, auth) {
+  const result = { nextCalled: false, status: 200, body: null };
+  const res = {
+    status(code) { result.status = code; return this; },
+    json(body) { result.body = body; return this; },
+  };
+  authorizeLegacyRequest({ method, path, auth }, res, () => { result.nextCalled = true; });
+  return result;
+}
+
+test('Firmeneinstellungen und Startnummern ändern nur mit dem Recht „Einstellungen verwalten“', () => {
+  const member = { role: 'member', permissions: {} };
+  const settingsEditor = { role: 'member', permissions: { 'workspace.settings': true } };
+  const owner = { role: 'owner', permissions: {} };
+
+  assert.equal(runLegacyPolicy('GET', '/company', member).nextCalled, true);
+  const denied = runLegacyPolicy('PUT', '/company', member);
+  assert.equal(denied.nextCalled, false);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.body.code, 'FORBIDDEN');
+  assert.equal(runLegacyPolicy('PUT', '/company', settingsEditor).nextCalled, true);
+  assert.equal(runLegacyPolicy('PUT', '/company', owner).nextCalled, true);
+  assert.equal(runLegacyPolicy('POST', '/yearly-invoice-start-numbers', member).status, 403);
+  assert.equal(runLegacyPolicy('DELETE', '/yearly-invoice-start-numbers/2026', member).status, 403);
+});
+
+test('E-Mail-Verwaltung bleibt ohne das Recht „Einstellungen verwalten“ auch lesend gesperrt', () => {
+  const member = { role: 'member', permissions: {} };
+  const settingsEditor = { role: 'member', permissions: { 'workspace.settings': true } };
+  assert.equal(runLegacyPolicy('GET', '/email-management/smtp-settings', member).status, 403);
+  assert.equal(runLegacyPolicy('GET', '/email-management/smtp-settings', settingsEditor).nextCalled, true);
 });
