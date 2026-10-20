@@ -740,7 +740,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                 ) : (
                   <>
                     <div className="space-y-4">
-                      <h3 className="text-base font-semibold text-gray-900">Postfach einrichten</h3>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-4 disabled:opacity-70">
                         <SettingsToggleRow
                           label="E-Mail-Versand aktivieren"
