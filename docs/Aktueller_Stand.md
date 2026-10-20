@@ -1,36 +1,34 @@
 # Aktueller Stand SoloOffice
 
-**Stand:** 2026-10-19
+**Stand:** 2026-10-20
 
-**Fachapp:** `main` · Beta-Pre-Release `v0.9.6` veröffentlicht
+**Fachapp:** `release/v0.9.7` · Beta-Pre-Release `v0.9.7b` veröffentlicht
 
-**Release-Commit:** `1caddc66b86704c91583da1b810ab1346d38aef6`
+**Release-Commit:** `8b566fb94bb19b8c22d1d1148802290f14173fbd`
 
-**GitHub-Release:** [SoloOffice v0.9.6](https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.9.6)
+**GitHub-Release:** [SoloOffice v0.9.7b](https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.9.7b)
 
-Der Tag `v0.9.6` zeigt auf den Release-Commit. Nachgelagerte Korrekturen an Deploy-Skript und Statusdokumentation ändern diesen Release-Tag nicht. Ein öffentlicher Hosted-/SaaS-Start ist weiterhin nicht freigegeben.
+Der Tag `v0.9.7b` zeigt auf den geprüften Beta-Release-Commit. Ein öffentlicher Hosted-/SaaS-Start ist weiterhin nicht freigegeben.
 
 ## Produktstand
 
 SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Der aktuelle Stand umfasst unter anderem E-Rechnungen, Belege mit lokaler OCR, Workspace- und Rollenverwaltung, Datenübernahme, EÜR und die optionale Erweiterung „Steuern & Abgaben“.
 
-## Änderungen in v0.9.6
+## Änderungen in v0.9.7b
 
-- Die EÜR-Monatsübersicht kann nach Monat filtern und zeigt einen Monatsdurchschnitt.
-- Tagespauschalen lassen sich mit selbst recherchierten Beträgen, optionalen Grenzen und einer eigenen Quelle je Steuerjahr erfassen. SoloOffice liefert keine gesetzlichen Tagessätze oder Höchstgrenzen vor.
-- Arbeitstage und Tätigkeitsarten können unabhängig von Unterrichts- oder Kalenderterminen dokumentiert werden. Termine werden nicht als Arbeitstage vorausgesetzt.
-- Weitere oder besondere Pauschalen lassen sich frei beschriften und mit selbst eingetragener Berechnungsgrundlage erfassen.
-- SoloOffice prüft weder steuerliche Anspruchsvoraussetzungen noch Ausschlüsse oder ELSTER-Zuordnung.
-- Einstellungen und Rechte für Workspace-Daten wurden korrigiert. Zusätzlich wurden Mailverwaltung, Plattformübersicht und Workspace-Einblicke erweitert.
+- Rechnungszahlungen in der EÜR übernehmen standardmäßig den noch offenen Rechnungsbetrag, einschließlich Zahlungen aus anderen EÜR-Jahren. Ein kleinerer Betrag erfasst weiterhin eine Teilzahlung.
+- EÜR-Monatsdurchschnitt und bisherige Berechnung zeigen ihre Zeiträume an einer Info-Schaltfläche. Die Ausgabenaktion und PDF-Vorschau sind kompakter.
+- Das Anpassungssymbol im Dashboard öffnet ein Menü zum bestehenden Kachel-Editor.
+- Einstellungen enthalten weniger redundante Beschreibungen. SMTP-Server, Port und Verschlüsselung lassen sich ohne feste Anbieterauswahl eintragen.
 
 Details zur Steuererfassung stehen in [docs/steuern-abgaben.md](steuern-abgaben.md); Versionshinweise in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Prüfstand und Nachweise
 
-- GitHub CI für den Release-Commit bestanden: [Lauf 39288082121](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39288082121). Frontend-Tests, Lint, Typprüfung, Produktionsbuild, Backend-Image und 387 Backend-Unit-Tests liefen erfolgreich; die Compose-Prüfung sowie Migrationen und Workspace-RLS gegen PostgreSQL bestanden.
-- ESLint meldet vier nicht blockierende Warnungen in `Calendar.tsx`, `TaxOverview.tsx` und `MotionProvider.tsx`.
-- Staging unter [app.staging.solooffice.de](https://app.staging.solooffice.de) wurde mit dem Release-Commit aktualisiert und die Betriebsprüfung meldete Version `0.9.6` als gesund.
-- Das Demo-Image wurde durch [Lauf 39288082067](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39288082067) gebaut und veröffentlicht. Der aktive Server-Timer übernahm es; `https://demo.solooffice.de/healthz` antwortete mit `ok`. Das ausgelieferte JavaScript enthält Version `0.9.6` und den Release-Commit.
+- GitHub CI für den Release-Commit bestanden: [Lauf 39399549078](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39399549078). Frontend-Tests, Lint, Typprüfung, Produktionsbuild, Audit, Backend-Image und 394 Backend-Unit-Tests liefen erfolgreich; die Compose-Prüfung sowie Migrationen und Workspace-RLS gegen PostgreSQL bestanden.
+- ESLint meldet eine nicht blockierende Warnung in `src/context/MotionProvider.tsx`.
+- Staging unter [app.staging.solooffice.de](https://app.staging.solooffice.de) wurde auf Version `0.9.7` und Commit `8b566fb94bb1` aktualisiert. Die Betriebsprüfung war erfolgreich.
+- Das Demo-Image folgt weiterhin dem Branch `main`; der Beta-Tag `v0.9.7b` wurde nicht auf `main` übertragen.
 - Lokal bestanden: `git diff --check`, `bash -n deploy/solooffice-update-all.sh`, `node scripts/verify-audit-contracts.mjs`, `npm run typecheck` und `npm run lint`.
 - Docker ist auf der Arbeitsmaschine nicht verfügbar. Docker-Builds und die vollständigen Containerprüfungen liefen deshalb in GitHub CI.
 - Die manuelle Release-Checkliste nennt 13 offene Punkte. Sie wurden nicht erneut geprüft oder geschlossen.
@@ -39,7 +37,7 @@ Details zur Steuererfassung stehen in [docs/steuern-abgaben.md](steuern-abgaben.
 ## Umgebungen und Freigaben
 
 - `solooffice.de` ist die öffentliche Landingpage.
-- `app.staging.solooffice.de` enthält den geprüften v0.9.6-Release-Commit.
+- `app.staging.solooffice.de` enthält den geprüften v0.9.7b-Release-Commit.
 - `demo.solooffice.de` läuft als Demo und nicht als produktiver SaaS-Endpunkt.
 - Selbsthosting ist möglich, ersetzt jedoch keine manuelle, rechtliche oder steuerliche Prüfung.
 - Vor einem späteren öffentlichen Hosted-/SaaS-Start bleiben die dafür vorgesehenen Freigaben und Prüfungen offen. Das blockiert nicht die interne Erfassung eigener EÜR-Werte in SoloOffice.
