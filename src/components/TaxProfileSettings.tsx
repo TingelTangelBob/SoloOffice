@@ -332,7 +332,7 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
         sectionId="steuerprofil"
         icon={Calculator}
         title={`Steuerprofil ${year}`}
-        description="Freiwillige Angaben als Grundlage für Schätzungen und Prognosen. Nicht benötigte Fragen können leer bleiben."
+        description="Nicht benötigte Fragen können leer bleiben."
         actions={<button type="button" onClick={() => setShowHelp(true)} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium"><BookOpenText className="h-4 w-4" aria-hidden="true" />So entstehen die Schätzungen</button>}
       >
        <div className="space-y-4">

@@ -291,7 +291,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
         sectionId="erechnung"
         icon={FileCheck2}
         title="eRechnung & Vorlagen"
-        description={`ZUGFeRD und XRechnung stehen beim Export zur Verfügung. Prüfen Sie vor dem Versand Ihre ${terminology.organization.dataLabel}, Zahlungsinformationen und die Leitweg-ID des Empfängers.`}
+        info={`ZUGFeRD und XRechnung stehen beim Export zur Verfügung. Prüfen Sie vor dem Versand Ihre ${terminology.organization.dataLabel}, Zahlungsinformationen und die Leitweg-ID des Empfängers.`}
         actions={onNavigate && (
           <button type="button" onClick={() => onNavigate('templates')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
             Vorlagen öffnen

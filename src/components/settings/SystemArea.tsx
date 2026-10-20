@@ -42,7 +42,6 @@ export function SystemArea({ isDemoMode, onNavigate }: { isDemoMode: boolean; on
         sectionId="datenuebernahme"
         icon={ArrowRightLeft}
         title="Datenübernahme"
-        description="Status der Datenübernahme einsehen und fortfahren."
         actions={(
           <button type="button" onClick={() => onNavigate?.('data-import')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
             Datenübernahme öffnen

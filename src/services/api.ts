@@ -1209,9 +1209,10 @@ class ApiService {
   // EÜR API
   // --------------------------------------------------------------------------
 
-  async getEuerEntries(year?: number): Promise<EuerEntry[]> {
+  async getEuerEntries(year?: number, sourceType?: EuerEntry['sourceType']): Promise<EuerEntry[]> {
     const queryParams = new URLSearchParams();
     if (year) queryParams.append('year', year.toString());
+    if (sourceType) queryParams.append('sourceType', sourceType);
     return this.request<EuerEntry[]>(`/euer-entries?${queryParams}`);
   }
 

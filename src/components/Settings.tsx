@@ -250,7 +250,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
     <div className="page-root flex flex-col gap-3">
       {!embedded && (
         <div className="page-header-slot">
-          <PageHeader icon={SettingsIcon} title="Einstellungen" subtitle={`Verwalten Sie ${terminology.organization.dataLabel} und Anwendungseinstellungen`} />
+          <PageHeader icon={SettingsIcon} title="Einstellungen" />
         </div>
       )}
 
@@ -268,7 +268,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
         <section className="settings-layout-content" aria-labelledby="settings-area-title">
           <header className="settings-area-header">
             <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
-            <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>
+            {areaDefinition.description && <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>}
           </header>
 
           {readOnlyNotice}

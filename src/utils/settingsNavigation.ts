@@ -22,7 +22,7 @@ export interface SettingsSectionDefinition {
 export interface SettingsAreaDefinition {
   id: SettingsArea;
   label: string;
-  description: string;
+  description?: string;
   sections: SettingsSectionDefinition[];
 }
 
@@ -77,7 +77,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   taxes: {
     id: 'taxes',
     label: 'Steuern & Abgaben',
-    description: 'Freiwilliges Steuerprofil als Grundlage für unverbindliche Schätzungen.',
     sections: [
       { id: 'steuerprofil', title: 'Steuerprofil', keywords: ['steuerjahr', 'umsatzsteuer', 'voranmeldung', 'krankenversicherung', 'rentenversicherung', 'kirchensteuer', 'vorauszahlung', 'gewerbesteuer', 'hebesatz', 'kammer', 'ksk', 'bundesland', 'kinder'] },
     ],
@@ -95,7 +94,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   system: {
     id: 'system',
     label: 'E-Mail & Backup',
-    description: 'E-Mail-Versand, Datensicherung und Datenübernahme.',
     sections: [
       { id: 'email', title: 'E-Mail-Versand', keywords: ['smtp', 'mail', 'postausgang', 'benachrichtigungen', 'absender', 'testmail', 'test-e-mail', 'kopie', 'passwort', 'versand'] },
       { id: 'sicherung', title: 'Datensicherung', keywords: ['backup', 'sicherung', 'zip', 'json', 'wiederherstellen', 'export'] },

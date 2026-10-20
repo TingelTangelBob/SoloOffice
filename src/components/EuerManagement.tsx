@@ -13,6 +13,7 @@ import {
   FileText,
   History,
   Info,
+  Loader2,
   Pencil,
   Plus,
   ReceiptText,
@@ -66,6 +67,7 @@ import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocumen
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { loadImportedInvoiceOriginal } from '../utils/pdfGenerator';
 import { blobToBase64 } from '../utils/blobUtils';
+import { FloatingInfoTooltip } from './InfoTooltip';
 
 /** Feste Spaltenbreiten inklusive Innenabstand; die Beschreibung nimmt den Rest ein. */
 const EUER_COLUMN_WIDTHS = { date: 120, category: 176, source: 160, amount: 144 } as const;
@@ -74,6 +76,7 @@ const EUER_TABLE_LAYOUT = listTableLayout({
   flexibleColumnMinWidth: 200,
   maxActions: 5,
 });
+const MONTHLY_AVERAGE_HELP = 'Der feste Jahresdurchschnitt teilt die Jahressumme durch 12. Der zweite Wert teilt im laufenden Jahr durch die bisher erreichten Monate und in anderen Jahren durch Monate mit Buchungen.';
 
 type EntryDraft = {
   entryType: EuerEntryType;
@@ -177,7 +180,7 @@ const dateKey = (value: Date | string) => String(value).slice(0, 10);
 const getEuerInfoNoticeId = (year: number) => `euer-automatic-documents-${year}`;
 const sourceLabels: Record<EuerEntrySourceType, string> = {
   manual: 'Manuell',
-  invoice_payment: 'Teilzahlung',
+  invoice_payment: 'Zahlungseingang',
   receipt: 'Beleg',
   correction: 'Korrektur',
   recurring_expense: 'Fixkosten',
@@ -204,6 +207,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [vatIncompleteOnly, setVatIncompleteOnly] = useState(initialAction === 'vat-incomplete');
   const [entries, setEntries] = useState<EuerEntry[]>([]);
+  const [invoicePaymentEntries, setInvoicePaymentEntries] = useState<EuerEntry[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [entriesLoadedScope, setEntriesLoadedScope] = useState<string | null>(null);
@@ -238,14 +242,26 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const invoiceOptions = useMemo(() => invoices.filter(invoice => invoice.documentType !== 'credit_note'), [invoices]);
   const paymentTotals = useMemo(() => {
     const totals = new Map<string, number>();
-    entries.forEach(entry => {
+    invoicePaymentEntries.forEach(entry => {
       if (entry.sourceType !== 'invoice_payment' || !entry.sourceId || entry.status === 'voided') return;
       totals.set(entry.sourceId, (totals.get(entry.sourceId) || 0) + Number(entry.amount || 0));
     });
     return totals;
-  }, [entries]);
-  const getRemainingAmount = (invoice: { id: string; total: number }) =>
-    Math.max(0, Number(invoice.total || 0) - (paymentTotals.get(invoice.id) || 0));
+  }, [invoicePaymentEntries]);
+  const getRemainingAmount = (invoice: { id: string; total: number }, excludingEntryId?: string) => {
+    const excludedPayment = excludingEntryId
+      ? invoicePaymentEntries.find(entry => entry.id === excludingEntryId && entry.sourceId === invoice.id && entry.status !== 'voided')
+      : undefined;
+    return Math.max(0, Number(invoice.total || 0) - (paymentTotals.get(invoice.id) || 0) + Number(excludedPayment?.amount || 0));
+  };
+  const storeInvoicePayment = (entry: EuerEntry) => {
+    setInvoicePaymentEntries(current => {
+      const withoutEntry = current.filter(item => item.id !== entry.id);
+      return entry.sourceType === 'invoice_payment' && entry.status !== 'voided'
+        ? [entry, ...withoutEntry]
+        : withoutEntry;
+    });
+  };
   const entriesById = useMemo(() => new Map(entries.map(entry => [entry.id, entry])), [entries]);
 
   const loadEntries = useCallback(async () => {
@@ -255,12 +271,14 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setEntriesLoadedScope(null);
     setError('');
     try {
-      const [entryData, creditNoteData] = await Promise.all([
+      const [entryData, invoicePaymentData, creditNoteData] = await Promise.all([
         apiService.getEuerEntries(year),
+        apiService.getEuerEntries(undefined, 'invoice_payment'),
         apiService.getCreditNotes(),
       ]);
       if (entryRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
       setEntries(entryData);
+      setInvoicePaymentEntries(invoicePaymentData);
       setCreditNotes(creditNoteData);
       setEntriesLoadedScope(`${targetWorkspace ?? ''}:${year}`);
     } catch (loadError) {
@@ -271,7 +289,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   }, [year, workspaceId]);
 
   useEffect(() => {
-    entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setQuickExpenseMonth(null); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
+    entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setInvoicePaymentEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setQuickExpenseMonth(null); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
     void loadEntries(); return () => { entryRequestVersion.current += 1; };
   }, [loadEntries]);
   useEffect(() => {
@@ -377,9 +395,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   } : null;
   const activeAverageLabel = activeAverageMonthCount === 0
     ? 'Noch keine Buchungsmonate'
-    : year === currentYear
-      ? `Bisher · über ${activeAverageMonthCount} ${activeAverageMonthCount === 1 ? 'Monat' : 'Monate'}`
-      : `Mit Buchungen · über ${activeAverageMonthCount} ${activeAverageMonthCount === 1 ? 'Monat' : 'Monate'}`;
+    : `über ${activeAverageMonthCount} ${activeAverageMonthCount === 1 ? 'Monat' : 'Monate'}`;
 
   const openInvoicePreview = async (invoiceId: string) => {
     const invoice = invoices.find(item => item.id === invoiceId) || creditNotes.find(item => item.id === invoiceId);
@@ -414,14 +430,14 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     entries.forEach(entry => {
       if (!entry.notes?.trim() && entry.sourceType !== 'invoice_payment') hints.push(`„${entry.description}“ hat noch keinen Beleg- oder Notizhinweis.`);
       if (entry.entryType === 'expense' && entry.category === 'other_expense') hints.push(`„${entry.description}“ nutzt noch die allgemeine Kategorie.`);
-      if (entry.sourceType === 'invoice_payment' && !entry.sourceId) hints.push(`„${entry.description}“ ist als Teilzahlung erfasst, aber keiner Rechnung zugeordnet.`);
+      if (entry.sourceType === 'invoice_payment' && !entry.sourceId) hints.push(`„${entry.description}“ ist als Rechnungszahlung erfasst, aber keiner Rechnung zugeordnet.`);
     });
     invoiceOptions.forEach(invoice => {
       const payments = entries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id);
       if (!payments.length) return;
       const paidAmount = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-      if (paidAmount > Number(invoice.total || 0) + 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} überschreiten den Rechnungsbetrag.`);
-      if (invoice.status === 'paid' && Math.abs(paidAmount - Number(invoice.total || 0)) > 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} stimmen nicht mit dem Status „Bezahlt“ überein.`);
+      if (paidAmount > Number(invoice.total || 0) + 0.01) hints.push(`Zahlungen zu ${invoice.invoiceNumber} überschreiten den Rechnungsbetrag.`);
+      if (invoice.status === 'paid' && Math.abs(paidAmount - Number(invoice.total || 0)) > 0.01) hints.push(`Erfasste Zahlungen zu ${invoice.invoiceNumber} stimmen nicht mit dem Status „Bezahlt“ überein.`);
     });
     return hints;
   }, [entries, invoiceOptions]);
@@ -447,7 +463,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         : 'pointer-events-none absolute inset-y-0 right-0 inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-md border border-primary-custom bg-white px-2 text-sm font-medium text-primary-custom opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 2xl:whitespace-nowrap'}
     >
       <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className={mobile ? 'hidden sm:inline' : 'hidden 2xl:inline'}>Ausgaben hinzufügen</span>
+      <span className={mobile ? '' : 'hidden 2xl:inline'}>Ausgaben</span>
     </button>
   );
   const homeOfficeEntries = entries.filter(entry => isHomeOfficeAllowanceEntry(entry, year));
@@ -528,13 +544,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       return;
     }
     if (draft.sourceType === 'invoice_payment') {
+      if (amount <= 0) {
+        setError('Der Zahlungsbetrag muss größer als 0 € sein.');
+        return;
+      }
       if (!draft.sourceId) {
-        setError('Bitte ordnen Sie die Teilzahlung einer Rechnung zu.');
+        setError('Bitte ordnen Sie die Zahlung einer Rechnung zu.');
         return;
       }
       const invoice = invoiceOptions.find(item => item.id === draft.sourceId);
-      if (invoice && amount > getRemainingAmount(invoice) + 0.01) {
-        setError(`Die Teilzahlung darf den offenen Rechnungsbetrag von ${formatAmount(getRemainingAmount(invoice))} nicht überschreiten.`);
+      if (invoice && amount > getRemainingAmount(invoice, dialogEntry?.id) + 0.01) {
+        setError(`Der Zahlungsbetrag darf den offenen Rechnungsbetrag von ${formatAmount(getRemainingAmount(invoice, dialogEntry?.id))} nicht überschreiten.`);
         return;
       }
     }
@@ -562,11 +582,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       if (dialogEntry) {
         const updated = await apiService.updateEuerEntry(dialogEntry.id, payload);
         setEntries(current => current.map(entry => entry.id === updated.id ? updated : entry));
+        storeInvoicePayment(updated);
         setNotice('EÜR-Buchung wurde aktualisiert und protokolliert.');
       } else {
         const created = await apiService.createEuerEntry(payload);
         if (new Date(created.entryDate).getFullYear() === year) setEntries(current => [created, ...current]);
-        setNotice(payload.sourceType === 'invoice_payment' ? 'Teilzahlung wurde gespeichert.' : 'EÜR-Buchung wurde gespeichert.');
+        storeInvoicePayment(created);
+        setNotice(payload.sourceType === 'invoice_payment' ? 'Zahlungseingang wurde gespeichert.' : 'EÜR-Buchung wurde gespeichert.');
       }
       closeDialog();
     } catch (saveError) {
@@ -589,6 +611,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     try {
       await apiService.deleteEuerEntry(entry.id, 'Stornierung durch Benutzer');
       setEntries(current => current.filter(item => item.id !== entry.id));
+      setInvoicePaymentEntries(current => current.filter(item => item.id !== entry.id));
       setNotice('EÜR-Buchung wurde storniert und bleibt im Änderungsverlauf erhalten.');
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'EÜR-Buchung konnte nicht storniert werden.');
@@ -733,7 +756,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <ActionMenuItem icon={<Plus className="h-4 w-4" />} tone="orange" onClick={openNew}>Manuelle Buchung</ActionMenuItem>
         {can('data.write') && <ActionMenuItem icon={<Calculator className="h-4 w-4" />} tone="indigo" disabled={!entriesReady} onClick={() => setAllowanceDialogOpen(true)}>Pauschale erfassen</ActionMenuItem>}
         <ActionMenuItem icon={<FileScan className="h-4 w-4" />} tone="blue" onClick={() => onNavigate?.('receipts')}>Beleg hinzufügen</ActionMenuItem>
-        <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" onClick={openPayment}>Teilzahlung</ActionMenuItem>
+        <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" onClick={openPayment}>Zahlungseingang</ActionMenuItem>
         <ActionMenuItem icon={<Upload className="h-4 w-4" />} tone="indigo" onClick={() => setIsImportOpen(true)}>Aus Datei importieren</ActionMenuItem>
       </ActionMenu>
     </PageHeader>
@@ -762,7 +785,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
-      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Das Einnahmen-/Ausgabenjournal ist der Kern deiner EÜR. Bezahlte Rechnungen und Gutschriften werden automatisch übernommen; Teilzahlungen, Belege und weitere Geschäftsvorfälle kannst du ergänzen.</p><p className="mt-2 text-xs text-blue-800">Hinweis: Im aktuellen Rechnungsmodell ist kein Zahlungseingangsdatum hinterlegt. Automatische Rechnungszeilen werden deshalb zunächst über das Rechnungsdatum zugeordnet und sollten vor der Abgabe geprüft werden.</p></div></div>
+      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Das Einnahmen-/Ausgabenjournal ist der Kern deiner EÜR. Bezahlte Rechnungen und Gutschriften werden automatisch übernommen; weitere Zahlungseingänge, Belege und Geschäftsvorfälle kannst du ergänzen.</p><p className="mt-2 text-xs text-blue-800">Hinweis: Im aktuellen Rechnungsmodell ist kein Zahlungseingangsdatum hinterlegt. Automatische Rechnungszeilen werden deshalb zunächst über das Rechnungsdatum zugeordnet und sollten vor der Abgabe geprüft werden.</p></div></div>
     </section>}
 
     {notice && <Notice variant="success" onDismiss={() => setNotice('')}>{notice}</Notice>}
@@ -807,7 +830,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             </tbody>
             <tfoot className="border-t-2 border-gray-200 bg-gray-50">
               <tr>
-                <td className="px-4 py-3 font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über 12 Monate</span></td>
+                <td className="px-4 py-3 font-semibold text-gray-900"><span className="inline-flex items-center gap-1">Ø pro Monat<FloatingInfoTooltip label="Berechnung des Monatsdurchschnitts" text={MONTHLY_AVERAGE_HELP} /></span></td>
                 <td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(yearlyMonthlyAverage.income)}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(yearlyMonthlyAverage.expenses)}</td>
                 <td className={`px-4 py-3 text-right font-semibold ${yearlyMonthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(yearlyMonthlyAverage.profit)}</td>
@@ -824,7 +847,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}><span className="font-medium text-gray-900">{monthLabel(locale, year, item.month)}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></button><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div className="min-w-0"><p className="text-xs text-gray-500">Ausgaben</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><p className="shrink-0 whitespace-nowrap text-rose-700">{formatAmount(item.expenses)}</p>{addExpenseAction(item.month, true)}</div></div></div></article>)}</div>
         <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden">
           <div className="flex items-start justify-between gap-3">
-            <span className="font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über 12 Monate</span><span className="mt-1 block text-xs font-normal text-gray-500">{activeAverageLabel}</span></span>
+            <span><span className="inline-flex items-center gap-1 font-semibold text-gray-900">Ø pro Monat<FloatingInfoTooltip label="Berechnung des Monatsdurchschnitts" text={MONTHLY_AVERAGE_HELP} /></span><span className="mt-1 block text-xs font-normal text-gray-500">{activeAverageLabel}</span></span>
             <span className="text-right">
               <span className={`block font-semibold ${yearlyMonthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(yearlyMonthlyAverage.profit)}</span>
               <span className="mt-1 block text-xs font-normal text-gray-500">{activeMonthlyAverage ? formatAmount(activeMonthlyAverage.profit) : '–'}</span>
@@ -859,9 +882,11 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                 return <tr key={row.id} className="group hover:bg-gray-50">
                   <td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td>
                   <td className="max-w-0 px-3 py-4 text-sm">
-                    <div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <div className="min-w-0 truncate font-medium text-gray-900" title={row.description}>{row.description}</div>
+                      {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={previewLoadingInvoiceId === row.invoiceId ? `PDF-Vorschau wird geöffnet: ${row.description}` : `PDF-Vorschau öffnen: ${row.description}`} title="PDF-Vorschau" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:opacity-60">{previewLoadingInvoiceId === row.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}</button>}
+                    </div>
                     {row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}
-                    {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={`PDF-Vorschau öffnen: ${row.description}`} title={`PDF-Vorschau öffnen: ${row.description}`} className="mt-1 inline-flex min-h-7 items-center gap-1 text-xs font-medium text-primary-custom hover:underline disabled:opacity-60"><Eye className="h-3.5 w-3.5" aria-hidden="true" />{previewLoadingInvoiceId === row.invoiceId ? 'Öffnet …' : 'PDF-Vorschau'}</button>}
                     {entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}
                     {entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}
                   </td>
@@ -883,7 +908,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             return <article key={row.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <p className="min-w-0 truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p>
+                    {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={previewLoadingInvoiceId === row.invoiceId ? `PDF-Vorschau wird geöffnet: ${row.description}` : `PDF-Vorschau öffnen: ${row.description}`} title="PDF-Vorschau" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:opacity-60">{previewLoadingInvoiceId === row.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}</button>}
+                  </div>
                   <p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p>
                 </div>
                 <div className="flex shrink-0 items-start gap-2">
@@ -894,7 +922,6 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
                 <span className="min-w-0 truncate">{row.sourceLabel || 'Manuell'}</span>
                 <div className="flex items-center gap-3">
-                  {row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label={`PDF-Vorschau öffnen: ${row.description}`} className="inline-flex min-h-9 items-center gap-1 font-medium text-primary-custom hover:underline disabled:opacity-60"><Eye className="h-4 w-4" aria-hidden="true" />{previewLoadingInvoiceId === row.invoiceId ? 'Öffnet …' : 'PDF-Vorschau'}</button>}
                   {row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}
                 </div>
               </div>
@@ -910,7 +937,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       <DialogShell
         titleId="euer-entry-dialog-title"
         icon={dialogEntry ? Pencil : draft.sourceType === 'correction' ? RotateCcw : Plus}
-        title={quickExpenseMonth !== null && !dialogEntry ? `Ausgabe für ${monthLabel(locale, year, quickExpenseMonth)} ${year} erfassen` : dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Teilzahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
+        title={quickExpenseMonth !== null && !dialogEntry ? `Ausgabe für ${monthLabel(locale, year, quickExpenseMonth)} ${year} erfassen` : dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Rechnungszahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
         description={quickExpenseMonth !== null && !dialogEntry ? 'Bitte das tatsächliche Buchungsdatum auswählen. Es wird nicht automatisch aus dem Monat übernommen.' : 'Beträge werden als Bruttobeträge erfasst. Änderungen werden protokolliert.'}
         onClose={closeDialog}
         onSubmit={submit}
@@ -935,13 +962,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                   <label className="text-base font-medium text-gray-700 md:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value, category: current.entryType === 'expense' && (current.category === 'office' || current.category === 'other_expense') ? suggestCategory(event.target.value) : current.category }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label>
                   <label className="text-base font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label>
                   {draft.entryType === 'income' && draft.sourceType === 'manual' && <label className="text-base font-medium text-gray-700 md:col-span-2">{terminology.entity.singular} (optional)<select value={draft.customerId} onChange={event => setDraft(current => ({ ...current, customerId: event.target.value }))} className="form-input mt-1 w-full"><option value="">Ohne Zuordnung</option>{customers.filter(customer => customer.isActive !== false || customer.id === draft.customerId).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>}
-                  <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Teilzahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>
+                  <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Zahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>
                 </div>
               </section>
 
               {draft.sourceType === 'invoice_payment' && <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="euer-entry-source-title">
-                <div className="mb-3"><h3 id="euer-entry-source-title" className="text-xl font-semibold text-gray-900">Zuordnung</h3><p className="mt-1 text-base text-gray-500">Ordne die Teilzahlung einer Rechnung zu.</p></div>
-                <label className="text-base font-medium text-gray-700">Rechnung<select required value={draft.sourceId} onChange={event => { const sourceId = event.target.value; const invoice = invoiceOptions.find(item => item.id === sourceId); setDraft(current => ({ ...current, sourceId, description: invoice ? `Teilzahlung Rechnung ${invoice.invoiceNumber}` : current.description, taxRate: invoice && Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : current.taxRate })); }} className="form-input mt-1 w-full"><option value="">Rechnung auswählen</option>{invoiceOptions.filter(invoice => getRemainingAmount(invoice) > 0.01 || invoice.id === draft.sourceId).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · offen {formatAmount(getRemainingAmount(invoice))}</option>)}</select></label>
+                <div className="mb-3"><h3 id="euer-entry-source-title" className="text-xl font-semibold text-gray-900">Zuordnung</h3><p className="mt-1 text-base text-gray-500">Ordne den Zahlungseingang einer Rechnung zu. Der Betrag wird mit dem offenen Rest vorausgefüllt; ein kleinerer Betrag erfasst eine Teilzahlung.</p></div>
+                <label className="text-base font-medium text-gray-700">Rechnung<select required value={draft.sourceId} onChange={event => { const sourceId = event.target.value; const invoice = invoiceOptions.find(item => item.id === sourceId); setDraft(current => ({ ...current, sourceId, description: invoice ? `Zahlung Rechnung ${invoice.invoiceNumber}` : current.description, amount: invoice && sourceId !== current.sourceId ? String(getRemainingAmount(invoice, dialogEntry?.id)) : current.amount, taxRate: invoice && Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : current.taxRate })); }} className="form-input mt-1 w-full"><option value="">Rechnung auswählen</option>{invoiceOptions.filter(invoice => getRemainingAmount(invoice, dialogEntry?.id) > 0.01 || invoice.id === draft.sourceId).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · {dialogEntry?.sourceType === 'invoice_payment' && dialogEntry.sourceId === invoice.id ? 'ohne diese Zahlung offen' : 'offen'} {formatAmount(getRemainingAmount(invoice, dialogEntry?.id))}</option>)}</select></label>
               </section>}
 
               <section className="rounded-xl border border-primary-custom border-l-2 bg-primary-light-custom p-5 sm:p-6" aria-labelledby="euer-entry-amount-title">

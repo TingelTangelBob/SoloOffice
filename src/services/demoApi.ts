@@ -3266,8 +3266,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
     if (method === 'GET' && !id) {
       const year = queryParams.get('year');
+      const sourceType = queryParams.get('sourceType');
       const activeEntries = entries.filter(entry => entry.status !== 'voided');
-      return (year ? activeEntries.filter(entry => String(entry.entryDate).startsWith(`${year}-`)) : activeEntries) as unknown as T;
+      return activeEntries.filter(entry => (!year || String(entry.entryDate).startsWith(`${year}-`))
+        && (!sourceType || entry.sourceType === sourceType)) as unknown as T;
     }
     if (method === 'POST' && !id) {
       const amount = Number(data.amount);

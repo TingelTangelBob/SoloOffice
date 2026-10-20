@@ -72,8 +72,7 @@ import { MonthlyRevenueChart, type MonthlyRevenueComparisonRow } from './Monthly
 import { IncomeExpenseChart } from './IncomeExpenseChart';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardEditItem, DashboardEditToolbar, DashboardSortableGroup } from './DashboardEditMode';
-import { FloatingInfoTooltip, FloatingTooltipBubble } from './InfoTooltip';
-import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
+import { FloatingInfoTooltip } from './InfoTooltip';
 
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
@@ -222,7 +221,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     taxesEnabled && preferences.monthView && comparisonYear !== forecastYear,
   );
   const editToolbarRef = useRef<HTMLDivElement>(null);
-  const customizeTooltip = useFloatingTooltip<HTMLButtonElement>();
   // Belege werden nur geladen, wenn die Kachel sichtbar ist.
   const receiptsWanted = (editDraft ?? preferences).items.some(item => item.id === 'recent-receipts' && item.visible);
 
@@ -830,7 +828,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     if (message) announce(message);
   };
   const startEditing = () => {
-    customizeTooltip.close();
     setEditDraft({ ...preferences, items: preferences.items.map(item => ({ ...item })) });
     announce('Bearbeiten-Modus. Kacheln verschieben, ausblenden oder hinzufügen; „Fertig“ speichert.');
     focusToolbar();
@@ -838,7 +835,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const leaveEditing = (message: string) => {
     setEditDraft(null);
     announce(message);
-    requestAnimationFrame(() => customizeTooltip.anchorRef.current?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
   };
   const finishEditing = () => {
     if (editDraft && dashboardLayoutChanged(editDraft, preferences)) {
@@ -1631,11 +1628,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <option value="all">Gesamt</option>
             {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
           </select>
-          <button type="button" {...customizeTooltip.anchorProps} aria-describedby={undefined}
-            onClick={startEditing} disabled={!preferencesLoaded} aria-label="Dashboard anpassen" className="dashboard-header-button">
-            <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
-          </button>
-          <FloatingTooltipBubble id={customizeTooltip.id} anchorRef={customizeTooltip.anchorRef} open={customizeTooltip.open}>Dashboard anpassen</FloatingTooltipBubble>
+          <ActionMenu fitViewport ariaLabel="Dashboard anpassen" title="Dashboard anpassen" icon={<SlidersHorizontal className="h-5 w-5" aria-hidden="true" />}
+            menuClassName="w-72 min-w-0 max-w-[calc(100vw-1rem)]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
+            <div className="px-3 pb-1 pt-2">
+              <p className="text-xs font-medium text-gray-500">Dashboard anpassen</p>
+            </div>
+            <ActionMenuItem icon={<SlidersHorizontal className="h-4 w-4" />} onClick={startEditing} multiline>
+              Kacheln und Schnellzugriffe bearbeiten
+            </ActionMenuItem>
+            <p className="px-3 pb-2 pt-1 text-xs text-gray-500">Reihenfolge, Größe und Sichtbarkeit ändern.</p>
+          </ActionMenu>
           <ActionMenu fitViewport ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
             menuClassName="w-max min-w-0 max-w-[calc(100vw-1rem)]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
             <div className="flex items-center justify-between gap-2 pl-3 pr-1.5 pt-1">

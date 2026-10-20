@@ -2,6 +2,19 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.7b – EÜR-Buchungen, Übersicht und Einstellungen
+
+- Rechnungszahlungen in der EÜR übernehmen standardmäßig den noch offenen
+  Rechnungsbetrag, einschließlich Zahlungen aus anderen EÜR-Jahren. Ein
+  kleinerer Betrag erfasst weiterhin eine Teilzahlung; Beschriftung und
+  Hinweise erklären den Unterschied.
+- EÜR-Monatsdurchschnitt und bisherige Berechnung zeigen ihre Zeiträume an
+  einer Info-Schaltfläche. Die Ausgabenaktion und PDF-Vorschau sind kompakter.
+- Das Anpassungssymbol im Dashboard öffnet ein kleines Menü zum bestehenden
+  Kachel-Editor.
+- Einstellungen enthalten weniger redundante Beschreibungen. SMTP-Server,
+  Port und Verschlüsselung lassen sich ohne feste Anbieterauswahl eintragen.
+
 ## v0.9.7 – EÜR-Jahreszuordnung, Steuerprognose und Datenübernahme
 
 - EÜR-Buchungen lassen sich in der Steuerprognose dem erfassten Steuerjahr

@@ -37,15 +37,12 @@ import { SettingsCard, SettingsField, SettingsSaveBar, SettingsToggleRow } from 
 import {
   defaultTestEmailRecipient,
   isSingleEmailAddress,
-  SMTP_PROVIDERS,
-  smtpProviderForSettings,
   smtpFormFromSettings,
   smtpSettingsDirty,
   smtpSettingsPayload,
   validateSmtpSettings,
   type SmtpFieldErrors,
   type SmtpFormSettings,
-  type SmtpProvider,
 } from '../utils/smtpSettings';
 
 interface EmailAttachment {
@@ -134,7 +131,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   // Zugangsdaten werden nur als neuer Entwurf im Arbeitsspeicher gehalten.
   const [smtpSettings, setSmtpSettings] = useState<SmtpFormSettings>(() => smtpFormFromSettings());
   const [savedSmtpSettings, setSavedSmtpSettings] = useState<SmtpFormSettings | null>(null);
-  const [smtpProvider, setSmtpProvider] = useState<SmtpProvider>('eigen');
   const [smtpUserManuallyEdited, setSmtpUserManuallyEdited] = useState(false);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null | undefined>(undefined);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -218,7 +214,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     setIsSendingTest(false);
     setTestRecipientError(undefined);
     setSmtpSettings(smtpFormFromSettings());
-    setSmtpProvider('eigen');
     setSmtpUserManuallyEdited(false);
     setSmtpErrors({});
     setConnectionResult(null);
@@ -233,7 +228,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
       if (!data.success) throw new Error(data.message || 'Die E-Mail-Einrichtung konnte nicht geladen werden.');
       const settings = smtpFormFromSettings(data.settings);
       setSmtpSettings(settings);
-      setSmtpProvider(smtpProviderForSettings(settings));
       setSmtpUserManuallyEdited(!!settings.smtp_user && settings.smtp_user !== settings.email_from);
       setSavedSmtpSettings(settings);
       setLoadedWorkspaceId(requestedWorkspace);
@@ -272,13 +266,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     setSmtpSaveMessage(null);
     setConnectionResult(null);
     setTestResult(null);
-  };
-
-  const changeSmtpProvider = (provider: SmtpProvider) => {
-    setSmtpProvider(provider);
-    if (provider === 'eigen') return;
-    const preset = SMTP_PROVIDERS[provider];
-    changeSmtpSettings({ smtp_host: preset.smtp_host, smtp_port: preset.smtp_port, smtp_secure: preset.smtp_secure });
   };
 
   const changeSenderAddress = (email_from: string) => {
@@ -324,7 +311,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const discardSmtpSettings = () => {
     if (!savedSmtpSettings || smtpBusy) return;
     setSmtpSettings(savedSmtpSettings);
-    setSmtpProvider(smtpProviderForSettings(savedSmtpSettings));
     setSmtpUserManuallyEdited(!!savedSmtpSettings.smtp_user && savedSmtpSettings.smtp_user !== savedSmtpSettings.email_from);
     setSmtpErrors({});
     setConnectionResult(null);
@@ -753,7 +739,8 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                   </div>
                 ) : (
                   <>
-                    <SettingsCard title="Postfach einrichten" icon={Mail} description="Das Postfach für Rechnungen, Angebote und Mahnungen einrichten.">
+                    <div className="space-y-4">
+                      <h3 className="text-base font-semibold text-gray-900">Postfach einrichten</h3>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-4 disabled:opacity-70">
                         <SettingsToggleRow
                           label="E-Mail-Versand aktivieren"
@@ -762,11 +749,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           onChange={is_enabled => changeSmtpSettings({ is_enabled })}
                           disabled={smtpBusy || !canManageSmtp}
                         />
-                        <SettingsField id="smtp-provider" label="Mailanbieter" hint="Server, Port und Verschlüsselung werden vorbelegt und können angepasst werden.">
-                          <select id="smtp-provider" value={smtpProvider} onChange={e => changeSmtpProvider(e.target.value as SmtpProvider)} aria-describedby="smtp-provider-message" className="form-input form-input-compact w-full">
-                            {Object.entries(SMTP_PROVIDERS).map(([value, provider]) => <option key={value} value={value}>{provider.label}</option>)}
-                          </select>
-                        </SettingsField>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <SettingsField id="smtp-email_from" label="Absenderadresse" required hint="An diese Adresse geht auch Ihre Kopie jeder Kundenmail." error={smtpErrors.email_from}>
                             <input id="smtp-email_from" type="email" value={smtpSettings.email_from} onChange={e => changeSenderAddress(e.target.value)} autoComplete="email" placeholder="buero@example.de" aria-invalid={!!smtpErrors.email_from} aria-describedby="smtp-email_from-message" className="form-input form-input-compact w-full" />
@@ -777,24 +759,24 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <SettingsField id="smtp-smtp_user" label="Benutzername" required hint="Meist die vollständige E-Mail-Adresse des Postfachs." error={smtpErrors.smtp_user}>
                             <input id="smtp-smtp_user" type="text" value={smtpSettings.smtp_user} onChange={e => { setSmtpUserManuallyEdited(true); changeSmtpSettings({ smtp_user: e.target.value }); }} autoComplete="off" spellCheck={false} aria-invalid={!!smtpErrors.smtp_user} aria-describedby="smtp-smtp_user-message" className="form-input form-input-compact w-full" />
                           </SettingsField>
-                          <SettingsField id="smtp-smtp_pass" label={smtpSettings.smtp_pass_set ? 'Passwort ändern' : 'Passwort'} required={!smtpSettings.smtp_pass_set} hint={smtpSettings.smtp_pass_set ? 'Passwort gespeichert. Leer lassen, um es beizubehalten.' : SMTP_PROVIDERS[smtpProvider].hint} error={smtpErrors.smtp_pass}>
+                          <SettingsField id="smtp-smtp_pass" label={smtpSettings.smtp_pass_set ? 'Passwort ändern' : 'Passwort'} required={!smtpSettings.smtp_pass_set} hint={smtpSettings.smtp_pass_set ? 'Passwort gespeichert. Leer lassen, um es beizubehalten.' : 'Bei manchen Anbietern ist dafür ein App-Passwort erforderlich.'} error={smtpErrors.smtp_pass}>
                             <input id="smtp-smtp_pass" type="password" value={smtpSettings.smtp_pass} onChange={e => changeSmtpSettings({ smtp_pass: e.target.value })} autoComplete="new-password" placeholder={smtpSettings.smtp_pass_set ? 'Gespeichertes Passwort beibehalten' : ''} aria-invalid={!!smtpErrors.smtp_pass} aria-describedby="smtp-smtp_pass-message" className="form-input form-input-compact w-full" />
                           </SettingsField>
                         </div>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <SettingsField id="smtp-smtp_host" label="SMTP-Server" required error={smtpErrors.smtp_host}>
-                            <input id="smtp-smtp_host" type="text" value={smtpSettings.smtp_host} onChange={e => changeSmtpSettings({ smtp_host: e.target.value })} autoComplete="off" spellCheck={false} placeholder="smtp.example.de" aria-invalid={!!smtpErrors.smtp_host} aria-describedby={smtpErrors.smtp_host ? 'smtp-smtp_host-message' : undefined} className="form-input form-input-compact w-full" />
+                          <SettingsField id="smtp-smtp_host" label="SMTP-Server" required info="SMTP-Server, Port und Verschlüsselung stehen in den E-Mail-Einstellungen Ihres Anbieters. Alle Werte bleiben hier frei änderbar." error={smtpErrors.smtp_host}>
+                            <input id="smtp-smtp_host" type="text" value={smtpSettings.smtp_host} onChange={e => changeSmtpSettings({ smtp_host: e.target.value })} autoComplete="off" spellCheck={false} placeholder="smtp.example.de" aria-invalid={!!smtpErrors.smtp_host} aria-describedby="smtp-smtp_host-message" className="form-input form-input-compact w-full" />
                           </SettingsField>
                           <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
                             <SettingsField id="smtp-smtp_port" label="Port" required error={smtpErrors.smtp_port}>
                               <input id="smtp-smtp_port" type="text" inputMode="numeric" value={smtpSettings.smtp_port} onChange={e => changeSmtpSettings({ smtp_port: e.target.value })} aria-invalid={!!smtpErrors.smtp_port} aria-describedby={smtpErrors.smtp_port ? 'smtp-smtp_port-message' : undefined} className="form-input form-input-compact w-full" />
                             </SettingsField>
-                            <SettingsField id="smtp-smtp_secure" label="Verschlüsselung" hint="Die Werte stehen bei Ihrem Mailanbieter.">
+                            <SettingsField id="smtp-smtp_secure" label="Verschlüsselung">
                               <select id="smtp-smtp_secure" value={smtpSettings.smtp_secure ? 'tls' : 'starttls'} onChange={e => {
                                 const smtp_secure = e.target.value === 'tls';
                                 const defaultPort = smtpSettings.smtp_port === '465' || smtpSettings.smtp_port === '587';
                                 changeSmtpSettings({ smtp_secure, ...(defaultPort ? { smtp_port: smtp_secure ? '465' : '587' } : {}) });
-                              }} aria-describedby="smtp-smtp_secure-message" className="form-input form-input-compact w-full">
+                              }} className="form-input form-input-compact w-full">
                                 <option value="starttls">STARTTLS (meist 587)</option>
                                 <option value="tls">SSL/TLS (meist 465)</option>
                               </select>
@@ -813,7 +795,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                         {connectionResult && <p role={connectionResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${connectionResult.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>{connectionResult.text}</p>}
                       </div>
                       <p className="mt-4 text-xs leading-5 text-gray-600">Bei jeder Kundenmail wird automatisch eine unsichtbare Kopie (BCC) an die gespeicherte Absenderadresse geschickt. Die Kunden sehen diese Kopie nicht.</p>
-                    </SettingsCard>
+                    </div>
 
                     <SettingsCard title="Testmail senden" icon={Send} description={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : 'Eine echte E-Mail mit der gespeicherten Einrichtung versenden und den Empfang im Postfach prüfen.'}>
                       {smtpDirty ? <p className="mb-3 text-sm text-gray-600">Bitte die Änderungen zuerst speichern. Die Testmail nutzt die gespeicherte Einrichtung.</p>

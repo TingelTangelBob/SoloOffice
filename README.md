@@ -8,7 +8,7 @@
 
 SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Sie richtet sich an Selbstständige und kleine Betriebe, die ihre Geschäftsabläufe und Belege in einem eigenen Workspace verwalten möchten. SoloOffice kann selbst gehostet werden; eine öffentliche SaaS-Freigabe ist derzeit nicht erteilt.
 
-Der aktuelle Versionsstand ist **v0.9.6**, ein Beta-/Testrelease für Tests und Feedback. Die Anwendung ersetzt keine Steuer-, Rechts- oder Datenschutzberatung und ist nicht als uneingeschränkt produktiver Steuerabschluss freigegeben. Steuerliche Auswertungen und Abschreibungen sind vorbereitende Arbeitsunterlagen. OCR-Ergebnisse müssen vor der Übernahme geprüft werden. Eine ELSTER-Übertragung ist nicht enthalten. Die Versionsnummer folgt SemVer; v1.0.0 ist an einen praktisch nachgewiesenen Self-Hosting-Betrieb einschließlich Migrationen, Mandantentrennung und Wiederherstellung gebunden.
+Der aktuelle Versionsstand ist **v0.9.7b**, ein Beta-/Testrelease für Tests und Feedback (Build-Version `0.9.7`). Die Build-Version folgt SemVer; `v0.9.7b` ist die Bezeichnung dieser Beta-Vorabversion. Die Anwendung ersetzt keine Steuer-, Rechts- oder Datenschutzberatung und ist nicht als uneingeschränkt produktiver Steuerabschluss freigegeben. Steuerliche Auswertungen und Abschreibungen sind vorbereitende Arbeitsunterlagen. OCR-Ergebnisse müssen vor der Übernahme geprüft werden. Eine ELSTER-Übertragung ist nicht enthalten. v1.0.0 ist an einen praktisch nachgewiesenen Self-Hosting-Betrieb einschließlich Migrationen, Mandantentrennung und Wiederherstellung gebunden.
 
 ## Funktionen
 

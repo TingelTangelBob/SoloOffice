@@ -120,7 +120,8 @@ async function validateSource(data, currentId = null, executor = query) {
   }
 
   if (sourceType === 'invoice_payment') {
-    if (data.entryType !== 'income') return 'Teilzahlungen zu Rechnungen müssen als Einnahme erfasst werden.';
+    if (data.entryType !== 'income') return 'Zahlungen zu Rechnungen müssen als Einnahme erfasst werden.';
+    if (amount <= 0) return 'Der Zahlungsbetrag muss größer als 0 € sein.';
     const invoiceResult = await executor(`
       SELECT total, document_type, status
       FROM invoices
@@ -141,7 +142,7 @@ async function validateSource(data, currentId = null, executor = query) {
     `, [sourceId, currentId]);
     const alreadyAllocated = Number(paymentResult.rows[0]?.amount || 0);
     const remaining = Math.max(0, Number(invoice.total || 0) - alreadyAllocated);
-    if (amount > remaining + 0.01) return `Die Teilzahlung überschreitet den offenen Rechnungsbetrag von ${remaining.toFixed(2)} €. `;
+    if (amount > remaining + 0.01) return `Der Zahlungsbetrag überschreitet den offenen Rechnungsbetrag von ${remaining.toFixed(2)} €. `;
     return null;
   }
 
@@ -187,12 +188,18 @@ async function resolveCustomerId(data, executor) {
 router.get('/', async (req, res, next) => {
   try {
     const year = req.query.year ? Number(req.query.year) : null;
+    const sourceType = req.query.sourceType ? String(req.query.sourceType) : null;
     const params = [];
     const conditions = ["status = 'active'"];
     if (year) {
       if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error: 'Ungültiges Jahr.' });
       params.push(year);
       conditions.push('COALESCE(euer_year, EXTRACT(YEAR FROM entry_date)::smallint) = $1');
+    }
+    if (sourceType) {
+      if (!sourceTypes.has(sourceType)) return res.status(400).json({ error: 'Ungültige Buchungsquelle.' });
+      params.push(sourceType);
+      conditions.push(`source_type = $${params.length}`);
     }
 
     const result = await query(`
