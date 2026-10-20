@@ -46,6 +46,12 @@ export const normalizeRecurrence = (value) => {
   };
 };
 
+// Metadaten und ältere Aliasfelder verändern die Wiederholung selbst nicht.
+export const sameRecurrenceRule = (left, right) => {
+  const rule = value => normalizeRecurrence(typeof value === 'string' ? JSON.parse(value) : value);
+  return JSON.stringify(rule(left)) === JSON.stringify(rule(right));
+};
+
 export const expandRecurrence = (rule) => {
   const startDate = parseDateOnly(rule.startDate);
   const duration = Number(rule.duration ?? rule.durationWeeks);

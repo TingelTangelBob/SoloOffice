@@ -1329,11 +1329,14 @@ function planInvoices(rows, context, options) {
       paymentCents = paidAmountRaw !== null ? cents(paidAmountRaw) : (paymentStatus === 'open' ? 0 : totalCents);
       paymentDate = paidDate;
       if (paymentCents > 0 && !paymentDate) {
-        paymentDate = issue.value;
-        messages.push('Zahlungsdatum fehlt – das Rechnungsdatum wird als Zahlungsdatum verwendet. Für die EÜR zählt das tatsächliche Zahlungsdatum');
+        messages.push('Zahlungsdatum fehlt; Zahlungseingang nachtragen');
       }
       if (paymentCents > totalCents) {
         entries.push(entry(rowNumbers, 'error', `Der bezahlte Betrag ${euro(paymentCents / 100)} € übersteigt den Rechnungsbetrag`));
+        continue;
+      }
+      if (paymentCents > 0 && paymentCents < totalCents && !paymentDate) {
+        entries.push(entry(rowNumbers, 'error', 'Für eine Teilzahlung fehlt das Zahlungsdatum. Bitte ergänzen, damit der offene Rechnungsbetrag korrekt übernommen werden kann'));
         continue;
       }
       if (paymentDate && paymentDate < issue.value) messages.push('Das Zahlungsdatum liegt vor dem Rechnungsdatum');
@@ -1374,7 +1377,7 @@ function planInvoices(rows, context, options) {
       subtotal: calculated.subtotal,
       taxAmount: calculated.taxAmount,
       total: calculated.total,
-      payment: paymentCents > 0 ? {
+      payment: paymentCents > 0 && paymentDate ? {
         entryDate: paymentDate,
         amount: paymentCents / 100,
         taxRate: effectiveTaxRate(calculated.items.map(item => item.taxRate), calculated.total, calculated.taxAmount),
@@ -1565,7 +1568,7 @@ function importTotals(resource, entries) {
       bucket.invoiced += cents(data.total);
       bucket.count += 1;
       totals.invoiced += cents(data.total);
-      totals.openAmount += cents(data.total) - cents(data.payment?.amount || 0);
+      totals.openAmount += data.status === 'paid' ? 0 : cents(data.total) - cents(data.payment?.amount || 0);
       if (data.payment) {
         const paymentBucket = month(data.payment.entryDate.slice(0, 7));
         paymentBucket.invoicePayments += cents(data.payment.amount);

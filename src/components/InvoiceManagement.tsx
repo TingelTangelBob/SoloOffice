@@ -763,6 +763,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       
       try {
         let successCount = 0;
+        let simulatedCount = 0;
         const deliveryWarnings: string[] = [];
         let errorCount = 0;
         let missingRecipientCount = 0;
@@ -831,14 +832,20 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
               throw new Error(`Email send failed: ${result.message}`);
             }
             if (result.warning) deliveryWarnings.push(`${invoice.invoiceNumber}: ${result.warning}`);
-            trackTelemetry('invoice_sent_count', { count: 1 });
+            if (result.simulated) simulatedCount++;
+            else trackTelemetry('invoice_sent_count', { count: 1 });
+            successCount++;
             
             // Mark as sent if it was draft
             if (invoice.status === 'draft') {
-              await updateInvoice(invoice.id, { status: 'sent' });
+              try {
+                await updateInvoice(invoice.id, { status: 'sent' });
+              } catch (error) {
+                const delivery = result.simulated ? 'Der Demo-Versand wurde simuliert' : 'Die E-Mail wurde übergeben';
+                deliveryWarnings.push(`${invoice.invoiceNumber}: ${delivery}, aber der Rechnungsstatus konnte nicht auf „versendet“ gesetzt werden. Bitte vor einem erneuten Versand den Status prüfen.`);
+                logger.error(`Invoice ${invoice.invoiceNumber} was sent but its status could not be updated:`, error);
+              }
             }
-            
-            successCount++;
           } catch (error) {
             logger.error(`Error sending invoice ${invoice.invoiceNumber}:`, error);
             errorCount++;
@@ -862,10 +869,15 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           missingRecipientCount > 0 ? `${missingRecipientCount} ohne E-Mail-Adresse` : '',
           errorCount > 0 ? `${errorCount} mit Fehler` : '',
         ].filter(Boolean).join(', ');
+        const deliveryInfo = [
+          successCount > simulatedCount ? `${formatCountLabel(successCount - simulatedCount, 'Rechnung', 'Rechnungen')} per E-Mail versendet` : '',
+          simulatedCount > 0 ? `Demo-Versand für ${simulatedCount} ${simulatedCount === 1 ? 'Rechnung' : 'Rechnungen'} simuliert; ${simulatedCount === 1 ? 'es wurde keine E-Mail' : 'es wurden keine E-Mails'} verschickt` : '',
+        ].filter(Boolean).join('; ');
         const summary = successCount === 0
           ? `Keine der ${formatCountLabel(emailModal.bulkInvoices.length, 'Rechnung', 'Rechnungen')} konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.`
-          : `${formatCountLabel(successCount, 'Rechnung', 'Rechnungen')} erfolgreich versendet (${formatLabels.join(', ')})${attachmentInfo}.${failedCount > 0 ? ` ${failureInfo}.` : ''}`;
-        notify({ variant: successCount === 0 ? 'error' : failedCount > 0 || deliveryWarnings.length > 0 ? 'warning' : 'success', message: [summary, ...deliveryWarnings].join(' ') });
+          : `${deliveryInfo} (${formatLabels.join(', ')})${attachmentInfo}.${failedCount > 0 ? ` ${failureInfo}.` : ''}`;
+        const variant = successCount === 0 ? 'error' : failedCount > 0 || deliveryWarnings.length > 0 ? 'warning' : simulatedCount > 0 ? 'info' : 'success';
+        notify({ variant, message: [summary, ...deliveryWarnings].join(' ') });
         
         // Clear selection and close modal
         if (successCount > 0) setSelectedInvoiceIds([]);
@@ -957,7 +969,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       if (!result.success) {
         throw new Error(`Fehler beim E-Mail-Versand: ${result.message}`);
       }
-      trackTelemetry('invoice_sent_count', { count: 1 });
+      if (!result.simulated) trackTelemetry('invoice_sent_count', { count: 1 });
       
       const formatLabels = formats.map(f => {
         switch(f) {
@@ -971,7 +983,10 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
         : '';
       
-      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
+      const deliveryMessage = result.simulated
+        ? result.message || 'Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.'
+        : result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}`;
+      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
       
       // Automatically mark as sent if it was draft
       if (emailModal.invoice.status === 'draft') {

@@ -28,12 +28,18 @@ interface EuerAllowanceDialogProps {
 }
 
 type AllowanceMode = 'home_office' | 'manual';
+interface SavedDailyParameters {
+  dailyRate: number;
+  maxDays: number | '';
+  maxAmount: number | '';
+  source: string;
+}
 
 function dateFromKey(value: string): Date {
   return new Date(`${value}T12:00:00`);
 }
 
-function readSavedDailyParameters(notes: string | null | undefined, year: number) {
+function readSavedDailyParameters(notes: string | null | undefined, year: number): SavedDailyParameters | null {
   const line = notes?.split('\n').find(item => item.startsWith(`Berechnungswerte für ${year} (vom Nutzer erfasst): `));
   const match = line?.match(/^Berechnungswerte für (\d{4}) \(vom Nutzer erfasst\): ([\d.]+) EUR je Tag; Tagesgrenze=(keine|\d+); Betragsgrenze=(keine|[\d.]+) EUR; Quelle=(.*)$/);
   if (!match || Number(match[1]) !== year) return null;

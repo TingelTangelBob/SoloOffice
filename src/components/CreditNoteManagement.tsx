@@ -40,7 +40,7 @@ const CREDIT_NOTE_TABLE_LAYOUT = listTableLayout({
 });
 
 const creditNoteStatusLabel = (status: CreditNote['status']) =>
-  status === 'draft' ? 'Entwurf' : status === 'sent' ? 'Versendet' : status;
+  status === 'draft' ? 'Entwurf' : status === 'sent' ? 'Versendet' : status === 'paid' ? 'Altstatus prüfen' : status;
 
 export function CreditNoteManagement({ initialAction }: { initialAction?: string } = {}) {
   const { confirm } = useFeedback();
@@ -153,7 +153,7 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
     finally { setBusy(null); }
   };
 
-  return <div className="page-root space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Korrekturen und Rückerstattungen nachvollziehbar verwalten."><button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Gutschrift erstellen" title="Gutschrift erstellen"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neu</span></button></PageHeader>
+  return <div className="page-root space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Gutschriften zu Rechnungen erstellen und versenden."><button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Gutschrift erstellen" title="Gutschrift erstellen"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neu</span></button></PageHeader>
     {notice && <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}{error && <div className="flex justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><XCircle className="h-4 w-4" /></button></div>}
     {loading ? <TableSkeleton rows={5} columns={6} label="Gutschriften werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" /> : notes.length === 0 ? <EmptyState variant="invoices" title="Noch keine Gutschriften vorhanden." action={{ label: 'Gutschrift erstellen', onClick: openNew }} /> : (() => {
       const amount = (note: CreditNote) => `−${formatCurrency(total(note), locale, company?.numberFormat, company?.currency)}`;

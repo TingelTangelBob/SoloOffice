@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
 import { findAllJobs, findJobById } from '../queries/jobQueries.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
-import { expandRecurrence, normalizeRecurrence } from '../utils/jobRecurrenceRule.js';
+import { expandRecurrence, normalizeRecurrence, sameRecurrenceRule } from '../utils/jobRecurrenceRule.js';
 
 const router = express.Router();
 const JOB_STATUSES = new Set(['draft', 'in-progress', 'completed', 'invoiced']);
@@ -408,7 +408,8 @@ router.put('/:id', async (req, res) => {
     
     // Check if job exists and get current status
     const currentJobResult = await client.query(
-      'SELECT status, recurrence_id, customer_id, title, description FROM job_entries WHERE id = $1',
+      `SELECT j.status, j.recurrence_id, j.customer_id, j.title, j.description, jr.rule AS recurrence_rule
+       FROM job_entries j LEFT JOIN job_recurrences jr ON jr.id = j.recurrence_id WHERE j.id = $1`,
       [id]
     );
     if (currentJobResult.rows.length === 0) {
@@ -499,7 +500,7 @@ router.put('/:id', async (req, res) => {
     let recurrenceDetach = false;
     if (recurrenceInput !== undefined) {
       try {
-        if (currentJob.recurrence_id) {
+        if (currentJob.recurrence_id && !sameRecurrenceRule(recurrenceInput, currentJob.recurrence_rule)) {
           const hasProtectedSeriesUnit = existingSeriesResult.rows.some(({ status }) => ['completed', 'invoiced'].includes(status));
           if (hasProtectedSeriesUnit) {
             await client.query('ROLLBACK');
@@ -521,7 +522,7 @@ router.put('/:id', async (req, res) => {
               rows: existingSeriesResult.rows,
             };
           }
-        } else if (recurrenceInput) {
+        } else if (!currentJob.recurrence_id && recurrenceInput) {
           const recurrence = normalizeRecurrence(recurrenceInput);
           const occurrenceDates = expandRecurrence(recurrence);
           if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine gültige Einheit.');

@@ -197,7 +197,7 @@ export function ShareBarItem({
   const edgeMix = Math.min(100, Math.max(36, clamped * 1.75));
 
   return (
-    <li className="relative flex h-12 min-w-0 items-center gap-3 overflow-hidden px-4 lg:px-6">
+    <li className="relative flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden px-4 py-2 lg:px-6">
       <span
         aria-hidden="true"
         className="chart-bar-grow pointer-events-none absolute inset-y-0 left-0 border-r-2 border-solid"
@@ -209,9 +209,9 @@ export function ShareBarItem({
             'linear-gradient(to right, color-mix(in srgb, var(--dashboard-bar-color) 4%, transparent), color-mix(in srgb, var(--dashboard-bar-color) 30%, transparent))',
         }}
       />
-      <span className="relative z-10 min-w-0 flex-1 truncate text-sm text-gray-900">{label}</span>
+      <span className="relative z-10 min-w-0 flex-[1_0_5rem] truncate text-sm text-gray-900">{label}</span>
       <span
-        className="relative z-10 shrink-0 truncate text-right font-sans text-sm font-medium text-gray-900 tabular-nums"
+        className="relative z-10 ml-auto max-w-full shrink-0 truncate text-right font-sans text-sm font-medium text-gray-900 tabular-nums"
         style={{ width: VALUE_COLUMN }}
       >
         {value}

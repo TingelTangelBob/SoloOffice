@@ -32,7 +32,8 @@ router.get('/invoice-journal', async (req, res) => {
   try {
     const { startDate, endDate, customerId } = req.query;
 
-    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice'";
+    // Ein Entwurf wurde noch nicht fakturiert und gehört deshalb nicht ins Journal.
+    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice' AND i.status <> 'draft'";
     let params = [];
     let paramIndex = 1;
 
@@ -69,21 +70,16 @@ router.get('/invoice-journal', async (req, res) => {
         i.status,
         i.created_at,
         c.customer_number,
-        -- Teilzahlungen werden als EÜR-Buchung mit source_type
-        -- 'invoice_payment' erfasst. Ohne sie zählt eine Rechnung mit
-        -- Anzahlung als vollständig offen, obwohl das Geld eingegangen ist.
+        -- Nur aktive Rechnungszahlungen in der EÜR belegen einen Zahlungseingang.
         LEAST(
           i.total,
-          GREATEST(
-            COALESCE((
-              SELECT SUM(e.amount)
-              FROM euer_entries e
-              WHERE e.source_type = 'invoice_payment'
-                AND e.source_id = i.id
-                AND COALESCE(e.status, 'active') <> 'voided'
-            ), 0),
-            CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END
-          )
+          GREATEST(COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
         ) as paid_amount,
         CASE
           WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
@@ -182,7 +178,7 @@ router.post('/invoice-journal/pdf', async (req, res) => {
     const company = companyResult.rows[0] || {};
 
     // Get invoice journal data (reuse the logic from GET endpoint)
-    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice'";
+    let whereClause = "COALESCE(i.document_type, 'invoice') = 'invoice' AND i.status <> 'draft'";
     let params = [];
     let paramIndex = 1;
 
@@ -216,21 +212,16 @@ router.post('/invoice-journal/pdf', async (req, res) => {
         i.status,
         i.created_at,
         c.customer_number,
-        -- Teilzahlungen werden als EÜR-Buchung mit source_type
-        -- 'invoice_payment' erfasst. Ohne sie zählt eine Rechnung mit
-        -- Anzahlung als vollständig offen, obwohl das Geld eingegangen ist.
+        -- Nur aktive Rechnungszahlungen in der EÜR belegen einen Zahlungseingang.
         LEAST(
           i.total,
-          GREATEST(
-            COALESCE((
-              SELECT SUM(e.amount)
-              FROM euer_entries e
-              WHERE e.source_type = 'invoice_payment'
-                AND e.source_id = i.id
-                AND COALESCE(e.status, 'active') <> 'voided'
-            ), 0),
-            CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END
-          )
+          GREATEST(COALESCE((
+            SELECT SUM(e.amount)
+            FROM euer_entries e
+            WHERE e.source_type = 'invoice_payment'
+              AND e.source_id = i.id
+              AND COALESCE(e.status, 'active') <> 'voided'
+          ), 0), 0)
         ) as paid_amount,
         CASE
           WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
@@ -458,7 +449,7 @@ router.get('/statistics', async (req, res) => {
   try {
     const { year = new Date().getFullYear() } = req.query;
 
-    // Monthly revenue statistics
+    // Rechnungsvolumen nach Rechnungsdatum; Entwürfe wurden noch nicht fakturiert.
     const monthlyRevenueResult = await query(`
       SELECT 
         EXTRACT(MONTH FROM i.issue_date) as month,
@@ -474,13 +465,6 @@ router.get('/statistics', async (req, res) => {
         ) as subtotal_sum,
         SUM(i.tax_amount) as tax_sum,
         SUM(i.total) as total_sum,
-        SUM(LEAST(i.total, GREATEST(COALESCE((
-          SELECT SUM(e.amount)
-          FROM euer_entries e
-          WHERE e.source_type = 'invoice_payment'
-            AND e.source_id = i.id
-            AND COALESCE(e.status, 'active') <> 'voided'
-        ), 0), CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END))) as paid_sum,
         SUM(CASE WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
           SELECT SUM(e.amount)
           FROM euer_entries e
@@ -490,14 +474,41 @@ router.get('/statistics', async (req, res) => {
         ), 0), 0) ELSE 0 END) as overdue_sum
       FROM invoices i
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND i.status <> 'draft'
         AND EXTRACT(YEAR FROM i.issue_date) = $1
       GROUP BY EXTRACT(MONTH FROM i.issue_date)
       ORDER BY month
     `, [year]);
 
-    // Einnahmen ohne Rechnung (z. B. aus einer übernommenen Tabelle) zählen
-    // mit ihrem Buchungsdatum zum Umsatz. Zahlungen zu Rechnungen sind bereits
-    // über die Rechnung erfasst und werden hier nicht erneut gezählt.
+    // Nur eine aktive EÜR-Zahlungsbuchung liefert ein belastbares Zahlungsdatum.
+    const paymentIncomeResult = await query(`
+      SELECT EXTRACT(MONTH FROM e.entry_date) AS month, SUM(e.amount) AS amount
+      FROM euer_entries e
+      WHERE e.entry_type = 'income' AND e.source_type = 'invoice_payment'
+        AND e.amount > 0
+        AND COALESCE(e.status, 'active') <> 'voided'
+        AND EXTRACT(YEAR FROM e.entry_date) = $1
+      GROUP BY EXTRACT(MONTH FROM e.entry_date)
+      ORDER BY EXTRACT(MONTH FROM e.entry_date)
+    `, [year]);
+    const paymentIncomeByMonth = new Map(paymentIncomeResult.rows.map(row => [parseInt(row.month), parseFloat(row.amount || 0)]));
+
+    const missingPaymentResult = await query(`
+      SELECT COUNT(*) AS count
+      FROM invoices i
+      WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND i.status = 'paid'
+        AND EXTRACT(YEAR FROM i.issue_date) = $1
+        AND i.total - COALESCE((
+          SELECT SUM(e.amount) FROM euer_entries e
+          WHERE e.source_type = 'invoice_payment' AND e.source_id = i.id
+            AND e.entry_type = 'income' AND e.amount > 0
+            AND COALESCE(e.status, 'active') <> 'voided'
+        ), 0) > 0.005
+    `, [year]);
+    const incompletePaidInvoiceCount = parseInt(missingPaymentResult.rows[0]?.count || 0);
+
+    // Bareinnahmen werden nach dem tatsächlichen Buchungsjahr und -monat gruppiert.
     const otherIncomeResult = await query(`
       SELECT EXTRACT(MONTH FROM entry_date) AS month, COUNT(*) AS entry_count, SUM(amount) AS amount
       FROM euer_entries
@@ -516,6 +527,7 @@ router.get('/statistics', async (req, res) => {
                SUM(i.total) AS invoice_total, AVG(i.total) AS avg_invoice_amount
         FROM invoices i
         WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+          AND i.status <> 'draft'
           AND EXTRACT(YEAR FROM i.issue_date) = $1
         GROUP BY i.customer_id
       ), other_income AS (
@@ -526,15 +538,15 @@ router.get('/statistics', async (req, res) => {
         GROUP BY e.customer_id
       )
       SELECT
-        COALESCE(r.customer_id, x.customer_id) AS customer_id,
+        r.customer_id AS customer_id,
         COALESCE(r.customer_name, c.name) AS customer_name,
         COALESCE(r.invoice_count, 0) AS invoice_count,
-        COALESCE(r.invoice_total, 0) + COALESCE(x.amount, 0) AS total_revenue,
+        COALESCE(r.invoice_total, 0) AS total_revenue,
         COALESCE(r.avg_invoice_amount, 0) AS avg_invoice_amount,
         COALESCE(x.amount, 0) AS other_income
       FROM invoice_revenue r
-      FULL OUTER JOIN other_income x ON x.customer_id = r.customer_id
-      LEFT JOIN customers c ON c.id = COALESCE(r.customer_id, x.customer_id)
+      LEFT JOIN other_income x ON x.customer_id = r.customer_id
+      LEFT JOIN customers c ON c.id = r.customer_id
       ORDER BY total_revenue DESC
       LIMIT 10
     `, [year]);
@@ -547,6 +559,7 @@ router.get('/statistics', async (req, res) => {
         SUM(total) as total_amount
       FROM invoices
       WHERE COALESCE(document_type, 'invoice') = 'invoice'
+        AND status <> 'draft'
         AND EXTRACT(YEAR FROM issue_date) = $1
       GROUP BY status
     `, [year]);
@@ -566,13 +579,6 @@ router.get('/statistics', async (req, res) => {
         ) as total_subtotal,
         SUM(i.tax_amount) as total_tax,
         SUM(i.total) as total_amount,
-        SUM(LEAST(i.total, GREATEST(COALESCE((
-          SELECT SUM(e.amount)
-          FROM euer_entries e
-          WHERE e.source_type = 'invoice_payment'
-            AND e.source_id = i.id
-            AND COALESCE(e.status, 'active') <> 'voided'
-        ), 0), CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END))) as paid_amount,
         SUM(CASE WHEN i.status = 'overdue' THEN GREATEST(i.total - COALESCE((
           SELECT SUM(e.amount)
           FROM euer_entries e
@@ -583,13 +589,17 @@ router.get('/statistics', async (req, res) => {
         AVG(i.total) as avg_invoice_amount
       FROM invoices i
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
+        AND i.status <> 'draft'
         AND EXTRACT(YEAR FROM i.issue_date) = $1
     `, [year]);
+
+    const paymentIncomeForYear = [...paymentIncomeByMonth.values()].reduce((sum, amount) => sum + amount, 0);
 
     res.json({
       year: parseInt(year),
       monthlyRevenue: [...new Set([
         ...monthlyRevenueResult.rows.map(row => parseInt(row.month)),
+        ...paymentIncomeByMonth.keys(),
         ...otherIncomeByMonth.keys(),
       ])].sort((left, right) => left - right).map(month => {
         const row = monthlyRevenueResult.rows.find(item => parseInt(item.month) === month);
@@ -599,7 +609,7 @@ router.get('/statistics', async (req, res) => {
           subtotalSum: parseFloat(row?.subtotal_sum || 0),
           taxSum: parseFloat(row?.tax_sum || 0),
           totalSum: parseFloat(row?.total_sum || 0),
-          paidSum: parseFloat(row?.paid_sum || 0),
+          paidSum: paymentIncomeByMonth.get(month) || 0,
           overdueSum: parseFloat(row?.overdue_sum || 0),
           otherIncomeSum: otherIncomeByMonth.get(month)?.amount || 0,
           otherIncomeCount: otherIncomeByMonth.get(month)?.count || 0,
@@ -623,11 +633,12 @@ router.get('/statistics', async (req, res) => {
         totalSubtotal: parseFloat(yearOverviewResult.rows[0].total_subtotal || 0),
         totalTax: parseFloat(yearOverviewResult.rows[0].total_tax || 0),
         totalAmount: parseFloat(yearOverviewResult.rows[0].total_amount || 0),
-        paidAmount: parseFloat(yearOverviewResult.rows[0].paid_amount || 0),
+        paidAmount: paymentIncomeForYear,
         overdueAmount: parseFloat(yearOverviewResult.rows[0].overdue_amount || 0),
         avgInvoiceAmount: parseFloat(yearOverviewResult.rows[0].avg_invoice_amount || 0),
         otherIncome: [...otherIncomeByMonth.values()].reduce((sum, item) => sum + item.amount, 0),
-        otherIncomeCount: [...otherIncomeByMonth.values()].reduce((sum, item) => sum + item.count, 0)
+        otherIncomeCount: [...otherIncomeByMonth.values()].reduce((sum, item) => sum + item.count, 0),
+        incompletePaidInvoiceCount,
       } : null
     });
   } catch (error) {

@@ -22,6 +22,7 @@ import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExpor
 import { SortableTableHeader } from './SortableTableHeader';
 import { sortByTableState, type SortState } from '../utils/tableSort';
 import { EmptyState } from './EmptyState';
+import { getCustomerListLayout } from '../utils/customerListLayout';
 
 const formatCustomerAddress = (customer: Customer) => (
   [
@@ -55,7 +56,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
   const currencySymbol = getCurrencySymbol(company.locale, company.numberFormat, company.currency);
   const { query: searchTerm } = usePageSearch({ placeholder: terminology.entity.searchPlaceholder });
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
-  const showAddressColumn = tableWidth >= 920;
+  const { showTable, showAddressColumn } = getCustomerListLayout(tableWidth);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [additionalEmails, setAdditionalEmails] = useState<CustomerEmail[]>([]);
@@ -955,7 +956,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
       )}
 
       {/* Customer List */}
-      <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+      <div ref={tableRef} className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
           <p className="text-sm text-gray-500">
             {filteredCustomers.length} {filteredCustomers.length === 1 ? terminology.entity.singular : terminology.entity.plural}
@@ -967,7 +968,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           </label>
         </div>
         {/* Desktop Table View */}
-        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+        <div className={`${showTable ? 'block' : 'hidden'} w-full min-w-0 max-w-full overflow-x-auto`}>
           <table className={`w-full ${showAddressColumn ? 'min-w-[980px]' : 'min-w-[780px]'}`}>
             <thead className="bg-gray-50">
               <tr>
@@ -985,19 +986,19 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
               {filteredCustomers.map((customer) => (
                 <tr key={customer.id} className="transition-colors hover:bg-gray-50">
                   <td className="max-w-[260px] px-5 py-3">
-                    <button type="button" onClick={() => openCustomerPage(customer)} className="group flex min-w-0 items-start gap-2 text-left">
+                    <button type="button" onClick={() => openCustomerPage(customer)} aria-label={`Kundenseite öffnen: ${customer.name}`} className="group flex min-w-0 items-start gap-2 text-left">
                       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary-custom/10 text-primary-custom">
                         <CustomerTypeIcon customerType={customer.customerType} className="h-4 w-4" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
+                        <span title={customer.name} className="block truncate text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
                         <span className="mt-0.5 block truncate text-xs text-gray-500">{customerTypeLabel(customer.customerType)}{customer.isActive === false ? ' · Archiviert' : ''}</span>
                         {(customer.taxId || customer.leitwegId) && <span className="mt-0.5 block truncate text-xs text-gray-500">{customer.taxId ? `USt-IdNr. ${customer.taxId}` : `Leitweg-ID ${customer.leitwegId}`}</span>}
                       </span>
                     </button>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 tabular-nums">{formatCustomerNumber(customer.customerNumber)}</td>
-                  <td className="max-w-[220px] px-4 py-3 text-sm text-gray-700"><span className="block truncate">{customer.email || '–'}</span></td>
+                  <td className="max-w-[220px] px-4 py-3 text-sm text-gray-700"><span title={customer.email || undefined} className="block truncate">{customer.email || '–'}</span></td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{customer.phone || '–'}</td>
                   {showAddressColumn && <td className="max-w-[260px] px-4 py-3 text-sm text-gray-700"><span className="block truncate">{formatCustomerAddress(customer) || '–'}</span></td>}
                   <td className="sticky right-0 z-10 bg-white px-2 py-3 text-sm font-medium">
@@ -1010,14 +1011,14 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
         </div>
 
         {/* Mobile Card View */}
-        <div className="tablet:hidden">
+        <div className={showTable ? 'hidden' : 'block'}>
           {filteredCustomers.map((customer) => (
             <div key={customer.id} className="border-b border-gray-200 p-4 last:border-b-0">
               <div className="mb-3 flex items-start justify-between gap-3">
-                <button type="button" onClick={() => openCustomerPage(customer)} className="group flex min-w-0 items-start gap-2 text-left">
+                <button type="button" onClick={() => openCustomerPage(customer)} aria-label={`Kundenseite öffnen: ${customer.name}`} className="group flex min-w-0 items-start gap-2 text-left">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-custom/10 text-primary-custom"><CustomerTypeIcon customerType={customer.customerType} /></span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
+                    <span title={customer.name} className="block break-words text-sm font-medium text-gray-900 group-hover:text-primary-custom">{customer.name}</span>
                     <span className="block truncate text-xs text-gray-500">{customerTypeLabel(customer.customerType)} · {terminology.entity.numberShortLabel} {customer.customerNumber}</span>
                     {customer.isActive === false && <span className="block text-xs text-amber-600">Archiviert</span>}
                   </span>
@@ -1025,7 +1026,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 {renderCustomerActions(customer)}
               </div>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
-                <div className="flex min-w-0 items-center gap-2 text-gray-700"><Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="truncate">{customer.email || '–'}</span></div>
+                <div className="flex min-w-0 items-start gap-2 text-gray-700"><Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span title={customer.email || undefined} className="min-w-0 break-all">{customer.email || '–'}</span></div>
                 <div className="flex min-w-0 items-center gap-2 text-gray-700"><Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="truncate">{customer.phone || '–'}</span></div>
                 <div className="flex min-w-0 items-start gap-2 text-gray-600 sm:col-span-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="break-words">{formatCustomerAddress(customer) || '–'}</span></div>
               </div>
@@ -1098,10 +1099,11 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 </fieldset>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                <label htmlFor="customer-name" className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
                   {formData.customerType === 'organization' ? 'Name der Organisation' : 'Name'} *
                 </label>
                 <input
+                  id="customer-name"
                   type="text"
                   required
                   value={formData.name}
@@ -1206,10 +1208,11 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 </label>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
+                <label htmlFor="customer-notes" className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
                   Notizen
                 </label>
                 <textarea
+                  id="customer-notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   maxLength={5000}

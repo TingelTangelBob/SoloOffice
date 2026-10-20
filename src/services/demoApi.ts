@@ -1,3 +1,4 @@
+import { sameRecurrenceRule } from '../../backend/utils/jobRecurrenceRule.js';
 import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile, WorkspaceResetOptions } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
@@ -17,6 +18,7 @@ import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../back
 import { computeVat } from '../../backend/shared/vat/index.js';
 import { normalizeEuerVatFields } from '../../backend/utils/euerVatValidation.js';
 import { resolveTaxParams } from '../../backend/shared/taxParams/index.js';
+import { validateCompanyFormats, validateCompanyRequiredFields } from '../../backend/shared/companyValidation.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 class DemoApiError extends Error {
@@ -1050,6 +1052,12 @@ function protectDemoInvoice(current: DemoRecord, data: DemoRecord) {
   }
 }
 
+function protectDemoCreditNoteStatus(current: DemoRecord, data: DemoRecord) {
+  if (current.documentType !== 'credit_note' || data.status === undefined) return;
+  if (data.status === current.status || (current.status === 'draft' && data.status === 'sent')) return;
+  throw new Error('Gutschriften lassen sich hier nur als Entwurf oder versendet führen. Rückzahlung und Verrechnung sind noch nicht verfügbar.');
+}
+
 function captureDemoInvoice(state: DemoState, invoice: DemoRecord) {
   const customer = state.customers.find(row => row.id === invoice.customerId);
   if (!customer) throw new Error('Kunde nicht gefunden.');
@@ -2049,14 +2057,16 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (method === 'PUT' && id) {
       assertDemoDate(id, 'Datum');
-      if (id > todayLocal(state.company.timeZone)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
-      if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
+      const timeZone = typeof state.company.timeZone === 'string' ? state.company.timeZone : undefined;
+      if (id > todayLocal(timeZone)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
+      const dayType = data.dayType;
+      if (dayType !== 'home_majority' && dayType !== 'home_no_other_workspace') throw new Error('Ungültige Tagesart.');
       if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.');
       const existing = days.find(day => day.date === id);
       const record = {
         id,
         date: id,
-        dayType: data.dayType,
+        dayType,
         reviewedAt: isoDate(),
         createdAt: existing?.createdAt || isoDate(),
         updatedAt: isoDate(),
@@ -2812,16 +2822,19 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const date = dateOnly(invoice.issueDate);
       return (!start || date >= start) && (!end || date <= end);
     };
-    const reportableInvoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note');
-    /**
-     * Teilzahlungen liegen als EÜR-Buchung mit sourceType 'invoice_payment'.
-     * Ohne sie gilt eine Rechnung mit Anzahlung als vollständig offen.
-     * Der Status 'paid' bleibt die Obergrenze, damit ältere Rechnungen ohne
-     * erfasste Zahlung weiterhin als bezahlt zählen.
-     */
-    const paidAmountOf = (invoice: DemoRecord) => demoPaidAmount(state, invoice);
+    // Entwürfe wurden nicht fakturiert und gehören weder ins Journal noch in
+    // Kennzahlen zum Rechnungsvolumen.
+    const reportableInvoices = state.invoices.filter(invoice => invoice.documentType !== 'credit_note' && invoice.status !== 'draft');
+    const activeInvoicePayments = state.euerEntries.filter(entry => entry.entryType === 'income'
+      && entry.sourceType === 'invoice_payment' && entry.status !== 'voided'
+      && Number(entry.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(String(entry.entryDate).slice(0, 10)));
+    const paidAmountOf = (invoice: DemoRecord) => Math.min(Number(invoice.total || 0), Math.max(0,
+      activeInvoicePayments.filter(entry => String(entry.sourceId) === String(invoice.id))
+        .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)));
     const outstandingAmountOf = (invoice: DemoRecord) =>
       invoice.status === 'paid' ? 0 : Math.max(Number(invoice.total || 0) - paidAmountOf(invoice), 0);
+    const paymentReceipts = activeInvoicePayments.map(entry => ({ date: String(entry.entryDate || ''),
+      year: Number(String(entry.entryDate).slice(0, 4)), amount: Number(entry.amount || 0) }));
     if (path.includes('invoice-journal')) {
       const startDate = queryParams.get('startDate') || undefined;
       const endDate = queryParams.get('endDate') || undefined;
@@ -2860,6 +2873,11 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     const selectedYear = Number(queryParams.get('year') || new Date().getFullYear());
     const yearInvoices = reportableInvoices.filter(invoice => new Date(String(invoice.issueDate)).getFullYear() === selectedYear);
+    const paymentReceiptsByMonth = new Map<number, number>();
+    paymentReceipts.filter(receipt => receipt.year === selectedYear).forEach(receipt => {
+      const month = Number(receipt.date.slice(5, 7));
+      paymentReceiptsByMonth.set(month, (paymentReceiptsByMonth.get(month) || 0) + receipt.amount);
+    });
     const monthlyRevenue = Array.from({ length: 12 }, (_, index) => {
       const monthInvoices = yearInvoices.filter(invoice => new Date(String(invoice.issueDate)).getMonth() === index);
       return {
@@ -2868,7 +2886,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         subtotalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0),
         taxSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0),
         totalSum: monthInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
-        paidSum: monthInvoices.reduce((sum, invoice) => sum + paidAmountOf(invoice), 0),
+        paidSum: paymentReceiptsByMonth.get(index + 1) || 0,
         overdueSum: monthInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + outstandingAmountOf(invoice), 0),
       };
     });
@@ -2878,51 +2896,38 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       customerInvoices.push(invoice);
       customerTotals.set(String(invoice.customerId), customerInvoices);
     });
+    const otherIncome = state.euerEntries.filter(entry => entry.entryType === 'income'
+      && (entry.sourceType || 'manual') === 'manual'
+      && entry.status !== 'voided'
+      && Number(String(entry.entryDate).slice(0, 4)) === selectedYear);
+    const otherByCustomer = new Map<string, number>();
+    otherIncome.filter(entry => entry.customerId).forEach(entry => {
+      otherByCustomer.set(String(entry.customerId), (otherByCustomer.get(String(entry.customerId)) || 0) + Number(entry.amount || 0));
+    });
     const topCustomers = Array.from(customerTotals.entries()).map(([customerId, customerInvoices]) => ({
       customerId,
       customerName: customerInvoices[0].customerName,
       invoiceCount: customerInvoices.length,
       totalRevenue: customerInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
       avgInvoiceAmount: customerInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) / customerInvoices.length,
+      otherIncome: otherByCustomer.get(customerId) || 0,
     })).sort((a, b) => b.totalRevenue - a.totalRevenue);
     const statuses = ['draft', 'sent', 'paid', 'overdue'] as const;
     const statusDistribution = statuses.map(status => {
       const statusInvoices = yearInvoices.filter(invoice => invoice.status === status);
       return { status, count: statusInvoices.length, totalAmount: statusInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) };
     });
-    // Einnahmen ohne Rechnung zählen wie auf dem Server mit ihrem Buchungsdatum.
-    const otherIncome = state.euerEntries.filter(entry => entry.entryType === 'income'
-      && (entry.sourceType || 'manual') === 'manual'
-      && entry.status !== 'voided'
-      && String(entry.entryDate).startsWith(`${selectedYear}-`));
+    // EÜR-Jahr wie auf dem Server; der Monatsbucket bleibt der Zahlungsmonat.
     monthlyRevenue.forEach(month => {
       const monthEntries = otherIncome.filter(entry => Number(String(entry.entryDate).slice(5, 7)) === month.month);
       Object.assign(month, { otherIncomeSum: monthEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0), otherIncomeCount: monthEntries.length });
-    });
-    const otherByCustomer = new Map<string, number>();
-    otherIncome.filter(entry => entry.customerId).forEach(entry => {
-      otherByCustomer.set(String(entry.customerId), (otherByCustomer.get(String(entry.customerId)) || 0) + Number(entry.amount || 0));
-    });
-    otherByCustomer.forEach((amount, customerId) => {
-      const existing = topCustomers.find(customer => customer.customerId === customerId);
-      if (existing) {
-        existing.totalRevenue += amount;
-        Object.assign(existing, { otherIncome: amount });
-      } else {
-        topCustomers.push({
-          customerId,
-          customerName: String(state.customers.find(customer => customer.id === customerId)?.name || ''),
-          invoiceCount: 0,
-          totalRevenue: amount,
-          avgInvoiceAmount: 0,
-          otherIncome: amount,
-        } as (typeof topCustomers)[number]);
-      }
     });
     topCustomers.sort((a, b) => b.totalRevenue - a.totalRevenue);
     const totalSubtotal = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0);
     const totalTax = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0);
     const totalAmount = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+    const incompletePaidInvoiceCount = yearInvoices.filter(invoice => invoice.status === 'paid'
+      && Number(invoice.total || 0) - paidAmountOf(invoice) > 0.005).length;
     return {
       year: selectedYear,
       monthlyRevenue,
@@ -2933,11 +2938,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         totalSubtotal,
         totalTax,
         totalAmount,
-        paidAmount: yearInvoices.reduce((sum, invoice) => sum + paidAmountOf(invoice), 0),
+        paidAmount: [...paymentReceiptsByMonth.values()].reduce((sum, amount) => sum + amount, 0),
         overdueAmount: yearInvoices.filter(invoice => invoice.status === 'overdue').reduce((sum, invoice) => sum + outstandingAmountOf(invoice), 0),
         avgInvoiceAmount: yearInvoices.length ? totalAmount / yearInvoices.length : 0,
         otherIncome: otherIncome.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
         otherIncomeCount: otherIncome.length,
+        incompletePaidInvoiceCount,
       },
     } as T;
   }
@@ -2945,8 +2951,85 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   if (resource === 'support') return demoSupportRequest<T>(parts, method, data);
   if (resource === 'notification-settings') return demoNotificationRequest<T>(state, parts, method, data);
 
+  // Versand in der Demo bleibt vollständig lokal: keine SMTP-/Provider-Anfrage,
+  // aber derselbe Erfolgsvertrag wie im Backend für Einzel- und Sammelversand.
+  const simulatedEmailDelivery = (message: string) => ({
+    success: true,
+    message,
+    messageId: `<demo-${generateUUID()}@solooffice.local>`,
+    simulated: true,
+    ...(state.company.email ? { copyRecipient: String(state.company.email), copyAccepted: true } : {}),
+  });
+
+  if (resource === 'email' && method === 'POST' && parts.length === 2) {
+    if (id === 'send-invoice') {
+      if (!data.customerEmail || !data.invoicePDF || !data.invoiceData) {
+        throw new DemoApiError('Fehlende Parameter: customerEmail, invoicePDF und invoiceData sind erforderlich', 400, 'VALIDATION_ERROR');
+      }
+      return simulatedEmailDelivery('Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.') as unknown as T;
+    }
+    if (id === 'send-invoice-multi') {
+      if (!Array.isArray(data.customerEmails) || data.customerEmails.length === 0 || !Array.isArray(data.invoiceFormats) || !data.invoiceData) {
+        throw new DemoApiError('Fehlende Parameter: customerEmails (Array), invoiceFormats und invoiceData sind erforderlich', 400, 'VALIDATION_ERROR');
+      }
+      const results = data.customerEmails.map(email => ({
+        email,
+        ...simulatedEmailDelivery('Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.'),
+      }));
+      return {
+        success: true,
+        message: `Demo: Rechnungsversand für ${results.length} Empfänger simuliert. Es wurde keine E-Mail verschickt.`,
+        simulated: true,
+        results,
+        successCount: results.length,
+        failureCount: 0,
+      } as unknown as T;
+    }
+    if (id === 'send-reminder') {
+      const validRecipients = Array.isArray(data.customerEmails)
+        && data.customerEmails.length > 0
+        && data.customerEmails.every(email => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+      if (!data.invoiceId || !validRecipients || !data.reminderPDF || !data.invoiceData || ![1, 2, 3].includes(Number(data.stage))) {
+        throw new DemoApiError('Fehlende oder ungültige Parameter für den Mahnungsversand', 400, 'VALIDATION_ERROR');
+      }
+      const invoice = state.invoices.find(item => item.id === String(data.invoiceId) && item.documentType !== 'credit_note');
+      if (!invoice) throw new DemoApiError('Rechnung nicht gefunden', 404, 'NOT_FOUND');
+      if (Number(withDemoPaymentState(state, invoice).outstandingAmount || 0) < 0.005) {
+        throw new DemoApiError('Die Rechnung ist bereits vollständig bezahlt.', 409, 'INVOICE_PAID');
+      }
+      return simulatedEmailDelivery('Demo: Mahnungsversand simuliert. Es wurde keine E-Mail verschickt.') as unknown as T;
+    }
+  }
+
+  if (resource === 'quotes' && parts[2] === 'send-email' && parts.length === 3 && id && method === 'POST') {
+    const quote = state.quotes.find(item => item.id === id);
+    if (!quote) throw new DemoApiError('Angebot nicht gefunden', 404, 'NOT_FOUND');
+    if (!state.customers.some(customer => customer.id === quote.customerId)) {
+      throw new DemoApiError('Kunde nicht gefunden', 404, 'NOT_FOUND');
+    }
+    if (!Array.isArray(data.customerEmails) || !data.customerEmails.some(email => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      throw new DemoApiError('Keine gültigen E-Mail-Adressen angegeben', 400, 'VALIDATION_ERROR');
+    }
+    if (!data.pdfBuffer) {
+      throw new DemoApiError('PDF-Daten fehlen. Das PDF muss vom Frontend generiert werden.', 400, 'VALIDATION_ERROR');
+    }
+    if (quote.status === 'draft') {
+      quote.status = 'sent';
+      quote.updatedAt = isoDate();
+      saveState(state);
+    }
+    return simulatedEmailDelivery('Demo: Angebotsversand simuliert. Es wurde keine E-Mail verschickt.') as unknown as T;
+  }
+
   if (resource === 'company') {
     if (method === 'PUT') {
+      const requiredErrors = validateCompanyRequiredFields(data as Parameters<typeof validateCompanyRequiredFields>[0]);
+      if (Object.keys(requiredErrors).length) throw new Error(Object.values(requiredErrors).join(' '));
+      const formatErrors = validateCompanyFormats(
+        data as Parameters<typeof validateCompanyFormats>[0],
+        { country: state.company.country, postalCode: state.company.postalCode },
+      );
+      if (Object.keys(formatErrors).length) throw new Error(Object.values(formatErrors).join(' '));
       const invoicePatternError = data.invoiceNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.invoiceNumberPattern));
       const creditNotePatternError = data.creditNoteNumberPattern === undefined ? null : validateInvoiceNumberPattern(String(data.creditNoteNumberPattern));
       if (invoicePatternError || creditNotePatternError) throw new Error(invoicePatternError || creditNotePatternError || 'Ungültiges Nummernmuster.');
@@ -2995,6 +3078,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00`).getTime() + 30 * 86400000)),
       ...totals,
       status: 'draft',
+      attachments: Array.isArray(quote.attachments)
+        ? quote.attachments.map(attachment => ({ ...attachment, id: generateUUID() }))
+        : [],
       notes: quote.notes ? `Erstellt aus Angebot ${quote.quoteNumber}\n\n${quote.notes}` : `Erstellt aus Angebot ${quote.quoteNumber}`,
       sourceQuoteId: quote.id,
       sourceQuoteNumber: quote.quoteNumber,
@@ -3173,8 +3259,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
     if (method === 'GET' && !id) {
       const year = queryParams.get('year');
-      const activeEntries = entries.filter(entry => entry.status !== 'voided');
-      return (year ? activeEntries.filter(entry => String(entry.entryDate).startsWith(`${year}-`)) : activeEntries) as unknown as T;
+      if (year && (!Number.isInteger(Number(year)) || Number(year) < 2000 || Number(year) > 2200)) throw new Error('Ungültiges Jahr.');
+      const includeVoided = queryParams.get('includeVoided') === 'true';
+      const selectedEntries = entries.filter(entry => includeVoided || entry.status !== 'voided');
+      return selectedEntries.filter(entry => !year || Number(entry.euerYear ?? String(entry.entryDate).slice(0, 4)) === Number(year))
+        .sort((left, right) => String(right.entryDate).localeCompare(String(left.entryDate))
+          || String(right.createdAt || '').localeCompare(String(left.createdAt || ''))) as unknown as T;
     }
     if (method === 'POST' && !id) {
       const amount = Number(data.amount);
@@ -3474,13 +3564,15 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         order: Number(item.order || 0),
       }));
       const totals = calculateItems(invoiceItems, 'invoice', recurring);
+      const dueDate = new Date(`${runDate}T00:00:00Z`);
+      dueDate.setUTCDate(dueDate.getUTCDate() + Number(recurring.dueDays ?? 30));
       const invoice: DemoRecord = {
         id: generateUUID(),
         invoiceNumber: nextDemoInvoiceNumber(state, runDate),
         customerId: recurring.customerId,
         customerName: recurring.customerName,
         issueDate: runDate,
-        dueDate: dateOnly(new Date(new Date(`${runDate}T00:00:00`).getTime() + Number(recurring.dueDays || 30) * 86400000)),
+        dueDate: dueDate.toISOString().slice(0, 10),
         ...totals,
         status: 'draft',
         notes: recurring.notes || '',
@@ -3574,6 +3666,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (method === 'POST' && !id) {
       const customer = state.customers.find(item => item.id === String(data.customerId));
       if (!customer) throw new Error('Kunde nicht gefunden');
+      if (!['draft', 'sent'].includes(String(data.status || 'draft'))) {
+        throw new Error('Gutschriften lassen sich hier nur als Entwurf oder versendet führen. Rückzahlung und Verrechnung sind noch nicht verfügbar.');
+      }
       if (!String(data.creditNoteReason || '').trim()) throw new Error('Ein Grund ist erforderlich');
       if (!Array.isArray(data.items) || data.items.length === 0 || data.items.some(item => Number(item.quantity) <= 0 || Number(item.unitPrice) <= 0 || Number(item.taxRate) < 0)) throw new Error('Mindestens eine gültige Position ist erforderlich');
       if (data.referenceInvoiceId) {
@@ -3613,6 +3708,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (method === 'PUT') {
         const current = state.invoices[index];
         protectDemoInvoice(current, data);
+        protectDemoCreditNoteStatus(current, data);
         const contentUpdate = ['customerId', 'referenceInvoiceId', 'creditNoteReason', 'issueDate', 'dueDate', 'items'].some(field => data[field] !== undefined);
         if (contentUpdate && current.status !== 'draft') throw new Error('Nur Entwürfe können bearbeitet werden');
         const customer = data.customerId ? state.customers.find(item => item.id === String(data.customerId)) : undefined;
@@ -3774,8 +3870,11 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         }
         const recurrence = data.recurrence as JobRecurrenceRule | null | undefined;
         const currentRecurrence = current.recurrence as JobRecurrence | undefined;
+        if (recurrence !== undefined && currentRecurrence?.id && sameRecurrenceRule(recurrence, currentRecurrence)) {
+          data.recurrence = currentRecurrence;
+        }
 
-        if (recurrence !== undefined && currentRecurrence?.id) {
+        if (recurrence !== undefined && currentRecurrence?.id && !sameRecurrenceRule(recurrence, currentRecurrence)) {
           const seriesId = currentRecurrence.id;
           const series = state.jobs
             .filter((record) => (record.recurrence as JobRecurrence | undefined)?.id === seriesId)
@@ -3870,6 +3969,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (key === 'invoices') {
         if (index < 0) throw new Error('Rechnung nicht gefunden.');
         protectDemoInvoice(items[index], data);
+        protectDemoCreditNoteStatus(items[index], data);
       }
       const moneyUpdate = (key === 'invoices' || key === 'quotes') && index >= 0
         ? demoMoneyUpdate(items[index], data, key === 'quotes' ? 'quote' : 'invoice') : {};
@@ -3898,7 +3998,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (method === 'DELETE') {
       if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
-      if (key === 'invoices' && items[index]?.status !== 'draft') throw new Error('Nur Entwürfe können gelöscht werden.');
+      if (key === 'invoices' && (
+        items[index]?.status !== 'draft'
+        || items[index]?.recurringInvoiceId
+        || items[index]?.sourceQuoteId
+        || state.quotes.some(quote => quote.convertedToInvoiceId === id)
+      )) throw new Error('Nur unabhängige Entwürfe ohne Dokumentquelle können gelöscht werden.');
       if (key === 'invoices' && Array.isArray(items[index]?.sourceJobIds)) {
         state.jobs.forEach(job => {
           if (((items[index]?.sourceJobIds as string[]) || []).includes(job.id) && job.status === 'invoiced') {

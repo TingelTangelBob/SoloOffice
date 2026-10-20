@@ -5,6 +5,7 @@
  * Tabellenblätter, gemeinsame Zeichenketten und Zahlenformate. Formeln liefern
  * ihren zuletzt berechneten Wert, Makros und externe Verknüpfungen werden nie
  * ausgeführt. Datumszellen erscheinen als JJJJ-MM-TT, Uhrzeiten als HH:MM,
+ * Zahlen mit reinen Nullmasken (z. B. PLZ 00000) als aufgefüllter Text,
  * übrige Zahlen als JavaScript-Zahl – unabhängig von der Ländereinstellung
  * des Programms, mit dem die Datei gespeichert wurde.
  */
@@ -130,6 +131,11 @@ function readSharedStrings(xml: string | null): string[] {
 
 type NumberKind = 'date' | 'time' | 'number';
 
+interface NumberStyle {
+  kind: NumberKind;
+  minimumIntegerDigits?: number;
+}
+
 const BUILT_IN_DATE_FORMATS = new Set([14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 34, 35, 36, 50, 51, 52, 53, 54, 57, 58]);
 const BUILT_IN_TIME_FORMATS = new Set([18, 19, 20, 21, 32, 33, 45, 46, 47, 55, 56]);
 
@@ -144,28 +150,33 @@ function classifyFormatCode(code: string): NumberKind {
   return 'number';
 }
 
-function readStyleKinds(xml: string | null): NumberKind[] {
+function readNumberStyles(xml: string | null): NumberStyle[] {
   if (!xml) return [];
-  const customFormats = new Map<number, NumberKind>();
+  const customFormats = new Map<number, NumberStyle>();
   for (const match of xml.matchAll(/<numFmt\b([^>]*)\/?>/g)) {
     const id = Number(attribute(match[1], 'numFmtId'));
     const code = attribute(match[1], 'formatCode') || '';
-    customFormats.set(id, classifyFormatCode(code));
+    customFormats.set(id, {
+      kind: classifyFormatCode(code),
+      minimumIntegerDigits: /^0{2,}$/.test(code) ? code.length : undefined,
+    });
   }
   const cellXfs = xml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/);
   if (!cellXfs) return [];
   return [...cellXfs[1].matchAll(/<xf\b([^>]*?)(?:\/>|>)/g)].map(match => {
     const id = Number(attribute(match[1], 'numFmtId') || 0);
-    if (customFormats.has(id)) return customFormats.get(id) as NumberKind;
-    if (BUILT_IN_DATE_FORMATS.has(id)) return 'date';
-    if (BUILT_IN_TIME_FORMATS.has(id)) return 'time';
-    return 'number';
+    if (customFormats.has(id)) return customFormats.get(id) as NumberStyle;
+    if (BUILT_IN_DATE_FORMATS.has(id)) return { kind: 'date' };
+    if (BUILT_IN_TIME_FORMATS.has(id)) return { kind: 'time' };
+    return { kind: 'number' };
   });
 }
 
-function serialToDate(serial: number): string | null {
-  if (!Number.isFinite(serial) || serial < 1 || serial > 2958465) return null;
-  const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
+function serialToDate(serial: number, date1904: boolean): string | null {
+  const days = Math.floor(serial);
+  if (!Number.isFinite(serial) || days < (date1904 ? 0 : 1) || days > (date1904 ? 2957003 : 2958465)) return null;
+  const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
+  const date = new Date(epoch + days * 86400000);
   return date.toISOString().slice(0, 10);
 }
 
@@ -182,7 +193,7 @@ function columnIndex(reference: string | null, fallback: number): number {
   return index - 1;
 }
 
-function readSheetRows(xml: string, sharedStrings: string[], styles: NumberKind[]): XlsxRow[] {
+function readSheetRows(xml: string, sharedStrings: string[], styles: NumberStyle[], date1904: boolean): XlsxRow[] {
   const rows: XlsxRow[] = [];
   const sheetData = xml.match(/<sheetData\b[^>]*>([\s\S]*?)<\/sheetData>/)?.[1] || '';
   let fallbackRow = 0;
@@ -207,11 +218,14 @@ function readSheetRows(xml: string, sharedStrings: string[], styles: NumberKind[
       else if (type === 'e') value = null;
       else if (rawValue !== undefined && rawValue !== '') {
         const number = Number(rawValue);
-        const kind = styles[Number(attribute(attrs, 's') || 0)] || 'number';
+        const style = styles[Number(attribute(attrs, 's') || 0)] || { kind: 'number' };
+        const { kind } = style;
         if (!Number.isFinite(number)) value = decodeXml(rawValue);
-        else if (kind === 'date' && number >= 1) value = serialToDate(number) ?? number;
+        else if (kind === 'date' && number >= (date1904 ? 0 : 1)) value = serialToDate(number, date1904) ?? number;
         else if ((kind === 'time' || kind === 'date') && number < 1) value = serialToTime(number);
-        else value = number;
+        else if (style.minimumIntegerDigits && Number.isSafeInteger(number)) {
+          value = `${number < 0 ? '-' : ''}${String(Math.abs(number)).padStart(style.minimumIntegerDigits, '0')}`;
+        } else value = number;
       }
       if (typeof value === 'string') value = value.trim();
       cells[column] = value === '' ? null : value;
@@ -241,6 +255,8 @@ export async function readXlsx(buffer: ArrayBuffer | Uint8Array): Promise<XlsxSh
   const entries = readZipDirectory(bytes);
   const workbook = await readEntry(bytes, entries, 'xl/workbook.xml');
   if (!workbook) throw new Error('Die Excel-Datei enthält keine Arbeitsmappe.');
+  const workbookProperties = workbook.match(/<workbookPr\b([^>]*?)\/?>/)?.[1] || '';
+  const date1904 = ['1', 'true'].includes(attribute(workbookProperties, 'date1904') || '');
   const relations = await readEntry(bytes, entries, 'xl/_rels/workbook.xml.rels');
   const targets = new Map<string, string>();
   for (const match of (relations || '').matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
@@ -249,7 +265,7 @@ export async function readXlsx(buffer: ArrayBuffer | Uint8Array): Promise<XlsxSh
     if (id && target) targets.set(id, resolveTarget(target));
   }
   const sharedStrings = readSharedStrings(await readEntry(bytes, entries, 'xl/sharedStrings.xml'));
-  const styles = readStyleKinds(await readEntry(bytes, entries, 'xl/styles.xml'));
+  const styles = readNumberStyles(await readEntry(bytes, entries, 'xl/styles.xml'));
   const sheets: XlsxSheet[] = [];
   let index = 0;
   for (const match of workbook.matchAll(/<sheet\b([^>]*?)\/?>/g)) {
@@ -259,7 +275,7 @@ export async function readXlsx(buffer: ArrayBuffer | Uint8Array): Promise<XlsxSh
     const path = (relationId && targets.get(relationId)) || `xl/worksheets/sheet${index}.xml`;
     const xml = await readEntry(bytes, entries, path);
     if (xml === null) continue;
-    sheets.push({ name, rows: readSheetRows(xml, sharedStrings, styles) });
+    sheets.push({ name, rows: readSheetRows(xml, sharedStrings, styles, date1904) });
   }
   if (sheets.length === 0) throw new Error('Die Excel-Datei enthält kein lesbares Tabellenblatt.');
   return sheets;

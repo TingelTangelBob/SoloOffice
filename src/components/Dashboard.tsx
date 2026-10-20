@@ -46,11 +46,13 @@ import {
   buildRevenueRecords,
   compareRevenue,
   countActiveCustomers,
+  getDashboardAvailableYears,
   sumRevenue,
   summarizeIncomeExpense,
   summarizeOpenInvoices,
   summarizeOpenQuotes,
   upcomingJobs,
+  type DashboardRevenueRecord,
 } from '../utils/dashboardMetrics';
 import { REVENUE_CHART_SERIES, getForecastRevenuePoints } from '../utils/dashboardChartSeries';
 import {
@@ -72,8 +74,7 @@ import { MonthlyRevenueChart, type MonthlyRevenueComparisonRow } from './Monthly
 import { IncomeExpenseChart } from './IncomeExpenseChart';
 import { DashboardEmptyState } from './DashboardEmptyState';
 import { DashboardEditItem, DashboardEditToolbar, DashboardSortableGroup } from './DashboardEditMode';
-import { FloatingInfoTooltip, FloatingTooltipBubble } from './InfoTooltip';
-import { useFloatingTooltip } from '../hooks/useFloatingTooltip';
+import { FloatingInfoTooltip } from './InfoTooltip';
 
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
@@ -103,8 +104,6 @@ type DashboardCourseSeries = {
   job: JobEntry;
   jobs: JobEntry[];
 };
-
-type DashboardRevenueRecord = { customerName: string; date: Date; amount: number };
 
 /* Rasterbreiten als feste Klassennamen, damit Tailwind sie beim Bauen findet:
    Tablet zwei Spalten, Desktop zwölf (siehe `packDashboardRows`). */
@@ -222,7 +221,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     taxesEnabled && preferences.monthView && comparisonYear !== forecastYear,
   );
   const editToolbarRef = useRef<HTMLDivElement>(null);
-  const customizeTooltip = useFloatingTooltip<HTMLButtonElement>();
   // Belege werden nur geladen, wenn die Kachel sichtbar ist.
   const receiptsWanted = (editDraft ?? preferences).items.some(item => item.id === 'recent-receipts' && item.visible);
 
@@ -457,7 +455,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
         : '';
       
-      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
+      const deliveryMessage = result.simulated
+        ? result.message || 'Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.'
+        : result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}`;
+      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
       
       // Automatically mark as sent if it was draft
       if (emailModal.invoice.status === 'draft') {
@@ -563,12 +564,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { monthKeys, selectedMonth, comparisonMonth } = period;
   const dashboardYear = period.selectedYear;
   const selectedPeriodYear = period.selectedYear;
-  const availableYears = Array.from(new Set([
-    today.getFullYear(),
-    ...(typeof preferences.year === 'number' ? [preferences.year] : []),
-    ...invoices.map(invoice => parseLocalJobDate(invoice.issueDate).getFullYear()),
-    ...euerEntries.map(entry => parseLocalJobDate(entry.entryDate).getFullYear()),
-  ])).sort((a, b) => b - a);
+  const availableYears = getDashboardAvailableYears({
+    todayYear: today.getFullYear(),
+    preferenceYear: preferences.year,
+    invoices,
+    euerEntries,
+  });
 
   const revenueInvoices = invoices.map(invoice => {
     const hasUnconfirmedSourceJob = invoice.sourceJobs?.some(sourceJob => {
@@ -613,6 +614,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const customerRevenue = new Map<string, number>();
   recordsForYear(allYears ? 'all' : dashboardYear).forEach(record => {
+    if (!record.customerName) return;
     customerRevenue.set(record.customerName, (customerRevenue.get(record.customerName) || 0) + record.amount);
   });
   const topCustomers = Array.from(customerRevenue.entries())
@@ -761,7 +763,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const quickActions: Record<DashboardQuickItemId, { label: string; ariaLabel: string; description: string; icon: ReactNode; available: boolean; onClick: () => void }> = {
     'quick-invoice': { label: 'Rechnung schreiben', ariaLabel: 'Neue Rechnung schreiben', description: 'Neue Rechnung anlegen', icon: <FileText className="h-7 w-7" />, available: true, onClick: () => onNavigate('invoices', 'new') },
     'quick-receipt': { label: 'Beleg hochladen', ariaLabel: 'Beleg hochladen', description: 'Beleg hochladen und auslesen', icon: <Upload className="h-7 w-7" />, available: true, onClick: () => onNavigate('documents', 'receipts') },
-    'quick-customer': { label: terminology.entity.newLabel, ariaLabel: `Neuen ${terminology.entity.singular} anlegen`, description: `${terminology.entity.singular} anlegen`, icon: <Users className="h-7 w-7" />, available: true, onClick: () => onNavigate('customers', 'new') },
+    'quick-customer': { label: terminology.entity.newLabel, ariaLabel: terminology.entity.newLabel, description: `${terminology.entity.singular} anlegen`, icon: <Users className="h-7 w-7" />, available: true, onClick: () => onNavigate('customers', 'new') },
     'quick-course': { label: terminology.work.newLabel, ariaLabel: `Neuen ${terminology.work.singular} anlegen`, description: `${terminology.work.singular} anlegen`, icon: <Briefcase className="h-7 w-7" />, available: jobsEnabled, onClick: () => onNavigate('jobs', 'new') },
     'quick-quote': { label: 'Angebot schreiben', ariaLabel: 'Neues Angebot schreiben', description: 'Neues Angebot anlegen', icon: <FileCheck className="h-7 w-7" />, available: quotesEnabled, onClick: () => onNavigate('quote-editor') },
     'quick-calendar': { label: 'Kalender', ariaLabel: 'Kalender öffnen', description: 'Termine im Kalender ansehen', icon: <CalendarDays className="h-7 w-7" />, available: jobsEnabled, onClick: () => onNavigate('calendar') },
@@ -830,7 +832,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     if (message) announce(message);
   };
   const startEditing = () => {
-    customizeTooltip.close();
     setEditDraft({ ...preferences, items: preferences.items.map(item => ({ ...item })) });
     announce('Bearbeiten-Modus. Kacheln verschieben, ausblenden oder hinzufügen; „Fertig“ speichert.');
     focusToolbar();
@@ -838,7 +839,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const leaveEditing = (message: string) => {
     setEditDraft(null);
     announce(message);
-    requestAnimationFrame(() => customizeTooltip.anchorRef.current?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
   };
   const finishEditing = () => {
     if (editDraft && dashboardLayoutChanged(editDraft, preferences)) {
@@ -1631,11 +1632,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <option value="all">Gesamt</option>
             {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
           </select>
-          <button type="button" {...customizeTooltip.anchorProps} aria-describedby={undefined}
-            onClick={startEditing} disabled={!preferencesLoaded} aria-label="Dashboard anpassen" className="dashboard-header-button">
-            <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
-          </button>
-          <FloatingTooltipBubble id={customizeTooltip.id} anchorRef={customizeTooltip.anchorRef} open={customizeTooltip.open}>Dashboard anpassen</FloatingTooltipBubble>
+          <ActionMenu fitViewport ariaLabel="Dashboard anpassen" title="Dashboard anpassen"
+            icon={<SlidersHorizontal className="h-5 w-5" aria-hidden="true" />}
+            menuClassName="min-w-56 max-w-[calc(100vw-1rem)]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
+            <div className="px-3 py-2">
+              <p className="text-xs font-medium text-gray-500">Dashboard</p>
+            </div>
+            <ActionMenuItem role="menuitem" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={startEditing}>
+              Kacheln und Schnellzugriffe bearbeiten
+            </ActionMenuItem>
+          </ActionMenu>
           <ActionMenu fitViewport ariaLabel="Dashboard-Optionen" title="Dashboard-Optionen" icon={<MoreHorizontal className="h-5 w-5" />}
             menuClassName="w-max min-w-0 max-w-[calc(100vw-1rem)]" triggerClassName="dashboard-header-button" disabled={!preferencesLoaded}>
             <div className="flex items-center justify-between gap-2 pl-3 pr-1.5 pt-1">

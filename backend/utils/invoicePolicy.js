@@ -33,6 +33,13 @@ export function validateInvoiceUpdate(current, data) {
   }
 }
 
+export function validateCreditNoteStatus(status, currentStatus = null) {
+  if (status === currentStatus) return;
+  if ((currentStatus === null && ['draft', 'sent'].includes(status))
+    || (currentStatus === 'draft' && status === 'sent')) return;
+  throw invoiceError('Gutschriften lassen sich hier nur als Entwurf oder versendet führen. Rückzahlung und Verrechnung sind noch nicht verfügbar.', 409);
+}
+
 export function validateInvoiceHeader({ status, issueDate, dueDate, serviceDate, customerId, items }) {
   if (!statuses.has(status)) throw invoiceError('Ungültiger Rechnungsstatus.');
   if (!invoiceDateParts(issueDate) || !invoiceDateParts(dueDate)) throw invoiceError('Rechnungs- und Fälligkeitsdatum müssen gültige Datumswerte sein.');

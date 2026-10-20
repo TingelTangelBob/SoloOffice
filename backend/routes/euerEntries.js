@@ -188,8 +188,8 @@ router.get('/', async (req, res, next) => {
   try {
     const year = req.query.year ? Number(req.query.year) : null;
     const params = [];
-    const conditions = ["status = 'active'"];
-    if (year) {
+    const conditions = [req.query.includeVoided === 'true' ? "status IN ('active', 'voided')" : "status = 'active'"];
+    if (year !== null) {
       if (!Number.isInteger(year) || year < 2000 || year > 2200) return res.status(400).json({ error: 'Ungültiges Jahr.' });
       params.push(year);
       conditions.push('COALESCE(euer_year, EXTRACT(YEAR FROM entry_date)::smallint) = $1');

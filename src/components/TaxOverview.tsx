@@ -4,7 +4,7 @@ import { useCompany } from '../context/CompanyContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
-import type { CreditNote, EuerEntry } from '../types';
+import type { EuerEntry } from '../types';
 import { PageHeader } from './PageHeader';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
@@ -29,8 +29,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   const { forecast, loading: forecastLoading, error: forecastError } = useForecast(year, hasSettingsPermission && taxesEnabled);
   const workspaceId = workspace?.id ?? null;
   const sourceDataKey = `${workspaceId ?? 'none'}:${year}`;
-  const [sourceData, setSourceData] = useState<{ key: string; creditNotes: CreditNote[]; euerEntries: EuerEntry[] }>({ key: '', creditNotes: [], euerEntries: [] });
-  const creditNotes = sourceData.key === sourceDataKey ? sourceData.creditNotes : [];
+  const [sourceData, setSourceData] = useState<{ key: string; euerEntries: EuerEntry[] }>({ key: '', euerEntries: [] });
   const euerEntries = sourceData.key === sourceDataKey ? sourceData.euerEntries : [];
   const locale = company?.locale || 'de-DE';
   const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
@@ -39,14 +38,17 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
     let active = true;
     let requestVersion = 0;
     if (!workspaceId) {
-      setSourceData({ key: sourceDataKey, creditNotes: [], euerEntries: [] });
+      setSourceData({ key: sourceDataKey, euerEntries: [] });
       return () => { active = false; };
     }
     const refresh = () => {
       const version = ++requestVersion;
-      void Promise.allSettled([apiService.getCreditNotes(), apiService.getEuerEntries(year)]).then(([notesResult, entriesResult]) => {
+      void apiService.getEuerEntries().then(entries => {
         if (!active || requestVersion !== version) return;
-        setSourceData({ key: sourceDataKey, creditNotes: notesResult.status === 'fulfilled' ? notesResult.value : [], euerEntries: entriesResult.status === 'fulfilled' ? entriesResult.value : [] });
+        setSourceData({ key: sourceDataKey, euerEntries: entries });
+      }).catch(() => {
+        if (!active || requestVersion !== version) return;
+        setSourceData({ key: sourceDataKey, euerEntries: [] });
       });
     };
     refresh();
@@ -59,19 +61,26 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   }, [invoices, sourceDataKey, year, workspaceId]);
 
   const paidInvoiceSummary = useMemo(() => {
-    const payments = euerEntries.filter(entry => entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId);
-    const linkedInvoiceIds = new Set(payments.map(entry => entry.sourceId));
-    const legacyPaidInvoices = invoices.filter(invoice => (
-      invoice.status === 'paid'
+    const activePayments = euerEntries.filter(entry => entry.status !== 'voided'
+      && entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId
+      && Number(entry.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(String(entry.entryDate).slice(0, 10)));
+    const paymentsForYear = activePayments.filter(entry => Number(String(entry.entryDate).slice(0, 4)) === year);
+    const paymentTotals = new Map<string, number>();
+    activePayments.forEach(entry => {
+      if (entry.sourceId) paymentTotals.set(entry.sourceId, (paymentTotals.get(entry.sourceId) || 0) + Math.round(Number(entry.amount) * 100));
+    });
+    const missingPaymentCount = invoices.filter(invoice => (
+      invoice.documentType !== 'credit_note'
+      && invoice.status === 'paid'
       && Number(String(invoice.issueDate).slice(0, 4)) === year
-      && !linkedInvoiceIds.has(invoice.id)
-    ));
-    const paidCreditNotes = creditNotes.filter(note => Number(String(note.issueDate).slice(0, 4)) === year && note.status === 'paid' && !linkedInvoiceIds.has(note.id));
-    const income = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
-      + legacyPaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
-      - paidCreditNotes.reduce((sum, note) => sum + Math.abs(Number(note.total || 0)), 0);
-    return { count: linkedInvoiceIds.size + legacyPaidInvoices.length, income };
-  }, [creditNotes, euerEntries, invoices, year]);
+      && Math.round(Number(invoice.total || 0) * 100) - (paymentTotals.get(invoice.id) || 0) > 0
+    )).length;
+    return {
+      count: new Set(paymentsForYear.map(entry => entry.sourceId)).size,
+      income: paymentsForYear.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+      missingPaymentCount,
+    };
+  }, [euerEntries, invoices, year]);
 
   const forecastContent = extensionsLoading ? (
     <p role="status" className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">Steuereinstellungen werden geladen …</p>
@@ -99,7 +108,7 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Voraussichtlicher Gewinn</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.profitAnnual)}</p><p className="mt-1 text-xs text-gray-500">Bisher {formatAmount(forecast.profitYtd)} · Bereich {formatAmount(forecast.profitBand.low)} bis {formatAmount(forecast.profitBand.high)}</p></article>
         <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Steuern und Sozialbeiträge</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.annualBurden)}</p><p className="mt-1 text-xs text-gray-500">Steuern {formatAmount(forecast.taxes.total)} · Sozialbeiträge {formatAmount(forecast.social.total)}</p></article>
-        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Verbleibende Rücklage</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.remainingReserve)}</p><p className="mt-1 text-xs text-gray-500">Berücksichtigt erfasste Zahlungen; Umsatzsteuer separat.</p></article>
+        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Noch aufzubringen für Steuern und Sozialbeiträge</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.remainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{formatAmount(forecast.annualBurden)} Jahresbedarf − {formatAmount(forecast.paidLevies)} erfasste Zahlungen. Umsatzsteuer separat.</p></article>
         <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Umsatzsteuer-Richtwert</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.vatRemainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{forecast.vatStatus === 'small_business' ? 'Kleinunternehmerregelung im Profil; hier ist keine Umsatzsteuer angesetzt.' : forecast.vatStatus === 'education_exempt' ? 'Bildungsbefreiung im Profil; mögliche Mischfälle bitte prüfen.' : forecast.vatBasis === 'calculated' ? 'Aus erfassten Belegen berechnet.' : forecast.vatBasis === 'estimate' ? `${forecast.vatIncompleteEntries} Buchungen ohne vollständige USt-Angaben.` : 'Grobe Schätzung; Vorsteuer und Sonderfälle können abweichen.'}</p></article>
       </div>
       {forecast.parameterYear !== year && <p role="note" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">{TAX_TEXTS.missingYearNotice(year, forecast.parameterYear, forecast.paramsAsOf)}</p>}
@@ -128,11 +137,15 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
         <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /><span className="text-sm text-gray-500">Automatische Einnahmen</span></div><p className={`mt-3 text-2xl font-bold ${paidInvoiceSummary.income < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatAmount(paidInvoiceSummary.income)}</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">EÜR-Vorschau öffnen <ArrowRight className="h-4 w-4" /></button></article>
         <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-amber-600" /><span className="text-sm text-gray-500">Nächster Schritt</span></div><p className="mt-3 font-semibold text-gray-900">Ausgaben ergänzen</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">Ausgaben erfassen <ArrowRight className="h-4 w-4" /></button></article>
       </div>
+      {paidInvoiceSummary.missingPaymentCount > 0 && <div role="note" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <p>Bei {paidInvoiceSummary.missingPaymentCount} als bezahlt {paidInvoiceSummary.missingPaymentCount === 1 ? 'markierter Rechnung fehlen' : 'markierten Rechnungen fehlen'} vollständige Zahlungseinträge. Trage den fehlenden Betrag mit dem tatsächlichen Zahlungsdatum nach. Bereits erfasste Teilzahlungen sind enthalten. Die Umsatzsteuer richtet sich nach dem hinterlegten Verfahren.</p>
+        <button type="button" onClick={() => onNavigate('euer')} className="action-button shrink-0">Zahlungseingang nachtragen <ArrowRight className="h-4 w-4" /></button>
+      </div>}
     </section>
 
     <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-gray-900">Vorbereitung für Steuererklärung und Jahresabschluss</h2>
-      <div className="mt-4 grid gap-4 md:grid-cols-3"><div><p className="font-medium text-gray-900">1. Einnahmen prüfen</p><p className="mt-1 text-sm text-gray-600">Bezahlte Rechnungen und Gutschriften kontrollieren.</p></div><div><p className="font-medium text-gray-900">2. Ausgaben erfassen</p><p className="mt-1 text-sm text-gray-600">Betriebsausgaben mit Kategorie und Belegnotiz ergänzen.</p></div><div><p className="font-medium text-gray-900">3. Export teilen</p><p className="mt-1 text-sm text-gray-600">CSV, JSON oder PDF an den Steuerberater weitergeben.</p></div></div>
+      <div className="mt-4 grid gap-4 md:grid-cols-3"><div><p className="font-medium text-gray-900">1. Einnahmen prüfen</p><p className="mt-1 text-sm text-gray-600">Zahlungseingänge und Gutschriften kontrollieren.</p></div><div><p className="font-medium text-gray-900">2. Ausgaben erfassen</p><p className="mt-1 text-sm text-gray-600">Betriebsausgaben mit Kategorie und Belegnotiz ergänzen.</p></div><div><p className="font-medium text-gray-900">3. Export teilen</p><p className="mt-1 text-sm text-gray-600">CSV, JSON oder PDF an den Steuerberater weitergeben.</p></div></div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <button type="button" onClick={() => onNavigate('euer')} className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-left transition hover:border-orange-400"><span className="flex items-center justify-between gap-3 font-semibold text-gray-900">EÜR öffnen <ArrowRight className="h-4 w-4 text-orange-600" /></span><span className="mt-1 block text-sm text-gray-600">Einnahmen-/Ausgabenjournal, Prüfhinweise und Steuerberater-Exporte.</span></button>
         <button type="button" onClick={() => onNavigate('fixed-assets')} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left transition hover:border-orange-300"><span className="flex items-center justify-between gap-3 font-semibold text-gray-900">Anlagenverzeichnis <Boxes className="h-4 w-4 text-orange-600" /></span><span className="mt-1 block text-sm text-gray-600">Anlagegüter erfassen und vorbereitende lineare Abschreibung prüfen.</span></button>

@@ -3,6 +3,7 @@ import { pool } from '../database.js';
 import logger from '../utils/logger.js';
 import { createInvoice } from '../services/invoiceService.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
+import { assertDateOnly as assertCalendarDate } from '../shared/recurrence.js';
 
 const router = express.Router();
 const frequencies = ['monthly', 'quarterly', 'semiannual', 'annual', 'custom'];
@@ -13,8 +14,8 @@ function mapRecurring(row) {
   return {
     id: row.id, customerId: row.customer_id, customerName: row.customer_name, name: row.name,
     items: row.items || [], frequency: row.frequency, intervalValue: row.interval_value || 1,
-    intervalUnit: row.interval_unit || 'month', startDate: row.start_date, endDate: row.end_date,
-    nextRunDate: row.next_run_date, lastRunDate: row.last_run_date, dueDays: row.due_days,
+    intervalUnit: row.interval_unit || 'month', startDate: dateInput(row.start_date), endDate: row.end_date ? dateInput(row.end_date) : null,
+    nextRunDate: dateInput(row.next_run_date), lastRunDate: row.last_run_date ? dateInput(row.last_run_date) : null, dueDays: row.due_days,
     notes: row.notes, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
@@ -43,18 +44,16 @@ function nextRunDate(date, recurring) {
 }
 
 function assertDateOnly(value, label) {
-  const date = String(value || '');
-  const parsed = new Date(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-    const error = new Error(`${label} ist ungültig.`);
+  try {
+    return assertCalendarDate(value, label);
+  } catch (error) {
     error.statusCode = 400;
     throw error;
   }
-  return date;
 }
 
 function dateInput(value) {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value || '').slice(0, 10);
+  return value instanceof Date ? assertDateOnly(value, 'Das Datum') : String(value || '').slice(0, 10);
 }
 
 function validateRecurring(body) {
@@ -102,7 +101,7 @@ router.get('/', async (req, res) => {
 router.get('/:id/runs', async (req, res) => {
   try {
     const result = await pool.query(`SELECT r.id, r.status, r.scheduled_date, r.generated_invoice_id, i.invoice_number, r.error, r.created_at FROM recurring_invoice_runs r LEFT JOIN invoices i ON i.id = r.generated_invoice_id WHERE r.recurring_invoice_id = $1 ORDER BY r.scheduled_date DESC, r.created_at DESC`, [req.params.id]);
-    res.json(result.rows.map(row => ({ id: row.id, status: row.status, scheduledDate: row.scheduled_date, generatedInvoiceId: row.generated_invoice_id, invoiceNumber: row.invoice_number, error: row.error, createdAt: row.created_at })));
+    res.json(result.rows.map(row => ({ id: row.id, status: row.status, scheduledDate: dateInput(row.scheduled_date), generatedInvoiceId: row.generated_invoice_id, invoiceNumber: row.invoice_number, error: row.error, createdAt: row.created_at })));
   } catch (error) {
     logger.error('Failed to fetch recurring invoice runs', { error: error.message, recurringInvoiceId: req.params.id });
     res.status(500).json({ error: 'Failed to fetch recurring invoice runs' });
@@ -230,7 +229,8 @@ router.post('/:id/generate', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Recurring invoice not found' });
     recurring = result.rows[0];
     if (recurring.status !== 'active') return res.status(400).json({ error: 'Recurring invoice is not active' });
-    if (recurring.end_date && recurring.next_run_date > recurring.end_date) return res.status(400).json({ error: 'Recurring invoice has ended' });
+    const endDate = recurring.end_date ? assertDateOnly(recurring.end_date, 'Das Enddatum') : null;
+    if (endDate && assertDateOnly(recurring.next_run_date, 'Das nächste Ausführungsdatum') > endDate) return res.status(400).json({ error: 'Recurring invoice has ended' });
 
     const scheduledDate = assertDateOnly(body.scheduledDate || recurring.next_run_date, 'Das Ausführungsdatum');
     scheduledDateForRun = scheduledDate;
@@ -246,13 +246,14 @@ router.post('/:id/generate', async (req, res) => {
           error.statusCode = 409;
           throw error;
         }
-        if (lockedRecurring.end_date && scheduledDate > lockedRecurring.end_date) {
+        const lockedEndDate = lockedRecurring.end_date ? assertDateOnly(lockedRecurring.end_date, 'Das Enddatum') : null;
+        if (lockedEndDate && scheduledDate > lockedEndDate) {
           const error = new Error('Die wiederkehrende Rechnung ist bereits beendet.');
           error.statusCode = 400;
           throw error;
         }
         const nextDate = nextRunDate(scheduledDate, lockedRecurring);
-        const ended = lockedRecurring.end_date && nextDate > lockedRecurring.end_date;
+        const ended = lockedEndDate && nextDate > lockedEndDate;
         await client.query(`
           INSERT INTO recurring_invoice_runs (recurring_invoice_id, status, scheduled_date, generated_invoice_id)
           VALUES ($1, 'success', $2, $3)

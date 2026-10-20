@@ -218,6 +218,10 @@ function SortableQuoteItem({
   const itemTotalAfterDiscount = itemTotalBeforeDiscount - discountAmount;
   const [showSuggestions, setShowSuggestions] = useState(false);
   const itemDescription = String(item.description || '');
+  // Positionen prüft handleSubmit. Ein natives `required` würde das Absenden blockieren:
+  // an der automatisch angehängten Leerzeile (wird beim Speichern verworfen) und an der
+  // ausgeblendeten Kopie jeder Zeile im jeweils anderen Layout (Desktop/Mobil).
+  const isPlaceholderRow = !itemDescription.trim();
   const matchingTemplateSuggestions = itemDescription.trim().length >= 2
     ? templateSuggestions.filter(suggestion => suggestion.label.toLowerCase().includes(itemDescription.trim().toLowerCase())).slice(0, 5)
     : [];
@@ -227,7 +231,7 @@ function SortableQuoteItem({
     <div className="relative">
       <input
         type="text"
-        required
+        aria-required={!isPlaceholderRow}
         value={item.description}
         onChange={(e) => {
           onUpdate(item.id, 'description', e.target.value);
@@ -303,7 +307,7 @@ function SortableQuoteItem({
           <LocalizedNumberInput
             min="0"
             step="0.01"
-            required
+            aria-required={!isPlaceholderRow}
             value={item.quantity}
             locale={company.locale}
             numberFormat={company.numberFormat}
@@ -320,7 +324,7 @@ function SortableQuoteItem({
           <LocalizedNumberInput
             min="0"
             step="0.01"
-            required
+            aria-required={!isPlaceholderRow}
             value={item.unitPrice}
             locale={company.locale}
             numberFormat={company.numberFormat}
@@ -457,7 +461,7 @@ function SortableQuoteItem({
               <LocalizedNumberInput
                 min="0"
                 step="0.01"
-                required
+                aria-required={!isPlaceholderRow}
                 value={item.quantity}
                 locale={company.locale}
                 numberFormat={company.numberFormat}
@@ -473,7 +477,7 @@ function SortableQuoteItem({
               <LocalizedNumberInput
                 min="0"
                 step="0.01"
-                required
+                aria-required={!isPlaceholderRow}
                 value={item.unitPrice}
                 locale={company.locale}
                 numberFormat={company.numberFormat}
@@ -928,10 +932,15 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
       return;
     }
 
-    // Validate all items
+    // Validate all items; die Nummer entspricht der sichtbaren Zeile im Editor.
     for (const item of filledItems) {
-      if (!item.description || item.quantity <= 0 || item.unitPrice < 0) {
-        notify({ variant: 'warning', message: 'Bitte füllen Sie alle Pflichtfelder korrekt aus.' });
+      const position = items.indexOf(item) + 1;
+      if (!(item.quantity > 0)) {
+        notify({ variant: 'warning', message: `Position ${position}: Die Menge muss größer als 0 sein.` });
+        return;
+      }
+      if (!(item.unitPrice >= 0)) {
+        notify({ variant: 'warning', message: `Position ${position}: Der Einzelpreis darf nicht negativ sein.` });
         return;
       }
     }

@@ -154,7 +154,7 @@ export function WorkspaceArea({
         sectionId="einrichtung"
         icon={Rocket}
         title="Ersteinrichtung"
-        description="Firmendaten, Rechnungseinstellungen und Module geführt prüfen."
+        info="Der Einrichtungsassistent führt durch Firmendaten, Rechnungseinstellungen und Module."
         actions={(
           <button type="button" onClick={() => onNavigate?.('setup')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
             Einrichtung öffnen
@@ -187,31 +187,29 @@ export function WorkspaceArea({
         sectionId="module"
         icon={ToggleRight}
         title="Module"
-        description="Deaktivierte Module verschwinden aus der Navigation."
-        info="Aktivieren Sie nur die Bereiche, die Sie in der Anwendung benötigen. Daten bleiben beim Deaktivieren erhalten."
+        info="Deaktivierte Module verschwinden aus der Navigation. Vorhandene Daten bleiben erhalten."
       >
         <div className="settings-row-list">
           <SettingsToggleRow
             label={terminology.work.managementLabel}
-            description={`Erfassung von ${terminology.work.plural} und Arbeitszeiten.`}
+            info={`Erfassung von ${terminology.work.plural} und Arbeitszeiten.`}
             checked={formData.jobTrackingEnabled || false}
             onChange={checked => set('jobTrackingEnabled', checked)}
           />
           <SettingsToggleRow
             label="Reporting & Auswertungen"
-            description="Rechnungsjournale, Statistiken und Auswertungen."
+            info="Rechnungsjournale, Statistiken und Auswertungen."
             checked={formData.reportingEnabled || false}
             onChange={checked => set('reportingEnabled', checked)}
           />
           <SettingsToggleRow
             label="Angebote"
-            description="Erstellung und Verwaltung von Angeboten."
             checked={formData.quotesEnabled || false}
             onChange={checked => set('quotesEnabled', checked)}
           />
           <SettingsToggleRow
             label="Rabatt-Funktion"
-            description={`Rabatte auf Positions- und Gesamtebene in Rechnungen, Angeboten und ${terminology.work.plural}.`}
+            info={`Rabatte auf Positions- und Gesamtebene in Rechnungen, Angeboten und ${terminology.work.plural}.`}
             checked={formData.discountsEnabled !== false}
             onChange={checked => set('discountsEnabled', checked)}
           />
@@ -222,7 +220,6 @@ export function WorkspaceArea({
         sectionId="begriffe"
         icon={Languages}
         title="Begriffe & Fachsprache"
-        description="Bezeichnungen in Navigation, Formularen und Hinweisen."
         info="Wählen Sie die Begriffe, die in Navigation, Formularen und Hinweisen für Ihre Organisation verwendet werden. Die Datenstruktur bleibt unverändert."
       >
         <div
@@ -312,7 +309,7 @@ export function WorkspaceArea({
         sectionId="standardwerte"
         icon={RotateCcw}
         title="Standardwerte"
-        description="Setzt Darstellung, Formate, Module und Begriffe auf die Standardwerte. Firmendaten bleiben unverändert. Übernommen wird erst mit „Speichern“."
+        info="Setzt Darstellung, Formate, Module und Begriffe auf die Standardwerte. Firmendaten bleiben unverändert. Übernommen wird erst mit „Speichern“."
         actions={(
           <button type="button" onClick={onResetToDefaults} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
             <RotateCcw className="h-4 w-4" aria-hidden="true" />

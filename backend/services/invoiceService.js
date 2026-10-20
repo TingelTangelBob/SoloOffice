@@ -2,7 +2,7 @@ import { pool } from '../database.js';
 import { findInvoiceById } from '../queries/invoiceQueries.js';
 import { calculateDocumentMoney } from '../utils/documentMoney.js';
 import { captureInvoiceSnapshot } from './invoiceSnapshot.js';
-import { invoiceError, normalizeInvoiceNumber, validateInvoiceHeader, validateInvoiceUpdate, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
+import { invoiceError, normalizeInvoiceNumber, validateInvoiceHeader, validateInvoiceUpdate, validateCreditNoteStatus, INVOICE_CONTENT_FIELDS } from '../utils/invoicePolicy.js';
 import { counterMatcher, formatNumberPattern, invoiceDateParts, legacyCounter, numberPatternError } from '../utils/invoiceNumberPattern.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -146,6 +146,7 @@ export async function createInvoice(data, transactionHook) {
   if (status === 'paid' && documentType === 'invoice') {
     throw invoiceError('Bitte die Rechnung zunächst anlegen und anschließend den Zahlungseingang erfassen.', 409);
   }
+  if (documentType === 'credit_note') validateCreditNoteStatus(status);
   if (!Array.isArray(attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
 
   if (!Array.isArray(sourceJobIds) || sourceJobIds.some(id => !UUID_PATTERN.test(String(id)))) {
@@ -420,6 +421,9 @@ export async function updateInvoice(id, data) {
       globalDiscountAmount: money ? money.globalDiscountAmount : current.global_discount_amount,
       documentSnapshot: current.document_snapshot,
     };
+    if (current.document_type === 'credit_note' && data.status !== undefined) {
+      validateCreditNoteStatus(data.status, current.status);
+    }
     if (data.recurringInvoiceId !== undefined && data.recurringInvoiceId !== current.recurring_invoice_id) {
       throw invoiceError('Die Herkunft einer Rechnung kann nach dem Anlegen nicht geändert werden.', 409);
     }

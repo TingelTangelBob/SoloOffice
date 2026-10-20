@@ -58,9 +58,11 @@ import { getTerminology } from '../utils/terminology';
 import { DueRecurringExpensesNotice } from './DueRecurringExpensesNotice';
 import { RecurringExpenseDialog } from './RecurringExpenseDialog';
 import { EuerAllowanceDialog } from './EuerAllowanceDialog';
+import { InfoTooltip } from './InfoTooltip';
 import { financeApi } from '../services/financeApi';
 import type { RecurringExpensePayload } from '../types/finance';
 import { useAuth } from '../context/AuthContext';
+import { getEuerHistoryChanges, isActiveEuerEntry } from '../utils/euerHistory';
 
 /** Feste Spaltenbreiten inklusive Innenabstand; die Beschreibung nimmt den Rest ein. */
 const EUER_COLUMN_WIDTHS = { date: 120, category: 176, source: 160, amount: 144 } as const;
@@ -98,6 +100,7 @@ interface EuerRow {
   automatic: boolean;
   sourceLabel?: string;
   sourceId?: string;
+  status?: 'active' | 'voided';
 }
 
 const categoryLabels: Record<EuerEntryCategory, string> = {
@@ -171,7 +174,7 @@ const dateKey = (value: Date | string) => String(value).slice(0, 10);
 const getEuerInfoNoticeId = (year: number) => `euer-automatic-documents-${year}`;
 const sourceLabels: Record<EuerEntrySourceType, string> = {
   manual: 'Manuell',
-  invoice_payment: 'Teilzahlung',
+  invoice_payment: 'Rechnungszahlung',
   receipt: 'Beleg',
   correction: 'Korrektur',
   recurring_expense: 'Fixkosten',
@@ -188,7 +191,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const { confirm } = useFeedback();
   const { can, workspace } = useAuth();
   const workspaceId = workspace?.id ?? null;
-  const { invoices } = useInvoices();
+  const { invoices, refreshInvoices } = useInvoices();
   const { company } = useCompany();
   const currentYear = new Date().getFullYear();
   const locale = company?.locale || 'de-DE';
@@ -197,7 +200,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [year, setYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [vatIncompleteOnly, setVatIncompleteOnly] = useState(initialAction === 'vat-incomplete');
-  const [entries, setEntries] = useState<EuerEntry[]>([]);
+  const [showVoided, setShowVoided] = useState(false);
+  const [allEntries, setEntries] = useState<EuerEntry[]>([]);
+  const entries = useMemo(() => allEntries.filter(entry => Number(entry.euerYear ?? dateKey(entry.entryDate).slice(0, 4)) === year), [allEntries, year]);
+  const activeEntries = useMemo(() => entries.filter(isActiveEuerEntry), [entries]);
+  const paymentEntries = useMemo(() => allEntries.filter(entry => isActiveEuerEntry(entry)
+    && entry.sourceType === 'invoice_payment' && entry.entryType === 'income'
+    && entry.sourceId && Number(entry.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(dateKey(entry.entryDate))), [allEntries]);
   const [workLocationDays, setWorkLocationDays] = useState<WorkLocationDay[]>([]);
   const [workLocationDaysLoading, setWorkLocationDaysLoading] = useState(true);
   const [workLocationDaysError, setWorkLocationDaysError] = useState('');
@@ -217,11 +226,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [historyEntry, setHistoryEntry] = useState<EuerEntry | null>(null);
   const [history, setHistory] = useState<EuerEntryHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [expenseTemplateEntry, setExpenseTemplateEntry] = useState<EuerEntry | null>(null);
   const [allowanceDialogOpen, setAllowanceDialogOpen] = useState(false);
   const templateWorkspace = useRef(workspace?.id ?? null);
   const entryRequestVersion = useRef(0);
   const workLocationRequestVersion = useRef(0);
+  const historyRequestVersion = useRef(0);
   templateWorkspace.current = workspace?.id ?? null;
   const currentEntriesScope = `${workspaceId ?? ''}:${year}`;
   const entriesReady = !loading && entriesLoadedScope === currentEntriesScope;
@@ -233,14 +244,14 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const invoiceOptions = useMemo(() => invoices.filter(invoice => invoice.documentType !== 'credit_note'), [invoices]);
   const paymentTotals = useMemo(() => {
     const totals = new Map<string, number>();
-    entries.forEach(entry => {
-      if (entry.sourceType !== 'invoice_payment' || !entry.sourceId || entry.status === 'voided') return;
+    paymentEntries.forEach(entry => {
+      if (!entry.sourceId) return;
       totals.set(entry.sourceId, (totals.get(entry.sourceId) || 0) + Number(entry.amount || 0));
     });
     return totals;
-  }, [entries]);
+  }, [paymentEntries]);
   const getRemainingAmount = (invoice: { id: string; total: number }) =>
-    Math.max(0, Number(invoice.total || 0) - (paymentTotals.get(invoice.id) || 0));
+    Math.max(0, Math.round(Number(invoice.total || 0) * 100) - Math.round((paymentTotals.get(invoice.id) || 0) * 100)) / 100;
   const entriesById = useMemo(() => new Map(entries.map(entry => [entry.id, entry])), [entries]);
 
   const loadEntries = useCallback(async () => {
@@ -251,7 +262,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setError('');
     try {
       const [entryData, creditNoteData] = await Promise.all([
-        apiService.getEuerEntries(year),
+        apiService.getEuerEntries(undefined, true),
         apiService.getCreditNotes(),
       ]);
       if (entryRequestVersion.current !== request || templateWorkspace.current !== targetWorkspace) return;
@@ -284,6 +295,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   }, [year, workspaceId]);
 
   useEffect(() => {
+    historyRequestVersion.current += 1;
     entryRequestVersion.current += 1; setSelectedMonth(null); setEntries([]); setCreditNotes([]); setError(''); setNotice(''); setHistoryEntry(null); setHistory([]); setExpenseTemplateEntry(null); setAllowanceDialogOpen(false); setBusy(false); setDialogEntry(undefined); setDraft(emptyDraft()); setIsImportOpen(false); setLoading(true);
     void loadEntries(); return () => { entryRequestVersion.current += 1; };
   }, [loadEntries]);
@@ -304,30 +316,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   }, [initialAction]);
   useEffect(() => { setInfoNoticeDismissed(isNoticeDismissed(getEuerInfoNoticeId(year))); }, [year]);
 
-  const rows = useMemo<EuerRow[]>(() => {
-    const linkedInvoiceIds = new Set(entries
-      .filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId)
-      .map(entry => entry.sourceId));
-    const automaticRows = [...invoices, ...creditNotes]
-      .filter(invoice => invoice.status === 'paid' && Number(dateKey(invoice.issueDate).slice(0, 4)) === year)
-      .filter(invoice => !linkedInvoiceIds.has(invoice.id))
-      .map(invoice => {
-        const isCreditNote = invoice.documentType === 'credit_note';
-        const amount = isCreditNote ? -Math.abs(Number(invoice.total || 0)) : Math.abs(Number(invoice.total || 0));
-        const taxRate = Number(invoice.subtotal) > 0 ? Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2)) : 0;
-        return {
-          id: `invoice-${invoice.id}`,
-          entryType: 'income' as const,
-          entryDate: dateKey(invoice.issueDate),
-          description: isCreditNote ? `Gutschrift ${invoice.invoiceNumber}` : `Rechnung ${invoice.invoiceNumber}`,
-          category: 'other_income' as const,
-          amount,
-          taxRate,
-          automatic: true,
-          sourceLabel: isCreditNote ? 'Automatisch · Gutschrift' : 'Automatisch · Bezahlt',
-          sourceId: invoice.id,
-        };
-      });
+  const legacyPaidInvoices = invoiceOptions.filter(invoice => invoice.status === 'paid' && getRemainingAmount(invoice) > 0.005);
+  const legacyPaidCreditNotes = creditNotes.filter(note => note.status === 'paid');
+
+  const allRows = useMemo<EuerRow[]>(() => {
     const manualRows = entries.map(entry => {
       const sourceInvoice = entry.sourceType === 'invoice_payment' ? invoiceOptions.find(invoice => invoice.id === entry.sourceId) : undefined;
       return {
@@ -348,23 +340,28 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             ? `${sourceLabels[entry.sourceType || 'manual']} · ${customerNames.get(entry.customerId)}`
             : sourceLabels[entry.sourceType || 'manual'],
         sourceId: entry.sourceId,
+        status: entry.status,
       };
     });
-    return [...automaticRows, ...manualRows].sort((a, b) => b.entryDate.localeCompare(a.entryDate)
+    return manualRows.sort((a, b) => b.entryDate.localeCompare(a.entryDate)
       || b.id.localeCompare(a.id, 'de-DE', { numeric: true, sensitivity: 'base' }));
-  }, [creditNotes, customerNames, entries, invoiceOptions, invoices, year]);
+  }, [customerNames, entries, invoiceOptions]);
+
+  // Der Filter erweitert ausschließlich die Nachweisliste, niemals Summen oder Exporte.
+  const rows = useMemo(() => allRows.filter(isActiveEuerEntry), [allRows]);
+  const listedRows = showVoided ? allRows : rows;
 
   const monthFilteredRows = selectedMonth === null
-    ? rows
-    : rows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === selectedMonth);
+    ? listedRows
+    : listedRows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === selectedMonth);
   const incompleteRows = monthFilteredRows.filter(row => {
     const entry = entriesById.get(row.id);
-    return entry ? needsVatData(entry, Boolean(company?.isSmallBusiness)) : false;
+    return entry && isActiveEuerEntry(entry) ? needsVatData(entry, Boolean(company?.isSmallBusiness)) : false;
   });
   const incompleteCount = incompleteRows.length;
   const visibleRows = vatIncompleteOnly ? incompleteRows : monthFilteredRows;
   const monthPrefix = selectedMonth === null ? null : `Im ${monthLabel(locale, year, selectedMonth)}`;
-  const hasEuerYearShift = entries.some(entry => entry.euerYear && entry.euerYear !== Number(dateKey(entry.entryDate).slice(0, 4)));
+  const hasEuerYearShift = activeEntries.some(entry => entry.euerYear && entry.euerYear !== Number(dateKey(entry.entryDate).slice(0, 4)));
   const emptyBookingsMessage = vatIncompleteOnly
     ? monthPrefix ? `${monthPrefix} sind keine Buchungen mit unvollständigen USt-Angaben vorhanden.` : 'Keine Buchungen mit unvollständigen USt-Angaben.'
     : monthPrefix ? `${monthPrefix} sind keine Buchungen vorhanden.` : 'Keine Buchungen in diesem Zeitraum.';
@@ -382,6 +379,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     return { month, income, expenses, profit: income - expenses };
   }), [rows]);
   const averageMonthCount = year === currentYear ? new Date().getMonth() + 1 : 12;
+  const averagePeriodLabel = year === currentYear
+    ? `über ${averageMonthCount} ${averageMonthCount === 1 ? 'Monat' : 'Monate'}`
+    : null;
+  const averageTooltipText = 'Im laufenden Jahr wird die Summe durch die bisher begonnenen Kalendermonate einschließlich des aktuellen Monats geteilt. In abgeschlossenen Jahren wird durch 12 geteilt.';
   const monthlyAverage = {
     income: summary.income / averageMonthCount,
     expenses: summary.expenses / averageMonthCount,
@@ -390,23 +391,35 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
   const checkHints = useMemo(() => {
     const hints: string[] = [];
-    entries.forEach(entry => {
+    activeEntries.forEach(entry => {
       if (!entry.notes?.trim() && entry.sourceType !== 'invoice_payment') hints.push(`„${entry.description}“ hat noch keinen Beleg- oder Notizhinweis.`);
       if (entry.entryType === 'expense' && entry.category === 'other_expense') hints.push(`„${entry.description}“ nutzt noch die allgemeine Kategorie.`);
-      if (entry.sourceType === 'invoice_payment' && !entry.sourceId) hints.push(`„${entry.description}“ ist als Teilzahlung erfasst, aber keiner Rechnung zugeordnet.`);
+      if (entry.sourceType === 'invoice_payment' && !entry.sourceId) hints.push(`„${entry.description}“ ist als Rechnungszahlung erfasst, aber keiner Rechnung zugeordnet.`);
     });
     invoiceOptions.forEach(invoice => {
-      const payments = entries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId === invoice.id);
-      if (!payments.length) return;
-      const paidAmount = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-      if (paidAmount > Number(invoice.total || 0) + 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} überschreiten den Rechnungsbetrag.`);
-      if (invoice.status === 'paid' && Math.abs(paidAmount - Number(invoice.total || 0)) > 0.01) hints.push(`Teilzahlungen zu ${invoice.invoiceNumber} stimmen nicht mit dem Status „Bezahlt“ überein.`);
+      const paidAmount = paymentTotals.get(invoice.id) || 0;
+      if (paidAmount > Number(invoice.total || 0) + 0.01) hints.push(`Rechnungszahlungen zu ${invoice.invoiceNumber} überschreiten den Rechnungsbetrag.`);
+      const remaining = getRemainingAmount(invoice);
+      if (invoice.status === 'paid' && remaining > 0.005) hints.push(`Bei ${invoice.invoiceNumber} fehlen noch ${formatAmount(remaining)} an erfassten Zahlungseingängen.`);
     });
     return hints;
-  }, [entries, invoiceOptions]);
+  }, [activeEntries, invoiceOptions, paymentTotals]);
 
   const openNew = () => { setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
-  const openPayment = () => { setDraft(emptyDraft('invoice_payment')); setDialogEntry(null); setError(''); };
+  const openPayment = (invoiceId?: string) => {
+    const invoice = invoiceOptions.find(item => item.id === invoiceId);
+    const paymentDraft = emptyDraft('invoice_payment');
+    setDraft(invoice ? {
+      ...paymentDraft,
+      sourceId: invoice.id,
+      description: `Zahlung Rechnung ${invoice.invoiceNumber}`,
+      amount: String(getRemainingAmount(invoice)),
+      entryDate: '',
+      taxRate: Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : paymentDraft.taxRate,
+    } : paymentDraft);
+    setDialogEntry(null);
+    setError('');
+  };
   const homeOfficeEntries = entries.filter(entry => entry.entryType === 'expense'
     && entry.category === 'allowance'
     && entry.status !== 'voided'
@@ -421,12 +434,12 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       return;
     }
     const created = await apiService.createEuerEntry(payload);
-    if (Number(dateKey(created.entryDate).slice(0, 4)) === year) setEntries(current => [created, ...current]);
+    setEntries(current => [created, ...current]);
     setNotice('Pauschale wurde für das ausgewählte EÜR-Jahr erfasst.');
   };
   const removeHomeOfficeEntry = async (entryId: string) => {
     await apiService.deleteEuerEntry(entryId, 'Homeoffice-Pauschale ohne gespeicherte Tagesnachweise storniert');
-    setEntries(current => current.filter(entry => entry.id !== entryId));
+    setEntries(current => current.map(entry => entry.id === entryId ? { ...entry, status: 'voided' } : entry));
     setNotice('Homeoffice-Pauschalposten wurde storniert und bleibt im Änderungsverlauf erhalten.');
   };
   const saveWorkLocationDay = async (date: string, dayType: WorkLocationDayType) => {
@@ -438,6 +451,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setWorkLocationDays(current => current.filter(day => day.date !== date));
   };
   const openCorrection = (entry: EuerEntry) => {
+    if (!isActiveEuerEntry(entry)) return;
     const correctionType: EuerEntryType = entry.entryType === 'income' ? 'expense' : 'income';
     setDraft({
       entryType: correctionType,
@@ -457,7 +471,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setError('');
   };
   const openEdit = (entry: EuerEntry) => {
-    if (entry.sourceType === 'vat_payment') return;
+    if (entry.sourceType === 'vat_payment' || !isActiveEuerEntry(entry)) return;
     setDraft({
       entryType: entry.entryType,
       entryDate: dateKey(entry.entryDate),
@@ -496,13 +510,18 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       return;
     }
     if (draft.sourceType === 'invoice_payment') {
+      if (amount <= 0) { setError('Der Zahlungsbetrag muss größer als 0 sein.'); return; }
       if (!draft.sourceId) {
-        setError('Bitte ordnen Sie die Teilzahlung einer Rechnung zu.');
+        setError('Bitte ordne die Zahlung einer Rechnung zu.');
         return;
       }
       const invoice = invoiceOptions.find(item => item.id === draft.sourceId);
-      if (invoice && amount > getRemainingAmount(invoice) + 0.01) {
-        setError(`Die Teilzahlung darf den offenen Rechnungsbetrag von ${formatAmount(getRemainingAmount(invoice))} nicht überschreiten.`);
+      const currentPaymentAmount = dialogEntry?.sourceType === 'invoice_payment' && dialogEntry.sourceId === invoice?.id
+        ? Number(dialogEntry.amount || 0)
+        : 0;
+      const availableAmount = invoice ? getRemainingAmount(invoice) + currentPaymentAmount : 0;
+      if (invoice && amount > availableAmount + 0.01) {
+        setError(`Die Zahlung darf den verfügbaren Rechnungsbetrag von ${formatAmount(availableAmount)} nicht überschreiten.`);
         return;
       }
     }
@@ -533,10 +552,16 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         setNotice('EÜR-Buchung wurde aktualisiert und protokolliert.');
       } else {
         const created = await apiService.createEuerEntry(payload);
-        if (new Date(created.entryDate).getFullYear() === year) setEntries(current => [created, ...current]);
-        setNotice(payload.sourceType === 'invoice_payment' ? 'Teilzahlung wurde gespeichert.' : 'EÜR-Buchung wurde gespeichert.');
+        setEntries(current => [created, ...current]);
+        const paymentYear = Number(String(payload.entryDate).slice(0, 4));
+        setNotice(payload.sourceType === 'invoice_payment'
+          ? `Rechnungszahlung wurde für ${paymentYear} gespeichert.${paymentYear !== year ? ` Wähle ${paymentYear}, um die Zahlung in der EÜR zu sehen.` : ''}`
+          : 'EÜR-Buchung wurde gespeichert.');
       }
       closeDialog();
+      if (payload.sourceType === 'invoice_payment' || dialogEntry?.sourceType === 'invoice_payment') {
+        await refreshInvoices().catch(() => setError('Die Buchung wurde gespeichert. Der Rechnungsstatus konnte noch nicht aktualisiert werden; lade die Seite neu.'));
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'EÜR-Buchung konnte nicht gespeichert werden.');
     } finally {
@@ -545,7 +570,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   };
 
   const remove = async (entry: EuerRow) => {
-    if (entry.automatic || entriesById.get(entry.id)?.sourceType === 'vat_payment') return;
+    if (entry.automatic || entry.status === 'voided' || entriesById.get(entry.id)?.sourceType === 'vat_payment') return;
     const confirmed = await confirm({
       title: 'Buchung stornieren',
       message: `„${entry.description}“ stornieren? Die Buchung bleibt in der Historie erhalten.`,
@@ -556,8 +581,11 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setBusy(true);
     try {
       await apiService.deleteEuerEntry(entry.id, 'Stornierung durch Benutzer');
-      setEntries(current => current.filter(item => item.id !== entry.id));
-      setNotice('EÜR-Buchung wurde storniert und bleibt im Änderungsverlauf erhalten.');
+      setEntries(current => current.map(item => item.id === entry.id ? { ...item, status: 'voided' } : item));
+      setNotice('EÜR-Buchung wurde storniert. Über „Stornierte Buchungen anzeigen“ bleibt der Änderungsverlauf erreichbar.');
+      if (entriesById.get(entry.id)?.sourceType === 'invoice_payment') {
+        await refreshInvoices().catch(() => setError('Die Buchung wurde storniert. Der Rechnungsstatus konnte noch nicht aktualisiert werden; lade die Seite neu.'));
+      }
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'EÜR-Buchung konnte nicht storniert werden.');
     } finally {
@@ -566,15 +594,19 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   };
 
   const openHistory = async (entry: EuerEntry) => {
+    const request = ++historyRequestVersion.current;
+    const targetWorkspace = workspaceId;
     setHistoryEntry(entry);
+    setHistory([]);
+    setHistoryError('');
     setHistoryLoading(true);
     try {
-      setHistory(await apiService.getEuerEntryHistory(entry.id));
+      const loadedHistory = await apiService.getEuerEntryHistory(entry.id);
+      if (request === historyRequestVersion.current && templateWorkspace.current === targetWorkspace) setHistory(loadedHistory);
     } catch (historyError) {
-      setError(historyError instanceof Error ? historyError.message : 'Der Änderungsverlauf konnte nicht geladen werden.');
-      setHistory([]);
+      if (request === historyRequestVersion.current && templateWorkspace.current === targetWorkspace) setHistoryError(historyError instanceof Error ? historyError.message : 'Der Änderungsverlauf konnte nicht geladen werden.');
     } finally {
-      setHistoryLoading(false);
+      if (request === historyRequestVersion.current && templateWorkspace.current === targetWorkspace) setHistoryLoading(false);
     }
   };
 
@@ -701,7 +733,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         <ActionMenuItem icon={<Plus className="h-4 w-4" />} tone="orange" onClick={openNew}>Manuelle Buchung</ActionMenuItem>
         {can('data.write') && <ActionMenuItem icon={<Calculator className="h-4 w-4" />} tone="indigo" disabled={!entriesReady} onClick={() => setAllowanceDialogOpen(true)}>Pauschale erfassen</ActionMenuItem>}
         <ActionMenuItem icon={<FileScan className="h-4 w-4" />} tone="blue" onClick={() => onNavigate?.('receipts')}>Beleg hinzufügen</ActionMenuItem>
-        <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" onClick={openPayment}>Teilzahlung</ActionMenuItem>
+        <ActionMenuItem icon={<ReceiptText className="h-4 w-4" />} tone="green" disabled={!entriesReady} onClick={() => openPayment()}>Rechnungszahlung</ActionMenuItem>
         <ActionMenuItem icon={<Upload className="h-4 w-4" />} tone="indigo" onClick={() => setIsImportOpen(true)}>Aus Datei importieren</ActionMenuItem>
       </ActionMenu>
     </PageHeader>
@@ -737,8 +769,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
-      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Das Einnahmen-/Ausgabenjournal ist der Kern deiner EÜR. Bezahlte Rechnungen und Gutschriften werden automatisch übernommen; Teilzahlungen, Belege und weitere Geschäftsvorfälle kannst du ergänzen.</p><p className="mt-2 text-xs text-blue-800">Hinweis: Im aktuellen Rechnungsmodell ist kein Zahlungseingangsdatum hinterlegt. Automatische Rechnungszeilen werden deshalb zunächst über das Rechnungsdatum zugeordnet und sollten vor der Abgabe geprüft werden.</p></div></div>
+      <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Deine EÜR für {year}</h2><p className="mt-1 text-sm leading-6 text-blue-900">Erfasste Zahlungen, Belege und weitere Geschäftsvorfälle bilden deine EÜR. Ein Rechnungsstatus allein erzeugt keine Einnahme. Erfasse Rechnungszahlungen mit dem tatsächlichen Zahlungsdatum.</p></div></div>
     </section>}
+
+    {entriesReady && legacyPaidInvoices.length > 0 && <Notice variant="warning" title={`Zahlung nachtragen (${legacyPaidInvoices.length})`}>
+      <p>Bei diesen als bezahlt markierten Rechnungen fehlen Zahlungsbuchungen für den gesamten Betrag oder einen Restbetrag. Nur bereits erfasste Zahlungen sind in den EÜR-Summen enthalten. Trage den fehlenden Betrag mit dem tatsächlichen Zahlungsdatum nach.</p>
+      {can('data.write') && <button type="button" onClick={() => openPayment(legacyPaidInvoices[0].id)} className="action-button mt-3">Zahlung nachtragen</button>}
+    </Notice>}
+    {entriesReady && legacyPaidCreditNotes.length > 0 && <Notice variant="warning" title={`Gutschriften prüfen (${legacyPaidCreditNotes.length})`}>
+      <p>Der Status „Bezahlt“ allein belegt keine Rückzahlung oder Verrechnung. Diese Gutschriften erzeugen hier keine automatische Buchung. Prüfe den tatsächlichen Vorgang.</p>
+      <button type="button" onClick={() => onNavigate?.('credit-notes')} className="action-button mt-3">Gutschriften öffnen</button>
+    </Notice>}
 
     {notice && <Notice variant="success" onDismiss={() => setNotice('')}>{notice}</Notice>}
     {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Fehler schließen"><X className="h-4 w-4" /></button></div>}
@@ -749,7 +790,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-bold text-emerald-700">{formatAmount(summary.income)}</p></article>
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />Ausgaben</div><p className="mt-3 text-2xl font-bold text-rose-700">{formatAmount(summary.expenses)}</p></article>
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><Calculator className="h-4 w-4 text-primary-custom" />Überschuss</div><p className={`mt-3 text-2xl font-bold ${summary.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(summary.profit)}</p></article>
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-bold text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">automatisch und manuell</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-bold text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">aktive Einnahmen und Ausgaben</p></article>
     </div>
 
     {checkHints.length > 0 && <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><h2 className="font-semibold text-amber-950">Prüfhinweise ({checkHints.length})</h2><p className="mt-1 text-sm text-amber-900">Diese Hinweise helfen bei der Vorbereitung und ersetzen keine steuerliche Prüfung.</p><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{checkHints.slice(0, 6).map(hint => <li key={hint}>{hint}</li>)}</ul>{checkHints.length > 6 && <p className="mt-2 text-xs text-amber-800">Weitere Hinweise sind im Steuerberater-Export enthalten.</p>}</div></div></section>}
@@ -768,17 +809,18 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
           <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white">{monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}><td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td></tr>)}</tbody>
-            <tfoot className="border-t-2 border-gray-200 bg-gray-50"><tr><td className="px-4 py-3 font-semibold text-gray-900">Ø pro Monat<span className="block text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></td><td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</td><td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</td><td className={`px-4 py-3 text-right font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</td></tr></tfoot>
+            <tfoot className="border-t-2 border-gray-200 bg-gray-50"><tr><td className="px-4 py-3 font-semibold text-gray-900"><div className="flex items-center gap-1">Ø pro Monat<InfoTooltip label="Berechnung des Monatsdurchschnitts" text={averageTooltipText} /></div>{averagePeriodLabel && <span className="block text-xs font-normal text-gray-500">{averagePeriodLabel}</span>}</td><td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</td><td className="px-4 py-3 text-right font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</td><td className={`px-4 py-3 text-right font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</td></tr></tfoot>
           </table>
         </div>
         <div className="divide-y divide-gray-100 tablet:hidden">{monthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}><span className="font-medium text-gray-900">{monthLabel(locale, year, item.month)}</span><span className={`font-semibold ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</span></button><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
-        <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-900">Ø pro Monat<span className="ml-2 text-xs font-normal text-gray-500">über {averageMonthCount} {averageMonthCount === 1 ? 'Monat' : 'Monate'}</span></span><span className={`font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</p></div></div></div>
+        <div className="mt-4 border-t-2 border-gray-200 pt-4 tablet:hidden"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-1 font-semibold text-gray-900">Ø pro Monat<InfoTooltip label="Berechnung des Monatsdurchschnitts" text={averageTooltipText} /></div>{averagePeriodLabel && <span className="block text-xs font-normal text-gray-500">{averagePeriodLabel}</span>}</div><span className={`shrink-0 font-semibold ${monthlyAverage.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(monthlyAverage.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 font-semibold text-emerald-700">{formatAmount(monthlyAverage.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 font-semibold text-rose-700">{formatAmount(monthlyAverage.expenses)}</p></div></div></div>
       </div>
     </section>
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Automatische Belege und manuell erfasste Geschäftsvorfälle.</p>{selectedMonth !== null && <p className="mt-2 text-sm text-gray-700">Nur <strong>{monthLabel(locale, year, selectedMonth)}</strong> · {monthFilteredRows.length} {monthFilteredRows.length === 1 ? 'Buchung' : 'Buchungen'} <button type="button" onClick={() => setSelectedMonth(null)} className="ml-2 font-medium text-primary-custom hover:underline">Alle Monate anzeigen</button></p>}</div><button type="button" aria-pressed={vatIncompleteOnly} onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
-      {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : rows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
+      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Erfasste Zahlungen, Belege und weitere Geschäftsvorfälle.</p>{selectedMonth !== null && <p className="mt-2 text-sm text-gray-700">Nur <strong>{monthLabel(locale, year, selectedMonth)}</strong> · {monthFilteredRows.length} {monthFilteredRows.length === 1 ? 'Buchung' : 'Buchungen'} <button type="button" onClick={() => setSelectedMonth(null)} className="ml-2 font-medium text-primary-custom hover:underline">Alle Monate anzeigen</button></p>}</div><button type="button" aria-pressed={vatIncompleteOnly} onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
+      <label className="mx-5 mb-4 flex w-fit items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={showVoided} onChange={event => setShowVoided(event.target.checked)} className="rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />Stornierte Buchungen anzeigen</label>
+      {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : listedRows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
           <table className="w-full table-fixed">
             <colgroup>
@@ -790,10 +832,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
               <col style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} />
             </colgroup>
             <thead className="bg-gray-50"><tr><th className="w-28 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="w-40 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="w-36 whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="w-32 whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
-            <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className="group hover:bg-gray-50"><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
+            <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className={`group ${row.status === 'voided' ? 'bg-gray-50' : 'hover:bg-gray-50'}`}><td className="w-28 whitespace-nowrap px-3 py-4 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-4 text-sm"><div className="truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.status === 'voided' && <span className="mt-1 inline-block text-xs font-medium text-gray-500">Storniert · nicht in den Summen</span>}{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && isActiveEuerEntry(entry) && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="w-40 max-w-0 px-3 py-4 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="w-36 max-w-0 px-3 py-4 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`w-32 whitespace-nowrap px-3 py-4 text-right text-sm font-medium ${row.status === 'voided' ? 'text-gray-500 line-through' : row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-4 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && !isActiveEuerEntry(entry) ? <button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" aria-label="Änderungsverlauf der stornierten Buchung öffnen" title="Änderungsverlauf" disabled={busy}><History className="h-4 w-4" /></button> : entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 tablet:hidden">{visibleRows.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</p>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p><p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}{entry && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}</article>; })}</div>
+        <div className="divide-y divide-gray-100 tablet:hidden">{visibleRows.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</p>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <article key={row.id} className={`p-4 ${row.status === 'voided' ? 'bg-gray-50' : ''}`}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900" title={row.description}>{row.description}</p>{row.status === 'voided' && <span className="mt-1 inline-block text-xs font-medium text-gray-500">Storniert · nicht in den Summen</span>}<p className="mt-1 text-xs text-gray-500">{formatDate(row.entryDate, locale, company?.dateFormat)} · {categoryLabels[row.category]}</p></div><div className="flex shrink-0 items-start gap-2"><p className={`whitespace-nowrap text-sm font-semibold ${row.status === 'voided' ? 'text-gray-500 line-through' : row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</p>{entry && !isActiveEuerEntry(entry) ? <button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" aria-label="Änderungsverlauf der stornierten Buchung öffnen" title="Änderungsverlauf" disabled={busy}><History className="h-4 w-4" /></button> : entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="text-xs font-medium text-primary-custom hover:underline">USt-Zahlung verwalten</button> : entry && <ActionMenu containerClassName="self-center" triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>}</div></div><div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500"><span className="truncate">{row.sourceLabel || 'Manuell'}</span>{row.automatic && <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-600">Automatisch</span>}</div>{row.notes && <p className="mt-2 line-clamp-2 text-xs text-gray-500">{row.notes}</p>}{entry && isActiveEuerEntry(entry) && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <p className="mt-2 text-xs text-amber-700">USt-Angaben unvollständig</p>}</article>; })}</div>
       </>}
     </section>
 
@@ -801,7 +843,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       <DialogShell
         titleId="euer-entry-dialog-title"
         icon={dialogEntry ? Pencil : draft.sourceType === 'correction' ? RotateCcw : Plus}
-        title={dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Teilzahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
+        title={dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Rechnungszahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
         description="Beträge werden als Bruttobeträge erfasst. Änderungen werden protokolliert."
         onClose={closeDialog}
         onSubmit={submit}
@@ -822,21 +864,21 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="text-base font-medium text-gray-700">Art<select value={draft.entryType} onChange={event => { const entryType = event.target.value as EuerEntryType; setDraft(current => ({ ...current, entryType, category: entryType === 'income' ? 'other_income' : current.category === 'other_income' ? 'office' : current.category })); }} className="form-input mt-1 w-full"><option value="expense">Ausgabe</option><option value="income">Einnahme</option></select></label>
-                  <label className="text-base font-medium text-gray-700">Datum<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label>
+                  <label className="text-base font-medium text-gray-700">{draft.sourceType === 'invoice_payment' ? 'Zahlungsdatum' : 'Datum'}<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label>
                   <label className="text-base font-medium text-gray-700 md:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value, category: current.entryType === 'expense' && (current.category === 'office' || current.category === 'other_expense') ? suggestCategory(event.target.value) : current.category }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label>
                   <label className="text-base font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label>
                   {draft.entryType === 'income' && draft.sourceType === 'manual' && <label className="text-base font-medium text-gray-700 md:col-span-2">{terminology.entity.singular} (optional)<select value={draft.customerId} onChange={event => setDraft(current => ({ ...current, customerId: event.target.value }))} className="form-input mt-1 w-full"><option value="">Ohne Zuordnung</option>{customers.filter(customer => customer.isActive !== false || customer.id === draft.customerId).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>}
-                  <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Teilzahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>
+                  <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Zahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option></select></label>
                 </div>
               </section>
 
               {draft.sourceType === 'invoice_payment' && <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="euer-entry-source-title">
-                <div className="mb-3"><h3 id="euer-entry-source-title" className="text-xl font-semibold text-gray-900">Zuordnung</h3><p className="mt-1 text-base text-gray-500">Ordne die Teilzahlung einer Rechnung zu.</p></div>
-                <label className="text-base font-medium text-gray-700">Rechnung<select required value={draft.sourceId} onChange={event => { const sourceId = event.target.value; const invoice = invoiceOptions.find(item => item.id === sourceId); setDraft(current => ({ ...current, sourceId, description: invoice ? `Teilzahlung Rechnung ${invoice.invoiceNumber}` : current.description, taxRate: invoice && Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : current.taxRate })); }} className="form-input mt-1 w-full"><option value="">Rechnung auswählen</option>{invoiceOptions.filter(invoice => getRemainingAmount(invoice) > 0.01 || invoice.id === draft.sourceId).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · offen {formatAmount(getRemainingAmount(invoice))}</option>)}</select></label>
+                <div className="mb-3"><h3 id="euer-entry-source-title" className="text-xl font-semibold text-gray-900">Rechnung</h3><p className="mt-1 text-base text-gray-500">Ordne die Zahlung der Rechnung zu, auf der sie eingegangen ist.</p></div>
+                <label className="text-base font-medium text-gray-700">Rechnung<select required value={draft.sourceId} onChange={event => { const sourceId = event.target.value; const invoice = invoiceOptions.find(item => item.id === sourceId); const currentPaymentAmount = dialogEntry?.sourceType === 'invoice_payment' && dialogEntry.sourceId === sourceId ? Number(dialogEntry.amount || 0) : 0; const availableAmount = invoice ? getRemainingAmount(invoice) + currentPaymentAmount : 0; setDraft(current => ({ ...current, sourceId, amount: invoice ? String(availableAmount) : '', entryDate: invoice?.status === 'paid' && getRemainingAmount(invoice) > 0.005 ? '' : current.entryDate, description: invoice ? `Zahlung Rechnung ${invoice.invoiceNumber}` : current.description, taxRate: invoice && Number(invoice.subtotal) > 0 ? String(Number(((Number(invoice.taxAmount || 0) / Number(invoice.subtotal)) * 100).toFixed(2))) : current.taxRate })); }} className="form-input mt-1 w-full"><option value="">Rechnung auswählen</option>{invoiceOptions.filter(invoice => invoice.status !== 'draft' && (getRemainingAmount(invoice) > 0.01 || invoice.id === draft.sourceId)).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · {invoice.status === 'paid' && getRemainingAmount(invoice) > 0.005 ? 'noch zu erfassen' : 'offen'} {formatAmount(getRemainingAmount(invoice))}</option>)}</select></label>
               </section>}
 
               <section className="rounded-xl border border-primary-custom border-l-2 bg-primary-light-custom p-5 sm:p-6" aria-labelledby="euer-entry-amount-title">
-                <div className="mb-3"><h3 id="euer-entry-amount-title" className="text-xl font-semibold text-gray-900">Betrag</h3><p className="mt-1 text-base text-gray-500">{draft.vatFields.vatTreatment === 'reverse_charge_eu' || draft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Bei Reverse Charge entspricht der Betrag dem Netto.' : 'Beträge werden als Bruttobeträge erfasst.'}</p></div>
+                <div className="mb-3"><h3 id="euer-entry-amount-title" className="text-xl font-semibold text-gray-900">Betrag</h3><p className="mt-1 text-base text-gray-500">{draft.sourceType === 'invoice_payment' ? 'Der noch nicht gebuchte Rechnungsbetrag ist vorausgefüllt. Für eine Teilzahlung kannst du den Betrag verringern.' : draft.vatFields.vatTreatment === 'reverse_charge_eu' || draft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Bei Reverse Charge entspricht der Betrag dem Netto.' : 'Beträge werden als Bruttobeträge erfasst.'}</p></div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="text-base font-medium text-gray-700">{draft.vatFields.vatTreatment === 'reverse_charge_eu' || draft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Betrag (Netto)' : 'Betrag (Brutto)'}<LocalizedNumberInput required min="0" step="0.01" value={draft.amount} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, amount: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label>
                   <label className="text-base font-medium text-gray-700">MwSt.-Satz in %<LocalizedNumberInput required min="0" max="100" step="0.01" value={draft.taxRate} locale={locale} numberFormat={company?.numberFormat} onValueChange={value => setDraft(current => ({ ...current, taxRate: value === '' ? '' : String(value) }))} className="form-input mt-1 w-full" /></label>
@@ -854,7 +896,42 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       </DialogShell>
     )}
 
-    {historyEntry && <div className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-gray-900">Änderungsverlauf</h2><p className="mt-1 text-sm text-gray-500">{historyEntry.description}</p></div><button type="button" onClick={() => setHistoryEntry(null)} aria-label="Historie schließen"><X className="h-5 w-5 text-gray-500" /></button></div>{historyLoading ? <div className="py-10 text-center text-sm text-gray-500">Historie wird geladen …</div> : history.length === 0 ? <div className="py-10 text-center text-sm text-gray-500">Noch keine Historieneinträge vorhanden.</div> : <div className="mt-5 space-y-3">{history.map(item => <article key={item.id} className="rounded-lg border border-gray-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2 font-medium text-gray-900"><CheckCircle2 className="h-4 w-4 text-primary-custom" />{item.action === 'created' ? 'Erstellt' : item.action === 'updated' ? 'Geändert' : 'Storniert'}</span><span className="text-xs text-gray-500">{formatDate(item.changedAt, locale, company?.dateFormat)}</span></div>{item.reason && <p className="mt-2 text-sm text-gray-700">Grund: {item.reason}</p>}{(item.oldData || item.newData) && <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-gray-500">Technische Werte anzeigen</summary><pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">{JSON.stringify({ vorher: item.oldData, nachher: item.newData }, null, 2)}</pre></details>}</article>)}</div>}</section></div>}
+    {historyEntry && <DialogShell
+      titleId="euer-history-dialog-title"
+      title="Änderungsverlauf"
+      description={historyEntry.description}
+      icon={History}
+      size="lg"
+      fitContent
+      onClose={() => { historyRequestVersion.current += 1; setHistoryEntry(null); }}
+    >
+      {historyLoading ? <div className="py-10 text-center text-sm text-gray-500">Historie wird geladen …</div> : historyError ? <p role="alert" className="py-6 text-sm text-red-700">{historyError}</p> : history.length === 0 ? <div className="py-10 text-center text-sm text-gray-500">Noch keine Historieneinträge vorhanden.</div> : <div className="space-y-3">{history.map(item => {
+        const changes = getEuerHistoryChanges(item, {
+          amount: formatAmount,
+          date: value => formatDate(value, locale, company?.dateFormat),
+          number: value => new Intl.NumberFormat(locale).format(value),
+          categories: categoryLabels,
+          customers: customerNames,
+          sources: new Map([...invoiceOptions.map(invoice => [invoice.id, invoice.invoiceNumber] as const), ...entries.map(entry => [entry.id, entry.description] as const)]),
+        });
+        const changedAt = new Date(item.changedAt);
+        return <article key={item.id} className="rounded-lg border border-gray-200 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2 font-medium text-gray-900"><CheckCircle2 className="h-4 w-4 text-primary-custom" />{item.action === 'created' ? 'Erstellt' : item.action === 'updated' ? 'Geändert' : 'Storniert'}</span>
+            <span className="text-xs text-gray-500">{formatDate(item.changedAt, locale, company?.dateFormat)} · {Number.isNaN(changedAt.getTime()) ? '—' : changedAt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          {item.reason && <p className="mt-2 text-sm text-gray-700">Grund: {item.reason}</p>}
+          {changes.length > 0 ? <dl className="mt-3 space-y-3">{changes.map(change => <div key={change.key} className="text-sm">
+            <dt className="font-medium text-gray-700">{change.label}</dt>
+            <dd className="mt-1 grid gap-1 break-words text-gray-600 sm:grid-cols-2 sm:gap-4">
+              {item.action !== 'created' && <span><span className="text-xs text-gray-500">Vorher: </span>{change.before}</span>}
+              <span><span className="text-xs text-gray-500">{item.action === 'created' ? 'Erfasst: ' : 'Nachher: '}</span>{change.after}</span>
+            </dd>
+          </div>)}</dl> : <p className="mt-3 text-sm text-gray-500">Keine fachlichen Feldänderungen.</p>}
+          {(item.oldData || item.newData) && <details className="mt-3"><summary className="cursor-pointer text-xs font-medium text-gray-500">Technische Werte anzeigen</summary><pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">{JSON.stringify({ vorher: item.oldData, nachher: item.newData }, null, 2)}</pre></details>}
+        </article>;
+      })}</div>}
+    </DialogShell>}
     {expenseTemplateEntry && <RecurringExpenseDialog
       key={expenseTemplateEntry.id}
       scope="business"

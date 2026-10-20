@@ -18,9 +18,9 @@ const colorPresets = [
 ] as const;
 
 const themeModes = [
-  { id: 'system', label: 'System', description: 'Betriebssystem übernehmen', icon: Monitor },
-  { id: 'light', label: 'Hell', description: 'Helles Design verwenden', icon: Sun },
-  { id: 'dark', label: 'Dunkel', description: 'Dunkles Design verwenden', icon: Moon },
+  { id: 'system', label: 'System', icon: Monitor },
+  { id: 'light', label: 'Hell', icon: Sun },
+  { id: 'dark', label: 'Dunkel', icon: Moon },
 ] as const;
 
 /** Bereich „Darstellung & Sprache“ (`#settings/appearance`). */
@@ -48,9 +48,9 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
 
   return (
     <>
-      <SettingsCard sectionId="sprache" icon={Globe} title="Sprache & Formate" description="Wie Zahlen, Beträge, Datum und Uhrzeit angezeigt werden.">
+      <SettingsCard sectionId="sprache" icon={Globe} title="Sprache & Formate">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <SettingsField id="locale" label="Sprache" hint="Bestimmt die Sprache der Benutzeroberfläche.">
+          <SettingsField id="locale" label="Sprache">
             <select id="locale" value={formData.locale || 'de-DE'} onChange={event => set('locale', event.target.value as 'de-DE' | 'en-US' | 'fr-FR' | 'es-ES')} className={settingsInputClass}>
               <option value="de-DE">Deutsch (Deutschland) - 1.234,56 {currencySymbol}</option>
               <option value="en-US">English (United States) - $1,234.56</option>
@@ -58,13 +58,13 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
               <option value="es-ES">Español (España) - 1.234,56 {currencySymbol}</option>
             </select>
           </SettingsField>
-          <SettingsField id="number-format" label="Zahlenformat" hint="Dezimal- und Tausendertrennzeichen in der Anwendung.">
+          <SettingsField id="number-format" label="Zahlenformat">
             <select id="number-format" value={formData.numberFormat || 'european'} onChange={event => set('numberFormat', event.target.value as NumberFormat)} className={settingsInputClass}>
               <option value="european">Europäisch – 1.234,56</option>
               <option value="american">Amerikanisch – 1,234.56</option>
             </select>
           </SettingsField>
-          <SettingsField id="currency" label="Währung" hint="Wird in Beträgen, PDFs und eRechnungen verwendet.">
+          <SettingsField id="currency" label="Währung" info="Die Währung wird in Beträgen, PDFs und eRechnungen verwendet.">
             <select id="currency" value={formData.currency || 'EUR'} onChange={event => set('currency', event.target.value)} className={settingsInputClass}>
               <option value="EUR">Euro (EUR)</option>
               <option value="USD">US-Dollar (USD)</option>
@@ -86,7 +86,7 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
               <option value="12h">12-Stunden-Format</option>
             </select>
           </SettingsField>
-          <SettingsField id="time-zone" label="Workspace-Zeitzone" hint="Wird standardmäßig für neue Kurse und Termine verwendet.">
+          <SettingsField id="time-zone" label="Workspace-Zeitzone" info="Die Workspace-Zeitzone wird standardmäßig für neue Kurse und Termine verwendet.">
             <select id="time-zone" value={formData.timeZone || DEFAULT_TIME_ZONE} onChange={event => set('timeZone', event.target.value)} className={settingsInputClass}>
               {TIME_ZONE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
@@ -94,7 +94,7 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
         </div>
       </SettingsCard>
 
-      <SettingsCard sectionId="erscheinungsbild" icon={SunMoon} title="Erscheinungsbild" description="Betrifft nur die App-Oberfläche, nicht Dokumente oder E-Mails.">
+      <SettingsCard sectionId="erscheinungsbild" icon={SunMoon} title="Erscheinungsbild" info="Der Farbmodus betrifft die App-Oberfläche. Dokumente und E-Mails behalten ihre eigene Darstellung.">
         <div role="radiogroup" aria-label="Farbmodus" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {themeModes.map(mode => (
             <button
@@ -107,15 +107,14 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
             >
               <mode.icon className="h-5 w-5 text-gray-700" aria-hidden="true" />
               <span className="mt-2 block text-sm font-medium text-gray-900">{mode.label}</span>
-              <span className="mt-1 block text-xs text-gray-500">{mode.description}</span>
             </button>
           ))}
         </div>
         <div className="mt-4">
           <SettingsToggleRow
             label="Animationen"
-            description={<>Gilt sofort für Ihr Benutzerkonto auf allen Geräten.{motionError && <span role="alert" className="mt-1 block text-red-700">Die Einstellung konnte nicht gespeichert werden.</span>}</>}
-            info="„Bewegung reduzieren“ im Betriebssystem schaltet Animationen zusätzlich aus."
+            description={motionError ? <span role="alert" className="text-red-700">Die Einstellung konnte nicht gespeichert werden.</span> : undefined}
+            info="Gilt sofort für Ihr Benutzerkonto auf allen Geräten. „Bewegung reduzieren“ im Betriebssystem schaltet Animationen zusätzlich aus."
             checked={animationsEnabled}
             onChange={() => {
               setMotionError(false);
@@ -125,7 +124,7 @@ export function AppearanceArea({ formData, setFormData }: CompanySettingsAreaPro
         </div>
       </SettingsCard>
 
-      <SettingsCard sectionId="farbschema" icon={Palette} title="Farbschema" description="Akzentfarben der App-Oberfläche. Dokumente und E-Mails behalten ihre eigene Darstellung.">
+      <SettingsCard sectionId="farbschema" icon={Palette} title="Farbschema" info="Die Akzentfarben gelten für die App-Oberfläche. Dokumentfarben werden in den Vorlagen festgelegt.">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <ColorPicker label="Primärfarbe" value={formData.primaryColor || '#2563eb'} onChange={color => set('primaryColor', color)} defaultColor="#2563eb" />
           <ColorPicker label="Sekundärfarbe" value={formData.secondaryColor || '#64748b'} onChange={color => set('secondaryColor', color)} defaultColor="#64748b" />

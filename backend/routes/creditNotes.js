@@ -45,7 +45,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(creditNote);
   } catch (error) {
     logger.error('Failed to create credit note', { error: error.message, stack: error.stack });
-    if (error.statusCode === 400 || error.message === 'Customer not found') return res.status(400).json({ error: error.message });
+    if (error.statusCode === 400 || error.statusCode === 409 || error.message === 'Customer not found') return res.status(error.statusCode || 400).json({ error: error.message });
     res.status(500).json({ error: 'Failed to create credit note' });
   }
 });

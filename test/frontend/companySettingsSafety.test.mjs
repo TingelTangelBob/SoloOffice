@@ -105,6 +105,7 @@ test('Zahlungsarten: Komma, Leerzeichen und leere Einträge werden beim Überneh
 
 test('Firmeneinstellungen und E-Mail-Versand prüfen das Recht „workspace.settings“', () => {
   const settings = readSource('components/Settings.tsx');
+  const companyArea = readSource('components/settings/CompanyArea.tsx');
   const email = readSource('components/EmailManagement.tsx');
 
   // Lesemodus ohne Recht: Eingaben deaktiviert, Speichern und Zurücksetzen blockiert.
@@ -112,6 +113,9 @@ test('Firmeneinstellungen und E-Mail-Versand prüfen das Recht „workspace.sett
   assert.match(settings, /<fieldset disabled=\{!canEditSettings\}/);
   assert.match(settings, /if \(isSaving \|\| !canEditSettings\) return;/);
   assert.match(settings, /if \(!canEditSettings\) return;/);
+  assert.match(settings, /validateCompanyRequiredFields\(formData\)/);
+  assert.match(companyArea, /aria-invalid=\{Boolean\(error\('name'\)\)\}/);
+  assert.match(companyArea, /validateCompanyRequiredFields\(formData\)/);
 
   // Der E-Mail-Versand nutzt das vorhandene Recht; „settings.write“ existiert nicht.
   assert.match(email, /can\('workspace\.settings'\)/);

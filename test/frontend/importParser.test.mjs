@@ -191,6 +191,7 @@ test('Leere und unbenannte CSV-Spalten werden nicht als Quellspalten übernommen
 
 import { deflateRawSync } from 'node:zlib';
 import { buildIssueList, buildImportTemplate, buildCombinedImportTemplate, describeCombinedImportTemplate } from '../../.test-dist/utils/importParser.js';
+import { readXlsx } from '../../.test-dist/utils/xlsxReader.js';
 
 function zip(files) {
   const encoder = new TextEncoder();
@@ -255,6 +256,75 @@ function tutoringWorkbook() {
     'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet><sheetData>${rows}</sheetData></worksheet>`,
   });
 }
+
+function formattedWorkbook({ date1904, headers, rows }) {
+  const properties = date1904 === undefined ? '' : `<workbookPr date1904="${date1904}"/>`;
+  const headerCells = headers.map(value => `<c t="inlineStr"><is><t>${value}</t></is></c>`).join('');
+  return zip({
+    'xl/workbook.xml': `<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${properties}<sheets><sheet name="Import" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    'xl/styles.xml': '<styleSheet><numFmts count="2"><numFmt numFmtId="164" formatCode="00000"/><numFmt numFmtId="165" formatCode="&quot;00000&quot;0"/></numFmts><cellXfs count="6"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/><xf numFmtId="2"/><xf numFmtId="20"/><xf numFmtId="165"/></cellXfs></styleSheet>',
+    'xl/worksheets/sheet1.xml': `<worksheet><sheetData><row r="1">${headerCells}</row>${rows.map((cells, index) => `<row r="${index + 2}">${cells}</row>`).join('')}</sheetData></worksheet>`,
+  });
+}
+
+test('Excel liest das 1904-Datumssystem einschließlich Tag null und lässt Uhrzeiten unverändert', async () => {
+  for (const date1904 of ['1', 'true']) {
+    const workbook = formattedWorkbook({
+      date1904,
+      headers: ['Datum', 'Beginn', 'Datum mit Uhrzeit', 'Uhrzeit'],
+      rows: ['<c s="1"><v>42992.75</v></c><c s="1"><v>0</v></c><c s="1"><v>0.5</v></c><c s="4"><v>0.5</v></c>'],
+    });
+    const [sheet] = await readXlsx(workbook);
+    assert.deepEqual(sheet.rows[1].cells, ['2021-09-15', '1904-01-01', '1904-01-01', '12:00'], `date1904=${date1904}`);
+  }
+});
+
+test('Excel verwendet ohne aktiviertes date1904 weiterhin das 1900-Datumssystem', async () => {
+  for (const date1904 of [undefined, '0', 'false']) {
+    const [sheet] = await readXlsx(formattedWorkbook({
+      date1904,
+      headers: ['Datum', 'Uhrzeit'],
+      rows: ['<c s="1"><v>44454</v></c><c s="4"><v>0.5</v></c>'],
+    }));
+    assert.deepEqual(sheet.rows[1].cells, ['2021-09-15', '12:00'], `date1904=${date1904}`);
+  }
+});
+
+test('Das Datum aus einer 1904-Arbeitsmappe bleibt bei der Importzuordnung erhalten', async () => {
+  const workbook = formattedWorkbook({
+    date1904: '1',
+    headers: ['Datum', 'Schüler', 'Stunden', 'Pro Stunde'],
+    rows: ['<c s="1"><v>42992</v></c><c t="inlineStr"><is><t>Anna</t></is></c><c s="3"><v>1.5</v></c><c><v>10</v></c>'],
+  });
+  const parsed = await parseImportFile(new File([workbook], 'einnahmen-1904.xlsx'));
+  const definition = getImportDefinition('euerEntries');
+  const { mapping } = analyseHeaderMapping(parsed.headers, definition);
+  const rows = mapImportRows(parsed, mapping, { definition, constants: { entryType: 'income', description: 'Unterricht' } });
+  assert.equal(parsed.rows[0].Datum, '2021-09-15');
+  assert.equal(rows[0].entryDate, '2021-09-15');
+  assert.equal(rows[0].quantity, 1.5);
+});
+
+test('Excel-Nullmasken erhalten PLZ als Text bis zur Kundenimport-Zuordnung', async () => {
+  const workbook = formattedWorkbook({
+    headers: ['Kundenname', 'PLZ', 'Wert', 'Dezimalzahl', 'Literale'],
+    rows: [
+      '<c t="inlineStr"><is><t>Muster GmbH</t></is></c><c s="2"><v>1234</v></c><c><v>12</v></c><c s="3"><v>12.5</v></c><c s="5"><v>7</v></c>',
+      '<c t="inlineStr"><is><t>Null GmbH</t></is></c><c s="2"><v>0</v></c>',
+      '<c t="inlineStr"><is><t>Lang GmbH</t></is></c><c s="2"><v>123456</v></c>',
+    ],
+  });
+  const parsed = await parseImportFile(new File([workbook], 'kunden.xlsx'));
+  const definition = getImportDefinition('customers');
+  const { mapping } = analyseHeaderMapping(parsed.headers, definition);
+  const mapped = mapImportRows(parsed, mapping, { definition });
+
+  assert.deepEqual(parsed.rows.map(row => row.PLZ), ['01234', '00000', '123456']);
+  assert.deepEqual(mapped.map(row => row.postalCode), ['01234', '00000', '123456']);
+  assert.equal(parsed.rows[0].Wert, 12, 'unformatierte Zahlen bleiben numerisch');
+  assert.equal(parsed.rows[0].Dezimalzahl, 12.5, 'Dezimalformate erzeugen keine Kennung');
+  assert.equal(parsed.rows[0].Literale, 7, 'Nullen in Literalen werden nicht als Nullmaske behandelt');
+});
 
 test('Deutsches Excel-CSV im Windows-Zeichensatz behält seine Umlaute', async () => {
   const bytes = Buffer.from('Schüler;Datum\nMüller;15.09.21\n', 'latin1');

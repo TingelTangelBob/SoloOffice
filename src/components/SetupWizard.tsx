@@ -7,6 +7,7 @@ import type { Company, WorkspaceSetup, WorkspaceMigrationChoice, TakeoverStatus 
 import { ColorPicker } from './ColorPicker';
 import { InfoTooltip } from './InfoTooltip';
 import { terminologyProfiles } from '../utils/terminology';
+import { validateCompanyFormats, type CompanyFormatField } from '../../backend/shared/companyValidation.js';
 
 const steps = ['Betrieb & Kontakt', 'Steuer & Rechnung', 'Zahlung & Auftritt', 'Module & Prüfung', 'Datenübernahme'];
 
@@ -38,6 +39,7 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
   const [error, setError] = useState('');
   const taxBusinessTypeRef = useRef<HTMLSelectElement>(null);
   const legalFormRef = useRef<HTMLSelectElement>(null);
+  const formatErrors = validateCompanyFormats({ ...company, ...draft });
 
   useEffect(() => {
     let active = true;
@@ -53,17 +55,31 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
     return () => { active = false; };
   }, []);
 
-  const field = <K extends keyof Company>(key: K, label: string, type = 'text') => (
+  const field = <K extends keyof Company>(key: K, label: string, type = 'text') => {
+    const fieldError = formatErrors[key as CompanyFormatField]
+      || (key === 'bankAccount' ? formatErrors['paymentInformation.bankAccount'] : undefined);
+    return (
     <label className="block space-y-1.5 text-sm font-medium text-gray-700" key={String(key)}>
       <span>{label}</span>
       <input
+        id={`setup-${String(key)}`}
         type={type}
-        value={String(draft[key] ?? company[key] ?? '')}
-        onChange={event => setDraft(previous => ({ ...previous, [key]: (type === 'number' ? Number(event.target.value) : event.target.value) as Company[K] }))}
+        aria-invalid={Boolean(fieldError)}
+        aria-describedby={fieldError ? `setup-${String(key)}-error` : undefined}
+        value={String(key === 'bankAccount'
+          ? draft.paymentInformation?.bankAccount ?? draft.bankAccount ?? company.paymentInformation?.bankAccount ?? company.bankAccount ?? ''
+          : draft[key] ?? company[key] ?? '')}
+        onChange={event => setDraft(previous => ({
+          ...previous,
+          [key]: (type === 'number' ? Number(event.target.value) : event.target.value) as Company[K],
+          ...(key === 'bankAccount' ? { paymentInformation: { ...company.paymentInformation, ...previous.paymentInformation, bankAccount: event.target.value } } : {}),
+        }))}
         className="form-input w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-900"
       />
+      {fieldError && <span id={`setup-${String(key)}-error`} className="block text-xs text-red-600">{fieldError}</span>}
     </label>
-  );
+    );
+  };
 
   const select = <K extends keyof Company>(
     key: K,
@@ -107,6 +123,13 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
   };
 
   const save = async (nextStep: number, complete = false) => {
+    const firstFormatField = Object.keys(formatErrors)[0] as CompanyFormatField | undefined;
+    if (firstFormatField) {
+      setError(Object.values(formatErrors).join(' '));
+      setStep(firstFormatField === 'taxId' ? 2 : firstFormatField.includes('bankAccount') ? 3 : 1);
+      requestAnimationFrame(() => document.getElementById(`setup-${firstFormatField.includes('bankAccount') ? 'bankAccount' : firstFormatField}`)?.focus());
+      return false;
+    }
     if (nextStep > step || complete) {
       const validationStep = complete ? 2 : step;
       const validationError = validateStep(validationStep);

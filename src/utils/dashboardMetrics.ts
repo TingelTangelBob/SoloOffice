@@ -1,5 +1,5 @@
 export interface DashboardRevenueRecord {
-  customerName: string;
+  customerName?: string;
   date: Date;
   amount: number;
 }
@@ -11,13 +11,28 @@ function localDate(value: Date | string | number) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+export function getDashboardAvailableYears({ todayYear, preferenceYear, invoices, euerEntries }: {
+  todayYear: number;
+  preferenceYear?: number | 'all' | null;
+  invoices: { issueDate: Date | string }[];
+  euerEntries: { entryDate: Date | string; euerYear?: number | null }[];
+}) {
+  return Array.from(new Set([
+    todayYear,
+    ...(typeof preferenceYear === 'number' ? [preferenceYear] : []),
+    ...invoices.map(invoice => localDate(invoice.issueDate).getFullYear()),
+    ...euerEntries.map(entry => entry.euerYear ?? localDate(entry.entryDate).getFullYear()),
+  ])).sort((a, b) => b - a);
+}
+
 export function buildRevenueRecords({ invoices, euerEntries, customers, includeUnpaidInvoices }: {
-  invoices: { id: string; issueDate: Date | string; status: string; total: number; customerName?: string; sourceJobsEligible?: boolean }[];
-  euerEntries: { entryType: string; sourceType?: string; sourceId?: string | null; entryDate: Date | string; amount: number; status?: string; customerId?: string | null }[];
+  invoices: { id: string; issueDate: Date | string; status: string; total: number; customerId?: string; customerName?: string; sourceJobsEligible?: boolean }[];
+  euerEntries: { entryType: string; sourceType?: string; sourceId?: string | null; entryDate: Date | string; amount: number; status?: string; customerId?: string | null; euerYear?: number | null }[];
   customers: { id: string; name: string }[];
   includeUnpaidInvoices: boolean;
 }): DashboardRevenueRecord[] {
   const records: DashboardRevenueRecord[] = [];
+  const names = new Map(customers.map(customer => [customer.id, customer.name]));
   const payments = euerEntries.filter(entry => entry.entryType === 'income' && entry.sourceType === 'invoice_payment'
     && entry.sourceId && entry.status !== 'voided' && Number(entry.amount) > 0);
   const byInvoice = new Map<string, typeof payments>();
@@ -25,33 +40,31 @@ export function buildRevenueRecords({ invoices, euerEntries, customers, includeU
   invoices.forEach(invoice => {
     if (invoice.sourceJobsEligible === false) return;
     const invoicePayments = byInvoice.get(invoice.id) || [];
+    const customerName = invoice.customerName?.trim() || (invoice.customerId ? names.get(invoice.customerId) : undefined);
     if (invoicePayments.length) invoicePayments.forEach(payment => records.push({
-      customerName: invoice.customerName?.trim() || 'Ohne Zuordnung', date: localDate(payment.entryDate), amount: Number(payment.amount),
+      customerName, date: localDate(payment.entryDate), amount: Number(payment.amount),
     }));
-    else if (invoice.status === 'paid') records.push({
-      customerName: invoice.customerName?.trim() || 'Ohne Zuordnung', date: localDate(invoice.issueDate), amount: Number(invoice.total),
-    });
     if (includeUnpaidInvoices && invoice.status !== 'draft' && invoice.status !== 'paid') {
       const openAmount = Math.max(0, Number(invoice.total) - invoicePayments.reduce((sum, payment) => sum + Number(payment.amount), 0));
-      if (openAmount > 0) records.push({ customerName: invoice.customerName?.trim() || 'Ohne Zuordnung', date: localDate(invoice.issueDate), amount: openAmount });
+      if (openAmount > 0) records.push({ customerName, date: localDate(invoice.issueDate), amount: openAmount });
     }
   });
-  const names = new Map(customers.map(customer => [customer.id, customer.name]));
   euerEntries.filter(entry => entry.entryType === 'income' && (entry.sourceType || 'manual') === 'manual'
     && entry.status !== 'voided' && Number(entry.amount) > 0).forEach(entry => records.push({
-    customerName: (entry.customerId && names.get(entry.customerId)) || 'Ohne Zuordnung', date: localDate(entry.entryDate), amount: Number(entry.amount),
+    customerName: entry.customerId ? names.get(entry.customerId) : undefined, date: localDate(entry.entryDate), amount: Number(entry.amount),
   }));
   return records;
 }
 
 export function aggregateRevenue(records: DashboardRevenueRecord[], year: number | 'all', locale = 'de-DE') {
-  const selected = year === 'all' ? records : records.filter(record => record.date.getFullYear() === year);
-  const years = [...new Set(selected.map(record => record.date.getFullYear()))].sort((a, b) => a - b);
+  const attributedYear = (record: DashboardRevenueRecord) => record.date.getFullYear();
+  const selected = year === 'all' ? records : records.filter(record => attributedYear(record) === year);
+  const years = [...new Set(selected.map(attributedYear))].sort((a, b) => a - b);
   const byYear = year === 'all' && years.length > 1;
   const monthlyYear = typeof year === 'number' ? year : years.length === 1 ? years[0] : null;
   const buckets = new Map<string, { label: string; shortLabel: string; value: number }>();
   selected.forEach(record => {
-    const actualYear = record.date.getFullYear();
+    const actualYear = attributedYear(record);
     const month = record.date.getMonth();
     const key = byYear ? String(actualYear) : `${actualYear}-${String(month + 1).padStart(2, '0')}`;
     const date = new Date(actualYear, byYear ? 0 : month, 1);
@@ -99,7 +112,7 @@ type InvoiceLike = {
   outstandingAmount?: number;
   documentType?: string;
 };
-type EuerLike = { entryType: string; sourceType?: string; sourceId?: string | null; entryDate: Date | string; amount: number; status?: string };
+type EuerLike = { entryType: string; sourceType?: string; sourceId?: string | null; entryDate: Date | string; amount: number; status?: string; euerYear?: number | null };
 
 const isRegularInvoice = (invoice: InvoiceLike) => invoice.documentType !== 'credit_note';
 const inYear = (date: Date, year: number | 'all') => year === 'all' || date.getFullYear() === year;
@@ -146,30 +159,26 @@ export function summarizeOpenInvoices<T extends InvoiceLike>(invoices: T[], euer
 export interface IncomeExpensePoint { key: string; label: string; shortLabel: string; income: number; expenses: number }
 
 /**
- * Einnahmen und Ausgaben wie in der EÜR: aktive Buchungen nach Buchungsdatum,
- * dazu bezahlte Rechnungen ohne erfassten Zahlungseingang nach
- * Rechnungsdatum. Stornierte Buchungen zählen nicht.
+ * Einnahmen und Ausgaben wie in der EÜR: aktive Buchungen nach Buchungsdatum.
+ * Rechnungsstatus ohne Zahlungsbuchung erzeugt keinen fingierten Geldzufluss.
  */
-export function summarizeIncomeExpense({ invoices, euerEntries, year, locale = 'de-DE' }: {
+export function summarizeIncomeExpense({ euerEntries, year, locale = 'de-DE' }: {
   invoices: InvoiceLike[];
   euerEntries: EuerLike[];
   year: number | 'all';
   locale?: string;
 }) {
-  const linked = new Set(euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId).map(entry => entry.sourceId));
-  const rows: { date: Date; income: number; expenses: number }[] = [];
-  invoices.forEach(invoice => {
-    if (!isRegularInvoice(invoice) || invoice.status !== 'paid' || linked.has(invoice.id)) return;
-    rows.push({ date: localDate(invoice.issueDate), income: Number(invoice.total || 0), expenses: 0 });
-  });
+  const rows: { date: Date; year: number; income: number; expenses: number }[] = [];
   euerEntries.forEach(entry => {
     if (entry.status === 'voided') return;
     const amount = Number(entry.amount || 0);
-    if (entry.entryType === 'income') rows.push({ date: localDate(entry.entryDate), income: amount, expenses: 0 });
-    else if (entry.entryType === 'expense') rows.push({ date: localDate(entry.entryDate), income: 0, expenses: amount });
+    const date = localDate(entry.entryDate);
+    const attributedYear = entry.euerYear ?? date.getFullYear();
+    if (entry.entryType === 'income') rows.push({ date, year: attributedYear, income: amount, expenses: 0 });
+    else if (entry.entryType === 'expense') rows.push({ date, year: attributedYear, income: 0, expenses: amount });
   });
-  const selected = rows.filter(row => inYear(row.date, year));
-  const years = [...new Set(selected.map(row => row.date.getFullYear()))].sort((a, b) => a - b);
+  const selected = rows.filter(row => year === 'all' || row.year === year);
+  const years = [...new Set(selected.map(row => row.year))].sort((a, b) => a - b);
   const byYear = year === 'all' && years.length > 1;
   const monthlyYear = typeof year === 'number' ? year : years.length === 1 ? years[0] : null;
   const buckets = new Map<string, IncomeExpensePoint>();
@@ -189,7 +198,7 @@ export function summarizeIncomeExpense({ invoices, euerEntries, year, locale = '
   };
   if (monthlyYear !== null && !byYear) for (let month = 0; month < 12; month += 1) bucket(monthlyYear, month);
   selected.forEach(row => {
-    const point = bucket(row.date.getFullYear(), row.date.getMonth());
+    const point = bucket(row.year, row.date.getMonth());
     point.income += row.income;
     point.expenses += row.expenses;
   });

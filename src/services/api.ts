@@ -64,6 +64,7 @@ interface ApiRequestOptions extends RequestInit {
 export interface EmailDeliveryResult {
   success: boolean;
   message: string;
+  simulated?: boolean;
   messageId?: string;
   copyRecipient?: string;
   copyAccepted?: boolean;
@@ -1202,9 +1203,10 @@ class ApiService {
   // EÜR API
   // --------------------------------------------------------------------------
 
-  async getEuerEntries(year?: number): Promise<EuerEntry[]> {
+  async getEuerEntries(year?: number, includeVoided = false): Promise<EuerEntry[]> {
     const queryParams = new URLSearchParams();
     if (year) queryParams.append('year', year.toString());
+    if (includeVoided) queryParams.append('includeVoided', 'true');
     return this.request<EuerEntry[]>(`/euer-entries?${queryParams}`);
   }
 

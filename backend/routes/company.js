@@ -3,6 +3,7 @@ import { mapCompanyRow } from '../utils/companyMapping.js';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { numberPatternError } from '../utils/invoiceNumberPattern.js';
+import { validateCompanyFormats, validateCompanyRequiredFields } from '../shared/companyValidation.js';
 
 const router = express.Router();
 const LOCALES = new Set(['de-DE', 'en-US', 'fr-FR', 'es-ES']);
@@ -44,6 +45,18 @@ router.get('/', async (req, res) => {
 // Update company information
 router.put('/', async (req, res) => {
   try {
+    let formatContext = {};
+    if (req.body.postalCode !== undefined || req.body.country !== undefined) {
+      const current = await query("SELECT country, postal_code FROM company WHERE workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid");
+      formatContext = { country: current.rows[0]?.country, postalCode: current.rows[0]?.postal_code };
+    }
+    const fieldErrors = {
+      ...validateCompanyRequiredFields(req.body),
+      ...validateCompanyFormats(req.body, formatContext),
+    };
+    if (Object.keys(fieldErrors).length) {
+      return res.status(400).json({ error: Object.values(fieldErrors).join(' '), fieldErrors });
+    }
     const updates = [];
     const values = [];
     let paramIndex = 1;
