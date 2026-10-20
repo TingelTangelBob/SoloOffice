@@ -2,6 +2,21 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.8b – Angebote, EÜR und verlässliche Datenübernahme
+
+- Angebote können im Demo-Modus als versendet markiert werden. Demo-Versand
+  bleibt ausdrücklich simuliert und verschickt keine E-Mail.
+- EÜR-Zahlungen, stornierte Buchungen und Änderungshistorien werden
+  nachvollziehbarer dargestellt. Legacy-Rechnungszahlungen lassen sich mit
+  Zahlungsdatum korrekt übernehmen.
+- Eingaben für Firmendaten werden auf gültige Formate geprüft. Importe weisen
+  Teilzahlungen ohne Zahlungsdatum zurück, damit offene Beträge korrekt
+  berechnet bleiben.
+- Auftragsstatus, Rechnungszahlungen, Steuerübersicht und Kennzahlen wurden
+  korrigiert und durch Regressionstests ergänzt.
+- Das Release bleibt eine Beta für Tests und Feedback; siehe die offenen
+  manuellen Prüfungen in `docs/manual-release-checklist.md`.
+
 ## v0.9.7b – EÜR-Buchungen, Übersicht und Einstellungen
 
 - Rechnungszahlungen in der EÜR übernehmen standardmäßig den noch offenen

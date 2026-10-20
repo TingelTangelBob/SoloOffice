@@ -128,6 +128,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const [entryType, setEntryType] = useState<'job' | 'vacation'>('job');
   const timeEntryListRef = useRef<HTMLDivElement>(null);
   const materialListRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const customerInputRef = useRef<HTMLInputElement>(null);
+  const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const { markEntering, settleEntering, isEntering } = useEnteringRows();
   const [vacationForm, setVacationForm] = useState({
     title: 'Urlaub',
@@ -615,8 +618,14 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   });
 
   const validateJobForm = () => {
-    if (!formData.customerId || !formData.title.trim() || !formData.description.trim()) {
-      setFormError('Bitte füllen Sie alle Pflichtfelder aus, bevor Sie den Eintrag weiterführen.');
+    const missingFields = [
+      { value: formData.title, label: 'Titel', ref: titleInputRef },
+      { value: formData.customerId, label: terminology.entity.singular, ref: customerInputRef },
+      { value: formData.description, label: 'Beschreibung', ref: descriptionInputRef },
+    ].filter(field => !field.value.trim());
+    if (missingFields.length > 0) {
+      setFormError(`Bitte ergänzen Sie folgende Pflichtfelder: ${missingFields.map(field => field.label).join(', ')}.`);
+      missingFields[0].ref.current?.focus();
       return false;
     }
 
@@ -627,6 +636,13 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
     setFormError('');
     return true;
+  };
+
+  const handleMaterialKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Enter in einer Materialposition darf nicht das gesamte Formular absenden.
+    if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.target instanceof HTMLInputElement) {
+      event.preventDefault();
+    }
   };
 
   const getRateNavigationCallback = (target: 'customers' | 'settings') => (
@@ -658,10 +674,11 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
     const navigate = getRateNavigationCallback(pendingRateNavigation);
     if (!navigate) return;
+    if (formData.status !== 'draft' && !validateJobForm()) return;
 
     setIsSavingBeforeNavigation(true);
     try {
-      const saved = await onSubmit(getSubmitData('draft'));
+      const saved = await onSubmit(getSubmitData(formData.status));
       if (saved === false) return;
       setPendingRateNavigation(null);
       navigate();
@@ -679,8 +696,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     // Bestehende Entwürfe dürfen auch mit noch offenen Pflichtfeldern weiter
     // bearbeitet und gespeichert werden. Die Prüfung greift beim Erstellen
     // sowie beim Weiterführen in eine aktive Statusstufe.
-    if (!job && !validateJobForm()) return;
-    if (job && job.status !== 'draft' && !validateJobForm()) return;
+    if ((!job || formData.status !== 'draft') && !validateJobForm()) return;
 
     setFormError('');
     try {
@@ -860,7 +876,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
         footer={dialogFooter}
       >
         <div className="space-y-4 pb-2">
-        {formError && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{formError}</div>}
+        {formError && <div id="job-entry-form-error" role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{formError}</div>}
             {entryType === 'vacation' ? (
               <div className="mx-auto max-w-xl space-y-4 py-2">
                 <p className="text-sm text-gray-500">
@@ -921,6 +937,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Titel *</label>
                   <input
                     type="text"
+                    ref={titleInputRef}
+                    aria-describedby={formError ? 'job-entry-form-error' : undefined}
                     value={formData.title}
                     onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                     className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
@@ -958,7 +976,10 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Status</label>
                   <SelectWithChevron
                     value={formData.status}
-                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }))}
+                    onChange={(e) => {
+                      setIsDirty(true);
+                      setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }));
+                    }}
                     className="form-input form-input-compact text-xs sm:px-3 sm:text-sm"
                   >
                     <option value="draft">Entwurf</option>
@@ -976,6 +997,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     <div className="relative min-w-0 flex-1">
                       <input
                         type="text"
+                        ref={customerInputRef}
+                        aria-describedby={formError ? 'job-entry-form-error' : undefined}
                         value={customerSearchTerm}
                         onChange={handleCustomerSearchChange}
                         onFocus={() => setIsCustomerDropdownOpen(true)}
@@ -1245,6 +1268,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 Beschreibung *
               </label>
               <textarea
+                ref={descriptionInputRef}
+                aria-describedby={formError ? 'job-entry-form-error' : undefined}
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 rows={2}
@@ -1606,7 +1631,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
 
             {formData.materials && formData.materials.length > 0 ? (
-              <div ref={materialListRef} className="space-y-2">
+              <div ref={materialListRef} className="space-y-2" onKeyDown={handleMaterialKeyDown}>
                 <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
                   <div className="col-span-2">Beschreibung</div>
                   <div>Menge</div>

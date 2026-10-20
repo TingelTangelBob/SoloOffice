@@ -20,8 +20,6 @@ const AREA_ICONS: Record<SettingsArea, LucideIcon> = {
 interface SettingsNavProps {
   activeArea: SettingsArea;
   dirtyAreas: ReadonlySet<SettingsArea>;
-  /** Kurzer Zusatz am Bereich, etwa „Unverbindliche Schätzung“ bei Steuern. */
-  badges?: Partial<Record<SettingsArea, string>>;
   onSelectArea: (area: SettingsArea) => void;
   onSelectResult: (result: SettingsSearchResult) => void;
 }
@@ -102,7 +100,7 @@ function SettingsSearch({ onSelectResult }: Pick<SettingsNavProps, 'onSelectResu
  * darunter Suche plus Auswahlfeld, damit auf schmalen Geräten kein
  * waagerecht scrollender Reiterstreifen entsteht.
  */
-export function SettingsNav({ activeArea, dirtyAreas, badges = {}, onSelectArea, onSelectResult }: SettingsNavProps) {
+export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResult }: SettingsNavProps) {
   const selectId = useId();
   return (
     <nav aria-label="Einstellungsbereiche" className="settings-nav">
@@ -153,7 +151,6 @@ export function SettingsNav({ activeArea, dirtyAreas, badges = {}, onSelectArea,
                       <span className="min-w-0 flex-1 truncate">{SETTINGS_AREA_DEFINITIONS[area].label}</span>
                       {dirty && <span className="settings-dirty-dot" title="Ungespeicherte Änderungen" aria-label="ungespeichert" />}
                     </a>
-                    {badges[area] && <p className="settings-nav-badge">{badges[area]}</p>}
                   </li>
                 );
               })}

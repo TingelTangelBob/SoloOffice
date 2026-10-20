@@ -14,7 +14,7 @@ export function SystemArea({ isDemoMode, onNavigate }: { isDemoMode: boolean; on
         sectionId="email"
         icon={Mail}
         title="E-Mail-Versand"
-        description={isDemoMode ? 'Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.' : 'Absender, SMTP-Zugang und Benachrichtigungen.'}
+        description={isDemoMode ? 'Im Demo-Modus ist die SMTP-Verwaltung deaktiviert.' : undefined}
       >
         {!isDemoMode && <EmailManagement embedded />}
       </SettingsCard>
@@ -23,7 +23,7 @@ export function SystemArea({ isDemoMode, onNavigate }: { isDemoMode: boolean; on
         sectionId="sicherung"
         icon={Database}
         title="Datensicherung"
-        description="JSON- und ZIP-Sicherungen erstellen, verwalten oder wiederherstellen."
+        info="JSON- und ZIP-Sicherungen erstellen, verwalten oder wiederherstellen."
         actions={(
           <button
             type="button"

@@ -100,20 +100,26 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   }, [invoices, sourceDataKey, year, workspaceId]);
 
   const paidInvoiceSummary = useMemo(() => {
-    const creditNotes = sourceData.key === sourceDataKey ? sourceData.creditNotes : [];
     const euerEntries = sourceData.key === sourceDataKey ? sourceData.euerEntries : [];
-    const payments = euerEntries.filter(entry => entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId);
+    const activePayments = euerEntries.filter(entry => entry.status !== 'voided'
+      && entry.entryType === 'income' && entry.sourceType === 'invoice_payment' && entry.sourceId
+      && Number(entry.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(String(entry.entryDate).slice(0, 10)));
+    const payments = activePayments.filter(entry => Number(String(entry.entryDate).slice(0, 4)) === year);
     const linkedInvoiceIds = new Set(payments.map(entry => entry.sourceId));
-    const legacyPaidInvoices = invoices.filter(invoice => (
-      invoice.status === 'paid'
+    const paymentTotals = new Map<string, number>();
+    activePayments.forEach(entry => {
+      if (entry.sourceId) paymentTotals.set(entry.sourceId, (paymentTotals.get(entry.sourceId) || 0) + Math.round(Number(entry.amount) * 100));
+    });
+    // Rechnungs- und Gutschriftstatus sind kein Zahlungsnachweis. Nur aktive
+    // EÜR-Zahlungsbuchungen fließen in Einnahmen und Zähler ein.
+    const income = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const missingPaymentCount = invoices.filter(invoice => (
+      invoice.documentType !== 'credit_note'
+      && invoice.status === 'paid'
       && Number(String(invoice.issueDate).slice(0, 4)) === year
-      && !linkedInvoiceIds.has(invoice.id)
-    ));
-    const paidCreditNotes = creditNotes.filter(note => Number(String(note.issueDate).slice(0, 4)) === year && note.status === 'paid' && !linkedInvoiceIds.has(note.id));
-    const income = payments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
-      + legacyPaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
-      - paidCreditNotes.reduce((sum, note) => sum + Math.abs(Number(note.total || 0)), 0);
-    return { count: linkedInvoiceIds.size + legacyPaidInvoices.length, income };
+      && Math.round(Number(invoice.total || 0) * 100) - (paymentTotals.get(invoice.id) || 0) > 0
+    )).length;
+    return { count: linkedInvoiceIds.size, income, missingPaymentCount };
   }, [sourceData, sourceDataKey, invoices, year]);
 
   const forecastContent = extensionsLoading ? (
@@ -166,6 +172,10 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
         <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /><span className="text-sm text-gray-500">Automatische Einnahmen</span></div><p className={`mt-3 text-2xl font-bold ${paidInvoiceSummary.income < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatAmount(paidInvoiceSummary.income)}</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">EÜR-Vorschau öffnen <ArrowRight className="h-4 w-4" /></button></article>
         <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-amber-600" /><span className="text-sm text-gray-500">Nächster Schritt</span></div><p className="mt-3 font-semibold text-gray-900">Ausgaben ergänzen</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">Ausgaben erfassen <ArrowRight className="h-4 w-4" /></button></article>
       </div>
+      {paidInvoiceSummary.missingPaymentCount > 0 && <div role="note" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <p>Bei {paidInvoiceSummary.missingPaymentCount} als bezahlt {paidInvoiceSummary.missingPaymentCount === 1 ? 'markierter Rechnung fehlen' : 'markierten Rechnungen fehlen'} vollständige Zahlungseinträge. Trage den fehlenden Betrag mit dem tatsächlichen Zahlungsdatum nach. Bereits erfasste Teilzahlungen sind enthalten. Die Umsatzsteuer richtet sich nach dem hinterlegten Verfahren.</p>
+        <button type="button" onClick={() => onNavigate('euer')} className="action-button shrink-0">Zahlungseingang nachtragen <ArrowRight className="h-4 w-4" /></button>
+      </div>}
     </section>
 
     <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

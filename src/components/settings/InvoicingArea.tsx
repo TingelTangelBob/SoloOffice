@@ -8,6 +8,7 @@ import { parsePaymentMethods } from '../../utils/paymentInformation';
 import { SettingsCard, SettingsField, type SettingsSaveMessage } from './SettingsUi';
 import { choiceCardClass, DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN, settingsInputClass } from './settingsStyles';
 import type { CompanySettingsAreaProps } from './settingsAreaProps';
+import { ibanFormatError } from '../../../backend/shared/companyValidation.js';
 
 function YearlyStartNumbers() {
   const [entries, setEntries] = useState<YearlyInvoiceStartNumber[]>([]);
@@ -118,6 +119,8 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
   const invoiceNumberPatternError = validateInvoiceNumberPattern(invoiceNumberPattern);
   const creditNoteNumberPatternError = validateInvoiceNumberPattern(creditNoteNumberPattern);
   const linkedHolder = formData.paymentInformationMode === 'company';
+  const bankAccount = formData.paymentInformation?.bankAccount ?? formData.bankAccount ?? '';
+  const bankAccountError = ibanFormatError(bankAccount);
   const setPayment = (patch: Partial<NonNullable<typeof formData.paymentInformation>>) => setFormData(previous => ({
     ...previous,
     paymentInformation: { ...previous.paymentInformation, ...patch },
@@ -129,8 +132,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
         sectionId="bankverbindung"
         icon={CreditCard}
         title="Bankverbindung"
-        description="Erscheint im Zahlungsbereich Ihrer Rechnungen und in eRechnungen."
-        info={`Wählen Sie, ob der Kontoinhaber automatisch dem ${terminology.organization.nameInDativeLabel} folgen oder unabhängig davon gepflegt werden soll.`}
+        info={`Diese Bankverbindung erscheint auf Rechnungen und in eRechnungen. Der Kontoinhaber kann mit dem ${terminology.organization.nameInDativeLabel} verknüpft oder getrennt verwaltet werden.`}
       >
         <div role="radiogroup" aria-label="Kontoinhaber" className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
           {[
@@ -171,8 +173,8 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               className={settingsInputClass}
             />
           </SettingsField>
-          <SettingsField id="payment-iban" label="IBAN" required>
-            <input id="payment-iban" type="text" name="iban" autoComplete="off" value={formData.paymentInformation?.bankAccount || formData.bankAccount || ''} onChange={event => setPayment({ bankAccount: event.target.value })} placeholder="DE89 3704 0044 0532 0130 00" className={settingsInputClass} />
+          <SettingsField id="payment-iban" label="IBAN" error={bankAccountError || undefined}>
+            <input id="payment-iban" type="text" name="iban" autoComplete="off" aria-invalid={Boolean(bankAccountError)} aria-describedby={bankAccountError ? 'payment-iban-message' : undefined} value={bankAccount} onChange={event => setPayment({ bankAccount: event.target.value })} placeholder="DE89 3704 0044 0532 0130 00" className={settingsInputClass} />
           </SettingsField>
           <SettingsField id="payment-bic" label="BIC">
             <input id="payment-bic" type="text" name="bic" autoComplete="off" value={formData.paymentInformation?.bic || formData.bic || ''} onChange={event => setPayment({ bic: event.target.value })} placeholder="COBADEFFXXX" className={settingsInputClass} />
@@ -183,7 +185,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
         </div>
       </SettingsCard>
 
-      <SettingsCard sectionId="zahlungsbedingungen" icon={CalendarClock} title="Zahlungsbedingungen" description="Standardwerte für neue Rechnungen und Angebote.">
+      <SettingsCard sectionId="zahlungsbedingungen" icon={CalendarClock} title="Zahlungsbedingungen" info="Diese Standardwerte gelten für neue Rechnungen und Angebote.">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SettingsField id="payment-days" label="Standard-Zahlungsziel (Tage)" required hint="Bei 0 Tagen ist die Rechnung sofort fällig.">
             <input
@@ -233,7 +235,6 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
         sectionId="nummernkreise"
         icon={Hash}
         title="Nummernkreise"
-        description="Aufbau und Start der fortlaufenden Rechnungs- und Gutschriftsnummern."
         info="Die Startnummer wird nur bei neuen Systemen oder beim Jahreswechsel verwendet. Bereits vergebene Nummern werden weitergezählt und auch nach dem Löschen eines Entwurfs nicht erneut verwendet. Platzhalter: {YYYY} Jahr, {YY} Kurzjahr, {MM} Monat und genau ein fortlaufender Zähler von {N} bis {NNNNNNNN}; mehrere N bestimmen die Mindestbreite."
       >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

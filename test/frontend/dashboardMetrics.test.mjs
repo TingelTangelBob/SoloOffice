@@ -6,6 +6,7 @@ import {
   buildRevenueRecords,
   compareRevenue,
   countActiveCustomers,
+  getDashboardAvailableYears,
   sumRevenue,
   summarizeIncomeExpense,
   summarizeOpenInvoices,
@@ -70,7 +71,7 @@ test('Offene Posten: Restbetrag nach Teilzahlung, überfällig nach Fälligkeit,
   assert.equal(summary.overdueTotal, 150);
 });
 
-test('Einnahmen und Ausgaben folgen der EÜR: Buchungen, bezahlte Rechnungen ohne Zahlung, ohne Stornos', () => {
+test('Einnahmen und Ausgaben folgen aktiven EÜR-Buchungen, ohne fingierte Zahlung aus Status „bezahlt“', () => {
   const invoices = [
     { id: 'p', issueDate: '2026-03-05', status: 'paid', total: 300 },
     { id: 'q', issueDate: '2026-04-05', status: 'paid', total: 999 },
@@ -83,13 +84,55 @@ test('Einnahmen und Ausgaben folgen der EÜR: Buchungen, bezahlte Rechnungen ohn
   ];
   const year = summarizeIncomeExpense({ invoices, euerEntries, year: 2026 });
   assert.equal(year.points.length, 12);
-  assert.equal(year.income, 1299);
+  assert.equal(year.income, 999);
   assert.equal(year.expenses, 120);
-  assert.equal(year.result, 1179);
-  assert.deepEqual([year.points[2].income, year.points[2].expenses], [300, 120]);
+  assert.equal(year.result, 879);
+  assert.deepEqual([year.points[2].income, year.points[2].expenses], [0, 120]);
   assert.equal(year.points[4].income, 999);
   const all = summarizeIncomeExpense({ invoices, euerEntries, year: 'all' });
-  assert.deepEqual(all.points.map(point => [point.key, point.income, point.expenses]), [['2025', 0, 500], ['2026', 1299, 120]]);
+  assert.deepEqual(all.points.map(point => [point.key, point.income, point.expenses]), [['2025', 0, 500], ['2026', 999, 120]]);
+});
+
+test('bezahlter Altbestand ohne Zahlungsbuchung wird nicht als Zufluss oder „Ohne Zuordnung“-Kunde gezeigt', () => {
+  const records = buildRevenueRecords({
+    invoices: [
+      { id: 'legacy', issueDate: '2026-02-01', status: 'paid', total: 400, customerName: 'Altbestand' },
+      { id: 'actual', issueDate: '2026-02-02', status: 'paid', total: 100, customerName: 'Kunde A' },
+    ],
+    euerEntries: [
+      { entryType: 'income', sourceType: 'invoice_payment', sourceId: 'actual', entryDate: '2026-03-04', amount: 100, status: 'active' },
+      { entryType: 'income', sourceType: 'manual', entryDate: '2026-03-05', amount: 50, status: 'active' },
+      { entryType: 'income', sourceType: 'manual', entryDate: '2026-03-06', amount: 20, customerId: 'c1', status: 'active' },
+    ],
+    customers: [{ id: 'c1', name: 'Kunde B' }],
+    includeUnpaidInvoices: false,
+  });
+  assert.deepEqual(records.map(record => [record.customerName, record.amount]), [
+    ['Kunde A', 100], [undefined, 50], ['Kunde B', 20],
+  ]);
+});
+
+test('Dashboard ordnet Zahlungseingänge und sonstige EÜR-Buchungen dem ausgewählten EÜR-Jahr zu', () => {
+  const euerEntries = [
+    { entryType: 'expense', sourceType: 'vat_payment', entryDate: '2026-01-08', euerYear: 2025, amount: 40, status: 'active' },
+    { entryType: 'income', sourceType: 'manual', entryDate: '2026-01-02', amount: 15, status: 'active' },
+  ];
+  const selected = summarizeIncomeExpense({ invoices: [], euerEntries, year: 2026 });
+  assert.equal(selected.income, 15);
+  assert.equal(selected.expenses, 0);
+  const prior = summarizeIncomeExpense({ invoices: [], euerEntries, year: 2025 });
+  assert.equal(prior.income, 0);
+  assert.equal(prior.expenses, 40);
+  assert.equal(prior.points[0].expenses, 40, 'USt-Zahlung wird dem nach § 11 EStG zugeordneten EÜR-Jahr zugerechnet');
+});
+
+test('Dashboard-Jahresauswahl enthält das abweichende EÜR-Jahr einer USt-Zahlung', () => {
+  const years = getDashboardAvailableYears({
+    todayYear: 2026,
+    invoices: [],
+    euerEntries: [{ entryDate: '2026-01-08', euerYear: 2025 }],
+  });
+  assert.deepEqual(years, [2026, 2025]);
 });
 
 test('Ø Rechnungsbetrag und aktive Kunden respektieren Zeitraum und „Nur bezahlte“', () => {

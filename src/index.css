@@ -2467,6 +2467,10 @@
     font-weight: 600;
   }
 
+  #app-shell[data-theme="dark"] .sidebar-setup-copy strong {
+    color: #fdba74;
+  }
+
   .sidebar-setup-copy span {
     margin-top: 0.15rem;
     color: var(--ink-muted);
@@ -3023,13 +3027,6 @@
     font-weight: 600;
   }
 
-  .settings-nav-badge {
-    margin: 0 0.5rem 0.25rem 2.125rem;
-    color: var(--ink-muted);
-    font-size: 0.6875rem;
-    line-height: 1rem;
-  }
-
   .settings-search-results {
     position: absolute;
     left: 0;
@@ -3470,4 +3467,9 @@
 }
 #app-shell[data-theme="dark"] .so-switch[data-checked="false"] .so-switch-knob {
   background-color: #a1a1aa !important;
+}
+
+/* Auf der Einstellungsseite haben Eingaben und Dropdowns denselben Radius. */
+.settings-layout :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), textarea, select) {
+  border-radius: 0.5rem !important;
 }

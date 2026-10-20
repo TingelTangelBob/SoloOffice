@@ -473,7 +473,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
             activeTab={activeTab}
             onChange={setActiveTab}
             tabs={[
-              { id: 'settings' as const, label: 'Einrichten & testen', icon: Settings },
+              { id: 'settings' as const, label: 'Postfach einrichten', icon: Settings },
               { id: 'notifications' as const, label: 'Benachrichtigungen', icon: BellRing },
               { id: 'activity' as const, label: 'Versandverlauf', icon: TrendingUp },
             ]}
@@ -739,27 +739,40 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                   </div>
                 ) : (
                   <>
-                    <div className="space-y-4">
+                    <section aria-label="Postfach einrichten" className="space-y-4">
                       <h3 className="text-base font-semibold text-gray-900">Postfach einrichten</h3>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-4 disabled:opacity-70">
                         <SettingsToggleRow
                           label="E-Mail-Versand aktivieren"
-                          description="Nach dem Speichern steht dieses Postfach für den Versand bereit."
+                          info="Nach dem Speichern steht dieses Postfach für Rechnungen, Angebote und Mahnungen bereit."
                           checked={smtpSettings.is_enabled}
                           onChange={is_enabled => changeSmtpSettings({ is_enabled })}
                           disabled={smtpBusy || !canManageSmtp}
                         />
+                        <details>
+                          <summary className="cursor-pointer text-sm text-gray-700">Servervorlage verwenden (optional)</summary>
+                          <div className="mt-3">
+                            <SettingsField id="smtp-provider" label="Servervorlage" info="Die Vorlage füllt nur SMTP-Server, Port und Verschlüsselung aus. Alle Serverdaten können anschließend angepasst werden. Absender und Zugangsdaten bleiben erhalten.">
+                              <select id="smtp-provider" value={smtpProvider} onChange={e => changeSmtpProvider(e.target.value as SmtpProvider)} className="form-input form-input-compact w-full">
+                                <option value="eigen">Eigene Serverdaten</option>
+                                <option value="gmail">Gmail</option>
+                                <option value="icloud">iCloud</option>
+                                <option value="hetzner">Hetzner</option>
+                              </select>
+                            </SettingsField>
+                          </div>
+                        </details>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <SettingsField id="smtp-email_from" label="Absenderadresse" required hint="An diese Adresse geht auch Ihre Kopie jeder Kundenmail." error={smtpErrors.email_from}>
-                            <input id="smtp-email_from" type="email" value={smtpSettings.email_from} onChange={e => changeSenderAddress(e.target.value)} autoComplete="email" placeholder="buero@example.de" aria-invalid={!!smtpErrors.email_from} aria-describedby="smtp-email_from-message" className="form-input form-input-compact w-full" />
+                          <SettingsField id="smtp-email_from" label="Absenderadresse" required info="Bei jeder Kundenmail wird eine unsichtbare Kopie (BCC) an diese Adresse geschickt. Der Empfänger sieht diese Kopie nicht." error={smtpErrors.email_from}>
+                            <input id="smtp-email_from" type="email" value={smtpSettings.email_from} onChange={e => changeSenderAddress(e.target.value)} autoComplete="email" placeholder="buero@example.de" aria-invalid={!!smtpErrors.email_from} aria-describedby={smtpErrors.email_from ? 'smtp-email_from-message' : undefined} className="form-input form-input-compact w-full" />
                           </SettingsField>
-                          <SettingsField id="smtp-email_from_name" label="Absendername" hint="Zum Beispiel Ihr Name oder Firmenname.">
-                            <input id="smtp-email_from_name" type="text" value={smtpSettings.email_from_name} onChange={e => changeSmtpSettings({ email_from_name: e.target.value })} autoComplete="organization" aria-describedby="smtp-email_from_name-message" className="form-input form-input-compact w-full" />
+                          <SettingsField id="smtp-email_from_name" label="Absendername">
+                            <input id="smtp-email_from_name" type="text" value={smtpSettings.email_from_name} onChange={e => changeSmtpSettings({ email_from_name: e.target.value })} autoComplete="organization" placeholder="Name oder Firmenname" className="form-input form-input-compact w-full" />
                           </SettingsField>
-                          <SettingsField id="smtp-smtp_user" label="Benutzername" required hint="Meist die vollständige E-Mail-Adresse des Postfachs." error={smtpErrors.smtp_user}>
-                            <input id="smtp-smtp_user" type="text" value={smtpSettings.smtp_user} onChange={e => { setSmtpUserManuallyEdited(true); changeSmtpSettings({ smtp_user: e.target.value }); }} autoComplete="off" spellCheck={false} aria-invalid={!!smtpErrors.smtp_user} aria-describedby="smtp-smtp_user-message" className="form-input form-input-compact w-full" />
+                          <SettingsField id="smtp-smtp_user" label="Benutzername" required info="Meist die vollständige E-Mail-Adresse des Postfachs. Maßgeblich sind die Zugangsdaten Ihres Mailanbieters." error={smtpErrors.smtp_user}>
+                            <input id="smtp-smtp_user" type="text" value={smtpSettings.smtp_user} onChange={e => { setSmtpUserManuallyEdited(true); changeSmtpSettings({ smtp_user: e.target.value }); }} autoComplete="off" spellCheck={false} aria-invalid={!!smtpErrors.smtp_user} aria-describedby={smtpErrors.smtp_user ? 'smtp-smtp_user-message' : undefined} className="form-input form-input-compact w-full" />
                           </SettingsField>
-                          <SettingsField id="smtp-smtp_pass" label={smtpSettings.smtp_pass_set ? 'Passwort ändern' : 'Passwort'} required={!smtpSettings.smtp_pass_set} hint={smtpSettings.smtp_pass_set ? 'Passwort gespeichert. Leer lassen, um es beizubehalten.' : 'Bei manchen Anbietern ist dafür ein App-Passwort erforderlich.'} error={smtpErrors.smtp_pass}>
+                          <SettingsField id="smtp-smtp_pass" label={smtpSettings.smtp_pass_set ? 'Passwort ändern' : 'Passwort'} required={!smtpSettings.smtp_pass_set} hint={smtpSettings.smtp_pass_set ? 'Passwort gespeichert. Leer lassen, um es beizubehalten.' : SMTP_PROVIDERS[smtpProviderForSettings(smtpSettings)].hint} error={smtpErrors.smtp_pass}>
                             <input id="smtp-smtp_pass" type="password" value={smtpSettings.smtp_pass} onChange={e => changeSmtpSettings({ smtp_pass: e.target.value })} autoComplete="new-password" placeholder={smtpSettings.smtp_pass_set ? 'Gespeichertes Passwort beibehalten' : ''} aria-invalid={!!smtpErrors.smtp_pass} aria-describedby="smtp-smtp_pass-message" className="form-input form-input-compact w-full" />
                           </SettingsField>
                         </div>
@@ -771,7 +784,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                             <SettingsField id="smtp-smtp_port" label="Port" required error={smtpErrors.smtp_port}>
                               <input id="smtp-smtp_port" type="text" inputMode="numeric" value={smtpSettings.smtp_port} onChange={e => changeSmtpSettings({ smtp_port: e.target.value })} aria-invalid={!!smtpErrors.smtp_port} aria-describedby={smtpErrors.smtp_port ? 'smtp-smtp_port-message' : undefined} className="form-input form-input-compact w-full" />
                             </SettingsField>
-                            <SettingsField id="smtp-smtp_secure" label="Verschlüsselung">
+                            <SettingsField id="smtp-smtp_secure" label="Verschlüsselung" info="SMTP-Server, Port und Verschlüsselung finden Sie bei Ihrem Mailanbieter. Die Angaben können unabhängig von einer Vorlage eingetragen werden.">
                               <select id="smtp-smtp_secure" value={smtpSettings.smtp_secure ? 'tls' : 'starttls'} onChange={e => {
                                 const smtp_secure = e.target.value === 'tls';
                                 const defaultPort = smtpSettings.smtp_port === '465' || smtpSettings.smtp_port === '587';
@@ -795,15 +808,21 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                         {connectionResult && <p role={connectionResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${connectionResult.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>{connectionResult.text}</p>}
                       </div>
                       <p className="mt-4 text-xs leading-5 text-gray-600">Bei jeder Kundenmail wird automatisch eine unsichtbare Kopie (BCC) an die gespeicherte Absenderadresse geschickt. Die Kunden sehen diese Kopie nicht.</p>
-                    </div>
+                    </section>
 
-                    <SettingsCard title="Testmail senden" icon={Send} description={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : 'Eine echte E-Mail mit der gespeicherten Einrichtung versenden und den Empfang im Postfach prüfen.'}>
-                      {smtpDirty ? <p className="mb-3 text-sm text-gray-600">Bitte die Änderungen zuerst speichern. Die Testmail nutzt die gespeicherte Einrichtung.</p>
-                        : !savedSmtpSettings?.is_enabled && <p className="mb-3 text-sm text-gray-600">Bitte oben den E-Mail-Versand aktivieren und speichern.</p>}
+                    <SettingsCard title="Testmail senden" icon={Send} info={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : undefined}>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-3 disabled:opacity-70">
-                        <SettingsField id="smtp-test-recipient" label="Empfänger der Testmail" required hint="Am besten das eigene Postfach verwenden." error={testRecipientError}>
-                          <input id="smtp-test-recipient" type="email" value={testEmailRecipient} onChange={e => { setTestEmailRecipient(e.target.value); setTestRecipientError(undefined); setTestResult(null); }} autoComplete="email" placeholder={savedSmtpSettings?.email_from || 'buero@example.de'} aria-invalid={!!testRecipientError} aria-describedby="smtp-test-recipient-message" className="form-input form-input-compact w-full" />
-                        </SettingsField>
+                        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-10">
+                          <SettingsField id="smtp-test-recipient" label="Empfänger der Testmail" required error={testRecipientError} className="sm:col-span-7">
+                            <input id="smtp-test-recipient" type="email" value={testEmailRecipient} onChange={e => { setTestEmailRecipient(e.target.value); setTestRecipientError(undefined); setTestResult(null); }} autoComplete="email" placeholder={savedSmtpSettings?.email_from || 'buero@example.de'} aria-invalid={!!testRecipientError} aria-describedby={testRecipientError ? 'smtp-test-recipient-message' : undefined} className="form-input form-input-compact w-full" />
+                          </SettingsField>
+                          <div className="sm:col-span-3" title={smtpDirty ? 'Bitte zuerst die Änderungen speichern.' : !savedSmtpSettings?.is_enabled ? 'Bitte oben den E-Mail-Versand aktivieren und speichern.' : !canManageSmtp ? 'Sie benötigen Administratorrechte, um eine Testmail zu senden.' : undefined}>
+                            <button type="button" onClick={() => void sendTestEmail()} disabled={smtpBusy || smtpDirty || !savedSmtpSettings?.is_enabled || !canManageSmtp} className="btn-primary inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
+                              {isSendingTest ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                              <span>{isSendingTest ? 'Sendet …' : 'Testmail senden'}</span>
+                            </button>
+                          </div>
+                        </div>
                         <details>
                           <summary className="cursor-pointer text-sm text-gray-700">Betreff und Nachricht anpassen (optional)</summary>
                           <div className="mt-3 space-y-3">
@@ -816,10 +835,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           </div>
                         </details>
                       </fieldset>
-                      <button type="button" onClick={() => void sendTestEmail()} disabled={smtpBusy || smtpDirty || !savedSmtpSettings?.is_enabled || !canManageSmtp} className="btn-primary mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
-                        {isSendingTest ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-                        {isSendingTest ? 'Sendet …' : 'Testmail senden'}
-                      </button>
                       {testResult && <p role={testResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${testResult.type === 'error' ? 'text-red-600' : testResult.type === 'warning' ? 'text-yellow-700' : 'text-green-700'}`}>{testResult.text}</p>}
                     </SettingsCard>
                   </>

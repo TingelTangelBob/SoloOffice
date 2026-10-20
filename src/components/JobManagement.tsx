@@ -530,17 +530,24 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
     clearSelection = false,
   ) => {
     if (newStatus !== 'draft') {
-      const hasIncompleteJob = jobIds.some((jobId) => {
+      const incompleteJobs = jobIds.flatMap((jobId) => {
         const job = jobEntries.find((entry) => entry.id === jobId);
-        return !job?.customerId || !job.title?.trim() || !job.description?.trim();
+        const missingFields = [
+          { value: job?.title, label: 'Titel' },
+          { value: job?.customerId, label: terminology.entity.singular },
+          { value: job?.description, label: 'Beschreibung' },
+        ].filter(field => !field.value?.trim()).map(field => field.label);
+        return missingFields.length > 0
+          ? [`${job?.jobNumber || job?.title?.trim() || terminology.work.singular}: ${missingFields.join(', ')}`]
+          : [];
       });
-      if (hasIncompleteJob) {
+      if (incompleteJobs.length > 0) {
         setStatusChangeFeedback({
           phase: 'error',
           completed: 0,
           total: jobIds.length,
           statusText: getStatusText(newStatus),
-          errorMessage: 'Pflichtfelder fehlen: Kunde, Titel und Beschreibung müssen vor dem Weiterführen ausgefüllt sein.',
+          errorMessage: `Bitte ergänzen Sie vor dem Statuswechsel: ${incompleteJobs.slice(0, 3).join('; ')}.${incompleteJobs.length > 3 ? ` Weitere ${incompleteJobs.length - 3} ${terminology.work.plural} sind unvollständig.` : ''}`,
         });
         return;
       }
@@ -1176,7 +1183,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
               <div className="flex items-start justify-between gap-2 border-b border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 sm:px-4" role="alert">
                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
                 <button type="button" onClick={() => setInvoiceCreationNotice(false)} className="order-last shrink-0 rounded p-1 text-yellow-700 hover:bg-yellow-100" aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button>
-                <span>Nur abgeschlossene {terminology.work.plural} können für die Rechnungserstellung ausgewählt werden.</span>
+                <span>Nur abgeschlossene {terminology.work.plural} können abgerechnet werden. Setzen Sie den Status über „Status ändern“ zuerst auf „Abgeschlossen“. Wählen Sie anschließend die abgeschlossenen {terminology.work.plural} aus und klicken Sie auf „Rechnung erstellen“.</span>
               </div>
             )}
             {/* Mobile View */}
@@ -1218,36 +1225,32 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                                 {recurrenceGroup.jobs.length} Termine
                               </span>
                             )}
-                            <label
-                              className="relative inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center"
-                              title={getNotePreview(job.notes) ? `Status: ${getStatusText(job.status)} · Hinweis: ${getNotePreview(job.notes)}` : getStatusText(job.status)}
-                            >
-                              <span className={`status-badge h-2.5 w-2.5 rounded-full tablet:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
-                              <span className={`status-badge hidden rounded-full px-2.5 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(job.status)}`}>
-                                {getStatusText(job.status)}
-                              </span>
-                              {job.recurrence && (
-                                <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />
-                              )}
-                              {getNotePreview(job.notes) && (
-                                <Info
-                                  className="h-4 w-4 shrink-0 text-primary-custom"
-                                  aria-label={`Hinweis: ${getNotePreview(job.notes)}`}
-                                />
-                              )}
-                              <select
-                                value={job.status}
-                                onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
-                                disabled={job.status === 'invoiced'}
-                                aria-label={`Status: ${getStatusText(job.status)}`}
-                                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                            <div className="flex shrink-0 items-center gap-2">
+                              <label
+                                className="relative inline-flex min-h-6 min-w-6 items-center justify-center gap-1"
+                                title={`Status ändern: ${getStatusText(job.status)}`}
                               >
-                                <option value="draft">Entwurf</option>
-                                <option value="in-progress">In Bearbeitung</option>
-                                <option value="completed">Abgeschlossen</option>
-                                <option value="invoiced">Abgerechnet</option>
-                              </select>
-                            </label>
+                                <span className={`status-badge h-2.5 w-2.5 rounded-full tablet:hidden ${getStatusDotColor(job.status)}`} aria-hidden="true" />
+                                <span className={`status-badge hidden rounded-full px-2.5 py-1 text-xs font-semibold tablet:inline-flex ${getStatusColor(job.status)}`}>
+                                  {getStatusText(job.status)}
+                                </span>
+                                <ChevronDown className="h-3 w-3 text-gray-500" aria-hidden="true" />
+                                <select
+                                  value={job.status}
+                                  onChange={(e) => handleStatusChange(job.id, e.target.value as JobEntry['status'])}
+                                  disabled={job.status === 'invoiced'}
+                                  aria-label={`Status ändern. Aktuell: ${getStatusText(job.status)}`}
+                                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                                >
+                                  <option value="draft">Entwurf</option>
+                                  <option value="in-progress">In Bearbeitung</option>
+                                  <option value="completed">Abgeschlossen</option>
+                                  <option value="invoiced">Abgerechnet</option>
+                                </select>
+                              </label>
+                              {job.recurrence && <Repeat2 className="h-4 w-4 text-primary-custom" aria-label="Wiederkehrend" />}
+                              {getNotePreview(job.notes) && <Info className="h-4 w-4 shrink-0 text-primary-custom" aria-label={`Hinweis: ${getNotePreview(job.notes)}`} />}
+                            </div>
                           </div>
                           <ActionMenu
                             ariaLabel={`Aktionen für ${job.title}`}
@@ -1849,6 +1852,7 @@ function StatusChangeFeedbackModal({ feedback, terminology, onClose }: StatusCha
               {feedback.total === 1
                 ? `Der ${terminology.work.singular} wurde aktualisiert.`
                 : `Alle ${feedback.total} ${terminology.work.plural} wurden aktualisiert.`}
+              {feedback.statusText === 'Abgeschlossen' && ' Sie können jetzt die abgeschlossenen Einträge auswählen und über „Rechnung erstellen“ abrechnen.'}
             </p>
           ) : (
             <p className="text-sm text-red-700">{feedback.errorMessage}</p>

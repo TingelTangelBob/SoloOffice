@@ -4,6 +4,7 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
 import { PageHeader } from './PageHeader';
+import { InfoTooltip } from './InfoTooltip';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
@@ -15,7 +16,6 @@ import { trackTelemetry } from '../services/telemetry';
 import { updateFavicon } from '../utils/faviconUtils';
 import { ExtensionsSettings } from './ExtensionsSettings';
 import { TaxProfileSettings } from './TaxProfileSettings';
-import { TAX_TEXTS } from '../../backend/shared/taxTexts.js';
 import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
 import { COMPANY_SETTINGS_GUARD_ID } from '../utils/navigationGuard';
 import {
@@ -36,6 +36,7 @@ import { InvoicingArea } from './settings/InvoicingArea';
 import { WorkspaceArea } from './settings/WorkspaceArea';
 import { AppearanceArea } from './settings/AppearanceArea';
 import { SystemArea } from './settings/SystemArea';
+import { validateCompanyFormats } from '../../backend/shared/companyValidation.js';
 
 /** Bereiche, die das gemeinsame Firmenformular bearbeiten. */
 const COMPANY_FORM_AREAS: ReadonlySet<SettingsArea> = new Set(['general', 'invoices', 'app', 'appearance']);
@@ -158,6 +159,14 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
 
   const saveCompanySettings = async () => {
     if (isSaving || !canEditSettings) return;
+    const formatErrors = validateCompanyFormats(formData);
+    if (Object.keys(formatErrors).length) {
+      setFeedback({ type: 'error', text: Object.values(formatErrors).join(' ') });
+      const bankError = !formatErrors.email && !formatErrors.postalCode && !formatErrors.taxId;
+      selectArea(bankError ? 'invoices' : 'general');
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.settings-form [aria-invalid="true"]')?.focus());
+      return;
+    }
     if (receiptLabelError) {
       setFeedback({ type: 'error', text: `${SETTINGS_AREA_DEFINITIONS.app.label}: ${receiptLabelError}` });
       return;
@@ -259,7 +268,6 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
           <SettingsNav
             activeArea={activeArea}
             dirtyAreas={dirtyAreaSet}
-            badges={{ taxes: TAX_TEXTS.badge }}
             onSelectArea={area => selectArea(area)}
             onSelectResult={selectSearchResult}
           />
@@ -267,8 +275,11 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
 
         <section className="settings-layout-content" aria-labelledby="settings-area-title">
           <header className="settings-area-header">
-            <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
-            {areaDefinition.description && <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>}
+            <div className="flex items-center gap-1">
+              <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
+              {activeArea === 'taxes' && <InfoTooltip text={areaDefinition.description} label="Hinweis zu Steuern und Abgaben" />}
+            </div>
+            {activeArea !== 'taxes' && areaDefinition.description && <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>}
           </header>
 
           {readOnlyNotice}

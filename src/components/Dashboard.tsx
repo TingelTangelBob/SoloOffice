@@ -46,11 +46,13 @@ import {
   buildRevenueRecords,
   compareRevenue,
   countActiveCustomers,
+  getDashboardAvailableYears,
   sumRevenue,
   summarizeIncomeExpense,
   summarizeOpenInvoices,
   summarizeOpenQuotes,
   upcomingJobs,
+  type DashboardRevenueRecord,
 } from '../utils/dashboardMetrics';
 import { REVENUE_CHART_SERIES, getForecastRevenuePoints } from '../utils/dashboardChartSeries';
 import {
@@ -102,8 +104,6 @@ type DashboardCourseSeries = {
   job: JobEntry;
   jobs: JobEntry[];
 };
-
-type DashboardRevenueRecord = { customerName: string; date: Date; amount: number };
 
 /* Rasterbreiten als feste Klassennamen, damit Tailwind sie beim Bauen findet:
    Tablet zwei Spalten, Desktop zwölf (siehe `packDashboardRows`). */
@@ -455,7 +455,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
         : '';
       
-      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}` });
+      const deliveryMessage = result.simulated
+        ? result.message || 'Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.'
+        : result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}`;
+      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
       
       // Automatically mark as sent if it was draft
       if (emailModal.invoice.status === 'draft') {
@@ -561,12 +564,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { monthKeys, selectedMonth, comparisonMonth } = period;
   const dashboardYear = period.selectedYear;
   const selectedPeriodYear = period.selectedYear;
-  const availableYears = Array.from(new Set([
-    today.getFullYear(),
-    ...(typeof preferences.year === 'number' ? [preferences.year] : []),
-    ...invoices.map(invoice => parseLocalJobDate(invoice.issueDate).getFullYear()),
-    ...euerEntries.map(entry => parseLocalJobDate(entry.entryDate).getFullYear()),
-  ])).sort((a, b) => b - a);
+  const availableYears = getDashboardAvailableYears({
+    todayYear: today.getFullYear(),
+    preferenceYear: preferences.year,
+    invoices,
+    euerEntries,
+  });
 
   const revenueInvoices = invoices.map(invoice => {
     const hasUnconfirmedSourceJob = invoice.sourceJobs?.some(sourceJob => {
@@ -611,6 +614,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const customerRevenue = new Map<string, number>();
   recordsForYear(allYears ? 'all' : dashboardYear).forEach(record => {
+    if (!record.customerName) return;
     customerRevenue.set(record.customerName, (customerRevenue.get(record.customerName) || 0) + record.amount);
   });
   const topCustomers = Array.from(customerRevenue.entries())
@@ -759,7 +763,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const quickActions: Record<DashboardQuickItemId, { label: string; ariaLabel: string; description: string; icon: ReactNode; available: boolean; onClick: () => void }> = {
     'quick-invoice': { label: 'Rechnung schreiben', ariaLabel: 'Neue Rechnung schreiben', description: 'Neue Rechnung anlegen', icon: <FileText className="h-7 w-7" />, available: true, onClick: () => onNavigate('invoices', 'new') },
     'quick-receipt': { label: 'Beleg hochladen', ariaLabel: 'Beleg hochladen', description: 'Beleg hochladen und auslesen', icon: <Upload className="h-7 w-7" />, available: true, onClick: () => onNavigate('documents', 'receipts') },
-    'quick-customer': { label: terminology.entity.newLabel, ariaLabel: `Neuen ${terminology.entity.singular} anlegen`, description: `${terminology.entity.singular} anlegen`, icon: <Users className="h-7 w-7" />, available: true, onClick: () => onNavigate('customers', 'new') },
+    'quick-customer': { label: terminology.entity.newLabel, ariaLabel: terminology.entity.newLabel, description: `${terminology.entity.singular} anlegen`, icon: <Users className="h-7 w-7" />, available: true, onClick: () => onNavigate('customers', 'new') },
     'quick-course': { label: terminology.work.newLabel, ariaLabel: `Neuen ${terminology.work.singular} anlegen`, description: `${terminology.work.singular} anlegen`, icon: <Briefcase className="h-7 w-7" />, available: jobsEnabled, onClick: () => onNavigate('jobs', 'new') },
     'quick-quote': { label: 'Angebot schreiben', ariaLabel: 'Neues Angebot schreiben', description: 'Neues Angebot anlegen', icon: <FileCheck className="h-7 w-7" />, available: quotesEnabled, onClick: () => onNavigate('quote-editor') },
     'quick-calendar': { label: 'Kalender', ariaLabel: 'Kalender öffnen', description: 'Termine im Kalender ansehen', icon: <CalendarDays className="h-7 w-7" />, available: jobsEnabled, onClick: () => onNavigate('calendar') },
@@ -835,7 +839,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const leaveEditing = (message: string) => {
     setEditDraft(null);
     announce(message);
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
+requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
   };
   const finishEditing = () => {
     if (editDraft && dashboardLayoutChanged(editDraft, preferences)) {
@@ -1633,7 +1637,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <div className="px-3 pb-1 pt-2">
               <p className="text-xs font-medium text-gray-500">Dashboard anpassen</p>
             </div>
-            <ActionMenuItem icon={<SlidersHorizontal className="h-4 w-4" />} onClick={startEditing} multiline>
+            <ActionMenuItem role="menuitem" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={startEditing} multiline>
               Kacheln und Schnellzugriffe bearbeiten
             </ActionMenuItem>
             <p className="px-3 pb-2 pt-1 text-xs text-gray-500">Reihenfolge, Größe und Sichtbarkeit ändern.</p>

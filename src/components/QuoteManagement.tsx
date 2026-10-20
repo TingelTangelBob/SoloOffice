@@ -38,8 +38,8 @@ interface QuoteManagementProps {
 /**
  * Spaltenmaße der Angebotstabelle: Auswahl 64, Datum 96, Angebotsnummer 176,
  * Gültig bis 112 und Betrag 96 Pixel. Eine Zeile zeigt höchstens sechs
- * Icon-Aktionen (Versendet-Status: annehmen, ablehnen, bearbeiten, Vorschau,
- * herunterladen, löschen).
+ * Icon-Aktionen (Entwurf: versenden, als versendet markieren, bearbeiten,
+ * Vorschau, herunterladen, löschen).
  */
 const QUOTE_TABLE_LAYOUT = listTableLayout({
   baseColumnsWidth: 64 + 96 + 176 + 112 + 96,
@@ -243,6 +243,23 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       },
       isDestructive: true,
     });
+  };
+
+  const handleMarkAsSent = async (quote: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    if (quote.status !== 'draft') return;
+
+    try {
+      await apiService.updateQuote(quote.id, { status: 'sent' });
+      await loadQuotes();
+      notify({ variant: 'success', message: 'Angebot wurde als versendet markiert.' });
+    } catch (error) {
+      logger.error('Error marking quote as sent:', error);
+      notify({ variant: 'error', message: 'Das Angebot konnte nicht als versendet markiert werden.' });
+    }
   };
 
   const handleStatusChange = async (id: string, newStatus: Quote['status']) => {
@@ -536,6 +553,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       
       try {
         let successCount = 0;
+        let simulatedCount = 0;
         const deliveryWarnings: string[] = [];
         let errorCount = 0;
         let missingRecipientCount = 0;
@@ -579,13 +597,19 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             }
 
             if (result.warning) deliveryWarnings.push(`${quote.quoteNumber}: ${result.warning}`);
+            if (result.simulated) simulatedCount++;
+            successCount++;
 
             // Update quote status if it's draft
             if (quote.status === 'draft') {
-              await apiService.updateQuote(quote.id, { status: 'sent' });
+              try {
+                await apiService.updateQuote(quote.id, { status: 'sent' });
+              } catch (error) {
+                const delivery = result.simulated ? 'Der Demo-Versand wurde simuliert' : 'Die E-Mail wurde übergeben';
+                deliveryWarnings.push(`${quote.quoteNumber}: ${delivery}, aber der Angebotsstatus konnte nicht auf „versendet“ gesetzt werden. Bitte vor einem erneuten Versand den Status prüfen.`);
+                logger.error(`Quote ${quote.quoteNumber} was sent but its status could not be updated:`, error);
+              }
             }
-
-            successCount++;
           } catch (error) {
             logger.error(`Error sending email for quote ${quote.quoteNumber}:`, error);
             errorCount++;
@@ -600,10 +624,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           missingRecipientCount > 0 ? `${missingRecipientCount} ohne E-Mail-Adresse` : '',
           errorCount > 0 ? `${errorCount} mit Fehler` : '',
         ].filter(Boolean).join(', ');
+        const deliveryInfo = [
+          successCount > simulatedCount ? `${formatCountLabel(successCount - simulatedCount, 'Angebot', 'Angebote')} per E-Mail versendet` : '',
+          simulatedCount > 0 ? `Demo-Versand für ${simulatedCount} ${simulatedCount === 1 ? 'Angebot' : 'Angebote'} simuliert; ${simulatedCount === 1 ? 'es wurde keine E-Mail' : 'es wurden keine E-Mails'} verschickt` : '',
+        ].filter(Boolean).join('; ');
         if (successCount === 0) {
           notify({ variant: 'error', message: `Keine der ${formatCountLabel(emailModal.bulkQuotes.length, 'Angebot', 'Angebote')} konnte versendet werden${failureInfo ? ` (${failureInfo})` : ''}.` });
         } else if (failedCount > 0 || deliveryWarnings.length > 0) {
-          notify({ variant: 'warning', message: [`${formatCountLabel(successCount, 'Angebot', 'Angebote')} versendet.${failureInfo ? ` ${failureInfo}.` : ''}`, ...deliveryWarnings].join(' ') });
+          notify({ variant: 'warning', message: [`${deliveryInfo}.${failureInfo ? ` ${failureInfo}.` : ''}`, ...deliveryWarnings].join(' ') });
+        } else if (simulatedCount > 0) {
+          notify({ variant: 'info', message: `${deliveryInfo}.` });
         } else {
           notify({ variant: 'success', message: `Alle ${formatCountLabel(successCount, 'Angebot', 'Angebote')} erfolgreich per E-Mail versendet!` });
         }
@@ -693,8 +723,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       const attachmentInfo = totalAttachments > 0 
         ? ` mit ${totalAttachments} Anhang${totalAttachments > 1 ? 'en' : ''}`
         : '';
-      
-      notify({ variant: result.warning ? 'warning' : 'success', message: result.warning || `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}` });
+
+      const deliveryMessage = result.simulated
+        ? result.message || 'Demo: Angebotsversand simuliert. Es wurde keine E-Mail verschickt.'
+        : result.warning || `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}`;
+      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
       setEmailModal({ isOpen: false, quote: null, customer: null });
     } catch (error) {
       logger.error('Error sending quote email:', error);
@@ -925,14 +958,25 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     {showInlineActions ? (
                     <div className="flex flex-nowrap items-center gap-1">
                       {quote.status === 'draft' && (
-                        <button
-                          type="button"
-                          className="action-icon-button action-icon-blue"
-                          title="Per E-Mail versenden"
-                          onClick={() => handleSendEmail(quote)}
-                        >
-                          <Send className="h-4 w-4" />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="action-icon-button action-icon-blue"
+                            title="Per E-Mail versenden"
+                            onClick={() => handleSendEmail(quote)}
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            className="action-icon-button action-icon-green"
+                            title="Als versendet markieren"
+                            aria-label="Als versendet markieren"
+                            onClick={() => handleMarkAsSent(quote)}
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </button>
+                        </>
                       )}
                       {quote.status === 'sent' && (
                         <>
@@ -1004,7 +1048,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     </div>
                     ) : (
                     <ActionMenu triggerClassName="action-icon-button action-icon-blue">
-                        {quote.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>}
+                        {quote.status === 'draft' && <>
+                          <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>
+                          <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleMarkAsSent(quote)}>Als versendet markieren</ActionMenuItem>
+                        </>}
                         {quote.status === 'sent' && <>
                           <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
                           <ActionMenuItem icon={<X className="h-4 w-4" />} tone="orange" onClick={() => handleStatusChange(quote.id, 'rejected')}>Als abgelehnt markieren</ActionMenuItem>
@@ -1056,7 +1103,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <ActionMenu containerClassName="shrink-0" triggerClassName="action-icon-button action-icon-blue">
                   <div className="flex flex-col gap-0.5">
                     {quote.status === 'draft' && (
-                      <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>
+                      <>
+                        <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(quote)}>Per E-Mail versenden</ActionMenuItem>
+                        <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleMarkAsSent(quote)}>Als versendet markieren</ActionMenuItem>
+                      </>
                     )}
                     {quote.status === 'sent' && (
                       <>

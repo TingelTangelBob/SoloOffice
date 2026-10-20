@@ -341,7 +341,10 @@ export function ReminderSendModal({
       if (successCount > 0) {
         const failedCount = invoicesToProcess.length - successCount;
         if (failedCount > 0) warnings.push(`${formatCountLabel(failedCount, 'Mahnung', 'Mahnungen')} konnten nicht versendet werden.`);
-        notify({ variant: warnings.length ? 'warning' : 'success', message: `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} ${isDemoMode ? 'im Demo-Modus simuliert' : 'an den Mailserver übergeben'}.${warnings.length ? ` ${warnings.join(' ')}` : ''}` });
+        const deliveryMessage = isDemoMode
+          ? `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} im Demo-Modus simuliert; es wurde keine echte E-Mail verschickt.`
+          : `${formatCountLabel(successCount, 'Mahnung', 'Mahnungen')} an den Mailserver übergeben.`;
+        notify({ variant: warnings.length ? 'warning' : isDemoMode ? 'info' : 'success', message: `${deliveryMessage}${warnings.length ? ` ${warnings.join(' ')}` : ''}` });
         onSuccess();
         onClose();
       } else {

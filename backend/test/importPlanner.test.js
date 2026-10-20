@@ -171,12 +171,62 @@ test('Übernommene Rechnungen: Sammelposition, Zahlung, Teilzahlung und Prüfung
   assert.equal(partial.data.payment.amount, 20);
   assert.match(partial.message, /Teilzahlung 20,00 €/);
   assert.equal(paidWithoutDate.status, 'warning');
-  assert.equal(paidWithoutDate.data.payment.entryDate, '2024-03-03');
+  assert.equal(paidWithoutDate.data.status, 'paid');
+  assert.equal(paidWithoutDate.data.payment, null);
+  assert.match(paidWithoutDate.message, /Zahlungsdatum fehlt; Zahlungseingang nachtragen/);
   assert.equal(duplicate.status, 'duplicate');
   assert.equal(mismatch.status, 'error');
   assert.equal(plan.totals.invoiced, 180);
-  assert.equal(plan.totals.invoicePayments, 150);
+  assert.equal(plan.totals.invoicePayments, 120);
   assert.equal(plan.totals.openAmount, 30);
+});
+
+test('Übernommene Bezahlt-Angaben ohne Zahlungsdatum erzeugen keine Zahlung', () => {
+  const customers = [{ id: 'c1', name: 'Anna Müller' }];
+  for (const paymentFields of [{ status: 'bezahlt' }, { paidAmount: '0,01' }]) {
+    const plan = planImport('invoices', [{
+      invoiceNumber: 'ALT-CENT', issueDate: '2025-12-31', customerName: 'Anna Müller',
+      total: '0,01', taxRate: 0, ...paymentFields,
+    }], context({ customers }), {});
+    const imported = plan.entries[0];
+    assert.equal(imported.status, 'warning');
+    assert.equal(imported.data.status, 'paid');
+    assert.equal(imported.data.total, 0.01);
+    assert.equal(imported.data.payment, null);
+    assert.match(imported.message, /Zahlungsdatum fehlt; Zahlungseingang nachtragen/);
+    assert.equal(plan.totals.invoicePayments, 0);
+    assert.equal(plan.totals.openAmount, 0);
+    assert.deepEqual(plan.totals.byMonth.map(bucket => [bucket.month, bucket.invoicePayments]), [['2025-12', 0]]);
+  }
+});
+
+test('Teilzahlung ohne Zahlungsdatum wird nicht mit falschem offenen Betrag übernommen', () => {
+  const plan = planImport('invoices', [{
+    _rowNumber: 2, invoiceNumber: 'ALT-TEIL', issueDate: '2025-12-31', customerName: 'Anna Müller',
+    total: '100,00', taxRate: 0, paidAmount: '40,00',
+  }], context({ customers: [{ id: 'c1', name: 'Anna Müller' }] }), {});
+  const imported = plan.entries[0];
+  assert.equal(imported.status, 'error');
+  assert.match(imported.message, /Für eine Teilzahlung fehlt das Zahlungsdatum/);
+  assert.equal(imported.data, null);
+  assert.equal(plan.totals.invoiced, 0);
+  assert.equal(plan.totals.invoicePayments, 0);
+  assert.equal(plan.totals.openAmount, 0);
+});
+
+test('Übernommene Centzahlung behält ihr explizites Zahlungsdatum im Folgejahr', () => {
+  const plan = planImport('invoices', [{
+    invoiceNumber: 'ALT-CENT', issueDate: '2025-12-31', customerName: 'Anna Müller',
+    total: '0,01', taxRate: 0, status: 'bezahlt', paidAmount: '0,01', paidDate: '2026-01-02',
+  }], context({ customers: [{ id: 'c1', name: 'Anna Müller' }] }), {});
+  const imported = plan.entries[0];
+  assert.equal(imported.status, 'valid');
+  assert.equal(imported.data.status, 'paid');
+  assert.deepEqual(imported.data.payment, { entryDate: '2026-01-02', amount: 0.01, taxRate: 0 });
+  assert.doesNotMatch(imported.message, /Zahlungsdatum fehlt/);
+  assert.equal(plan.totals.invoicePayments, 0.01);
+  assert.equal(plan.totals.openAmount, 0);
+  assert.deepEqual(plan.totals.byMonth.map(bucket => [bucket.month, bucket.invoicePayments]), [['2025-12', 0], ['2026-01', 0.01]]);
 });
 
 test('Zahlungsimport bleibt kompatibel und verhindert Überzahlungen', () => {

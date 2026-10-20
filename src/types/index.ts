@@ -949,6 +949,8 @@ export interface YearOverview {
   avgInvoiceAmount: number;
   otherIncome?: number;
   otherIncomeCount?: number;
+  /** Als bezahlt markierte Rechnungen des Rechnungsjahrs mit fehlenden oder zu niedrigen aktiven Zahlungsbuchungen. */
+  incompletePaidInvoiceCount?: number;
 }
 
 export interface ReportingStatistics {

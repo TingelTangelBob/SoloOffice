@@ -23,7 +23,6 @@ import {
   ReportingStatistics,
   InvoiceJournalEntry,
   CustomerStats,
-  CreditNote,
   EuerEntry,
 } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -63,7 +62,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
     { header: 'Nettobetrag', value: entry => entry.subtotal, decimals: 2 },
     { header: 'Steuerbetrag', value: entry => entry.taxAmount, decimals: 2 },
     { header: 'Bruttobetrag', value: entry => entry.total, decimals: 2 },
-    { header: 'Bezahlt', value: entry => entry.paidAmount, decimals: 2 },
+    { header: 'Bisher bezahlt', value: entry => entry.paidAmount, decimals: 2 },
     { header: 'Offen', value: entry => entry.outstandingAmount, decimals: 2 },
   ];
 
@@ -74,13 +73,13 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
 
   const handleExportStatisticsCsv = () => {
     if (!statistics) return;
-    downloadCsv(csvFileName(`Monatsumsaetze-${statistics.year}`), statistics.monthlyRevenue, [
+    downloadCsv(csvFileName(`Zahlungseingaenge-${statistics.year}`), statistics.monthlyRevenue, [
       { header: 'Monat', value: row => row.month },
-      { header: 'Rechnungen', value: row => row.invoiceCount },
+      { header: 'Ausgestellte Rechnungen', value: row => row.invoiceCount },
       { header: 'Nettobetrag', value: row => row.subtotalSum, decimals: 2 },
       { header: 'Steuerbetrag', value: row => row.taxSum, decimals: 2 },
-      { header: 'Bruttobetrag', value: row => row.totalSum, decimals: 2 },
-      { header: 'Bezahlt', value: row => row.paidSum, decimals: 2 },
+      { header: 'Rechnungsvolumen brutto', value: row => row.totalSum, decimals: 2 },
+      { header: 'Zahlungseingang aus Rechnungen', value: row => row.paidSum, decimals: 2 },
       { header: 'Überfällig', value: row => row.overdueSum, decimals: 2 },
       { header: 'Einnahmen ohne Rechnung', value: row => row.otherIncomeSum || 0, decimals: 2 },
     ]);
@@ -88,12 +87,12 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
 
   const handleExportCustomersCsv = () => {
     if (!statistics?.topCustomers.length) return;
-    downloadCsv(csvFileName(`${terminology.entity.plural}-Umsatz-${statistics.year}`), statistics.topCustomers, [
+    downloadCsv(csvFileName(`${terminology.entity.plural}-Rechnungsvolumen-${statistics.year}`), statistics.topCustomers, [
       { header: terminology.entity.singular, value: row => row.customerName },
       { header: 'Rechnungen', value: row => row.invoiceCount },
-      { header: 'Umsatz', value: row => row.totalRevenue, decimals: 2 },
+      { header: 'Rechnungsvolumen', value: row => row.totalRevenue, decimals: 2 },
       { header: 'Durchschnitt je Rechnung', value: row => row.avgInvoiceAmount, decimals: 2 },
-      { header: 'Davon ohne Rechnung', value: row => row.otherIncome || 0, decimals: 2 },
+      { header: 'Einnahmen ohne Rechnung', value: row => row.otherIncome || 0, decimals: 2 },
     ]);
   };
   
@@ -109,7 +108,6 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
-  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   
   // State for PDF generation
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -151,9 +149,8 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
 
   const loadEuerData = useCallback(async () => {
     try {
-      const [entries, notes] = await Promise.all([apiService.getEuerEntries(selectedYear), apiService.getCreditNotes()]);
+      const entries = await apiService.getEuerEntries(selectedYear);
       setEuerEntries(entries);
-      setCreditNotes(notes);
     } catch (err) {
       logger.error('Error loading EÜR data:', err);
       setError('Fehler beim Laden der EÜR-Auswertung');
@@ -291,23 +288,15 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   ];
 
   const euerRows = useMemo(() => {
-    const linkedInvoiceIds = new Set(euerEntries.filter(entry => entry.sourceType === 'invoice_payment' && entry.sourceId).map(entry => entry.sourceId));
-    const automatic = [...invoices, ...creditNotes]
-      .filter(invoice => invoice.status === 'paid' && new Date(invoice.issueDate).getFullYear() === selectedYear && !linkedInvoiceIds.has(invoice.id))
-      .map(invoice => ({
-        entryType: 'income' as const,
-        date: String(invoice.issueDate).slice(0, 10),
-        description: invoice.documentType === 'credit_note' ? `Gutschrift ${invoice.invoiceNumber}` : `Rechnung ${invoice.invoiceNumber}`,
-        amount: invoice.documentType === 'credit_note' ? -Math.abs(Number(invoice.total || 0)) : Math.abs(Number(invoice.total || 0)),
-      }));
-    const manual = euerEntries.map(entry => ({
+    const manual = euerEntries.filter(entry => entry.status !== 'voided'
+      && Number(entry.euerYear ?? String(entry.entryDate).slice(0, 4)) === selectedYear).map(entry => ({
       entryType: entry.entryType,
       date: String(entry.entryDate).slice(0, 10),
       description: entry.description,
       amount: Number(entry.amount || 0),
     }));
-    return [...automatic, ...manual];
-  }, [creditNotes, euerEntries, invoices, selectedYear]);
+    return manual;
+  }, [euerEntries, selectedYear]);
 
   const euerSummary = useMemo(() => {
     const income = euerRows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
@@ -370,13 +359,11 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <DollarSign className="h-5 w-5 text-green-600" />
               </div>
               <div className="ml-3">
-                <p className="text-sm font-medium text-gray-500">Gesamtumsatz</p>
+                <p className="text-sm font-medium text-gray-500">Rechnungsvolumen</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {formatAmount((statistics.yearOverview?.totalAmount || 0) + (statistics.yearOverview?.otherIncome || 0))}
+                  {formatAmount(statistics.yearOverview?.totalAmount || 0)}
                 </p>
-                {(statistics.yearOverview?.otherIncome || 0) > 0 && (
-                  <p className="text-xs text-gray-500">inkl. {formatAmount(statistics.yearOverview?.otherIncome || 0)} ohne Rechnung</p>
-                )}
+                <p className="text-xs text-gray-500">Ausgestellte Rechnungen, offene Beträge eingeschlossen</p>
               </div>
             </div>
           </div>
@@ -387,13 +374,12 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div className="ml-3">
-                <p className="text-sm font-medium text-gray-500">Bezahlt</p>
+                <p className="text-sm font-medium text-gray-500">Zahlungseingänge</p>
                 <p className="text-2xl font-bold text-green-600">
                   {formatAmount((statistics.yearOverview?.paidAmount || 0) + (statistics.yearOverview?.otherIncome || 0))}
                 </p>
-                {(statistics.yearOverview?.otherIncome || 0) > 0 && (
-                  <p className="text-xs text-gray-500">inkl. Einnahmen ohne Rechnung</p>
-                )}
+                <p className="text-xs text-gray-500">Rechnungen: {formatAmount(statistics.yearOverview?.paidAmount || 0)}</p>
+                <p className="text-xs text-gray-500">Ohne Rechnung: {formatAmount(statistics.yearOverview?.otherIncome || 0)}</p>
               </div>
             </div>
           </div>
@@ -679,7 +665,10 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center">
                 <BarChart3 className="h-5 w-5 text-primary-custom mr-2" />
-                <h2 className="text-lg font-semibold text-gray-900">Jahresstatistik</h2>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Zahlungseingänge pro Monat</h2>
+                  <p className="mt-1 text-xs text-gray-500">Erfasste Zahlungen nach EÜR-Jahr; die Monate folgen dem tatsächlichen Zahlungsdatum.</p>
+                </div>
               </div>
               <div className="flex items-center space-x-2">
                 <select
@@ -727,11 +716,14 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
             ) : statistics?.monthlyRevenue ? (
               <div>
+                {(statistics.yearOverview?.incompletePaidInvoiceCount || 0) > 0 && <p role="note" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                  Bei {statistics.yearOverview?.incompletePaidInvoiceCount} als bezahlt {statistics.yearOverview?.incompletePaidInvoiceCount === 1 ? 'markierter Rechnung fehlen' : 'markierten Rechnungen fehlen'} vollständige Zahlungseinträge. Bereits erfasste Teilzahlungen sind enthalten. <button type="button" onClick={() => onNavigate?.('euer')} className="font-semibold underline underline-offset-2">Fehlenden Zahlungseingang nachtragen</button>.
+                </p>}
                 {/* Simple bar chart visualization */}
                 <div className="space-y-2">
                   {Array.from({ length: 12 }, (_, i) => {
                     const monthData = statistics.monthlyRevenue.find(m => m.month === i + 1);
-                    const monthTotal = (item?: typeof monthData) => (item?.totalSum || 0) + (item?.otherIncomeSum || 0);
+                    const monthTotal = (item?: typeof monthData) => (item?.paidSum || 0) + (item?.otherIncomeSum || 0);
                     const maxValue = Math.max(...statistics.monthlyRevenue.map(m => monthTotal(m)));
                     const percentage = maxValue > 0 ? (monthTotal(monthData) / maxValue) * 100 : 0;
                     
@@ -769,7 +761,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center">
                 <Users className="h-5 w-5 text-primary-custom mr-2 shrink-0" />
-                <h2 className="min-w-0 truncate text-lg font-semibold text-gray-900">Top {terminology.entity.plural} {selectedYear}</h2>
+                <h2 className="min-w-0 truncate text-lg font-semibold text-gray-900">Top {terminology.entity.plural} nach Rechnungsvolumen {selectedYear}</h2>
               </div>
               <button
                 type="button"
