@@ -473,7 +473,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
             activeTab={activeTab}
             onChange={setActiveTab}
             tabs={[
-              { id: 'settings' as const, label: 'Einrichten & testen', icon: Settings },
+              { id: 'settings' as const, label: 'Postfach einrichten', icon: Settings },
               { id: 'notifications' as const, label: 'Benachrichtigungen', icon: BellRing },
               { id: 'activity' as const, label: 'Versandverlauf', icon: TrendingUp },
             ]}
