@@ -118,7 +118,7 @@ test('Ausstellen sperrt Inhalte in Service und Datenbank, Status bleibt fortschr
   assert.equal((await updateInvoice(invoice.id, { status: 'overdue' })).status, 'overdue');
 }));
 
-test('Bulk-Statuswechsel funktioniert auch einzeln und in Batches', () => inWorkspace(async () => {
+test('Bulk-Statuswechsel funktioniert auch einzeln und mit großer Auswahl', () => inWorkspace(async () => {
   // Sequentiell anlegen: parallele Creates belasten Nummernvergabe und CI-Timeouts unnötig.
   const invoices = [];
   for (let index = 0; index < 101; index += 1) {
@@ -133,6 +133,40 @@ test('Bulk-Statuswechsel funktioniert auch einzeln und in Batches', () => inWork
   assert.equal(batchResponse.payload.updatedIds.length, 100);
   assert.deepEqual(batchResponse.payload.failedIds, []);
   assert.equal((await findInvoiceById(invoices[0].id)).status, 'sent');
+}));
+
+test('Bulk-Statuswechsel bewahrt bezahlte Rechnungen in einer gemischten Auswahl', () => inWorkspace(async () => {
+  const paid = await createInvoice(draft({ status: 'sent' }));
+  const unpaid = await createInvoice(draft({ status: 'sent' }));
+  assert.equal((await recordPayment(paid.id, paid.total)).statusCode, 201);
+
+  for (const status of ['overdue', 'sent', 'reminded_1x']) {
+    const response = await updateInvoiceStatuses([paid.id, unpaid.id], status);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.payload.failedIds, []);
+    const persistedPaid = await findInvoiceById(paid.id);
+    assert.equal(persistedPaid.status, 'paid');
+    assert.equal(persistedPaid.paidAmount, paid.total);
+    assert.equal(persistedPaid.outstandingAmount, 0);
+    assert.equal((await findInvoiceById(unpaid.id)).status, status);
+  }
+}));
+
+test('Bulk-Status bezahlt benötigt vollständige Zahlungen und meldet Teilfehler', () => inWorkspace(async () => {
+  const paid = await createInvoice(draft({ status: 'sent' }));
+  const unpaid = await createInvoice(draft({ status: 'sent' }));
+  const partial = await createInvoice(draft({ status: 'sent' }));
+  assert.equal((await recordPayment(paid.id, paid.total)).statusCode, 201);
+  assert.equal((await recordPayment(partial.id, 100)).statusCode, 201);
+
+  const response = await updateInvoiceStatuses([paid.id, unpaid.id, partial.id], 'paid');
+  assert.equal(response.statusCode, 207);
+  assert.equal(response.payload.partial, true);
+  assert.deepEqual(response.payload.updatedIds, [paid.id]);
+  assert.deepEqual(response.payload.failedIds, [unpaid.id, partial.id]);
+  assert.ok(response.payload.failures.every(failure => /Zahlungseingang/.test(failure.message)));
+  assert.equal((await findInvoiceById(unpaid.id)).status, 'sent');
+  assert.equal((await findInvoiceById(partial.id)).status, 'sent');
 }));
 
 test('Dokumentdaten bleiben nach Änderungen an Firma und Kunde erhalten und sind im Backup enthalten', () => inWorkspace(async () => {

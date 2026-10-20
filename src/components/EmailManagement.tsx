@@ -740,8 +740,8 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
 
           {/* E-Mail-Einrichtung und echte Testmail gehören in denselben Ablauf. */}
           {activeTab === 'settings' && (
-            <div className={embedded ? '' : 'p-4 sm:p-6'}>
-              <div className="mx-auto max-w-3xl space-y-4">
+            <div className={embedded ? 'px-3 pb-4 pt-5' : 'p-4 sm:p-6'}>
+              <div className={`${embedded ? '' : 'mx-auto max-w-3xl'} space-y-5`}>
                 {!smtpReady && !settingsLoadError ? (
                   <p role="status" className="flex items-center gap-2 py-6 text-sm text-gray-600">
                     <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> E-Mail-Einrichtung wird geladen …
@@ -754,7 +754,6 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                 ) : (
                   <>
                     <section aria-label="Postfach einrichten" className="space-y-4">
-                      <h3 className="text-base font-semibold text-gray-900">Postfach einrichten</h3>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-4 disabled:opacity-70">
                         <SettingsToggleRow
                           label="E-Mail-Versand aktivieren"
@@ -794,7 +793,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <SettingsField id="smtp-smtp_host" label="SMTP-Server" required info="SMTP-Server, Port und Verschlüsselung stehen in den E-Mail-Einstellungen Ihres Anbieters. Alle Werte bleiben hier frei änderbar." error={smtpErrors.smtp_host}>
                             <input id="smtp-smtp_host" type="text" value={smtpSettings.smtp_host} onChange={e => changeSmtpSettings({ smtp_host: e.target.value })} autoComplete="off" spellCheck={false} placeholder="smtp.example.de" aria-invalid={!!smtpErrors.smtp_host} aria-describedby="smtp-smtp_host-message" className="form-input form-input-compact w-full" />
                           </SettingsField>
-                          <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
+                          <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-4">
                             <SettingsField id="smtp-smtp_port" label="Port" required error={smtpErrors.smtp_port}>
                               <input id="smtp-smtp_port" type="text" inputMode="numeric" value={smtpSettings.smtp_port} onChange={e => changeSmtpSettings({ smtp_port: e.target.value })} aria-invalid={!!smtpErrors.smtp_port} aria-describedby={smtpErrors.smtp_port ? 'smtp-smtp_port-message' : undefined} className="form-input form-input-compact w-full" />
                             </SettingsField>

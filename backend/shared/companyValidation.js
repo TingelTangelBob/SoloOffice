@@ -24,6 +24,29 @@ export function postalCodeFormatError(value, country = 'Deutschland') {
     ? 'Eine deutsche Postleitzahl muss genau 5 Ziffern enthalten.' : null;
 }
 
+const requiredCompanyFields = {
+  name: 'Bitte einen Firmennamen eingeben.',
+  address: 'Bitte eine Adresse eingeben.',
+  postalCode: 'Bitte eine Postleitzahl eingeben.',
+  city: 'Bitte einen Ort eingeben.',
+  country: 'Bitte ein Land eingeben.',
+  phone: 'Bitte eine Telefonnummer eingeben.',
+  email: 'Bitte eine E-Mail-Adresse eingeben.',
+  taxBusinessType: 'Bitte eine Betriebsart auswählen.',
+  legalForm: 'Bitte eine Rechtsform auswählen.',
+};
+
+/** Required fields are checked only when present so partial API updates remain supported. */
+export function validateCompanyRequiredFields(data) {
+  const errors = {};
+  for (const [field, message] of Object.entries(requiredCompanyFields)) {
+    if (Object.hasOwn(data, field) && (typeof data[field] !== 'string' || data[field].trim() === '')) {
+      errors[field] = message;
+    }
+  }
+  return errors;
+}
+
 // National syntax from the BZSt overview „Aufbau der USt-IdNr. in den EU-Mitgliedstaaten“:
 // https://www.bzst.de/SharedDocs/Downloads/DE/Merkblaetter/ust_idnr_aufbau.pdf
 const vatIdPatterns = {

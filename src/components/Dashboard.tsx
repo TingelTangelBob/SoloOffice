@@ -839,7 +839,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const leaveEditing = (message: string) => {
     setEditDraft(null);
     announce(message);
-requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="Dashboard anpassen"]')?.focus({ preventScroll: true }));
   };
   const finishEditing = () => {
     if (editDraft && dashboardLayoutChanged(editDraft, preferences)) {

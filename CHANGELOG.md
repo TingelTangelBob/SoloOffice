@@ -2,6 +2,21 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.9b – Konsolidierung der Beta-Linie
+
+- Pflichtfelder der Firmendaten werden serverseitig und in der Oberfläche
+  geprüft. Fehlende Angaben werden direkt am Feld markiert.
+- Auftragsformular sperrt Buttons während des Speicherns und übernimmt
+  wiederkehrende Regeln einheitlich.
+- Die EÜR-Pauschalen sind überarbeitet; Dokumentvorschau und Restbetrag
+  berücksichtigen den bearbeiteten Eintrag.
+- Die Steuerübersicht zeigt den noch aufzubringenden Betrag für Steuern und
+  Sozialbeiträge als Jahresbedarf abzüglich erfasster Zahlungen.
+- Der E-Mail-Bereich übernimmt die Fixes aus v0.9.7 für Tab-Beschriftung und
+  Überschrift.
+- Das Release bleibt eine Beta. Die offene manuelle Abnahme steht in
+  `docs/manual-release-checklist.md`.
+
 ## v0.9.8b – Angebote, EÜR und verlässliche Datenübernahme
 
 - Angebote können im Demo-Modus als versendet markiert werden. Demo-Versand

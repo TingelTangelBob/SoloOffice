@@ -198,7 +198,7 @@ export function WorkspaceArea({
           />
           <SettingsToggleRow
             label="Reporting & Auswertungen"
-            description="Rechnungsjournale, Statistiken und Auswertungen."
+            info="Rechnungsjournale, Statistiken und Auswertungen."
             checked={formData.reportingEnabled || false}
             onChange={checked => set('reportingEnabled', checked)}
           />

@@ -5,7 +5,7 @@ import { updateFavicon } from '../../utils/faviconUtils';
 import { SettingsCard, SettingsField, SettingsToggleRow } from './SettingsUi';
 import { settingsInputClass } from './settingsStyles';
 import type { CompanySettingsAreaProps } from './settingsAreaProps';
-import { validateCompanyFormats } from '../../../backend/shared/companyValidation.js';
+import { validateCompanyFormats, validateCompanyRequiredFields } from '../../../backend/shared/companyValidation.js';
 
 function readImage(event: ChangeEvent<HTMLInputElement>, onLoad: (dataUrl: string) => void) {
   const file = event.target.files?.[0];
@@ -63,26 +63,29 @@ function ImageUpload({ id, title, image, alt, emptyText, buttonLabel, hint, prev
 /** Bereich „Firmendaten“ (`#settings/general`). */
 export function CompanyArea({ formData, setFormData, terminology }: CompanySettingsAreaProps) {
   const set = <K extends keyof typeof formData>(key: K, value: (typeof formData)[K]) => setFormData(previous => ({ ...previous, [key]: value }));
+  const requiredErrors = validateCompanyRequiredFields(formData);
   const formatErrors = validateCompanyFormats(formData);
+  const error = (field: keyof typeof requiredErrors) => requiredErrors[field]
+    || (field === 'email' || field === 'postalCode' ? formatErrors[field] : undefined);
 
   return (
     <>
       <SettingsCard sectionId="stammdaten" icon={Building2} title="Stammdaten" info={`${terminology.organization.nameLabel} und Anschrift erscheinen auf Rechnungen, Angeboten und E-Mails.`}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <SettingsField id="company-name" label={terminology.organization.nameLabel} required className="md:col-span-2">
-            <input id="company-name" type="text" required name="organization" autoComplete="section-company organization" value={formData.name} onChange={event => set('name', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-name" label={terminology.organization.nameLabel} required className="md:col-span-2" error={error('name')}>
+            <input id="company-name" type="text" required name="organization" autoComplete="section-company organization" aria-invalid={Boolean(error('name'))} aria-describedby={error('name') ? 'company-name-message' : undefined} value={formData.name} onChange={event => set('name', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-address" label="Adresse" required className="md:col-span-2">
-            <input id="company-address" type="text" required name="street-address" autoComplete="section-company street-address" value={formData.address} onChange={event => set('address', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-address" label="Adresse" required className="md:col-span-2" error={error('address')}>
+            <input id="company-address" type="text" required name="street-address" autoComplete="section-company street-address" aria-invalid={Boolean(error('address'))} aria-describedby={error('address') ? 'company-address-message' : undefined} value={formData.address} onChange={event => set('address', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-postal-code" label="Postleitzahl" required error={formatErrors.postalCode}>
-            <input id="company-postal-code" type="text" required name="postal-code" autoComplete="section-company postal-code" aria-invalid={Boolean(formatErrors.postalCode)} aria-describedby={formatErrors.postalCode ? 'company-postal-code-message' : undefined} value={formData.postalCode} onChange={event => set('postalCode', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-postal-code" label="Postleitzahl" required error={error('postalCode')}>
+            <input id="company-postal-code" type="text" required name="postal-code" autoComplete="section-company postal-code" aria-invalid={Boolean(error('postalCode'))} aria-describedby={error('postalCode') ? 'company-postal-code-message' : undefined} value={formData.postalCode} onChange={event => set('postalCode', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-city" label="Stadt" required>
-            <input id="company-city" type="text" required name="address-level2" autoComplete="section-company address-level2" value={formData.city} onChange={event => set('city', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-city" label="Stadt" required error={error('city')}>
+            <input id="company-city" type="text" required name="address-level2" autoComplete="section-company address-level2" aria-invalid={Boolean(error('city'))} aria-describedby={error('city') ? 'company-city-message' : undefined} value={formData.city} onChange={event => set('city', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-country" label="Land" required>
-            <input id="company-country" type="text" required name="country-name" autoComplete="section-company country-name" value={formData.country} onChange={event => set('country', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-country" label="Land" required error={error('country')}>
+            <input id="company-country" type="text" required name="country-name" autoComplete="section-company country-name" aria-invalid={Boolean(error('country'))} aria-describedby={error('country') ? 'company-country-message' : undefined} value={formData.country} onChange={event => set('country', event.target.value)} className={settingsInputClass} />
           </SettingsField>
         </div>
       </SettingsCard>
@@ -100,8 +103,8 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
           <SettingsField id="company-tax-number" label="Steuernummer">
             <input id="company-tax-number" type="text" name="tax-identification-number" autoComplete="off" value={formData.taxIdentificationNumber || ''} onChange={event => set('taxIdentificationNumber', event.target.value)} className={settingsInputClass} placeholder="z.B. 123/456/78910" />
           </SettingsField>
-          <SettingsField id="company-business-type" label="Betriebsart" required>
-            <select id="company-business-type" required value={formData.taxBusinessType || ''} onChange={event => set('taxBusinessType', event.target.value ? event.target.value as TaxBusinessType : undefined)} className={`${settingsInputClass} bg-white text-gray-800`}>
+          <SettingsField id="company-business-type" label="Betriebsart" required error={error('taxBusinessType')}>
+            <select id="company-business-type" required aria-invalid={Boolean(error('taxBusinessType'))} aria-describedby={error('taxBusinessType') ? 'company-business-type-message' : undefined} value={formData.taxBusinessType || ''} onChange={event => set('taxBusinessType', event.target.value ? event.target.value as TaxBusinessType : undefined)} className={`${settingsInputClass} bg-white text-gray-800`}>
               <option value="" disabled>Bitte wählen …</option>
               <option value="freelance">Freiberuflich</option>
               <option value="commercial">Gewerblich</option>
@@ -110,8 +113,8 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
               <option value="other">Sonstige</option>
             </select>
           </SettingsField>
-          <SettingsField id="company-legal-form" label="Rechtsform" required>
-            <select id="company-legal-form" required value={formData.legalForm || ''} onChange={event => set('legalForm', event.target.value ? event.target.value as LegalForm : undefined)} className={`${settingsInputClass} bg-white text-gray-800`}>
+          <SettingsField id="company-legal-form" label="Rechtsform" required error={error('legalForm')}>
+            <select id="company-legal-form" required aria-invalid={Boolean(error('legalForm'))} aria-describedby={error('legalForm') ? 'company-legal-form-message' : undefined} value={formData.legalForm || ''} onChange={event => set('legalForm', event.target.value ? event.target.value as LegalForm : undefined)} className={`${settingsInputClass} bg-white text-gray-800`}>
               <option value="" disabled>Bitte wählen …</option>
               <option value="sole_proprietorship">Einzelunternehmen</option>
               <option value="partnership">Personengesellschaft</option>
@@ -137,11 +140,11 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
 
       <SettingsCard sectionId="kontakt" icon={Mail} title="Kontaktdaten">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <SettingsField id="company-email" label="E-Mail" required error={formatErrors.email}>
-            <input id="company-email" type="email" required name="email" autoComplete="section-company email" aria-invalid={Boolean(formatErrors.email)} aria-describedby={formatErrors.email ? 'company-email-message' : undefined} value={formData.email} onChange={event => set('email', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-email" label="E-Mail" required error={error('email')}>
+            <input id="company-email" type="email" required name="email" autoComplete="section-company email" aria-invalid={Boolean(error('email'))} aria-describedby={error('email') ? 'company-email-message' : undefined} value={formData.email} onChange={event => set('email', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-phone" label="Telefon" required>
-            <input id="company-phone" type="tel" required name="tel" autoComplete="section-company tel" value={formData.phone} onChange={event => set('phone', event.target.value)} className={settingsInputClass} />
+          <SettingsField id="company-phone" label="Telefon" required error={error('phone')}>
+            <input id="company-phone" type="tel" required name="tel" autoComplete="section-company tel" aria-invalid={Boolean(error('phone'))} aria-describedby={error('phone') ? 'company-phone-message' : undefined} value={formData.phone} onChange={event => set('phone', event.target.value)} className={settingsInputClass} />
           </SettingsField>
           <SettingsField id="company-website" label="Website">
             <input id="company-website" type="url" name="url" autoComplete="section-company url" value={formData.website || ''} onChange={event => set('website', event.target.value)} className={settingsInputClass} />

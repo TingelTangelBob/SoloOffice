@@ -156,13 +156,13 @@ export function RecurringInvoiceManagement() {
       startDate: String(source.startDate || '').slice(0, 10),
       nextRunDate: String(source.nextRunDate || source.startDate || '').slice(0, 10),
       endDate: source.endDate ? String(source.endDate).slice(0, 10) : '',
-      paymentTerms: String(source.dueDays || '14'),
+      paymentTerms: String(source.dueDays ?? '14'),
       notes: source.notes || '',
       items: (source.items || [emptyItem()]).map(item => ({
         description: String(item.description || ''),
         quantity: String(item.quantity || '1'),
         unitPrice: String(item.unitPrice || '0'),
-        taxRate: String(item.taxRate || '19'),
+        taxRate: String(item.taxRate ?? '19'),
       })),
     });
     setDialog({ open: true, entry });
@@ -228,7 +228,7 @@ export function RecurringInvoiceManagement() {
         : {}),
       startDate: form.startDate,
       nextRunDate: form.nextRunDate,
-      endDate: form.endDate || undefined,
+      endDate: form.endDate || null,
       dueDays: Number(form.paymentTerms),
       notes: form.notes,
       // Always send a value copy so later template edits cannot alter generated invoice snapshots.

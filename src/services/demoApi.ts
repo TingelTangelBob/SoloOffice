@@ -1,3 +1,4 @@
+import { sameRecurrenceRule } from '../../backend/utils/jobRecurrenceRule.js';
 import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile, WorkspaceResetOptions } from '../types';
 import { getJobRecurrenceDates } from '../utils/jobRecurrence';
@@ -17,7 +18,7 @@ import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../back
 import { computeVat } from '../../backend/shared/vat/index.js';
 import { normalizeEuerVatFields } from '../../backend/utils/euerVatValidation.js';
 import { resolveTaxParams } from '../../backend/shared/taxParams/index.js';
-import { validateCompanyFormats } from '../../backend/shared/companyValidation.js';
+import { validateCompanyFormats, validateCompanyRequiredFields } from '../../backend/shared/companyValidation.js';
 
 type DemoRecord = Record<string, unknown> & { id: string };
 class DemoApiError extends Error {
@@ -3113,6 +3114,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'company') {
     if (method === 'PUT') {
+      const requiredErrors = validateCompanyRequiredFields(data as Parameters<typeof validateCompanyRequiredFields>[0]);
+      if (Object.keys(requiredErrors).length) throw new Error(Object.values(requiredErrors).join(' '));
       const formatErrors = validateCompanyFormats(
         data as Parameters<typeof validateCompanyFormats>[0],
         { country: state.company.country, postalCode: state.company.postalCode },
@@ -3166,6 +3169,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00`).getTime() + 30 * 86400000)),
       ...totals,
       status: 'draft',
+      attachments: Array.isArray(quote.attachments)
+        ? quote.attachments.map(attachment => ({ ...attachment, id: generateUUID() }))
+        : [],
       notes: quote.notes ? `Erstellt aus Angebot ${quote.quoteNumber}\n\n${quote.notes}` : `Erstellt aus Angebot ${quote.quoteNumber}`,
       sourceQuoteId: quote.id,
       sourceQuoteNumber: quote.quoteNumber,
@@ -3957,8 +3963,11 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         }
         const recurrence = data.recurrence as JobRecurrenceRule | null | undefined;
         const currentRecurrence = current.recurrence as JobRecurrence | undefined;
+        if (recurrence !== undefined && currentRecurrence?.id && sameRecurrenceRule(recurrence, currentRecurrence)) {
+          data.recurrence = currentRecurrence;
+        }
 
-        if (recurrence !== undefined && currentRecurrence?.id) {
+        if (recurrence !== undefined && currentRecurrence?.id && !sameRecurrenceRule(recurrence, currentRecurrence)) {
           const seriesId = currentRecurrence.id;
           const series = state.jobs
             .filter((record) => (record.recurrence as JobRecurrence | undefined)?.id === seriesId)
@@ -4082,7 +4091,12 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
     if (method === 'DELETE') {
       if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
-      if (key === 'invoices' && items[index]?.status !== 'draft') throw new Error('Nur Entwürfe können gelöscht werden.');
+      if (key === 'invoices' && (
+        items[index]?.status !== 'draft'
+        || items[index]?.recurringInvoiceId
+        || items[index]?.sourceQuoteId
+        || state.quotes.some(quote => quote.convertedToInvoiceId === id)
+      )) throw new Error('Nur unabhängige Entwürfe ohne Dokumentquelle können gelöscht werden.');
       if (key === 'invoices' && Array.isArray(items[index]?.sourceJobIds)) {
         state.jobs.forEach(job => {
           if (((items[index]?.sourceJobIds as string[]) || []).includes(job.id) && job.status === 'invoiced') {

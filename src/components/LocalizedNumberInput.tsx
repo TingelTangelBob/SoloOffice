@@ -6,6 +6,7 @@ interface LocalizedNumberInputProps extends Omit<InputHTMLAttributes<HTMLInputEl
   value: DecimalInputValue;
   locale?: string;
   numberFormat?: NumberFormat;
+  allowNegative?: boolean;
   onValueChange: (value: number | '') => void;
 }
 
@@ -13,6 +14,7 @@ export function LocalizedNumberInput({
   value,
   locale = 'de-DE',
   numberFormat,
+  allowNegative = true,
   onValueChange,
   onBlur,
   onFocus,
@@ -31,7 +33,8 @@ export function LocalizedNumberInput({
 
   const handleBlur = (event: FocusEvent<HTMLInputElement>) => {
     const parsedValue = parseLocalizedNumber(draftValue, locale, numberFormat);
-    const nextValue = draftValue.trim() === '' ? '' : Number.isFinite(parsedValue) ? parsedValue : undefined;
+    const validValue = Number.isFinite(parsedValue) && (allowNegative || parsedValue >= 0);
+    const nextValue = draftValue.trim() === '' ? '' : validValue ? parsedValue : undefined;
 
     if (nextValue !== undefined) {
       onValueChange(nextValue);
@@ -64,7 +67,7 @@ export function LocalizedNumberInput({
         }
 
         const parsedValue = parseLocalizedNumber(nextDraftValue, locale, numberFormat);
-        if (Number.isFinite(parsedValue)) {
+        if (Number.isFinite(parsedValue) && (allowNegative || parsedValue >= 0)) {
           onValueChange(parsedValue);
         }
       }}

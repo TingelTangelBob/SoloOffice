@@ -36,7 +36,7 @@ import { InvoicingArea } from './settings/InvoicingArea';
 import { WorkspaceArea } from './settings/WorkspaceArea';
 import { AppearanceArea } from './settings/AppearanceArea';
 import { SystemArea } from './settings/SystemArea';
-import { validateCompanyFormats } from '../../backend/shared/companyValidation.js';
+import { validateCompanyFormats, validateCompanyRequiredFields } from '../../backend/shared/companyValidation.js';
 
 /** Bereiche, die das gemeinsame Firmenformular bearbeiten. */
 const COMPANY_FORM_AREAS: ReadonlySet<SettingsArea> = new Set(['general', 'invoices', 'app', 'appearance']);
@@ -61,6 +61,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
   const [feedback, setFeedback] = useState<SettingsSaveMessage | null>(null);
   const [localArea, setLocalArea] = useState<SettingsArea>(normalizeSettingsArea(settingsTab || initialTab));
   const [localSection, setLocalSection] = useState<{ id: string; nonce: number } | null>(null);
+  const [validationFocusArea, setValidationFocusArea] = useState<SettingsArea | null>(null);
   const routedArea = normalizeSettingsArea(settingsTab || initialTab);
   // Eingebettet ohne URL-Steuerung führt die Komponente den Bereich selbst.
   const activeArea = onNavigate && !embedded ? routedArea : localArea;
@@ -87,6 +88,12 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
   useEffect(() => {
     setFormData(company);
   }, [company]);
+
+  useEffect(() => {
+    if (validationFocusArea !== activeArea) return;
+    document.querySelector<HTMLInputElement | HTMLSelectElement>('.settings-form [aria-invalid="true"]')?.focus();
+    setValidationFocusArea(null);
+  }, [activeArea, validationFocusArea]);
 
   // Erfolgsmeldungen verschwinden von selbst, Fehler bleiben stehen.
   useEffect(() => {
@@ -159,12 +166,20 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
 
   const saveCompanySettings = async () => {
     if (isSaving || !canEditSettings) return;
+    const requiredErrors = validateCompanyRequiredFields(formData);
+    if (Object.keys(requiredErrors).length) {
+      setFeedback({ type: 'error', text: Object.values(requiredErrors).join(' ') });
+      setValidationFocusArea('general');
+      selectArea('general');
+      return;
+    }
     const formatErrors = validateCompanyFormats(formData);
     if (Object.keys(formatErrors).length) {
       setFeedback({ type: 'error', text: Object.values(formatErrors).join(' ') });
       const bankError = !formatErrors.email && !formatErrors.postalCode && !formatErrors.taxId;
-      selectArea(bankError ? 'invoices' : 'general');
-      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.settings-form [aria-invalid="true"]')?.focus());
+      const focusArea = bankError ? 'invoices' : 'general';
+      setValidationFocusArea(focusArea);
+      selectArea(focusArea);
       return;
     }
     if (receiptLabelError) {

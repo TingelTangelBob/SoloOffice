@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emailFormatError, postalCodeFormatError, vatIdFormatError, ibanFormatError, validateCompanyFormats } from '../shared/companyValidation.js';
+import { emailFormatError, postalCodeFormatError, vatIdFormatError, ibanFormatError, validateCompanyFormats, validateCompanyRequiredFields } from '../shared/companyValidation.js';
 
 test('E-Mail: übliche Adressen sind gültig, unvollständige und fehlerhafte Formate nicht', () => {
   for (const email of ['buero@example.de', 'name+rechnung@sub.example.de', 'name@büro.de']) {
@@ -54,4 +54,14 @@ test('Teiländerungen prüfen betroffene Felder mit gespeichertem Land und maßg
   assert.deepEqual(validateCompanyFormats({ bankAccount: 'alter ungültiger Fallback', paymentInformation: { bankAccount: 'DE89370400440532013000' } }), {});
   assert.ok(validateCompanyFormats({ paymentInformation: { bankAccount: 'DE90 3704 0044 0532 0130 00' } })['paymentInformation.bankAccount']);
   assert.ok(validateCompanyFormats({ paymentInformation: 123 })['paymentInformation.bankAccount']);
+});
+
+test('Pflichtfelder: leere übermittelte Stammdaten werden abgewiesen, ausgelassene Felder bleiben für Teilupdates zulässig', () => {
+  assert.deepEqual(validateCompanyRequiredFields({ name: 'Muster GmbH', city: 'Berlin' }), {});
+  assert.deepEqual(validateCompanyRequiredFields({ name: '  ', email: '', phone: null, taxBusinessType: undefined }), {
+    name: 'Bitte einen Firmennamen eingeben.',
+    email: 'Bitte eine E-Mail-Adresse eingeben.',
+    phone: 'Bitte eine Telefonnummer eingeben.',
+    taxBusinessType: 'Bitte eine Betriebsart auswählen.',
+  });
 });

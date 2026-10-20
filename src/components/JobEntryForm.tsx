@@ -1,3 +1,5 @@
+import { sameRecurrenceRule } from '../../backend/utils/jobRecurrenceRule.js';
+import { createSubmitGuard } from '../utils/submitGuard';
 import React, { useState, useEffect, useRef } from 'react';
 import { collapseRow } from '../utils/motion';
 import { useEnteringRows } from '../hooks/useEnteringRows';
@@ -126,6 +128,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [entryType, setEntryType] = useState<'job' | 'vacation'>('job');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitGuardRef = useRef(createSubmitGuard(setIsSubmitting));
   const timeEntryListRef = useRef<HTMLDivElement>(null);
   const materialListRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -614,7 +618,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const getSubmitData = (statusOverride?: JobEntry['status']) => ({
     ...formData,
     ...(statusOverride ? { status: statusOverride } : {}),
-    recurrence: recurrenceEnabled ? buildRecurrence() : job?.recurrence ? null : undefined,
+    recurrence: recurrenceEnabled
+      ? (job?.recurrence && sameRecurrenceRule(buildRecurrence(), job.recurrence) ? undefined : buildRecurrence())
+      : job?.recurrence ? null : undefined,
   });
 
   const validateJobForm = () => {
@@ -676,18 +682,20 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     if (!navigate) return;
     if (formData.status !== 'draft' && !validateJobForm()) return;
 
-    setIsSavingBeforeNavigation(true);
-    try {
-      const saved = await onSubmit(getSubmitData(formData.status));
-      if (saved === false) return;
-      setPendingRateNavigation(null);
-      navigate();
-    } catch (error) {
-      logger.error('Fehler beim Speichern vor dem Verlassen des Formulars:', error);
-      setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
-    } finally {
-      setIsSavingBeforeNavigation(false);
-    }
+    await submitGuardRef.current.run(async () => {
+      setIsSavingBeforeNavigation(true);
+      try {
+        const saved = await onSubmit(getSubmitData(formData.status));
+        if (saved === false) return;
+        setPendingRateNavigation(null);
+        navigate();
+      } catch (error) {
+        logger.error('Fehler beim Speichern vor dem Verlassen des Formulars:', error);
+        setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
+      } finally {
+        setIsSavingBeforeNavigation(false);
+      }
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -698,14 +706,16 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     // sowie beim Weiterführen in eine aktive Statusstufe.
     if ((!job || formData.status !== 'draft') && !validateJobForm()) return;
 
-    setFormError('');
-    try {
-      const saved = await onSubmit(getSubmitData());
-      if (saved === false) setFormError('Die Änderungen konnten nicht gespeichert werden.');
-    } catch (error) {
-      logger.error('Fehler beim Speichern des Eintrags:', error);
-      setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
-    }
+    await submitGuardRef.current.run(async () => {
+      setFormError('');
+      try {
+        const saved = await onSubmit(getSubmitData());
+        if (saved === false) setFormError('Die Änderungen konnten nicht gespeichert werden.');
+      } catch (error) {
+        logger.error('Fehler beim Speichern des Eintrags:', error);
+        setFormError(error instanceof Error ? error.message : 'Die Änderungen konnten nicht gespeichert werden.');
+      }
+    });
   };
 
   const handleVacationSubmit = async (e: React.FormEvent) => {
@@ -716,32 +726,36 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       return;
     }
 
-    try {
-      await onSubmitVacation({
-        eventType: 'vacation',
-        title: vacationForm.title.trim(),
-        startDate: vacationForm.startDate,
-        endDate: vacationForm.endDate,
-        notes: vacationForm.notes.trim() || undefined,
-        allDay: true,
-      });
-      onCancel();
-    } catch {
-      // The parent handles and logs the API error; keep the form open for another attempt.
-    }
+    await submitGuardRef.current.run(async () => {
+      try {
+        await onSubmitVacation({
+          eventType: 'vacation',
+          title: vacationForm.title.trim(),
+          startDate: vacationForm.startDate,
+          endDate: vacationForm.endDate,
+          notes: vacationForm.notes.trim() || undefined,
+          allDay: true,
+        });
+        onCancel();
+      } catch {
+        // The parent handles and logs the API error; keep the form open for another attempt.
+      }
+    });
   };
 
   const handleSubmitAsDraft = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    setFormError('');
-    try {
-      const saved = await onSubmit(getSubmitData('draft'));
-      if (saved === false) setFormError('Der Entwurf konnte nicht gespeichert werden.');
-    } catch (error) {
-      logger.error('Fehler beim Speichern des Entwurfs:', error);
-      setFormError(error instanceof Error ? error.message : 'Der Entwurf konnte nicht gespeichert werden.');
-    }
+    await submitGuardRef.current.run(async () => {
+      setFormError('');
+      try {
+        const saved = await onSubmit(getSubmitData('draft'));
+        if (saved === false) setFormError('Der Entwurf konnte nicht gespeichert werden.');
+      } catch (error) {
+        logger.error('Fehler beim Speichern des Entwurfs:', error);
+        setFormError(error instanceof Error ? error.message : 'Der Entwurf konnte nicht gespeichert werden.');
+      }
+    });
   };
 
   const formatDateForInput = (date: Date) => {
@@ -753,6 +767,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   };
 
   const requestClose = () => {
+    if (isSubmitting) return;
     if (isDirty) {
       setShowDiscardModal(true);
       return;
@@ -798,44 +813,52 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     <>
       <button
         type="button"
+        disabled={isSubmitting}
         onClick={requestClose}
-        className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        className="disabled:cursor-wait disabled:opacity-60 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
       >
         Abbrechen
       </button>
       <button
         type="submit"
-        className="btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
+        disabled={isSubmitting}
+        aria-busy={isSubmitting}
+        className="disabled:cursor-wait disabled:opacity-60 btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
       >
         <Calendar className="h-4 w-4" />
-        <span>Eintragen</span>
+        <span>{isSubmitting ? 'Wird eingetragen …' : 'Eintragen'}</span>
       </button>
     </>
   ) : (
     <>
       <button
         type="button"
+        disabled={isSubmitting}
         onClick={requestClose}
-        className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        className="disabled:cursor-wait disabled:opacity-60 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
       >
         Abbrechen
       </button>
       {!job && (
         <button
           type="button"
+          disabled={isSubmitting}
+          aria-busy={isSubmitting}
           onClick={handleSubmitAsDraft}
-          className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          className="disabled:cursor-wait disabled:opacity-60 flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
         >
           <Save className="h-4 w-4" />
-          <span>Als Entwurf speichern</span>
+          <span>{isSubmitting ? 'Wird gespeichert …' : 'Als Entwurf speichern'}</span>
         </button>
       )}
       <button
         type="submit"
-        className="btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
+        disabled={isSubmitting}
+        aria-busy={isSubmitting}
+        className="disabled:cursor-wait disabled:opacity-60 btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
       >
         <Save className="h-4 w-4" />
-        <span>{job ? 'Aktualisieren' : 'Erstellen'}</span>
+        <span>{isSubmitting ? 'Wird gespeichert …' : job ? 'Aktualisieren' : 'Erstellen'}</span>
       </button>
     </>
   );
@@ -938,6 +961,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                   <input
                     type="text"
                     ref={titleInputRef}
+                    aria-invalid={Boolean(formError && !formData.title.trim())}
                     aria-describedby={formError ? 'job-entry-form-error' : undefined}
                     value={formData.title}
                     onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
@@ -998,6 +1022,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       <input
                         type="text"
                         ref={customerInputRef}
+                        aria-invalid={Boolean(formError && !formData.customerId)}
                         aria-describedby={formError ? 'job-entry-form-error' : undefined}
                         value={customerSearchTerm}
                         onChange={handleCustomerSearchChange}
@@ -1269,6 +1294,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
               </label>
               <textarea
                 ref={descriptionInputRef}
+                aria-invalid={Boolean(formError && !formData.description.trim())}
                 aria-describedby={formError ? 'job-entry-form-error' : undefined}
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}

@@ -63,6 +63,12 @@ test('Demo-Angebots- und Rechnungsabläufe bleiben lokal und durchgängig', asyn
   writeState(state);
   const quotePayload = { customerEmails: ['kunde@example.com'], pdfBuffer: 'JVBERi0=' };
 
+  await t.test('Demo-Einstellungen lehnen leere Pflichtfelder ab', async () => {
+    const before = readState();
+    await assert.rejects(api.demoRequest('/company', { method: 'PUT', body: JSON.stringify({ name: ' ' }) }), /Firmennamen/);
+    assert.deepEqual(readState(), before);
+  });
+
   await t.test('Angebotsversand setzt den Entwurf auf versendet und erlaubt den nächsten Status', async () => {
     const result = await api.demoRequest('/quotes/quote-1/send-email', post(quotePayload));
     assert.equal(result.success, true);
@@ -84,6 +90,7 @@ test('Demo-Angebots- und Rechnungsabläufe bleiben lokal und durchgängig', asyn
       id: 'quote-2', customerId: 'customer-1', customerName: 'Demokunde',
       quoteNumber: 'AN-2026-002', status: 'draft', notes: '',
       items: [{ id: 'item-1', description: 'Arbeit', quantity: 1, unitPrice: 100, taxRate: 19, total: 100, order: 0 }],
+      attachments: [{ id: 'quote-attachment-1', name: 'Anlage.pdf', content: 'JVBERi0=', contentType: 'application/pdf', size: 7, uploadedAt: '2026-10-20T10:00:00.000Z' }],
     });
     writeState(state);
 
@@ -93,8 +100,15 @@ test('Demo-Angebots- und Rechnungsabläufe bleiben lokal und durchgängig', asyn
     const invoice = await api.demoRequest('/quotes/quote-2/convert-to-invoice', { method: 'POST' });
     assert.equal(invoice.sourceQuoteId, 'quote-2');
     assert.equal(invoice.total, 119);
+    assert.equal(invoice.attachments.length, 1);
+    assert.equal(invoice.attachments[0].name, 'Anlage.pdf');
+    assert.equal(invoice.attachments[0].content, 'JVBERi0=');
+    assert.notEqual(invoice.attachments[0].id, 'quote-attachment-1');
     assert.equal(readState().quotes.find(item => item.id === 'quote-2').status, 'billed');
     const invoiceCount = readState().invoices.length;
+    const stateBeforeDelete = readState();
+    await assert.rejects(api.demoRequest(`/invoices/${invoice.id}`, { method: 'DELETE' }), /Nur unabhängige Entwürfe ohne Dokumentquelle/);
+    assert.deepEqual(readState(), stateBeforeDelete, 'Die verknüpfte Rechnung und das Angebot bleiben erhalten');
     await assert.rejects(api.demoRequest('/quotes/quote-2/convert-to-invoice', { method: 'POST' }));
     assert.equal(readState().invoices.length, invoiceCount, 'ein zweiter Aufruf erzeugt keine zusätzliche Rechnung');
   });
