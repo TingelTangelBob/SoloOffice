@@ -277,7 +277,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
           <header className="settings-area-header">
             <div className="flex items-center gap-1">
               <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
-              {activeArea === 'taxes' && <InfoTooltip text={areaDefinition.description} label="Hinweis zu Steuern und Abgaben" />}
+              {activeArea === 'taxes' && areaDefinition.description && <InfoTooltip text={areaDefinition.description} label="Hinweis zu Steuern und Abgaben" />}
             </div>
             {activeArea !== 'taxes' && areaDefinition.description && <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>}
           </header>

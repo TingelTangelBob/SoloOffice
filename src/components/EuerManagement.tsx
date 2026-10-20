@@ -237,7 +237,6 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [previewLoadingInvoiceId, setPreviewLoadingInvoiceId] = useState<string | null>(null);
   const templateWorkspace = useRef(workspace?.id ?? null);
   const entryRequestVersion = useRef(0);
-  const workLocationRequestVersion = useRef(0);
   const historyRequestVersion = useRef(0);
   templateWorkspace.current = workspace?.id ?? null;
   const currentEntriesScope = `${workspaceId ?? ''}:${year}`;

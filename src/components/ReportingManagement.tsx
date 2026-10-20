@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
-import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import {
@@ -36,7 +35,6 @@ interface ReportingManagementProps {
 
 export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const { customers } = useCustomers();
-  const { invoices } = useInvoices();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const formatAmount = (amount: number) => formatCurrency(amount, company?.locale || 'de-DE', company?.numberFormat, company?.currency);

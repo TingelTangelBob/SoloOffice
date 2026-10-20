@@ -37,12 +37,15 @@ import { SettingsCard, SettingsField, SettingsSaveBar, SettingsToggleRow } from 
 import {
   defaultTestEmailRecipient,
   isSingleEmailAddress,
+  SMTP_PROVIDERS,
+  smtpProviderForSettings,
   smtpFormFromSettings,
   smtpSettingsDirty,
   smtpSettingsPayload,
   validateSmtpSettings,
   type SmtpFieldErrors,
   type SmtpFormSettings,
+  type SmtpProvider,
 } from '../utils/smtpSettings';
 
 interface EmailAttachment {
@@ -131,6 +134,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   // Zugangsdaten werden nur als neuer Entwurf im Arbeitsspeicher gehalten.
   const [smtpSettings, setSmtpSettings] = useState<SmtpFormSettings>(() => smtpFormFromSettings());
   const [savedSmtpSettings, setSavedSmtpSettings] = useState<SmtpFormSettings | null>(null);
+  const [smtpProvider, setSmtpProvider] = useState<SmtpProvider>('eigen');
   const [smtpUserManuallyEdited, setSmtpUserManuallyEdited] = useState(false);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null | undefined>(undefined);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -214,6 +218,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     setIsSendingTest(false);
     setTestRecipientError(undefined);
     setSmtpSettings(smtpFormFromSettings());
+    setSmtpProvider('eigen');
     setSmtpUserManuallyEdited(false);
     setSmtpErrors({});
     setConnectionResult(null);
@@ -228,6 +233,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
       if (!data.success) throw new Error(data.message || 'Die E-Mail-Einrichtung konnte nicht geladen werden.');
       const settings = smtpFormFromSettings(data.settings);
       setSmtpSettings(settings);
+      setSmtpProvider(smtpProviderForSettings(settings));
       setSmtpUserManuallyEdited(!!settings.smtp_user && settings.smtp_user !== settings.email_from);
       setSavedSmtpSettings(settings);
       setLoadedWorkspaceId(requestedWorkspace);
@@ -266,6 +272,13 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
     setSmtpSaveMessage(null);
     setConnectionResult(null);
     setTestResult(null);
+  };
+
+  const changeSmtpProvider = (provider: SmtpProvider) => {
+    setSmtpProvider(provider);
+    if (provider === 'eigen') return;
+    const preset = SMTP_PROVIDERS[provider];
+    changeSmtpSettings({ smtp_host: preset.smtp_host, smtp_port: preset.smtp_port, smtp_secure: preset.smtp_secure });
   };
 
   const changeSenderAddress = (email_from: string) => {
@@ -311,6 +324,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const discardSmtpSettings = () => {
     if (!savedSmtpSettings || smtpBusy) return;
     setSmtpSettings(savedSmtpSettings);
+    setSmtpProvider(smtpProviderForSettings(savedSmtpSettings));
     setSmtpUserManuallyEdited(!!savedSmtpSettings.smtp_user && savedSmtpSettings.smtp_user !== savedSmtpSettings.email_from);
     setSmtpErrors({});
     setConnectionResult(null);
