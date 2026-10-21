@@ -105,7 +105,7 @@ export function TopBar({
      `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
      auf null drücken oder die Leiste sprengen. */
   return (
-    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 xl:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] ${searchOpen ? 'topbar-search-mode' : ''}`}>
+    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
       <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
@@ -129,18 +129,18 @@ export function TopBar({
             : <PanelLeftClose className="h-[1.125rem] w-[1.125rem]" />}
         </button>
 
-        <div id="topbar-page-title" className="min-w-0 flex-1" aria-live="polite" />
+        <div id="topbar-page-title" className="min-w-0 max-w-[6rem] flex-1 truncate sm:max-w-none" aria-live="polite" />
       </div>
 
       {/* Die Suche bleibt mittig, ist auf dem Desktop bewusst kompakter und
           wird auf kleinen Geräten von ihrem Symbol aus aufgeklappt. */}
       <div className="topbar-search-slot shrink-0">{searchSlot}</div>
 
-      <div className="topbar-actions-group flex min-w-0 items-center justify-end gap-1 lg:gap-2">
-        <div id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-[min(55vw,42rem)]" />
+      <div className="topbar-actions-group flex min-w-0 items-center justify-end gap-0.5 sm:gap-1 lg:gap-2">
+        <div id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-full" />
 
         {/* Dezente Abtrennung zwischen Seitenaktionen und Hinweisen. */}
-        <span className="mx-1 h-5 w-px shrink-0 bg-gray-200" aria-hidden="true" />
+        <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-gray-200 sm:mx-1 sm:block" aria-hidden="true" />
 
         <ActionMenu
           ariaLabel={noticeCount > 0 ? `Hinweise (${noticeCount})` : 'Hinweise'}

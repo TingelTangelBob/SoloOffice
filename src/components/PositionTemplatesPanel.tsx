@@ -280,7 +280,7 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
                 </span>
                 {item.description && <span className="mt-0.5 block truncate text-xs text-gray-500">{item.description}</span>}
               </span>
-              <span className="shrink-0 font-mono text-sm text-gray-900 tabular-nums">{item.value}</span>
+              <span className="shrink-0 text-sm text-gray-900 tabular-nums">{item.value}</span>
               <span className="flex shrink-0 items-center gap-1">
                 <button type="button" onClick={item.onEdit} className="action-icon-button action-icon-blue" aria-label={`${item.name} bearbeiten`} title="Bearbeiten">
                   <Edit2 className="h-4 w-4" />

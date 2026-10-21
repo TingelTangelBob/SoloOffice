@@ -15,7 +15,7 @@ import {
   ReminderTemplateTexts,
   TerminologyProfile,
 } from '../types';
-import { getDocumentTemplateFallback, ResolvedDocumentTemplate } from '../utils/documentTemplateProfiles';
+import { getDocumentTemplateFallback } from '../utils/documentTemplateProfiles';
 import {
   defaultDocumentTextTemplates,
   documentTextTemplateTypes,
@@ -169,189 +169,6 @@ function getTemplateTabs(terminologyProfile?: TerminologyProfile) {
 function getTemplateTypeLabel(type: DocumentTemplateType, terminologyProfile?: TerminologyProfile) {
   if (type === 'reminder') return 'Mahnungen';
   return getTemplateTabs(terminologyProfile).find(tab => tab.id === type)?.label || 'Dokument';
-}
-
-function normaliseTemplate(template: DocumentTemplate, company: Company): ResolvedDocumentTemplate {
-  const fallback = getDocumentTemplateFallback(template.documentType);
-  const textDefaults = resolveDocumentTextTemplate(company, template.documentType);
-  const textMode = getDocumentTemplateTextMode(company, template);
-  return {
-    ...fallback,
-    ...template,
-    textMode,
-    subject: textMode === 'custom' ? (template.subject ?? textDefaults.subject) : textDefaults.subject,
-    introText: textMode === 'custom' ? (template.introText ?? textDefaults.introText) : textDefaults.introText,
-    closingText: textMode === 'custom' ? (template.closingText ?? textDefaults.closingText) : textDefaults.closingText,
-    paymentTerms: textMode === 'custom' ? (template.paymentTerms ?? textDefaults.paymentTerms) : textDefaults.paymentTerms,
-    reminderTexts: textMode === 'custom'
-      ? { ...textDefaults.reminderTexts, ...template.reminderTexts }
-      : textDefaults.reminderTexts,
-    layout: template.layout || fallback.layout,
-    accentColor: template.accentColor || fallback.accentColor,
-    logoMode: template.logoMode || fallback.logoMode,
-    headerAlignment: template.headerAlignment || fallback.headerAlignment,
-    tableStyle: template.tableStyle || fallback.tableStyle,
-    showPaymentInformation: template.showPaymentInformation ?? fallback.showPaymentInformation,
-    showFooter: template.showFooter ?? fallback.showFooter,
-  };
-}
-
-interface TemplatePreviewProps {
-  template: DocumentTemplate;
-  company: Company;
-  companyName: string;
-  logo?: string | null;
-  terminologyProfile?: TerminologyProfile;
-  large?: boolean;
-}
-
-function TemplateMiniature({ template, company, companyName, logo, terminologyProfile, large = false }: TemplatePreviewProps) {
-  const resolved = normaliseTemplate(template, company);
-  const terminology = getTerminology(terminologyProfile);
-  const isEditorial = resolved.layout === 'editorial';
-  const isMinimal = resolved.layout === 'minimal' || resolved.layout === 'compact' || resolved.layout === 'air';
-  const isModern = resolved.layout === 'modern';
-  const isBold = resolved.layout === 'bold';
-  const isSplit = resolved.layout === 'split';
-  const isCompact = resolved.layout === 'compact';
-  const isAir = resolved.layout === 'air';
-  const isFrame = resolved.layout === 'frame';
-  const isDark = resolved.tableStyle === 'dark';
-  const isAccent = resolved.tableStyle === 'accent';
-  const baseFontSize = large ? (resolved.layout === 'compact' ? 8 : 9) : (resolved.layout === 'compact' ? 4.8 : 5.2);
-  const tableColor = isDark ? '#1f2937' : isAccent ? resolved.accentColor : isEditorial ? 'transparent' : '#eef1f5';
-  const tableTextColor = isDark || isAccent ? '#ffffff' : '#374151';
-  const logoVisible = resolved.logoMode === 'company';
-  const documentTitle = template.documentType === 'quote'
-    ? 'ANGEBOT'
-    : template.documentType === 'reminder'
-      ? 'MAHNUNG'
-      : template.documentType === 'orderConfirmation'
-        ? terminology.work.confirmationLabel.toUpperCase()
-        : 'RECHNUNG';
-  const sampleRows = template.documentType === 'reminder'
-    ? [
-        ['Offener Rechnungsbetrag', '—'],
-        ['Mahngebühr', '—'],
-        ['Zahlungsfrist', '—'],
-      ]
-    : template.documentType === 'orderConfirmation'
-      ? [
-        ['Design Discovery', '—'],
-        ['Interface Design', '—'],
-        ['Website Design', '—'],
-      ]
-    : resolved.layout === 'modern'
-      ? [
-          ['Monatlicher Support', '—'],
-          ['Konzeption & Beratung', '—'],
-          ['Zusatzaufwand', '—'],
-        ]
-      : resolved.layout === 'editorial'
-        ? [
-            ['Projektphase: Konzeption', '—'],
-            ['Umsetzung & Abstimmung', '—'],
-            ['Übergabe & Dokumentation', '—'],
-          ]
-      : [
-          ['Beratung und Analyse', '—'],
-          ['Leistungserbringung', '—'],
-          ['Dokumentation', '—'],
-        ];
-  const sampleIntro = resolved.introText || 'Vielen Dank für Ihre Anfrage. Hiermit berechnen wir Ihnen folgende Leistungen:';
-  const sampleReminderText = resolved.reminderTexts?.stage1 || 'Bitte begleichen Sie den offenen Betrag innerhalb von 7 Tagen.';
-  const pageBackground = isEditorial ? '#fbf8f5' : isAir ? '#fbfdfe' : '#ffffff';
-  const documentText = isEditorial ? '#4a3d35' : '#27303d';
-  const mutedText = isEditorial ? '#806f63' : '#6b7280';
-  const brandMark = logoVisible && logo ? (
-    <img src={logo} alt="" className="max-w-full object-contain object-left" style={{ width: large ? 118 : 66, height: large ? 30 : 18 }} />
-  ) : (
-    <span className="font-semibold tracking-wide" style={{ color: resolved.accentColor, fontSize: large ? 14 : 7 }}>{companyName}</span>
-  );
-
-  return (
-    <div
-      className={`relative mx-auto overflow-hidden rounded-sm border text-left shadow-sm ${large ? 'w-[330px] sm:w-[480px]' : 'w-full'}`}
-      style={{ aspectRatio: '0.707', backgroundColor: pageBackground, color: documentText, borderColor: isFrame ? resolved.accentColor : '#d1d5db', borderWidth: isFrame ? 2 : 1, fontFamily: isEditorial || isAir ? 'Georgia, serif' : 'Arial, sans-serif' }}
-    >
-      {(isModern || isBold) && <div className="absolute inset-x-0 top-0 h-[3%]" style={{ backgroundColor: resolved.accentColor }} />}
-      <div className={`absolute inset-x-[9%] ${isCompact ? 'top-[4%] bottom-[4%]' : 'top-[6%] bottom-[6%]'} flex flex-col overflow-hidden ${isSplit ? 'border-l-4 pl-[5%]' : ''}`} style={{ fontSize: baseFontSize, borderColor: isSplit ? resolved.accentColor : undefined }}>
-        <div className={`flex items-start gap-4 ${resolved.headerAlignment === 'center' ? 'justify-center text-center' : 'justify-between'} ${isBold ? 'border-b-2 pb-2' : ''}`} style={{ borderColor: isBold ? resolved.accentColor : undefined }}>
-          <div className={resolved.headerAlignment === 'center' ? 'w-full' : 'min-w-0'}>
-            <div className={resolved.headerAlignment === 'center' ? 'flex justify-center' : ''}>{brandMark}</div>
-            {!isMinimal && <div className="mt-1 h-1 rounded-full" style={{ backgroundColor: resolved.accentColor, width: large ? 72 : 38 }} />}
-          </div>
-          <div className={`${resolved.headerAlignment === 'center' ? 'hidden' : 'text-right'} shrink-0`}>
-            <div className="font-bold tracking-wide" style={{ color: resolved.accentColor, fontSize: large ? 12 : 6.2 }}>{documentTitle}</div>
-            <div className="mt-1 space-y-0.5" style={{ color: mutedText, fontSize: large ? 7 : 4.2 }}>
-              <div>Nr. 12345</div>
-              <div>20. Februar 2030</div>
-              <div>Fällig am 06. März 2030</div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`mt-[10%] flex items-start justify-between gap-5 ${isMinimal ? 'border-t pt-3' : ''}`} style={{ borderColor: isMinimal ? resolved.accentColor : '#e5e7eb' }}>
-          <div className="min-w-0">
-            <div className="font-semibold" style={{ fontSize: large ? 10 : 5.8 }}>Rechnung an</div>
-            <div className="mt-1 font-semibold">Vincent Vogelstetter</div>
-            <div style={{ color: mutedText }}>Jede Straße 123</div>
-            <div style={{ color: mutedText }}>12345 Jede Stadt</div>
-          </div>
-          <div className="text-right" style={{ color: mutedText }}>
-            <div className="font-semibold" style={{ color: documentText }}>{terminology.entity.numberShortLabel} 12345</div>
-            <div>USt-ID: aus Firmeneinstellungen</div>
-            <div>Kontakt: aus Firmeneinstellungen</div>
-          </div>
-        </div>
-
-        <div className="mt-[9%] flex min-h-0 flex-1 flex-col">
-          <div className={`font-bold ${isEditorial ? 'uppercase tracking-[0.15em]' : ''}`} style={{ color: resolved.accentColor, fontSize: large ? 14 : 7.2 }}>{documentTitle === 'MAHNUNG' ? 'Zahlung offen' : documentTitle.charAt(0) + documentTitle.slice(1).toLowerCase()}</div>
-          <p className="mt-1 max-w-[90%] leading-tight" style={{ color: mutedText, maxHeight: large ? undefined : 22, overflow: 'hidden' }}>{sampleIntro}</p>
-
-          {template.documentType === 'reminder' && (
-            <div className="mt-3 rounded-sm px-2 py-1.5" style={{ backgroundColor: `${resolved.accentColor}18`, borderLeft: `2px solid ${resolved.accentColor}` }}>
-              <div className="font-bold" style={{ color: resolved.accentColor }}>1. Mahnung · Beispiel</div>
-              <div style={{ color: mutedText }}>{sampleReminderText}</div>
-            </div>
-          )}
-
-          <div className="mt-4 overflow-hidden" style={{ border: isEditorial ? `1px solid ${resolved.accentColor}80` : `1px solid ${resolved.accentColor}35`, borderRadius: isEditorial ? 0 : 3 }}>
-            <div className="grid grid-cols-[1fr_auto] gap-1 px-2 py-1 font-bold leading-tight" style={{ backgroundColor: tableColor, color: tableTextColor }}>
-              <span>Leistung</span>
-              <span>Gesamt</span>
-            </div>
-            {sampleRows.map(([description, amount], index) => (
-              <div key={description} className="grid grid-cols-[1fr_auto] gap-1 px-2 py-1.5 leading-tight" style={{ borderBottom: `1px solid ${isEditorial ? `${resolved.accentColor}35` : '#e5e7eb'}`, backgroundColor: !isEditorial && index % 2 === 1 ? '#fafbfc' : 'transparent' }}>
-                <span className="truncate">{description}</span>
-                <span className="whitespace-nowrap">{amount}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="ml-auto mt-3 w-[43%] space-y-1.5 text-right">
-            <div className="flex justify-between gap-2" style={{ color: mutedText }}><span>Netto</span><span>14.220,00 €</span></div>
-            <div className="flex justify-between gap-2" style={{ color: mutedText }}><span>MwSt. 19 %</span><span>2.701,80 €</span></div>
-            <div className="flex justify-between gap-2 border-t pt-1 font-bold" style={{ borderColor: resolved.accentColor, color: resolved.accentColor }}><span>Gesamt</span><span>16.921,80 €</span></div>
-          </div>
-        </div>
-
-        {resolved.showPaymentInformation && (
-          <div className="mt-3 max-w-[80%]" style={{ color: mutedText }}>
-            <div className="font-bold" style={{ color: documentText }}>Zahlungsinformationen</div>
-            <div>Zahlungsdaten aus den Firmeneinstellungen</div>
-          </div>
-        )}
-
-        {resolved.showFooter && (
-          <div className="mt-auto border-t pt-2" style={{ borderColor: `${resolved.accentColor}55`, color: mutedText }}>
-            <div className="flex justify-between gap-2"><span>{companyName || 'Ihr Firmenname'}</span><span>Firmendaten aus Einstellungen</span><span>Seite 1</span></div>
-            <div className="mt-1">Adresse und Kontakt aus den Firmeneinstellungen</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 interface TemplateEditorOverlayProps {
@@ -1254,7 +1071,7 @@ export function TemplatesManagement() {
                     {template.isDefault && <span className="absolute left-1/2 top-0 z-10 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
                     <button type="button" onClick={() => setSelectedPreview(template)} className="template-card-preview-surface group relative block min-h-[520px] w-full overflow-hidden rounded-t-xl p-[2.5%]" aria-label={`${template.name} in großer Vorschau öffnen`}>
                       <div className="mx-auto w-full space-y-2">
-                        <TemplateMiniature template={template} company={company} companyName={company.name} logo={company.logo} terminologyProfile={company.terminologyProfile} />
+                        <TemplatePdfPreview template={template} company={company} thumbnail />
                       </div>
                       <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
                         <Maximize2 className="h-3 w-3" /> Große Vorschau

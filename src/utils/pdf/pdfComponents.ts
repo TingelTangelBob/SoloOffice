@@ -51,6 +51,11 @@ async function addClassicPDFHeader(
   const { primaryRgb, grayText, darkText } = colors;
   const terminology = getTerminology(company.terminologyProfile);
   
+  // DIN 5008 Form B: Empfängerfeld 45 mm von oben, 20 mm von links (Fenster 90 × 45 mm).
+  const RECIPIENT_TOP_Y = 45;
+  const SENDER_LINE_Y = 34;
+  const LOGO_ZONE_HEIGHT = 18;
+
   let currentY = margins.top;
   
   // Invoice metadata box (right side) - positioned first to avoid overlaps
@@ -58,7 +63,7 @@ async function addClassicPDFHeader(
   const metadataBoxY = currentY;
   const metadataBoxWidth = 60;
   // Calculate height dynamically: title (12) + spacing (8) + fields * 10 + padding (10)
-  const metadataBoxHeight = 30 + (metadataBox.fields.length * 10);
+  const metadataBoxHeight = 15 + (metadataBox.fields.length * 8) + 3;
   
   // Draw metadata box (only fill, no border)
   pdf.setFillColor(248, 250, 252);
@@ -69,7 +74,7 @@ async function addClassicPDFHeader(
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.text(metadataBox.title, metadataBoxX + 3, metadataBoxY + 12);
   
-  let metadataY = metadataBoxY + 20;
+  let metadataY = metadataBoxY + 15;
   
   // Metadata fields
   pdf.setFontSize(8);
@@ -78,7 +83,7 @@ async function addClassicPDFHeader(
     pdf.text(field.label, metadataBoxX + 3, metadataY);
     pdf.setTextColor(darkText);
     pdf.text(field.value, metadataBoxX + 3, metadataY + 4);
-    metadataY += 10;
+    metadataY += 8;
     pdf.setTextColor(grayText);
   }
   
@@ -94,7 +99,7 @@ async function addClassicPDFHeader(
       ]);
       
       // Dynamic logo sizing and positioning calculation (same as original)
-      const maxLogoHeight = metadataBoxHeight * 0.8; // 80% of metadata box height for padding
+      const maxLogoHeight = LOGO_ZONE_HEIGHT; // Logo bleibt oberhalb der Absenderzeile
       const maxLogoWidth = 100; // Available width between left margin and line end (100 units)
       const aspectRatio = logoImg.width / logoImg.height;
       
@@ -117,7 +122,7 @@ async function addClassicPDFHeader(
       const logoStartX = 20 + (availableLogoSpaceWidth - logoWidth) / 2;
       
       // Y: Center the logo vertically within the metadata box
-      const logoStartY = metadataBoxY + (metadataBoxHeight - logoHeight) / 2;
+      const logoStartY = metadataBoxY + (LOGO_ZONE_HEIGHT - logoHeight) / 2;
       
       // Determine image format for jsPDF
       let imageFormat = 'JPEG';
@@ -130,21 +135,21 @@ async function addClassicPDFHeader(
     } catch (error) {
       logger.warn('Logo konnte nicht geladen werden:', { error: String(error) });
       // Fallback: Company name as header - center vertically in metadata box
-      const fallbackTextY = metadataBoxY + (metadataBoxHeight / 2) + 3; // +3 for better text baseline alignment
+      const fallbackTextY = metadataBoxY + LOGO_ZONE_HEIGHT / 2 + 3; // +3 for better text baseline alignment
       pdf.setFontSize(16);
       pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
       pdf.text(company.name, 20, fallbackTextY);
     }
   } else {
     // Company name as header without logo - center vertically in metadata box  
-    const fallbackTextY = metadataBoxY + (metadataBoxHeight / 2) + 3; // +3 for better text baseline alignment
+    const fallbackTextY = metadataBoxY + LOGO_ZONE_HEIGHT / 2 + 3; // +3 for better text baseline alignment
     pdf.setFontSize(16);
     pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
     pdf.text(company.name, 20, fallbackTextY);
   }
   
   // Move Y position down after header section
-  currentY = metadataBoxY + metadataBoxHeight + 10;
+  currentY = SENDER_LINE_Y;
   
   // Sender address line (German standard)
   pdf.setFontSize(7);
@@ -170,7 +175,8 @@ async function addClassicPDFHeader(
   pdf.setDrawColor(200, 200, 200);
   pdf.line(margins.left, currentY, 120, currentY);
   
-  currentY += 6;
+  // Empfängerfeld im Sichtfenster, unabhängig vom Kopf darüber
+  currentY = RECIPIENT_TOP_Y + 4;
   
   // Customer address block (left side)
   const customerAddressY = currentY;
@@ -208,7 +214,8 @@ async function addClassicPDFHeader(
   }
   
   // Customer details (right side)
-  let customerDetailsY = customerAddressY;
+  // Rechts unter dem Kasten für Rechnungsnummer und Datum beginnen
+  let customerDetailsY = Math.max(customerAddressY, metadataBoxY + metadataBoxHeight + 6);
   pdf.setFontSize(9);
   pdf.setTextColor(grayText);
   
@@ -244,10 +251,8 @@ async function addClassicPDFHeader(
     pdf.text(customer.taxId, customerMetadataX, customerDetailsY + 4);
   }
   
-  // Ensure currentY accounts for customer address section
-  currentY += 18;
-  
-  return currentY;
+  // Der Textkörper beginnt unterhalb des Sichtfensters (Form B: bis 90 mm).
+  return Math.max(currentY + 8, 95);
 }
 
 async function addBrand(
@@ -286,6 +291,15 @@ async function addBrand(
   pdf.text(company.name, align === 'center' ? x : x, y + maxHeight / 2 + 4, align === 'center' ? { align: 'center' } : undefined);
 }
 
+// Gemeinsame Maße für alle Kopfvarianten (DIN 5008 Form B): Der Empfänger steht im
+// Sichtfenster bei 45 mm von oben und 20 mm von links; Linien und Flächen bleiben
+// darüber oder seitlich davon.
+const WINDOW_RECIPIENT_Y = 49;
+
+function recipientBlockEnd(customerEndY: number): number {
+  return Math.max(customerEndY + 8, 95);
+}
+
 async function addMinimalPDFHeader(
   context: PDFContext,
   metadataBox: { title: string; fields: Array<{ label: string; value: string }> },
@@ -296,10 +310,10 @@ async function addMinimalPDFHeader(
   const top = margins.top;
   const compact = context.template.layout === 'compact';
   const airy = context.template.layout === 'air';
-  const lineY = top + (compact ? 24 : airy ? 34 : 29);
+  const lineY = top + 22;
 
   const minimalCentered = context.template.headerAlignment === 'center';
-  await addBrand(context, minimalCentered ? pageWidth / 2 : margins.left, top, 70, compact ? 16 : airy ? 24 : 20, minimalCentered ? 'center' : 'left');
+  await addBrand(context, minimalCentered ? pageWidth / 2 : margins.left, top, 70, compact ? 14 : airy ? 18 : 18, minimalCentered ? 'center' : 'left');
   pdf.setDrawColor(airy ? primaryRgb.r : 31, airy ? primaryRgb.g : 41, airy ? primaryRgb.b : 55);
   pdf.setLineWidth(0.5);
   pdf.line(margins.left, lineY, pageWidth - margins.right, lineY);
@@ -307,19 +321,24 @@ async function addMinimalPDFHeader(
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(compact ? 11 : airy ? 12 : 13);
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
-  pdf.text(metadataBox.title, pageWidth - margins.right, top + (compact ? 8 : 9), { align: 'right' });
+  pdf.text(metadataBox.title, pageWidth - margins.right, top + 8, { align: 'right' });
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(compact ? 7 : 8);
-  let metadataY = top + (compact ? 14 : 16);
+  let metadataY = top + 14;
   for (const field of metadataBox.fields) {
     pdf.setTextColor(grayText);
-    pdf.text(field.label, pageWidth - 58, metadataY);
+    pdf.text(field.label, pageWidth - 92, metadataY);
     pdf.setTextColor(darkText);
     pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
     metadataY += 4;
   }
 
-  let currentY = top + (compact ? 36 : airy ? 48 : 43);
+  // Absenderzeile oberhalb des Sichtfensters
+  pdf.setFontSize(7);
+  pdf.setTextColor(grayText);
+  pdf.text(`${company.name} · ${company.address} · ${company.postalCode} ${company.city}`, margins.left, lineY + 4);
+
+  let currentY = WINDOW_RECIPIENT_Y;
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10);
   pdf.setTextColor(darkText);
@@ -335,15 +354,13 @@ async function addMinimalPDFHeader(
     pdf.text(customer.country, margins.left, currentY);
   }
 
-  pdf.setFontSize(8);
-  pdf.setTextColor(grayText);
-  const sender = `${company.name} · ${company.address} · ${company.postalCode} ${company.city}`;
-  pdf.text(sender, margins.left, top + (compact ? 70 : airy ? 86 : 80));
   if (customerAddress?.trim()) {
-    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, margins.left, top + (compact ? 75 : airy ? 91 : 85));
-    return top + (compact ? 81 : airy ? 97 : 91);
+    pdf.setFontSize(8);
+    pdf.setTextColor(grayText);
+    currentY += 6;
+    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, margins.left, currentY);
   }
-  return top + (compact ? 76 : airy ? 92 : 86);
+  return recipientBlockEnd(currentY);
 }
 
 async function addEditorialPDFHeader(
@@ -355,27 +372,28 @@ async function addEditorialPDFHeader(
   const top = margins.top;
 
   const editorialCentered = context.template.headerAlignment !== 'left';
-  await addBrand(context, editorialCentered ? pageWidth / 2 : margins.left, top, 75, 24, editorialCentered ? 'center' : 'left');
+  await addBrand(context, editorialCentered ? pageWidth / 2 : margins.left, top, 75, 18, editorialCentered ? 'center' : 'left');
   pdf.setDrawColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
   pdf.setLineWidth(1);
-  pdf.line(margins.left, top + 31, pageWidth - margins.right, top + 31);
+  pdf.line(margins.left, top + 26, pageWidth - margins.right, top + 26);
 
+  // Titel und Metadaten rechts, damit der Empfänger links frei bleibt
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10);
   pdf.setTextColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
-  pdf.text(metadataBox.title, margins.left, top + 45);
+  pdf.text(metadataBox.title, pageWidth - margins.right, top + 12, { align: 'right' });
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(8);
-  let metadataY = top + 52;
+  let metadataY = top + 17;
   for (const field of metadataBox.fields) {
     pdf.setTextColor(grayText);
-    pdf.text(field.label, pageWidth - 64, metadataY);
+    pdf.text(field.label, pageWidth - 92, metadataY);
     pdf.setTextColor(darkText);
     pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
     metadataY += 4;
   }
 
-  let currentY = top + 49;
+  let currentY = WINDOW_RECIPIENT_Y;
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10);
   pdf.setTextColor(darkText);
@@ -386,7 +404,7 @@ async function addEditorialPDFHeader(
   pdf.text(customer.address, margins.left, currentY);
   currentY += 4;
   pdf.text(`${customer.postalCode} ${customer.city}`, margins.left, currentY);
-  return top + 82;
+  return recipientBlockEnd(currentY);
 }
 
 type AccentHeaderVariant = 'modern' | 'bold' | 'split' | 'frame';
@@ -402,24 +420,26 @@ async function addAccentPDFHeader(
   const top = margins.top;
   const contentWidth = pageWidth - margins.left - margins.right;
   const white = { r: 255, g: 255, b: 255 };
+  // Einrückung des Empfängers: Bei Rahmen und Seitenleiste liegt die Kante links bei 20 mm.
+  const customerX = margins.left + (variant === 'split' ? 11 : variant === 'frame' ? 8 : 0);
 
   if (variant === 'bold') {
     pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
-    pdf.rect(0, top - 5, pageWidth, 34, 'F');
-    await addBrand(context, margins.left, top, 74, 20, 'left', white);
+    pdf.rect(0, top - 5, pageWidth, 28, 'F');
+    await addBrand(context, margins.left, top, 74, 18, 'left', white);
   } else if (variant === 'modern') {
     pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
     pdf.rect(margins.left, top - 2, contentWidth, 4, 'F');
-    await addBrand(context, margins.left, top + 7, 74, 20, 'left');
+    await addBrand(context, margins.left, top + 6, 74, 18, 'left');
   } else if (variant === 'split') {
     pdf.setFillColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
     pdf.rect(margins.left, top, 4, 82, 'F');
-    await addBrand(context, margins.left + 11, top + 3, 74, 20, 'left');
+    await addBrand(context, margins.left + 11, top + 2, 74, 18, 'left');
   } else {
     pdf.setDrawColor(primaryRgb.r, primaryRgb.g, primaryRgb.b);
     pdf.setLineWidth(0.8);
     pdf.rect(margins.left, top, contentWidth, 82);
-    await addBrand(context, margins.left + 8, top + 7, 70, 20, 'left');
+    await addBrand(context, margins.left + 8, top + 6, 70, 18, 'left');
   }
 
   const titleColor = variant === 'bold' ? '#ffffff' : primaryRgb;
@@ -430,38 +450,41 @@ async function addAccentPDFHeader(
   } else {
     pdf.setTextColor(titleColor.r, titleColor.g, titleColor.b);
   }
-  pdf.text(metadataBox.title, pageWidth - margins.right, top + (variant === 'bold' ? 9 : 14), { align: 'right' });
+  pdf.text(metadataBox.title, pageWidth - margins.right, top + (variant === 'bold' ? 8 : 12), { align: 'right' });
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(8);
-  let metadataY = top + (variant === 'bold' ? 16 : 22);
+  let metadataY = top + (variant === 'bold' ? 14 : 18);
   for (const field of metadataBox.fields) {
     pdf.setTextColor(grayText);
-    pdf.text(field.label, pageWidth - 62, metadataY);
+    pdf.text(field.label, pageWidth - 92, metadataY);
     pdf.setTextColor(darkText);
     pdf.text(field.value, pageWidth - margins.right, metadataY, { align: 'right' });
     metadataY += 4;
   }
 
-  const customerY = top + (variant === 'bold' ? 48 : 54);
+  let currentY = WINDOW_RECIPIENT_Y;
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(10);
   pdf.setTextColor(darkText);
-  pdf.text(customer.name, margins.left + (variant === 'split' ? 11 : 0), customerY);
+  pdf.text(customer.name, customerX, currentY);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
-  pdf.text(customer.address, margins.left + (variant === 'split' ? 11 : 0), customerY + 5);
-  pdf.text(`${customer.postalCode} ${customer.city}`, margins.left + (variant === 'split' ? 11 : 0), customerY + 9);
+  pdf.text(customer.address, customerX, currentY + 5);
+  pdf.text(`${customer.postalCode} ${customer.city}`, customerX, currentY + 9);
+  currentY += 9;
   if (customerAddress?.trim()) {
     pdf.setTextColor(grayText);
     pdf.setFontSize(8);
-    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, margins.left + (variant === 'split' ? 11 : 0), customerY + 15);
+    pdf.text(`Ausführungsort: ${customerAddress.replace(/\n/g, ' ')}`, customerX, currentY + 6);
+    currentY += 6;
   }
 
+  // Absenderzeile unterhalb des Sichtfensters, außerhalb der Empfängerzone
   pdf.setFontSize(8);
   pdf.setTextColor(grayText);
-  pdf.text(`${company.name} · ${company.address} · ${company.postalCode} ${company.city}`, margins.left + (variant === 'split' ? 11 : 0), top + 78);
-  return top + (variant === 'bold' ? 91 : 94);
+  pdf.text(`${company.name} · ${company.address} · ${company.postalCode} ${company.city}`, margins.left + (variant === 'split' ? 11 : 0), top + 80);
+  return Math.max(recipientBlockEnd(currentY), top + 84);
 }
 
 /** Add the selected PDF layout profile's header. */

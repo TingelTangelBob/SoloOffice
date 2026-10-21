@@ -673,7 +673,7 @@ function EligibleRemindersTab({
                     className="custom-checkbox mt-0.5 shrink-0"
                     aria-label={`${reminder.invoiceNumber} auswählen`}
                   />
-                ) : <span className="w-4 shrink-0" />}
+                ) : null}
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-gray-900">{reminder.invoiceNumber}</p>
                   <p className="truncate text-sm text-gray-600">{reminder.customerName}</p>

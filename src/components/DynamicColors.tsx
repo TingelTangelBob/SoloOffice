@@ -364,12 +364,12 @@ export function DynamicColors() {
         }
 
         #app-shell .action-menu-trigger-primary {
-          background-color: var(--primary-color) !important;
-          color: var(--primary-text-color) !important;
+          background-color: var(--ink-solid) !important;
+          color: var(--ink-solid-text) !important;
         }
         #app-shell .action-menu-trigger-primary:hover {
-          background-color: var(--primary-color) !important;
-          color: var(--primary-text-color) !important;
+          background-color: var(--ink-solid) !important;
+          color: var(--ink-solid-text) !important;
           filter: brightness(0.9) !important;
         }
 

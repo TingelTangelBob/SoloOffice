@@ -15,6 +15,8 @@ interface TemplatePdfPreviewProps {
   template: DocumentTemplate;
   company: Company;
   large?: boolean;
+  /** Kleine Karte: dieselbe PDF, ohne Werkzeugleiste und ohne Scrollen, im A4-Verhältnis. */
+  thumbnail?: boolean;
   /**
    * Als eigenständiger Vorschaudialog rendern – mit derselben Kopfleiste wie
    * die Dokumentvorschau der Rechnungen und Aufträge (Name, Werkzeuge,
@@ -26,7 +28,7 @@ interface TemplatePdfPreviewProps {
 const PREVIEW_DEBOUNCE_MS = 300;
 const TOOL_BUTTON = 'inline-flex h-10 w-10 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom';
 
-export function TemplatePdfPreview({ template, company, large = false, dialog }: TemplatePdfPreviewProps) {
+export function TemplatePdfPreview({ template, company, large = false, thumbnail = false, dialog }: TemplatePdfPreviewProps) {
   const previewUrlRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -70,6 +72,17 @@ export function TemplatePdfPreview({ template, company, large = false, dialog }:
   }, [company, template]);
 
   const iframeSrc = previewUrl ? `${previewUrl}#view=FitH&toolbar=1&navpanes=0` : undefined;
+  const thumbnailSrc = previewUrl ? `${previewUrl}#view=FitH&toolbar=0&navpanes=0&scrollbar=0` : undefined;
+
+  if (thumbnail) {
+    return (
+      <div className="relative w-full overflow-hidden rounded bg-white" style={{ aspectRatio: '1 / 1.414' }}>
+        {isLoading && <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-xs text-gray-500" role="status">Vorschau wird erzeugt …</div>}
+        {error && <div className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-red-700" role="alert">{error}</div>}
+        {thumbnailSrc && <iframe src={thumbnailSrc} title={`${template.name} als PDF`} tabIndex={-1} aria-hidden="true" className="pointer-events-none h-full w-full border-0 bg-white" />}
+      </div>
+    );
+  }
 
   if (dialog) {
     return (

@@ -41,7 +41,7 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
           <button
             type="button"
             onClick={() => setIsFilterOpen((open) => !open)}
-            className={`order-1 inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
+            className={`order-1 inline-flex h-9 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
               hasActiveFilters || isFilterOpen
                 ? 'border-primary-custom bg-primary-custom/10 text-primary-custom'
                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -49,8 +49,12 @@ export function ResponsiveFilterBar({ search, filters, hasActiveFilters = false 
             aria-expanded={isFilterOpen}
             aria-label="Filter anzeigen"
           >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">Filter</span>
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 shrink-0" />
+              <span>Filter</span>
+              {hasActiveFilters && <span className="rounded-full bg-primary-custom px-2 py-0.5 text-xs font-semibold text-white">aktiv</span>}
+            </span>
+            <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 text-gray-500 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
           </button>
           <div className="order-2 hidden min-w-0 flex-1 items-center gap-2 lg:flex">{filters}</div>
           {search && <div className="order-3 min-w-0 flex-1 lg:ml-auto lg:max-w-[22rem] lg:basis-[16rem]">{search}</div>}

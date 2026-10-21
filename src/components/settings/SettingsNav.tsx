@@ -125,7 +125,7 @@ export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResu
                         onSelectArea(area);
                       }}
                       aria-current={active ? 'page' : undefined}
-                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? 'border-transparent bg-accent-tint text-primary-on-surface' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? 'border-transparent bg-[var(--accent-tint)] text-[var(--primary-on-surface,var(--primary-color))]' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                     >
                       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span>{SETTINGS_AREA_DEFINITIONS[area].label}</span>
