@@ -2,6 +2,26 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.10b – EÜR-Erfassung und Oberfläche
+
+- Ausgaben lassen sich mit einem Beleg verknüpfen. Die Auswahl zeigt die noch
+  offenen Belege und füllt Beschreibung, Betrag, MwSt.-Satz und Belegdatum
+  vor.
+- Der Dialog „Ausgabe erfassen“ ist schlanker: ohne Abschnittsboxen und
+  Untertitel, Felder ab 640 px nebeneinander, Art und Buchungsart entfallen.
+- Die EÜR-Monatsübersicht und die Buchungen sind auf Smartphone und Tablet
+  kompakter. Die Tabelle erscheint erst ab 1280 px.
+- Die Spalten der EÜR-Buchungstabelle sind neu verteilt, damit Kategorien
+  nicht mehr abgeschnitten werden.
+- Hinweis „Zahlung nachtragen“ listet alle betroffenen Rechnungen mit eigenem
+  Button und dem fehlenden Betrag.
+- Fällige Fixkosten: Datum, Bezahlt-Button und Überspringen liegen in einer
+  Reihe und brechen auf schmalen Geräten sauber um.
+- Listen für Rechnungen, Angebote, Gutschriften, Kunden, Aufträge, Vorlagen,
+  Auswertungen und Umsatzsteuer: flachere Zeilen und passendere Spaltenbreiten.
+- Einstellungen: Auf dem Smartphone sind alle Bereiche als Auswahl sichtbar,
+  statt eines Auswahlfelds. Die Suchfelder haben den gleichen Radius.
+
 ## v0.9.9b – Konsolidierung der Beta-Linie
 
 - Pflichtfelder der Firmendaten werden serverseitig und in der Oberfläche

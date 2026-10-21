@@ -19,6 +19,8 @@ interface Props {
   onAmountChange?: (value: number) => void;
   suggestionLabel?: string;
   onAcceptSuggestion?: () => void;
+  /** Ohne Box, Überschrift und Hinweistext, wenn der Block direkt in einem Formular steht. */
+  flat?: boolean;
 }
 
 const treatmentLabels: Record<EuerVatTreatment, string> = {
@@ -26,7 +28,7 @@ const treatmentLabels: Record<EuerVatTreatment, string> = {
   reverse_charge_eu: 'Reverse Charge EU (§ 13b Abs. 1)', reverse_charge_domestic: 'Reverse Charge Inland (§ 13b Abs. 2)',
 };
 
-export function VatFieldsEditor({ entryType, amount, taxRate, entryDate, value, locale = 'de-DE', dateFormat, numberFormat, isSmallBusiness, onChange, onTaxRateChange, onAmountChange, suggestionLabel, onAcceptSuggestion }: Props) {
+export function VatFieldsEditor({ entryType, amount, taxRate, entryDate, value, locale = 'de-DE', dateFormat, numberFormat, isSmallBusiness, onChange, onTaxRateChange, onAmountChange, suggestionLabel, onAcceptSuggestion, flat = false }: Props) {
   const gross = Number(amount);
   const rate = Number(taxRate) || 0;
   const parameterYear = Number(entryDate.slice(0, 4)) || new Date().getFullYear();
@@ -63,9 +65,9 @@ export function VatFieldsEditor({ entryType, amount, taxRate, entryDate, value, 
     onChange(next);
   };
 
-  return <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5" aria-labelledby="vat-fields-title">
+  return <section className={flat ? '' : 'rounded-xl border border-gray-200 bg-white p-4 sm:p-5'} aria-labelledby={flat ? undefined : 'vat-fields-title'}>
     <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0"><h3 id="vat-fields-title" className="text-base font-semibold text-gray-900">Umsatzsteuer</h3><p className="mt-1 text-xs leading-5 text-gray-500">Angaben zur Orientierung; bitte mit Rechnung oder Beleg abgleichen.</p></div>
+      <div className="min-w-0">{!flat && <><h3 id="vat-fields-title" className="text-base font-semibold text-gray-900">Umsatzsteuer</h3><p className="mt-1 text-xs leading-5 text-gray-500">Angaben zur Orientierung; bitte mit Rechnung oder Beleg abgleichen.</p></>}</div>
       {isSmallBusiness && <button type="button" onClick={() => setExpanded(open => !open)} className="shrink-0 text-xs font-medium text-primary-custom">{expanded ? 'Einklappen' : 'Angaben anzeigen'}</button>}
     </div>
     {isSmallBusiness && <p className="mt-3 rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-600">Bei § 19 werden keine Vorsteuerbeträge angesetzt. Reverse Charge kann besondere Umsatzsteuer auslösen.</p>}

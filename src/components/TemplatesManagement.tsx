@@ -798,13 +798,13 @@ function TextTemplateTable({ templates, terminologyProfile, onEdit }: TextTempla
               : [template.subject, template.introText, template.closingText, template.paymentTerms].filter(value => value?.trim()).length + ' Textfelder';
             return (
               <tr key={template.id} className="border-b last:border-b-0">
-                <th scope="row" className="px-4 py-4 font-semibold text-gray-900">
+                <th scope="row" className="px-4 py-2.5 font-semibold text-gray-900">
                   <div>{label}</div>
                   <div className="mt-1 text-xs font-normal text-gray-500">{template.name}</div>
                 </th>
-                <td className="px-4 py-4 text-gray-600">Eine Vorlage für alle {label.toLowerCase()}</td>
-                <td className="max-w-[360px] truncate px-4 py-4 text-gray-600" title={template.subject || undefined}>{content}</td>
-                <td className="px-4 py-4 text-right">
+                <td className="px-4 py-2.5 text-gray-600">Eine Vorlage für alle {label.toLowerCase()}</td>
+                <td className="max-w-0 px-4 py-2.5 text-gray-600"><span className="block truncate" title={template.subject || content}>{content}</span></td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right">
                   <button type="button" onClick={event => onEdit(template, event.currentTarget)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-primary-custom hover:text-primary-custom"><Edit2 className="h-4 w-4" /> Bearbeiten</button>
                 </td>
               </tr>

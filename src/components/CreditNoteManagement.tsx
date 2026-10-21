@@ -175,8 +175,8 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
 
       return (
         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
-          <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
-            <table className="w-full table-fixed text-sm">
+          <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+            <table className="w-full min-w-[940px] table-fixed text-sm">
               <thead className="bg-gray-50">
                 <tr>
                   <SortableTableHeader label="Nummer" sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-4 py-3" />
@@ -196,15 +196,15 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
               <tbody className="divide-y divide-gray-100">
                 {sortedNotes.map(note => (
                   <tr key={note.id} className="group hover:bg-gray-50">
-                    <td className="w-32 truncate px-4 py-3 font-medium">{note.invoiceNumber || '–'}</td>
-                    <td className="max-w-0 px-4 py-3"><span className="block truncate">{customerName(note.customerId)}</span></td>
-                    <td className="w-28 whitespace-nowrap px-4 py-3">{formatDate(note.issueDate, locale, company?.dateFormat)}</td>
-                    <td className="w-28 whitespace-nowrap px-4 py-3 text-right font-medium">{amount(note)}</td>
-                    <td className="w-28 px-4 py-3"><span className="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs">{creditNoteStatusLabel(note.status)}</span></td>
-                    <td className="w-48 max-w-0 px-4 py-3"><span className="block truncate">{referenceNumber(note)}</span></td>
+                    <td className="w-32 truncate px-4 py-2.5 font-medium">{note.invoiceNumber || '–'}</td>
+                    <td className="max-w-0 px-4 py-2.5"><span className="block truncate">{customerName(note.customerId)}</span></td>
+                    <td className="w-28 whitespace-nowrap px-4 py-2.5">{formatDate(note.issueDate, locale, company?.dateFormat)}</td>
+                    <td className="w-28 whitespace-nowrap px-4 py-2.5 text-right font-medium">{amount(note)}</td>
+                    <td className="w-28 whitespace-nowrap px-4 py-2.5"><span className="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs">{creditNoteStatusLabel(note.status)}</span></td>
+                    <td className="w-48 max-w-0 px-4 py-2.5"><span className="block truncate">{referenceNumber(note)}</span></td>
                     <td
                       style={{ width: showInlineActions ? CREDIT_NOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
-                      className={`sticky right-0 z-10 bg-white py-3 transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
+                      className={`sticky right-0 z-10 bg-white py-2.5 transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
                     >
                       {showInlineActions ? (
                         <div className="flex flex-nowrap items-center gap-1">

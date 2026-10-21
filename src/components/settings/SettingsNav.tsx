@@ -96,34 +96,47 @@ function SettingsSearch({ onSelectResult }: Pick<SettingsNavProps, 'onSelectResu
 }
 
 /**
- * Seitennavigation der Einstellungen. Ab `lg` eine gruppierte Leiste links,
- * darunter Suche plus Auswahlfeld, damit auf schmalen Geräten kein
- * waagerecht scrollender Reiterstreifen entsteht.
+ * Seitennavigation der Einstellungen. Ab `lg` eine gruppierte Leiste links.
+ * Darunter zeigen schmale Geräte alle Bereiche als Chips, die in Zeilen
+ * umbrechen: Jeder Bereich ist mit einem Tipp erreichbar, ohne Auswahlfeld
+ * und ohne waagerecht scrollende Reiter.
  */
 export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResult }: SettingsNavProps) {
-  const selectId = useId();
   return (
     <nav aria-label="Einstellungsbereiche" className="settings-nav">
       <SettingsSearch onSelectResult={onSelectResult} />
 
-      <div className="mt-3 lg:hidden">
-        <label htmlFor={selectId} className="mb-1 block text-xs font-medium text-gray-500">Bereich</label>
-        <select
-          id={selectId}
-          value={activeArea}
-          onChange={event => onSelectArea(event.target.value as SettingsArea)}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-custom"
-        >
-          {SETTINGS_GROUPS.map(group => (
-            <optgroup key={group.id} label={group.label}>
-              {group.areas.map(area => (
-                <option key={area} value={area}>
-                  {SETTINGS_AREA_DEFINITIONS[area].label}{dirtyAreas.has(area) ? ' • ungespeichert' : ''}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+      <div className="mt-3 space-y-3 lg:hidden">
+        {SETTINGS_GROUPS.map(group => (
+          <div key={group.id}>
+            <p className="settings-nav-group">{group.label}</p>
+            <ul className="mt-1.5 flex flex-wrap gap-2">
+              {group.areas.map(area => {
+                const Icon = AREA_ICONS[area];
+                const active = area === activeArea;
+                const dirty = dirtyAreas.has(area);
+                return (
+                  <li key={area}>
+                    <a
+                      href={`#settings/${area}`}
+                      onClick={event => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+                        event.preventDefault();
+                        onSelectArea(area);
+                      }}
+                      aria-current={active ? 'page' : undefined}
+                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? 'border-transparent bg-accent-tint text-primary-on-surface' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>{SETTINGS_AREA_DEFINITIONS[area].label}</span>
+                      {dirty && <span className="settings-dirty-dot" title="Ungespeicherte Änderungen" aria-label="ungespeichert" />}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
 
       <div className="mt-4 hidden space-y-4 lg:block">

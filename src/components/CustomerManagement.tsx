@@ -985,7 +985,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
             <tbody className="divide-y divide-gray-200 bg-white">
               {filteredCustomers.map((customer) => (
                 <tr key={customer.id} className="transition-colors hover:bg-gray-50">
-                  <td className="max-w-[260px] px-5 py-3">
+                  <td className="max-w-0 px-5 py-2.5">
                     <button type="button" onClick={() => openCustomerPage(customer)} aria-label={`Kundenseite öffnen: ${customer.name}`} className="group flex min-w-0 items-start gap-2 text-left">
                       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary-custom/10 text-primary-custom">
                         <CustomerTypeIcon customerType={customer.customerType} className="h-4 w-4" />
@@ -997,11 +997,11 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                       </span>
                     </button>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 tabular-nums">{formatCustomerNumber(customer.customerNumber)}</td>
-                  <td className="max-w-[220px] px-4 py-3 text-sm text-gray-700"><span title={customer.email || undefined} className="block truncate">{customer.email || '–'}</span></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{customer.phone || '–'}</td>
-                  {showAddressColumn && <td className="max-w-[260px] px-4 py-3 text-sm text-gray-700"><span className="block truncate">{formatCustomerAddress(customer) || '–'}</span></td>}
-                  <td className="sticky right-0 z-10 bg-white px-2 py-3 text-sm font-medium">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-600 tabular-nums">{formatCustomerNumber(customer.customerNumber)}</td>
+                  <td className="max-w-0 px-4 py-2.5 text-sm text-gray-700"><span title={customer.email || undefined} className="block truncate">{customer.email || '–'}</span></td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-700">{customer.phone || '–'}</td>
+                  {showAddressColumn && <td className="max-w-0 px-4 py-2.5 text-sm text-gray-700"><span title={formatCustomerAddress(customer) || undefined} className="block truncate">{formatCustomerAddress(customer) || '–'}</span></td>}
+                  <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-2 py-2.5 text-sm font-medium">
                     {renderCustomerActions(customer)}
                   </td>
                 </tr>

@@ -200,7 +200,6 @@
      ohne eigene Klasse wäre der Haken dann unsichtbar. */
   input:not([type="checkbox"]):not([type="radio"]), textarea, select {
     -webkit-appearance: none;
-    border-radius: 0;
   }
 
   /* Prevent zoom on iOS when focusing inputs */

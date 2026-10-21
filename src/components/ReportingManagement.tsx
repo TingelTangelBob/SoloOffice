@@ -600,7 +600,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {journalData.invoices.map((invoice: InvoiceJournalEntry) => (
                       <tr key={invoice.id} className="group hover:bg-gray-50">
-                        <td className="py-3 px-2 text-xs">
+                        <td className="whitespace-nowrap py-3 px-2 text-xs">
                           {invoice.issueDate ? 
                             formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) :
                             'N/A'
@@ -609,10 +609,10 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                         <td className="py-3 px-2 font-mono text-xs">
                           {invoice.invoiceNumber || 'N/A'}
                         </td>
-                        <td className="py-3 px-2 text-xs max-w-32 truncate" title={invoice.customerName}>
-                          {invoice.customerName || 'N/A'}
+                        <td className="max-w-0 py-3 px-2 text-xs">
+                          <span className="block truncate" title={invoice.customerName}>{invoice.customerName || 'N/A'}</span>
                         </td>
-                        <td className="py-3 px-2 text-xs text-right font-medium">
+                        <td className="whitespace-nowrap py-3 px-2 text-xs text-right font-medium">
                           {formatAmount(invoice.total || 0)}
                         </td>
                         <td className="py-3 px-2 text-center">

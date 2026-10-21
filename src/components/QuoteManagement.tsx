@@ -874,18 +874,18 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
-            <table className="w-full table-fixed">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
+            <table className="w-full table-fixed min-w-[820px]">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-3 text-left w-16">
+                <th className="px-3 py-3 text-left w-12">
                   <span className="sr-only">Auswahl</span>
                 </th>
                 <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
                 <SortableTableHeader label="Angebotsnummer" sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-44 px-3 py-3" />
                 <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
                 <SortableTableHeader label="Gültig bis" sortKey="validUntil" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
-                <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
+                <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
                 <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
                   style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
@@ -906,7 +906,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   className="group cursor-pointer hover:bg-gray-50"
                   title="Zeile anklicken für die Vorschau"
                 >
-                  <td className="px-3 py-4 w-16">
+                  <td className="px-3 py-2.5 w-12">
                     <input
                       type="checkbox"
                       checked={selectedQuoteIds.includes(quote.id)}
@@ -915,10 +915,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                       title="Angebot auswählen"
                     />
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(quote.issueDate, locale, company?.dateFormat)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-sm font-medium text-gray-900">
                     {quote.quoteNumber}
                     {/* Gegenrichtung zur Herkunftsangabe an der Rechnung: Hier ist
                         sichtbar, dass aus dem Angebot bereits eine Rechnung wurde. */}
@@ -928,16 +928,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                       </span>
                     )}
                   </td>
-                  <td className="max-w-0 px-3 py-4 text-sm text-gray-900">
+                  <td className="max-w-0 px-3 py-2.5 text-sm text-gray-900">
                     <span className="block truncate">{quote.customerName}</span>
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(quote.validUntil, locale, company?.dateFormat)}
                   </td>
-                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="w-28 px-3 py-2.5 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(quote.total, locale, company?.numberFormat, company?.currency)}
                   </td>
-                  <td className={`py-4 whitespace-nowrap ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}>
+                  <td className={`py-2.5 whitespace-nowrap ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`}>
                     {showStatusLabel ? (
                       <span className={`status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(quote.status)}`}>
                         {getStatusLabel(quote.status)}
@@ -953,7 +953,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   </td>
                   <td
                     style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
-                    className={`sticky right-0 z-10 bg-white py-4 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
+                    className={`sticky right-0 z-10 bg-white py-2.5 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
                   >
                     {showInlineActions ? (
                     <div className="flex flex-nowrap items-center gap-1">
