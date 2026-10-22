@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import logger from '../utils/logger';
 import { 
   BarChart3, 
@@ -16,6 +16,9 @@ import {
 import { PageHeader } from './PageHeader';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
+import { useAuth } from '../context/AuthContext';
+import { useReportingQuery } from '../hooks/useReportingQuery';
+import { changeReportingYear, yearStart, yearEnd } from '../utils/reportingRequests';
 import { apiService } from '../services/api';
 import {
   InvoiceJournalResponse, 
@@ -29,16 +32,17 @@ import { getTerminology } from '../utils/terminology';
 import { csvFileName, downloadCsv } from '../utils/csvExport';
 import type { CsvColumn } from '../utils/csvExport';
 
+const EMPTY_EUER_ENTRIES: EuerEntry[] = [];
+
 interface ReportingManagementProps {
   onNavigate?: (page: string) => void;
 }
 
-const yearStart = (year: number) => `${year}-01-01`;
-const yearEnd = (year: number) => `${year}-12-31`;
-
 export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const { customers } = useCustomers();
   const { company } = useCompany();
+  const { workspace, user } = useAuth();
+  const workspaceKey = JSON.stringify([user?.id, workspace?.id]);
   const terminology = getTerminology(company?.terminologyProfile);
   const formatAmount = (amount: number) => formatCurrency(amount, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
   const csvDate = (value: Date | string) => {
@@ -97,86 +101,44 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
     ]);
   };
   
-  // State for invoice journal
-  const [journalData, setJournalData] = useState<InvoiceJournalResponse | null>(null);
-  const [journalLoading, setJournalLoading] = useState(false);
-  // Das Journal startet im gewählten Auswertungsjahr, damit es zu den
-  // Jahreskennzahlen passt. Eigene Zeiträume bleiben beim Jahreswechsel erhalten.
-  const [startDate, setStartDate] = useState<string>(() => yearStart(new Date().getFullYear()));
-  const [endDate, setEndDate] = useState<string>(() => yearEnd(new Date().getFullYear()));
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
-  
-  // State for statistics
-  const [statistics, setStatistics] = useState<ReportingStatistics | null>(null);
-  const [statisticsLoading, setStatisticsLoading] = useState(false);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const journalYearRef = useRef(selectedYear);
-
-  useEffect(() => {
-    const previousYear = journalYearRef.current;
-    journalYearRef.current = selectedYear;
-    if (previousYear === selectedYear) return;
-    if (startDate === yearStart(previousYear) && endDate === yearEnd(previousYear)) {
-      setStartDate(yearStart(selectedYear));
-      setEndDate(yearEnd(selectedYear));
-    }
-  }, [endDate, selectedYear, startDate]);
-  const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
-  
-  // State for PDF generation
+  const [filters, setFilters] = useState(() => ({
+    selectedYear: new Date().getFullYear(),
+    startDate: yearStart(new Date().getFullYear()),
+    endDate: yearEnd(new Date().getFullYear()),
+    selectedCustomer: '',
+  }));
+  const { selectedYear, startDate, endDate, selectedCustomer } = filters;
+  const setStartDate = (value: string) => setFilters(current => ({ ...current, startDate: value }));
+  const setEndDate = (value: string) => setFilters(current => ({ ...current, endDate: value }));
+  const setSelectedCustomer = (value: string) => setFilters(current => ({ ...current, selectedCustomer: value }));
+  const setSelectedYear = (year: number) => setFilters(current => changeReportingYear(current, year));
   const [generatingPDF, setGeneratingPDF] = useState(false);
-  
-  // Error handling
-  const [error, setError] = useState<string>('');
+  const [pdfError, setError] = useState('');
+  const [dismissedError, setDismissedError] = useState<unknown>(null);
 
-  const loadJournalData = useCallback(async () => {
-    setJournalLoading(true);
-    setError('');
-    try {
-      const data = await apiService.getInvoiceJournal({
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        customerId: selectedCustomer || undefined
-      });
-      setJournalData(data);
-    } catch (err) {
-      logger.error('Error loading journal data:', err);
-      setError('Fehler beim Laden des Rechnungsjournals');
-    } finally {
-      setJournalLoading(false);
-    }
-  }, [endDate, selectedCustomer, startDate]);
-
-  const loadStatistics = useCallback(async () => {
-    setStatisticsLoading(true);
-    setError('');
-    try {
-      const data = await apiService.getReportingStatistics(selectedYear);
-      setStatistics(data);
-    } catch (err) {
-      logger.error('Error loading statistics:', err);
-      setError('Fehler beim Laden der Statistiken');
-    } finally {
-      setStatisticsLoading(false);
-    }
-  }, [selectedYear]);
-
-  const loadEuerData = useCallback(async () => {
-    try {
-      const entries = await apiService.getEuerEntries(selectedYear);
-      setEuerEntries(entries);
-    } catch (err) {
-      logger.error('Error loading EÜR data:', err);
-      setError('Fehler beim Laden der EÜR-Auswertung');
-    }
-  }, [selectedYear]);
-
-  // Load initial data and refresh when the selected filters change.
-  useEffect(() => {
-    void loadJournalData();
-    void loadStatistics();
-    void loadEuerData();
-  }, [loadEuerData, loadJournalData, loadStatistics]);
+  const requestJournal = useCallback(() => apiService.getInvoiceJournal({
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    customerId: selectedCustomer || undefined,
+  }), [endDate, selectedCustomer, startDate]);
+  const requestStatistics = useCallback(() => apiService.getReportingStatistics(selectedYear), [selectedYear]);
+  const requestEuer = useCallback(() => apiService.getEuerEntries(selectedYear), [selectedYear]);
+  const journal = useReportingQuery<InvoiceJournalResponse>(JSON.stringify([workspaceKey, startDate, endDate, selectedCustomer]), requestJournal);
+  const statisticsQuery = useReportingQuery<ReportingStatistics>(JSON.stringify([workspaceKey, selectedYear]), requestStatistics);
+  const euer = useReportingQuery<EuerEntry[]>(JSON.stringify([workspaceKey, selectedYear]), requestEuer);
+  const journalData = journal.data;
+  const journalLoading = journal.loading;
+  const statistics = statisticsQuery.data;
+  const statisticsLoading = statisticsQuery.loading;
+  const euerEntries = euer.data || EMPTY_EUER_ENTRIES;
+  const loadJournalData = journal.reload;
+  const loadStatistics = statisticsQuery.reload;
+  const queryError = journal.error || statisticsQuery.error || euer.error;
+  const error = pdfError || (queryError && queryError !== dismissedError
+    ? journal.error ? 'Fehler beim Laden des Rechnungsjournals'
+      : statisticsQuery.error ? 'Fehler beim Laden der Statistiken'
+        : 'Fehler beim Laden der EÜR-Auswertung'
+    : '');
 
   const handleGeneratePDF = async () => {
     setGeneratingPDF(true);
@@ -342,7 +304,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
           <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
           <span className="text-red-700">{error}</span>
           <button
-            onClick={() => setError('')}
+            onClick={() => { setError(''); setDismissedError(queryError); }}
             className="ml-auto text-red-500 hover:text-red-700"
           >
             <X className="h-4 w-4" />

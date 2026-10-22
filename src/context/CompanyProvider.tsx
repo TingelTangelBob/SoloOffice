@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Company, HourlyRate, MaterialTemplate, InvoiceTemplate, DocumentTemplate } from '../types';
 import { apiService } from '../services/api';
@@ -9,6 +9,7 @@ import { DEFAULT_TIME_ZONE } from '../utils/timeZones';
 import { CompanyContext, type CompanyContextType } from './CompanyContext';
 import { defaultDocumentTextTemplates } from '../utils/documentTextTemplates';
 import { trackTelemetry } from '../services/telemetry';
+import { createSerialStateWriter } from '../utils/serialStateWriter';
 
 // ============================================================================
 // Default Values
@@ -176,6 +177,13 @@ export function CompanyProvider({
   const [company, setCompany] = useState<Company>(initialCompany);
   const [hourlyRates, setHourlyRates] = useState<HourlyRate[]>(initialHourlyRates);
   const [materialTemplates, setMaterialTemplates] = useState<MaterialTemplate[]>(initialMaterialTemplates);
+  const companyRef = useRef(company);
+  const activeRef = useRef(true);
+  useLayoutEffect(() => { companyRef.current = company; }, [company]);
+  useEffect(() => {
+    activeRef.current = true;
+    return () => { activeRef.current = false; };
+  }, []);
 
   // Update favicon and page title when company data changes
   useEffect(() => {
@@ -189,10 +197,20 @@ export function CompanyProvider({
   // Company Methods
   // --------------------------------------------------------------------------
 
-  const updateCompanyData = useCallback(async (companyData: Partial<Company>): Promise<void> => {
-    try {
-      const updatedCompany = await apiService.updateCompany(companyData);
-      setCompany(previousCompany => ({
+  const [updateCompanyData] = useState(() => createSerialStateWriter<Company>({
+    current: () => companyRef.current,
+    active: () => activeRef.current,
+    save: async companyData => {
+      try {
+        return await apiService.updateCompany(companyData);
+      } catch (error) {
+        logger.error('Error updating company:', { error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
+    },
+    commit: updatedCompany => {
+      const previousCompany = companyRef.current;
+      const nextCompany = {
         ...updatedCompany,
         themeMode: updatedCompany.themeMode || previousCompany.themeMode || 'system',
         terminologyProfile: updatedCompany.terminologyProfile || previousCompany.terminologyProfile || 'customers',
@@ -209,12 +227,11 @@ export function CompanyProvider({
               ...template,
               reminderTexts: template.reminderTexts ? { ...template.reminderTexts } : undefined,
             })),
-      }));
-    } catch (error) {
-      logger.error('Error updating company:', { error: error instanceof Error ? error.message : String(error) });
-      throw error;
-    }
-  }, []);
+      };
+      companyRef.current = nextCompany;
+      setCompany(nextCompany);
+    },
+  }));
 
   // --------------------------------------------------------------------------
   // Hourly Rate Methods

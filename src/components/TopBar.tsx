@@ -161,7 +161,7 @@ export function TopBar({
      `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
      auf null drücken oder die Leiste sprengen. */
   return (
-    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,1fr)_auto_max-content] sm:grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
+    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,1fr)_auto_minmax(0,max-content)] sm:grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
       <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"

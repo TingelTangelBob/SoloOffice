@@ -2025,22 +2025,19 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               <span className="text-gray-600">Urlaub</span>
             </div>
           </div>
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-              title={[
-                `Ziehen Sie ${terminology.work.plural} per Drag & Drop, um das Datum zu ändern`,
-                `Ziehen Sie ${terminology.work.plural} innerhalb eines Tages, um die Reihenfolge zu ändern`,
-                `Doppelklicken Sie auf einen ${terminology.work.singular}, um die Übersicht zu öffnen`,
-                `Doppelklicken Sie auf das Datum, um einen neuen ${terminology.work.singular} zu erstellen`,
-                `Abgerechnete ${terminology.work.plural} können nicht verschoben werden`,
-              ].join('\n')}
-            >
+          <details className="mt-3 text-xs text-gray-500">
+            <summary className="ml-auto flex min-h-10 w-fit cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-color)]">
               <Info className="h-3.5 w-3.5" aria-hidden="true" />
               Bedienhinweise
-            </button>
-          </div>
+            </summary>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5 text-gray-600">
+              <li>Ziehen Sie {terminology.work.plural} per Drag &amp; Drop, um das Datum zu ändern.</li>
+              <li>Ziehen Sie {terminology.work.plural} innerhalb eines Tages, um die Reihenfolge zu ändern.</li>
+              <li>Doppelklicken Sie auf einen {terminology.work.singular}, um die Übersicht zu öffnen.</li>
+              <li>Doppelklicken Sie auf das Datum, um einen neuen {terminology.work.singular} zu erstellen.</li>
+              <li>Abgerechnete {terminology.work.plural} können nicht verschoben werden.</li>
+            </ul>
+          </details>
         </div>
       </div>
 

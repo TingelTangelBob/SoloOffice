@@ -12,7 +12,7 @@
 
 import type { Company, Customer, DocumentDesignId, DocumentFontFamily } from '../../types';
 import { hexToRgb, type RgbColor } from './colorUtils';
-import { loadImage } from './imageHelpers';
+import { loadPdfImage } from './imageHelpers';
 import logger from '../logger';
 import { getEffectivePaymentInformation } from '../paymentInformation';
 
@@ -151,13 +151,6 @@ function lineHeight(fontSize: number, factor = 1.4): number {
   return fontSize * PT * factor;
 }
 
-function imageFormat(source: string): string {
-  const lower = source.slice(0, 40).toLowerCase();
-  if (lower.includes('image/jpeg') || lower.includes('image/jpg')) return 'JPEG';
-  if (lower.includes('png')) return 'PNG';
-  return 'JPEG';
-}
-
 interface FooterLayout {
   size: number;
   columns: Array<{ heading: string; lines: string[]; x: number; width: number }>;
@@ -287,19 +280,22 @@ class DocumentWriter {
   async brand(x: number, y: number, maxWidth: number, maxHeight: number, align: 'left' | 'center' | 'right', fallback: () => void): Promise<void> {
     const logo = this.company.logo;
     if (logo && this.settings.showLogo) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const image = await Promise.race([
-          loadImage(logo),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Logo loading timeout')), 5000)),
+          loadPdfImage(logo),
+          new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Logo loading timeout')), 5000); }),
         ]);
-        const ratio = image.width / image.height || 1;
+        const ratio = image.width / image.height;
         const width = ratio > maxWidth / maxHeight ? maxWidth : maxHeight * ratio;
         const height = width / ratio;
         const startX = align === 'center' ? x - width / 2 : align === 'right' ? x - width : x;
-        this.pdf.addImage(logo, imageFormat(logo), startX, y + (maxHeight - height) / 2, width, height);
+        this.pdf.addImage(image.source, image.format, startX, y + (maxHeight - height) / 2, width, height);
         return;
       } catch (error) {
         logger.warn('Logo konnte nicht geladen werden:', { error: String(error) });
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
       }
     }
     fallback();
@@ -595,43 +591,59 @@ class DocumentWriter {
       return positioned;
     });
 
-    // Kopfzeile nicht allein am Seitenende stehen lassen.
-    this.ensure(8 + 12);
-    this.tableHeader(columns);
-
     const fontSize = 9;
     const step = lineHeight(fontSize, 1.35);
+    const fullPageRowHeight = this.bottomLimit - 29 - 8;
+    this.font('normal', fontSize);
+    const firstRowLines = table.rows[0]
+      ? Math.max(...columns.map((column, index) => this.wrap(table.rows[0][index] ?? '', column.width - 4).length))
+      : 0;
+    const firstRowHeight = firstRowLines * step + 3.4;
+    // Kopf und erste normale Position zusammenhalten. Bei einer überlangen
+    // Position mindestens den ersten Abschnitt beim Kopf beginnen lassen.
+    this.ensure(8 + (firstRowHeight <= fullPageRowHeight ? firstRowHeight : 12));
+    this.tableHeader(columns);
+
     const zebraFill = mix(this.accent, WHITE, 0.93);
     table.rows.forEach((row, rowIndex) => {
       this.font('normal', fontSize);
       const cells = columns.map((column, index) => this.wrap(row[index] ?? '', column.width - 4));
       const lines = Math.max(...cells.map(cell => cell.length));
-      const height = lines * step + 3.4;
-      if (this.ensure(height)) this.tableHeader(columns);
-
-      const top = this.y;
-      if (this.config.zebra && rowIndex % 2 === 1) {
-        this.fill(zebraFill);
-        this.pdf.rect(LEFT, top, CONTENT_WIDTH, height, 'F');
-      }
-      this.font('normal', fontSize);
-      this.color(TEXT);
-      cells.forEach((cellLines, index) => {
-        const column = columns[index];
-        cellLines.forEach((line, lineIndex) => {
-          const baseline = top + 1.7 + step * 0.78 + lineIndex * step;
-          if (column.align === 'right') {
-            this.pdf.text(line, column.x + column.width - 2, baseline, { align: 'right' });
-          } else {
-            this.pdf.text(line, column.x + 2, baseline);
-          }
+      const rowHeight = lines * step + 3.4;
+      // Normale Positionen zusammenhalten. Überlange Positionen werden in
+      // Zeilenpakete geteilt, statt sie außerhalb des Blatts zu zeichnen.
+      if (rowHeight <= fullPageRowHeight && this.ensure(rowHeight)) this.tableHeader(columns);
+      let offset = 0;
+      while (offset < lines) {
+        if (this.ensure(step + 3.4)) this.tableHeader(columns);
+        const capacity = Math.max(1, Math.floor((this.bottomLimit - this.y - 3.4) / step));
+        const count = Math.min(lines - offset, capacity);
+        const height = count * step + 3.4;
+        const top = this.y;
+        if (this.config.zebra && rowIndex % 2 === 1) {
+          this.fill(zebraFill);
+          this.pdf.rect(LEFT, top, CONTENT_WIDTH, height, 'F');
+        }
+        this.font('normal', fontSize);
+        this.color(TEXT);
+        cells.forEach((cellLines, index) => {
+          const column = columns[index];
+          cellLines.slice(offset, offset + count).forEach((line, lineIndex) => {
+            const baseline = top + 1.7 + step * 0.78 + lineIndex * step;
+            if (column.align === 'right') {
+              this.pdf.text(line, column.x + column.width - 2, baseline, { align: 'right' });
+            } else {
+              this.pdf.text(line, column.x + 2, baseline);
+            }
+          });
         });
-      });
-      if (this.config.rowLines) {
-        this.stroke(LINE, 0.2);
-        this.pdf.line(LEFT, top + height, RIGHT, top + height);
+        if (this.config.rowLines) {
+          this.stroke(LINE, 0.2);
+          this.pdf.line(LEFT, top + height, RIGHT, top + height);
+        }
+        this.y = top + height;
+        offset += count;
       }
-      this.y = top + height;
     });
 
     if (this.config.tableHeader === 'accentRule') {
@@ -733,28 +745,40 @@ class DocumentWriter {
   }
 
   payment(payment: NonNullable<PdfDocumentModel['payment']>): void {
-    this.font('normal', 9);
     const labelWidth = 34;
-    const fieldLines = payment.fields.map(field => this.wrap(field.value, CONTENT_WIDTH - labelWidth));
-    const height = 6
-      + (payment.emphasis ? 6 : 0)
-      + (payment.intro ? 5 : 0)
-      + fieldLines.reduce((sum, lines) => sum + lines.length * 4.3, 0);
-    this.ensure(height);
+    const step = 4.3;
+    this.font('normal', 9);
+    const fields = payment.fields.map((field, index) => {
+      this.font('normal', 9);
+      const label = this.wrap(field.label, labelWidth - 2);
+      this.font(index === payment.fields.length - 1 ? 'bold' : 'normal', 9);
+      const value = this.wrap(field.value, CONTENT_WIDTH - labelWidth);
+      return { label, value, lines: Math.max(label.length, value.length) };
+    });
+    const paragraphHeight = (text: string | undefined, style: FontStyle): number => {
+      if (!text) return 0;
+      this.font(style, 9);
+      return text.split('\n').reduce((sum, line) => sum + this.wrap(line, CONTENT_WIDTH).length, 0) * lineHeight(9, 1.45);
+    };
+    const height = 5 + paragraphHeight(payment.emphasis, 'bold') + paragraphHeight(payment.intro, 'normal')
+      + fields.reduce((sum, field) => sum + field.lines * step, 0);
+    // Einen kurzen Zahlungsblock zusammenhalten; lange Absätze dürfen über
+    // mehrere Seiten laufen. Überschrift und erste Inhaltszeile bleiben zusammen.
+    this.ensure(height <= this.bottomLimit - 29 ? height : 10);
     this.heading(payment.heading);
     if (payment.emphasis) this.paragraph(payment.emphasis, { size: 9, color: this.accent, style: 'bold' });
     if (payment.intro) this.paragraph(payment.intro, { size: 9, color: MUTED });
-    payment.fields.forEach((field, index) => {
-      const isLast = index === payment.fields.length - 1;
-      this.font('normal', 9);
-      this.color(MUTED);
-      this.pdf.text(field.label, LEFT, this.y);
-      this.font(isLast ? 'bold' : 'normal', 9);
-      this.color(INK);
-      fieldLines[index].forEach((line, lineIndex) => {
-        this.pdf.text(line, LEFT + labelWidth, this.y + lineIndex * 4.3);
-      });
-      this.y += fieldLines[index].length * 4.3;
+    fields.forEach((field, index) => {
+      for (let lineIndex = 0; lineIndex < field.lines; lineIndex += 1) {
+        this.ensure(step);
+        this.font('normal', 9);
+        this.color(MUTED);
+        if (field.label[lineIndex]) this.pdf.text(field.label[lineIndex], LEFT, this.y);
+        this.font(index === fields.length - 1 ? 'bold' : 'normal', 9);
+        this.color(INK);
+        if (field.value[lineIndex]) this.pdf.text(field.value[lineIndex], LEFT + labelWidth, this.y);
+        this.y += step;
+      }
     });
   }
 

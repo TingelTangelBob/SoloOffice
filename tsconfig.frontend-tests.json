@@ -45,6 +45,10 @@
     "src/utils/dashboardPeriod.ts",
     "src/utils/calendarJobTitle.ts",
     "src/utils/euerAllowanceDays.ts",
-    "src/utils/taxDashboardDisplay.ts"
+    "src/utils/taxDashboardDisplay.ts",
+    "src/utils/serialStateWriter.ts",
+    "src/utils/documentTemplateWrites.ts",
+    "src/utils/reportingRequests.ts",
+    "src/utils/receiptCurrency.ts"
   ]
 }

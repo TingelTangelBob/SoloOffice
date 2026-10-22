@@ -20,6 +20,7 @@ import { splitGrossAmount, validateVatAmounts } from '../utils/vatEntryForm';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { TableSkeleton } from './TableSkeleton';
 import { trackTelemetry } from '../services/telemetry';
+import { isReceiptCurrencyCode, normalizeReceiptCurrency } from '../utils/receiptCurrency';
 import { RecurringExpenseDialog } from './RecurringExpenseDialog';
 import { financeApi } from '../services/financeApi';
 import { EmptyState } from './EmptyState';
@@ -42,7 +43,7 @@ type EditableReceiptField = 'vendorName' | 'documentDate' | 'documentNumber' | '
 
 // Dateigrößen mit deutschem Dezimalkomma, z. B. 141,6 KB.
 const formatSizeDe = (bytes: number) => formatFileSize(bytes).replace('.', ',');
-const reviewCurrencyOptions = ['EUR', 'USD', 'CHF', 'GBP'];
+const reviewCurrencyOptions = ['EUR', 'USD', 'CHF', 'GBP', 'CAD', 'JPY', 'PLN', 'DKK', 'NOK', 'SEK', 'CZK'];
 
 const statusLabels: Record<ReceiptOcrStatus, string> = {
   pending: 'Wartet auf Erkennung',
@@ -201,7 +202,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     taxAmount: normalizeOptionalNumber(amountInputValue(data.taxAmount, locale, company.numberFormat), locale, company.numberFormat, 2),
     grossAmount: normalizeOptionalNumber(amountInputValue(data.grossAmount, locale, company.numberFormat), locale, company.numberFormat, 2),
     taxRate: normalizeOptionalNumber(inputValue(data.taxRate), locale, company.numberFormat),
-    currency: data.currency?.trim().toUpperCase() || undefined,
+    currency: normalizeReceiptCurrency(data.currency),
     suggestedCategory: data.suggestedCategory,
   });
 
@@ -265,6 +266,9 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
   const persistReview = async () => {
     if (!selectedReceipt) return null;
     const normalizedData = normalizeReviewData();
+    if (!isReceiptCurrencyCode(normalizedData.currency || '')) {
+      throw new Error('Bitte einen dreistelligen Währungscode eingeben, z. B. EUR, CAD oder JPY.');
+    }
     const updated = await apiService.updateReceipt(selectedReceipt.id, { extractedData: normalizedData });
     updateReceiptInState(updated);
     setReviewData({ ...updated.extractedData });
@@ -608,15 +612,15 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
               <p className="mt-1 text-base text-gray-500">Beträge werden für die weitere Verarbeitung übernommen.</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label htmlFor="receipt-net" className="block text-sm font-medium text-gray-700">
-                  Netto ({reviewData.currency || 'EUR'})
+                  Netto ({normalizeReceiptCurrency(reviewData.currency)})
                   <input id="receipt-net" inputMode="decimal" value={amountInputValue(reviewData.netAmount, locale, company.numberFormat)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} />
                 </label>
                 <label htmlFor="receipt-tax" className="block text-sm font-medium text-gray-700">
-                  MwSt. Betrag ({reviewData.currency || 'EUR'})
+                  MwSt. Betrag ({normalizeReceiptCurrency(reviewData.currency)})
                   <input id="receipt-tax" inputMode="decimal" value={amountInputValue(reviewData.taxAmount, locale, company.numberFormat)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} />
                 </label>
                 <label htmlFor="receipt-gross" className="block text-sm font-medium text-gray-700">
-                  Brutto ({reviewData.currency || 'EUR'})
+                  Brutto ({normalizeReceiptCurrency(reviewData.currency)})
                   <input id="receipt-gross" inputMode="decimal" value={amountInputValue(reviewData.grossAmount, locale, company.numberFormat)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} />
                 </label>
                 <label htmlFor="receipt-tax-rate" className="block text-sm font-medium text-gray-700">
@@ -625,10 +629,24 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                 </label>
                 <label htmlFor="receipt-currency" className="block text-sm font-medium text-gray-700">
                   Währung
-                  <select id="receipt-currency" value={reviewData.currency || 'EUR'} onChange={event => updateReviewField('currency', event.target.value)} className={fieldClassName('currency')}>
-                    {reviewData.currency && !reviewCurrencyOptions.includes(reviewData.currency) && <option value={reviewData.currency}>{reviewData.currency}</option>}
-                    {reviewCurrencyOptions.map(code => <option key={code} value={code}>{code}</option>)}
-                  </select>
+                  <input
+                    id="receipt-currency"
+                    list="receipt-currencies"
+                    value={reviewData.currency ?? 'EUR'}
+                    onChange={event => updateReviewField('currency', event.target.value.toUpperCase())}
+                    onBlur={() => updateReviewField('currency', normalizeReceiptCurrency(reviewData.currency))}
+                    maxLength={3}
+                    pattern="[A-Za-z]{3}"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label="Währung als dreistelliger ISO-Code"
+                    placeholder="z. B. CAD"
+                    className={fieldClassName('currency')}
+                  />
+                  <datalist id="receipt-currencies">
+                    {reviewCurrencyOptions.map(currency => <option key={currency} value={currency} />)}
+                  </datalist>
                 </label>
               </div>
             </section>

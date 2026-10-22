@@ -17,7 +17,7 @@ import {
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
+import { formatCurrency, formatDate, formatNumber, getCurrencySymbol } from '../utils/formatters';
 import { PageHeader } from './PageHeader';
 import type {
   RecurringInvoice,
@@ -711,7 +711,7 @@ export function RecurringInvoiceManagement() {
                             />
                           </label>
                           <label className={`${fieldLabelClassName} col-span-1 min-[480px]:col-span-1`}>
-                            Einzelpreis (€) <span className="text-red-600">*</span>
+                            Einzelpreis ({getCurrencySymbol(locale, company?.numberFormat, company?.currency)}) <span className="text-red-600">*</span>
                             <LocalizedNumberInput minimumFractionDigits={2}
                               required
                               min="0"
@@ -737,7 +737,7 @@ export function RecurringInvoiceManagement() {
                             />
                           </label>
                           <div className="col-span-1 min-w-0">
-                            <span className="block text-sm font-medium text-gray-700">Gesamt (€)</span>
+                            <span className="block text-sm font-medium text-gray-700">Gesamt ({getCurrencySymbol(locale, company?.numberFormat, company?.currency)})</span>
                             <div className="mt-1.5 flex min-h-10 items-center justify-end overflow-hidden rounded-lg border border-gray-200 bg-white px-2 text-right text-xs font-semibold tabular-nums text-gray-900 sm:px-3 sm:text-sm">
                               {formatNumber(itemTotal(item), locale, company?.numberFormat)}
                             </div>

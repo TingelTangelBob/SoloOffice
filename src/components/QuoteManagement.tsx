@@ -45,6 +45,9 @@ interface QuoteManagementProps {
 /** Feste Anzahl Aktions-Slots je Zeile; fehlende Aktionen werden als Platzhalter belegt. */
 const QUOTE_MAX_INLINE_ACTIONS = 6;
 
+// Unterhalb dieser Breite bleibt auch der Kundenname mit Menü und Statuspunkt lesbar.
+const QUOTE_TABLE_MIN_WIDTH = 48 + 96 + 160 + 176 + 112 + 112 + 32 + ACTION_MENU_COLUMN_WIDTH;
+
 const QUOTE_TABLE_LAYOUT = listTableLayout({
   baseColumnsWidth: 48 + 96 + 160 + 112 + 112,
   flexibleColumnMinWidth: 176,
@@ -98,6 +101,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [showImport, setShowImport] = useState(false);
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
+  const showTable = tableWidth >= QUOTE_TABLE_MIN_WIDTH;
   const showInlineActions = tableWidth >= QUOTE_TABLE_LAYOUT.inlineActionsMinWidth;
   const showStatusLabel = tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelMinWidth
     || (!showInlineActions && tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelWithMenuMinWidth);
@@ -816,7 +820,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       />
 
       {/* Quote List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div ref={tableRef} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {isLoadingQuotes ? (
           <TableSkeleton rows={6} columns={6} label="Angebote werden geladen …" />
         ) : quoteLoadError ? (
@@ -889,7 +893,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+        <div className={`${showTable ? 'block' : 'hidden'} w-full min-w-0 max-w-full overflow-hidden`}>
             <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
@@ -1089,7 +1093,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         </div>
 
         {/* Mobile Card View */}
-        <div className="tablet:hidden">
+        <div className={showTable ? 'hidden' : 'block'}>
           {filteredQuotes.map((quote) => (
             <div key={quote.id} className="p-4 border-b border-gray-200 last:border-b-0">
               <div className="flex items-start gap-3">

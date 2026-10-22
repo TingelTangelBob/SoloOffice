@@ -19,7 +19,6 @@ import {
   type DocumentDesign,
 } from '../utils/documentTemplateProfiles';
 import {
-  defaultDocumentTextTemplates,
   documentTextTemplateTypes,
   resolveDocumentTextTemplate,
 } from '../utils/documentTextTemplates';
@@ -27,7 +26,7 @@ import { getTerminology } from '../utils/terminology';
 import { ThemeTabBar } from './ThemeTabBar';
 import { useFeedback } from '../context/FeedbackContext';
 import { TemplateDocumentPreview } from './templates/TemplatePdfPreview';
-import { restoreDefaultTemplates } from '../utils/templateDefaults';
+import { documentTextResetPatch, documentTextSavePatch } from '../utils/documentTemplateWrites';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { choiceCardClass } from './settings/settingsStyles';
 
@@ -375,7 +374,7 @@ export function TemplatesManagement() {
   const design = draftDesign ?? savedDesign;
   const latestDraftRef = useRef<DocumentDesign | null>(null);
   const saveTimerRef = useRef<number | null>(null);
-  const templatesRef = useRef(sourceTemplates);
+  const designWriteRef = useRef<Promise<void> | null>(null);
   const customColorInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   // Wie weit die Leiste verdichtet ist, nach Wichtigkeit: zuerst die Texte
@@ -416,19 +415,28 @@ export function TemplatesManagement() {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    const next = latestDraftRef.current;
-    if (!next) return;
-    setDesignSaveState('saving');
-    try {
-      await updateCompany({ documentTemplates: applyDocumentDesign(templatesRef.current, defaultDocumentTemplates, next) });
-      if (latestDraftRef.current === next) {
-        latestDraftRef.current = null;
-        setDraftDesign(null);
+    if (designWriteRef.current) return designWriteRef.current;
+    if (!latestDraftRef.current) return;
+    const write = (async () => {
+      setDesignSaveState('saving');
+      try {
+        while (latestDraftRef.current) {
+          const next = latestDraftRef.current;
+          await updateCompany(current => ({
+            documentTemplates: applyDocumentDesign(current.documentTemplates || [], defaultDocumentTemplates, next),
+          }));
+          if (latestDraftRef.current === next) {
+            latestDraftRef.current = null;
+            setDraftDesign(null);
+          }
+        }
+        setDesignSaveState('saved');
+      } catch {
+        setDesignSaveState('error');
       }
-      setDesignSaveState('saved');
-    } catch {
-      setDesignSaveState('error');
-    }
+    })();
+    designWriteRef.current = write;
+    try { await write; } finally { designWriteRef.current = null; }
   }, [updateCompany]);
 
   // Beim Verlassen der Seite noch ausstehende Änderungen sofort speichern.
@@ -561,42 +569,19 @@ export function TemplatesManagement() {
 
     const now = new Date();
     const editedType = editingTextTemplate.documentType;
-    const updatedTextTemplates = documentTextTemplateTypes.map(type => {
-      const existing = company.documentTextTemplates?.find(template => template.documentType === type);
-      const resolved = resolveDocumentTextTemplate(company, type);
-      if (type !== editedType) {
-        return existing || resolved;
-      }
-
-      return {
-        ...(existing || resolved),
-        id: existing?.id || resolved.id,
-        documentType: type,
-        name: existing?.name || resolved.name,
-        subject: textFormData.subject.trim(),
-        introText: textFormData.introText.trim(),
-        closingText: textFormData.closingText.trim(),
-        paymentTerms: textFormData.paymentTerms.trim(),
-        reminderTexts: { ...textFormData.reminderTexts },
-        updatedAt: now,
-      };
-    });
-    // Frühere Vorlagen konnten eigene Texte tragen. Die Oberfläche pflegt nur
-    // noch die Standardtexte; damit das Bearbeitete auch gedruckt wird, gilt
-    // für diese Dokumentart danach wieder der Standardtext.
-    const hasOwnTexts = sourceTemplates.some(template => template.documentType === editedType && template.textMode !== 'global');
-    const updatedDocumentTemplates = hasOwnTexts
-      ? sourceTemplates.map(template => template.documentType === editedType ? { ...template, textMode: 'global' as const } : template)
-      : undefined;
+    const fields = {
+      subject: textFormData.subject.trim(),
+      introText: textFormData.introText.trim(),
+      closingText: textFormData.closingText.trim(),
+      paymentTerms: textFormData.paymentTerms.trim(),
+      reminderTexts: { ...textFormData.reminderTexts },
+    };
 
     try {
       saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
-      await updateCompany({
-        documentTextTemplates: updatedTextTemplates,
-        ...(updatedDocumentTemplates ? { documentTemplates: updatedDocumentTemplates } : {}),
-      });
+      await updateCompany(current => documentTextSavePatch(current, defaultDocumentTemplates, editedType, fields, now));
       await closeTextEditor(true);
     } catch {
       setError('Die Textvorlage konnte nicht gespeichert werden.');
@@ -613,14 +598,17 @@ export function TemplatesManagement() {
       confirmText: 'Standardtexte wiederherstellen',
       isDestructive: true,
     });
-    if (!confirmed) return;
+    if (!confirmed || saveInFlightRef.current) return;
     try {
-      await updateCompany({
-        documentTextTemplates: restoreDefaultTemplates(company.documentTextTemplates || [], defaultDocumentTextTemplates, false),
-      });
+      saveInFlightRef.current = true;
+      setIsSaving(true);
+      await updateCompany(current => documentTextResetPatch(current, defaultDocumentTemplates));
       setError(null);
     } catch {
       setError('Die Standardtexte konnten nicht wiederhergestellt werden.');
+    } finally {
+      saveInFlightRef.current = false;
+      setIsSaving(false);
     }
   };
 

@@ -1,11 +1,12 @@
 import { createContext, useContext } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Company, DocumentTemplate, HourlyRate, InvoiceTemplate, MaterialTemplate } from '../types';
+import type { StatePatch } from '../utils/serialStateWriter';
 
 export interface CompanyContextType {
   company: Company;
   setCompany: Dispatch<SetStateAction<Company>>;
-  updateCompany: (company: Partial<Company>) => Promise<void>;
+  updateCompany: (company: StatePatch<Company>) => Promise<void>;
   hourlyRates: HourlyRate[];
   setHourlyRates: Dispatch<SetStateAction<HourlyRate[]>>;
   addHourlyRate: (rate: Omit<HourlyRate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
