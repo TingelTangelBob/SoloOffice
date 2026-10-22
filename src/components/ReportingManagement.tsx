@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import logger from '../utils/logger';
 import { 
   BarChart3, 
@@ -32,6 +32,9 @@ import type { CsvColumn } from '../utils/csvExport';
 interface ReportingManagementProps {
   onNavigate?: (page: string) => void;
 }
+
+const yearStart = (year: number) => `${year}-01-01`;
+const yearEnd = (year: number) => `${year}-12-31`;
 
 export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   const { customers } = useCustomers();
@@ -97,14 +100,27 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   // State for invoice journal
   const [journalData, setJournalData] = useState<InvoiceJournalResponse | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  // Das Journal startet im gewählten Auswertungsjahr, damit es zu den
+  // Jahreskennzahlen passt. Eigene Zeiträume bleiben beim Jahreswechsel erhalten.
+  const [startDate, setStartDate] = useState<string>(() => yearStart(new Date().getFullYear()));
+  const [endDate, setEndDate] = useState<string>(() => yearEnd(new Date().getFullYear()));
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   
   // State for statistics
   const [statistics, setStatistics] = useState<ReportingStatistics | null>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const journalYearRef = useRef(selectedYear);
+
+  useEffect(() => {
+    const previousYear = journalYearRef.current;
+    journalYearRef.current = selectedYear;
+    if (previousYear === selectedYear) return;
+    if (startDate === yearStart(previousYear) && endDate === yearEnd(previousYear)) {
+      setStartDate(yearStart(selectedYear));
+      setEndDate(yearEnd(selectedYear));
+    }
+  }, [endDate, selectedYear, startDate]);
   const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
   
   // State for PDF generation
@@ -193,8 +209,8 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   };
 
   const clearFilters = () => {
-    setStartDate('');
-    setEndDate('');
+    setStartDate(yearStart(selectedYear));
+    setEndDate(yearEnd(selectedYear));
     setSelectedCustomer('');
   };
 
@@ -413,7 +429,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportJournalCsv}
                 disabled={journalLoading || !journalData?.invoices.length}
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />
@@ -422,7 +438,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               <button
                 onClick={handleGeneratePDF}
                 disabled={generatingPDF || journalLoading || !journalData}
-                className="btn-primary flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-white transition-colors hover:brightness-90 disabled:opacity-50"
+                className="btn-primary inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm text-white transition-colors hover:brightness-90 disabled:opacity-50"
               >
                 {generatingPDF ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -544,7 +560,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   onClick={clearFilters}
                   className="text-gray-500 hover:text-gray-700 px-2 py-2 text-sm"
                 >
-                  Filter löschen
+                  Filter zurücksetzen
                 </button>
               </div>
             </div>
@@ -586,28 +602,26 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
             ) : journalData?.invoices.length ? (
               <>
-              <div className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
-                <table className="w-full min-w-[760px]">
+              {/* Datum steht unter der Rechnungsnummer: Die Karte ist oft schmal,
+                  die Tabelle soll trotzdem ohne Querscrollen auskommen. */}
+              <div className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+                <table className="w-full table-fixed">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">Datum</th>
-                      <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">Rechnung</th>
+                      <th className="w-32 whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">Rechnung</th>
                       <th className="whitespace-nowrap py-3 px-2 text-left font-medium text-gray-700">{terminology.entity.singular}</th>
-                      <th className="whitespace-nowrap py-3 px-2 text-right font-medium text-gray-700">Betrag</th>
-                      <th className="whitespace-nowrap py-3 px-2 text-center font-medium text-gray-700">Status</th>
+                      <th className="w-28 whitespace-nowrap py-3 px-2 text-right font-medium text-gray-700">Betrag</th>
+                      <th className="w-24 whitespace-nowrap py-3 px-2 text-center font-medium text-gray-700">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {journalData.invoices.map((invoice: InvoiceJournalEntry) => (
                       <tr key={invoice.id} className="group hover:bg-gray-50">
-                        <td className="whitespace-nowrap py-3 px-2 text-xs">
-                          {invoice.issueDate ? 
-                            formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) :
-                            'N/A'
-                          }
-                        </td>
-                        <td className="py-3 px-2 font-mono text-xs">
-                          {invoice.invoiceNumber || 'N/A'}
+                        <td className="py-3 px-2 text-xs">
+                          <span className="block truncate font-mono" title={invoice.invoiceNumber}>{invoice.invoiceNumber || 'N/A'}</span>
+                          <span className="block text-gray-500">
+                            {invoice.issueDate ? formatDate(invoice.issueDate, company?.locale || 'de-DE', company?.dateFormat) : 'N/A'}
+                          </span>
                         </td>
                         <td className="max-w-0 py-3 px-2 text-xs">
                           <span className="block truncate" title={invoice.customerName}>{invoice.customerName || 'N/A'}</span>
@@ -616,7 +630,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                           {formatAmount(invoice.total || 0)}
                         </td>
                         <td className="py-3 px-2 text-center">
-                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
+                          <span className={`inline-block max-w-full truncate px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
                             {getStatusText(invoice.status)}
                           </span>
                         </td>
@@ -690,7 +704,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportStatisticsCsv}
                 disabled={statisticsLoading || !statistics?.monthlyRevenue.length}
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />
@@ -765,7 +779,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportCustomersCsv}
                 disabled={!statistics?.topCustomers.length}
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />

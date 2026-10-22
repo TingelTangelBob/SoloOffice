@@ -37,6 +37,8 @@
 @layer components {
   .custom-checkbox {
     @apply h-4 w-4 bg-white border-gray-300 border-2 rounded;
+    /* Neben langen Labels nie zusammendrücken lassen. */
+    flex-shrink: 0;
     color: var(--primary-color);
     appearance: none;
     -webkit-appearance: none;
@@ -113,6 +115,17 @@
     background-size: 0.9rem 0.9rem;
     padding-right: 2.25rem !important;
     transition: background-size 150ms ease, background-position 150ms ease;
+  }
+
+  /* Kompakte Auswahl (z. B. Jahr in der Kopfleiste): Pfeil näher am Rand,
+     damit eine Jahreszahl auf schmalen Geräten vollständig sichtbar bleibt. */
+  select.select-compact:not(.select-with-chevron) {
+    background-position: right 0.5rem center;
+    padding-right: 1.75rem !important;
+  }
+
+  select.select-compact:not(.select-with-chevron):focus {
+    background-position: right 0.5rem center;
   }
 
   select:not(.select-with-chevron):focus {
@@ -283,21 +296,30 @@
     background: transparent;
     padding: 0 0.75rem;
     box-shadow: none;
-    scrollbar-color: #cbd5e1 transparent;
-    scrollbar-width: thin;
+    /* Keine sichtbare Scrollleiste: Sie legte sich über die Beschriftung.
+       Gescrollt wird per Wischen, Trackpad, Tastatur und beim Anklicken. */
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
   }
 
   .theme-tab-bar::-webkit-scrollbar {
-    height: 6px;
+    display: none;
   }
 
-  .theme-tab-bar::-webkit-scrollbar-track {
-    background: transparent;
+  /* Weiche Ränder zeigen, dass links bzw. rechts weitere Tabs folgen. */
+  .theme-tab-bar-fade-start {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 2.5rem);
+    mask-image: linear-gradient(to right, transparent 0, #000 2.5rem);
   }
 
-  .theme-tab-bar::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 9999px;
+  .theme-tab-bar-fade-end {
+    -webkit-mask-image: linear-gradient(to left, transparent 0, #000 2.5rem);
+    mask-image: linear-gradient(to left, transparent 0, #000 2.5rem);
+  }
+
+  .theme-tab-bar-fade-start.theme-tab-bar-fade-end {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 2.5rem, #000 calc(100% - 2.5rem), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 2.5rem, #000 calc(100% - 2.5rem), transparent 100%);
   }
 
   .theme-tab-list {
@@ -461,6 +483,15 @@
     transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
   }
 
+  /* Auf dem Handy (Karten statt Tabellen) mindestens 40 px Trefferfläche.
+     Die Tabellen ab Tablet-Breite rechnen weiter mit 32 px, siehe tableLayout.ts. */
+  @media (max-width: 767px) {
+    .action-icon-button {
+      height: 2.5rem;
+      width: 2.5rem;
+    }
+  }
+
   .action-icon-button:hover:not(:disabled) {
     box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
     transform: translateY(-1px);
@@ -581,14 +612,6 @@
     background-color: var(--surface-hover);
     color: var(--ink-strong);
     box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
-  }
-
-  .template-card-actions > button {
-    @apply h-8 w-8 min-h-0 min-w-0;
-  }
-
-  .template-card > button.group {
-    padding: 0.5rem;
   }
 
   .bulk-action-icon-button {
@@ -1813,6 +1836,28 @@
    * lg-Haltepunkt wieder auf 24 px – zu wenig für die 25 px hohe Leiste.
    * Ein `!important` wäre die Alternative, wirkt aber breiter als nötig.
    */
+  /* Demo-Leiste folgt dem Farbmodus: hell im Hellmodus, dunkel im Dunkelmodus.
+     Vorher war sie immer dunkel und wirkte im Hellmodus wie ein Fremdkörper. */
+  .demo-bar {
+    border-color: var(--line-soft, #e7e7ea);
+    background-color: var(--surface-raised, #ffffff);
+    color: var(--ink-muted, #6b6b73);
+  }
+
+  .demo-bar .demo-bar-strong {
+    color: var(--ink-strong, #101012);
+  }
+
+  .demo-bar .demo-bar-muted {
+    color: var(--ink-muted, #6b6b73);
+    opacity: 0.8;
+  }
+
+  .demo-bar .demo-bar-action:hover {
+    background-color: var(--surface-hover, #ededef);
+    color: var(--ink-strong, #101012);
+  }
+
   .demo-bar-space.demo-bar-space {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--demo-bar-height, 1.5625rem));
   }
@@ -1906,9 +1951,12 @@
     --ink-muted: #9a9aa2;
     --ink-strong: #fafafa;
     /* Primäraktionen bleiben klar erkennbar, aber nicht mehr als weiße
-       Leuchtflächen auf dem dunklen Grund. */
-    --ink-solid: #29292e;
-    --ink-solid-text: #f4f4f5;
+       Leuchtflächen auf dem dunklen Grund. Der frühere Wert #29292e entsprach
+       genau der Fläche der Sekundärknöpfe, sodass „Speichern“ und „Abbrechen“
+       gleich aussahen; das mittlere Zink-Grau hebt sich davon ab (Kontrast
+       zur Schrift ca. 7:1). */
+    --ink-solid: #52525b;
+    --ink-solid-text: #fafafa;
     --surface-hover: #232326;
     --accent-tint: rgba(37, 99, 235, 0.26);
     --accent-edge: rgba(37, 99, 235, 0.55);
@@ -2371,6 +2419,23 @@
     min-height: 2.25rem !important;
   }
 
+  /* Auf dem Handy sind die Seitenaktionen reine Symbolknöpfe: 40 px breit
+     statt 44 px lässt dem Seitentitel spürbar mehr Platz. */
+  @media (max-width: 639px) {
+    .topbar-page-actions > button,
+    .topbar-page-actions > div > button,
+    .topbar-page-actions .action-menu-trigger,
+    .topbar-page-actions .action-menu-trigger-primary {
+      min-width: 2.5rem !important;
+      padding-left: 0.5rem !important;
+      padding-right: 0.5rem !important;
+    }
+
+    .topbar-page-actions > div {
+      gap: 0.25rem;
+    }
+  }
+
   .topbar-page-actions .calendar-toolbar-control {
     height: 2.5rem !important;
     min-height: 2.5rem !important;
@@ -2387,6 +2452,18 @@
 
   .topbar-page-actions-slot::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Vom TopBar ausgeblendete Beschriftungen, wenn die Aktionen nicht in eine
+     Zeile passen; der Knopf schrumpft dann auf das Symbol. */
+  .topbar-page-actions [data-topbar-collapsed] {
+    display: none !important;
+  }
+
+  .topbar-page-actions :is(button, .action-menu-trigger, .action-menu-export-trigger):has(> [data-topbar-collapsed]) {
+    min-width: 2.25rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
   }
 
   .topbar-page-title {
@@ -2532,6 +2609,32 @@
      Zeilenhöhe der Seitenleiste: 2 rem auf Touch, 1.75 rem auf Zeigergeräten
      (siehe `.nav-row`). Die Höhe steht hier statt als Utility am Element,
      damit die Zeiger-Variante nicht von `h-8` überstimmt wird. */
+  /* Destruktive Einträge (Löschen, Stornieren, Beenden) setzen sich mit einer
+     Trennlinie von den übrigen Aktionen ab – automatisch in allen Menüs. */
+  .action-menu-item:not(.action-menu-item-destructive) + .action-menu-item-destructive,
+  :not(.action-menu-item-destructive) + .action-menu-item-destructive:where(.action-menu-item) {
+    position: relative;
+    margin-top: 0.5rem;
+  }
+
+  .action-menu-item:not(.action-menu-item-destructive) + .action-menu-item-destructive::before,
+  :not(.action-menu-item-destructive) + .action-menu-item-destructive:where(.action-menu-item)::before {
+    content: '';
+    position: absolute;
+    top: -0.3rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    border-top: 1px solid var(--line-soft, #e7e7ea);
+  }
+
+  [role="separator"] + .action-menu-item-destructive {
+    margin-top: 0;
+  }
+
+  [role="separator"] + .action-menu-item-destructive::before {
+    content: none;
+  }
+
   .action-menu-item {
     height: 2rem;
   }
@@ -2597,6 +2700,28 @@
     background-color: var(--surface-raised);
   }
 
+  /* Handy: Die Inhalte der Reiter sind selbst Karten. Ohne äußeren Rahmen um
+     Reiterleiste und Fläche entfällt das „Rahmen in Rahmen“; die Reiterleiste
+     mit ihrer Unterlinie gliedert weiterhin. */
+  @media (max-width: 639px) {
+    .theme-tab-group {
+      overflow: visible;
+      border: 0;
+      background-color: transparent;
+      box-shadow: none;
+    }
+
+    .theme-tab-group > .theme-tab-panel {
+      padding: 0.75rem 0 0;
+      background-color: transparent;
+    }
+
+    .theme-tab-group > .theme-tab-bar {
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+
   /* Vorlageneditor: alle Flächen folgen den App-Variablen. Die frühere
      Mischung aus weißen Flächen und festen Beige-Tönen blieb im Dunkelmodus
      sichtbar und ließ den Editor wie ein fremdes Fenster wirken. */
@@ -2606,15 +2731,9 @@
   }
 
   #app-shell .template-editor-header,
-  #app-shell .template-editor-sidebar,
   #app-shell .template-editor-footer {
     background-color: var(--surface-raised);
     border-color: var(--line-soft);
-  }
-
-  #app-shell .template-editor-main {
-    background-color: var(--surface-page);
-    color: var(--ink-strong);
   }
 
   #app-shell .template-editor-section {
@@ -2622,18 +2741,8 @@
     border-color: var(--line-soft);
   }
 
-  #app-shell .template-editor-tabs,
-  #app-shell .template-editor-text-source {
-    background-color: var(--surface-sunken);
-    border-color: var(--line-soft);
-  }
-
-  #app-shell .template-editor-tab-active {
-    background-color: var(--surface-hover);
-    color: var(--ink-strong);
-  }
-
-  #app-shell .template-card-preview-surface {
+  /* Vorlagenseite: Die Vorschauseite liegt auf einer abgesenkten Fläche. */
+  #app-shell .template-design-preview {
     background-color: var(--surface-sunken);
   }
 

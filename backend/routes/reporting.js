@@ -493,19 +493,20 @@ router.get('/statistics', async (req, res) => {
     `, [year]);
     const paymentIncomeByMonth = new Map(paymentIncomeResult.rows.map(row => [parseInt(row.month), parseFloat(row.amount || 0)]));
 
+    // Wie in der EÜR unabhängig vom Rechnungsjahr: Der Zufluss fehlt, bis die
+    // Zahlung mit ihrem tatsächlichen Datum erfasst ist.
     const missingPaymentResult = await query(`
       SELECT COUNT(*) AS count
       FROM invoices i
       WHERE COALESCE(i.document_type, 'invoice') = 'invoice'
         AND i.status = 'paid'
-        AND EXTRACT(YEAR FROM i.issue_date) = $1
         AND i.total - COALESCE((
           SELECT SUM(e.amount) FROM euer_entries e
           WHERE e.source_type = 'invoice_payment' AND e.source_id = i.id
             AND e.entry_type = 'income' AND e.amount > 0
             AND COALESCE(e.status, 'active') <> 'voided'
         ), 0) > 0.005
-    `, [year]);
+    `);
     const incompletePaidInvoiceCount = parseInt(missingPaymentResult.rows[0]?.count || 0);
 
     // Bareinnahmen werden nach dem tatsächlichen Buchungsjahr und -monat gruppiert.

@@ -138,7 +138,7 @@ function SortableInvoiceItem({
           <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
             Preis *
           </label>
-          <LocalizedNumberInput
+          <LocalizedNumberInput minimumFractionDigits={2}
             min="0"
             step="0.01"
             required
@@ -310,7 +310,7 @@ function SortableInvoiceItem({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Preis *
             </label>
-            <LocalizedNumberInput
+            <LocalizedNumberInput minimumFractionDigits={2}
               min="0"
               step="0.01"
               required
@@ -1061,7 +1061,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
         titleId="invoice-editor-dialog-title"
         icon={FileText}
         title={invoice ? 'Rechnung bearbeiten' : 'Neue Rechnung'}
-        description={invoice ? `${invoice.invoiceNumber} bearbeiten und speichern.` : 'Erstellen Sie eine Rechnung mit Kunde, Positionen und Zahlungsangaben.'}
+        description={invoice ? `${invoice.invoiceNumber} bearbeiten und speichern.` : 'Kunde, Positionen und Zahlungsangaben erfassen.'}
         onClose={requestClose}
         onSubmit={handleSubmit}
         size="xl"
@@ -1089,7 +1089,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
           )}
 
           {/* Basic Information */}
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="border-0 bg-transparent p-0 shadow-none sm:rounded-lg sm:border sm:border-gray-200 sm:bg-white sm:p-5 sm:shadow-sm">
             <h3 className="mb-3 text-lg font-semibold text-gray-900">Grundinformationen</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-3 tablet:grid-cols-[minmax(10rem,0.7fr)_minmax(0,1.3fr)]">
@@ -1106,8 +1106,8 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     onChange={(event) => setFormData(previous => ({ ...previous, invoiceNumber: event.target.value }))}
                     className={`form-input form-input-compact w-full ${invoice ? 'bg-gray-100 text-gray-500' : ''}`}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Optional. Wenn das Feld leer bleibt, wird die Nummer nach dem Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'} erzeugt.`}
+                  <p className="text-xs text-gray-600 mt-1">
+                    {invoice ? "Rechnungsnummern können nach der Erstellung nicht mehr geändert werden" : `Optional. Leer lassen für das Muster ${company.invoiceNumberPattern || 'RE-{YYYY}-{NNN}'}.`}
                   </p>
                 </div>
                 <div className="min-w-0">
@@ -1159,7 +1159,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                           setNewCustomerData(emptyCustomerData);
                           setShowCustomerForm(true);
                         }}
-                        className="box-border inline-flex min-h-[38px] w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-blue-500 px-3 py-2 text-sm text-white transition-colors hover:bg-blue-600 sm:h-[38px] sm:max-h-[38px] sm:w-10 sm:gap-0 sm:p-0"
+                        className="box-border inline-flex min-h-[38px] w-full shrink-0 items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 sm:h-[38px] sm:max-h-[38px] sm:w-10 sm:gap-0 sm:p-0"
                         title={terminology.entity.newLabel}
                       >
                         <Plus className="h-4 w-4" />
@@ -1169,7 +1169,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 tablet:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 tablet:grid-cols-3">
                 <div className="min-w-0">
                   <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
                     Rechnungsdatum *
@@ -1213,7 +1213,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
                     className="form-input form-input-compact w-full"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-600 mt-1">
                     Wird automatisch auf {company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30} Tage nach Rechnungsdatum gesetzt. {(company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30) === 0 && 'Bei 0 Tagen ist die Rechnung sofort fällig.'}
                   </p>
                 </div>
@@ -1227,8 +1227,8 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                     onChange={(e) => setFormData(prev => ({ ...prev, serviceDate: e.target.value }))}
                     className="form-input form-input-compact w-full"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Wenn leer oder gleich dem Rechnungsdatum, erscheint auf der Rechnung „Leistungsdatum entspricht Rechnungsdatum“.
+                  <p className="text-xs text-gray-600 mt-1">
+                    Leer oder gleich Rechnungsdatum: Die Rechnung weist „entspricht Rechnungsdatum“ aus.
                   </p>
                 </div>
               </div>
@@ -1298,8 +1298,9 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                       isOpen: true,
                       type: 'materials'
                     })}
-                    className="inline-flex h-[38px] min-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 p-0 text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-800"
+                    className="inline-flex h-[38px] min-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white p-0 text-gray-700 transition-colors hover:bg-gray-50"
                     title="Stundensätze und Materialien verwalten"
+                    aria-label="Stundensätze und Materialien verwalten"
                   >
                     <Edit className="h-4 w-4" />
                   </button>
@@ -1310,7 +1311,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
               <button
                 type="button"
                 onClick={addItem}
-                className="btn-primary inline-flex h-[38px] min-h-[38px] items-center justify-center space-x-2 rounded-lg px-4 text-sm transition-colors w-full md:w-auto whitespace-nowrap"
+                className="inline-flex h-[38px] min-h-[38px] items-center justify-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 w-full md:w-auto whitespace-nowrap"
               >
                 <Plus className="h-4 w-4" />
                 <span>Manuell hinzufügen</span>
@@ -1546,7 +1547,6 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
 
         {/* Attachments */}
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-          <h3 className="mb-3 text-lg font-semibold text-gray-900">Anhänge</h3>
           <AttachmentManager
             attachments={attachments}
             onAttachmentsChange={setAttachments}
@@ -1808,7 +1808,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Preis ({currencySymbol}) *
                   </label>
-                  <LocalizedNumberInput
+                  <LocalizedNumberInput minimumFractionDigits={2}
                     step="0.01"
                     min="0"
                     value={newInvoiceTemplateData.unitPrice}

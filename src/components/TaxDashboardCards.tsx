@@ -32,7 +32,7 @@ const dateLabel = (date: string) => new Intl.DateTimeFormat('de-DE', { dateStyle
 function StateContent({ loading, error, forecast, onSetup }: Pick<TaxDashboardCardsProps, 'loading' | 'error' | 'forecast' | 'onSetup'>) {
   if (loading) return <p role="status" className="px-4 py-6 text-sm text-gray-500">Steuerschätzung wird geladen …</p>;
   if (error) return <div className="px-4 py-5"><p role="alert" className="text-sm text-red-700">{error}</p><p className="mt-1 text-xs text-gray-500">Es werden keine älteren Werte dieses Workspaces angezeigt.</p></div>;
-  if (!forecast) return <DashboardEmptyState variant="metric" title="Keine Schätzung verfügbar" description="Prüfe Erweiterung und Berechtigung für das Steuerprofil." />;
+  if (!forecast) return <DashboardEmptyState variant="metric" title="Keine Schätzung verfügbar" description="Prüfen Sie Erweiterung und Berechtigung für das Steuerprofil." />;
   if (!forecast.profileComplete) return <DashboardEmptyState variant="metric" title="Steuerprofil noch offen" description="Mit den noch fehlenden Angaben kann SoloOffice eine Schätzung erstellen." action={{ label: 'Steuern & Abgaben einrichten', onClick: onSetup }} />;
   return null;
 }

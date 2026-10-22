@@ -138,7 +138,7 @@ function DiscountTypeDropdown({ value, currencySymbol, onChange, onOpenChange, t
             onOpenChange?.(false);
           }
         }}
-        className={`flex h-full min-h-0 w-12 items-center justify-center gap-0.5 rounded-r border px-1 text-sm font-medium transition-colors focus:z-10 focus:outline-none focus:ring-2 ${triggerTone}`}
+        className={`flex h-full min-h-0 w-14 items-center justify-center gap-0.5 rounded-r border px-1 text-sm font-medium transition-colors focus:z-10 focus:outline-none focus:ring-2 ${triggerTone}`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Rabatteinheit auswählen"
@@ -149,7 +149,7 @@ function DiscountTypeDropdown({ value, currencySymbol, onChange, onOpenChange, t
 
       {isOpen && (
         <div
-          className={`absolute right-0 top-full mt-1 w-12 overflow-hidden rounded-lg border bg-white p-1 shadow-xl ${menuBorder}`}
+          className={`absolute right-0 top-full mt-1 w-14 overflow-hidden rounded-lg border bg-white p-1 shadow-xl ${menuBorder}`}
           role="listbox"
           aria-label="Rabatteinheit"
         >
@@ -312,7 +312,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'quantity', value)}
-            className="form-input form-input-compact"
+            className="form-input form-input-compact text-right tabular-nums"
           />
         </div>
 
@@ -321,7 +321,7 @@ function SortableQuoteItem({
           <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
             Einzelpreis {currencySymbol}
           </label>
-          <LocalizedNumberInput
+          <LocalizedNumberInput minimumFractionDigits={2}
             min="0"
             step="0.01"
             aria-required={!isPlaceholderRow}
@@ -329,7 +329,7 @@ function SortableQuoteItem({
             locale={company.locale}
             numberFormat={company.numberFormat}
             onValueChange={(value) => onUpdate(item.id, 'unitPrice', value)}
-            className="form-input form-input-compact"
+            className="form-input form-input-compact text-right tabular-nums"
           />
         </div>
 
@@ -347,7 +347,7 @@ function SortableQuoteItem({
               locale={company.locale}
               numberFormat={company.numberFormat}
               onValueChange={(value) => onUpdate(item.id, 'taxRate', value)}
-              className="form-input form-input-compact"
+              className="form-input form-input-compact text-right tabular-nums"
             />
           </div>
         )}
@@ -367,7 +367,7 @@ function SortableQuoteItem({
                 locale={company.locale || 'de-DE'}
                 numberFormat={company.numberFormat}
                 onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                className="form-input form-input-compact min-w-0 pr-12 text-sm"
+                className="form-input form-input-compact min-w-0 pr-14 text-sm text-right tabular-nums"
                 placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
               />
               <DiscountTypeDropdown
@@ -474,7 +474,7 @@ function SortableQuoteItem({
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Einzelpreis {currencySymbol}
               </label>
-              <LocalizedNumberInput
+              <LocalizedNumberInput minimumFractionDigits={2}
                 min="0"
                 step="0.01"
                 aria-required={!isPlaceholderRow}
@@ -519,7 +519,7 @@ function SortableQuoteItem({
                   locale={company.locale || 'de-DE'}
                   numberFormat={company.numberFormat}
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? 0 : value)}
-                  className="form-input form-input-compact min-w-0 pr-12 text-sm"
+                  className="form-input form-input-compact min-w-0 pr-14 text-sm text-right tabular-nums"
                   placeholder={item.discountType === 'fixed' ? currencySymbol : '0'}
                 />
                 <DiscountTypeDropdown
@@ -1123,7 +1123,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
         footer={(
           <>
             <button type="button" onClick={requestClose} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
-            <button type="button" onClick={handleQuotePreview} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-primary-custom px-5 py-2 text-base font-medium text-primary-custom transition hover:bg-primary-light-custom sm:flex-none"><Eye className="mr-2 h-5 w-5" />Vorschau</button>
+            <button type="button" onClick={handleQuotePreview} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none"><Eye className="mr-2 h-5 w-5" />Vorschau</button>
             <button type="submit" disabled={Boolean(totals.validationError)} className="btn-primary disabled:opacity-50 inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
           </>
         )}
@@ -1133,7 +1133,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
           <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
             <div className="col-span-2 min-[480px]:col-span-1 md:col-span-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Angebotsnummer
+                Angebotsnr.
               </label>
               <input
                 type="text"
@@ -1144,7 +1144,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 className="form-input form-input-compact w-full bg-gray-100 text-gray-500"
               />
               <p className="text-xs text-gray-500 mt-1">
-                {quote ? "Angebotsnummern können nach der Erstellung nicht mehr geändert werden" : "Die Angebotsnummer wird beim Speichern automatisch generiert (Format: AN-YYYY-XXX)"}
+                {quote ? "Angebotsnr. können nach der Erstellung nicht mehr geändert werden" : "Die Angebotsnr. wird beim Speichern automatisch generiert (Format: AN-YYYY-XXX)"}
               </p>
             </div>
 
@@ -1258,7 +1258,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                     title={!selectedCustomerId ? `Bitte wählen Sie zuerst einen ${terminology.entity.accusative} aus` : hasNoTemplates ? 'Keine Vorlagen verfügbar' : 'Position aus Vorlage hinzufügen'}
                   >
                     <FileText className="w-4 h-4" />
-                    <span className="hidden sm:inline">Vorlage</span>
+                    <span>Vorlage</span>
                   </button>
 
                   {showTemplateDropdown && (
@@ -1348,7 +1348,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Position</span>
+                  <span>Position</span>
                 </button>
 
                 {discountsEnabled && (
@@ -1360,7 +1360,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                     title={showGlobalDiscountRow ? 'Rabattzeile ist bereits vorhanden' : 'Gesamtrabatt hinzufügen'}
                   >
                     <Percent className="h-4 w-4" />
-                    <span className="hidden sm:inline">Rabatt</span>
+                    <span>Rabatt</span>
                   </button>
                 )}
               </div>
@@ -1372,17 +1372,17 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
               onDragEnd={handleDragEnd}
             >
               <div
-                className="position-table-header -mb-1 hidden items-center gap-3 px-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid"
+                className="position-table-header -mb-1 hidden items-center gap-3 px-3 pb-0.5 text-sm font-medium text-gray-700 lg:grid"
                 style={{ gridTemplateColumns: positionGridTemplateColumns }}
                 aria-hidden="true"
               >
                 <div />
                 <div>Beschreibung</div>
-                <div>Menge</div>
-                <div>Einzelpreis {currencySymbol}</div>
-                {!company.isSmallBusiness && <div>MwSt %</div>}
-                {discountsEnabled && <div>Rabatt</div>}
-                <div>Gesamt {currencySymbol}</div>
+                <div className="text-right">Menge</div>
+                <div className="text-right">Einzelpreis {currencySymbol}</div>
+                {!company.isSmallBusiness && <div className="text-right">MwSt %</div>}
+                {discountsEnabled && <div className="text-right">Rabatt</div>}
+                <div className="text-right">Gesamt {currencySymbol}</div>
                 <div />
               </div>
               <SortableContext
@@ -1451,7 +1451,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                     locale={company.locale}
                     numberFormat={company.numberFormat}
                     onValueChange={(value) => setGlobalDiscountValue(value === '' ? '0' : String(value))}
-                    className="form-input form-input-compact pr-12 text-sm"
+                    className="form-input form-input-compact pr-14 text-sm text-right tabular-nums"
                     placeholder="0"
                   />
                   <DiscountTypeDropdown

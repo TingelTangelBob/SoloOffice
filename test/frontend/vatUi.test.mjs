@@ -45,6 +45,7 @@ test('USt-Anzeigehelfer formatieren Kennzahlen, Status, Beträge, Zahlarten und 
   assert.deepEqual(rows.map(row => row.number), ['83']);
   assert.equal(module.vatPaymentStatusLabel('open'), 'Offen');
   assert.equal(module.vatPaymentStatusLabel('open', true), 'Überfällig');
+  assert.equal(module.vatPaymentStatusLabel('partial', true), 'Rest überfällig');
   assert.equal(module.vatPaymentStatusLabel('refund_open'), 'Erstattung erwartet');
   assert.equal(module.vatPeriodAmountLabel({ liability: -12.5, estimatedLiability: -12.5, complete: true }), 'Überschuss 12,50 €');
   assert.match(module.vatPeriodAmountLabel({ liability: 8, estimatedLiability: 10, complete: false }), /^Schätzung · 10,00/);

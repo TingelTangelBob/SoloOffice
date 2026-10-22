@@ -74,7 +74,7 @@ export function SupportManagement({ initialTicketId, onNavigate }: SupportManage
     return (
       <div className="page-root space-y-6">
         <PageHeader icon={LifeBuoy} title="Support" />
-        <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Lade Support…</div>
+        <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Support wird geladen …</div>
       </div>
     );
   }
@@ -128,9 +128,9 @@ function TicketListView({ locale, navigate }: { locale: Formatting; navigate: (f
           <p className="text-sm text-gray-500">Wir antworten in der Regel innerhalb eines Werktags – per E-Mail und hier im Verlauf.</p>
         </div>
         {tickets === null ? (
-          <div className="flex items-center gap-2 px-5 py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Lade Anfragen…</div>
+          <div className="flex items-center gap-2 px-5 py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Anfragen werden geladen …</div>
         ) : tickets.length === 0 ? (
-          <EmptyState variant="metric" title="Noch keine Anfragen" description="Fragen zur Bedienung, Fehler, Abrechnung oder Wünsche – wir helfen gern." action={{ label: 'Erste Anfrage stellen', onClick: () => navigate('neu') }} />
+          <div className="pb-6"><EmptyState variant="metric" title="Noch keine Anfragen" description="Fragen zur Bedienung, Fehler, Abrechnung oder Wünsche – wir helfen gern." /><div className="flex justify-center"><button type="button" onClick={() => navigate('neu')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"><Plus className="h-4 w-4" aria-hidden="true" />Erste Anfrage stellen</button></div></div>
         ) : (
           <ul className="divide-y divide-gray-100">
             {tickets.map(ticket => (
@@ -250,7 +250,7 @@ function TicketDetailView({ ticketId, locale, navigate }: { ticketId: string; lo
       </PageHeader>
 
       {error && <Notice variant="error">{error}</Notice>}
-      {!detail && !error && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Lade Anfrage…</div>}
+      {!detail && !error && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Anfrage wird geladen …</div>}
 
       {ticket && (
         <>

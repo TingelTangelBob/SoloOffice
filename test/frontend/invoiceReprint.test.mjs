@@ -43,6 +43,7 @@ test('importierte Rechnungs-Zweitschrift nutzt aktuelles PDF-Layout und historis
               setFontSize(...args) { this.record('setFontSize', ...args); }
               setLineWidth(...args) { this.record('setLineWidth', ...args); }
               setPage(...args) { this.record('setPage', ...args); }
+              setProperties(...args) { this.record('setProperties', ...args); }
               setTextColor(...args) { this.record('setTextColor', ...args); }
               splitTextToSize(value) { return [String(value)]; }
               text(...args) { this.record('text', ...args); }
@@ -105,7 +106,9 @@ test('importierte Rechnungs-Zweitschrift nutzt aktuelles PDF-Layout und historis
     assert.match(text, /119,00/);
     assert.match(text, /Importierter Gesamtbetrag/);
     assert.ok(calls.some(([name, ...args]) => name === 'setTextColor' && args.join(',') === '215,38,61'));
-    assert.ok(calls.some(([name, ...args]) => name === 'setFillColor' && args.join(',') === '31,41,55'));
+    // Das aktuelle Design „Minimal“ zieht unter dem Tabellenkopf eine dunkle Linie statt einer Fläche.
+    assert.ok(calls.some(([name, ...args]) => name === 'setDrawColor' && args.join(',') === '17,24,39'));
+    assert.ok(!calls.some(([name, ...args]) => name === 'setTextColor' && args.join(',') === '0,0,255'), 'die historische Akzentfarbe wird nicht verwendet');
     assert.doesNotMatch(text, /§ 19 UStG|§ 13b UStG/);
     await assert.rejects(
       generateInvoicePDF({ ...invoice, documentSnapshot: undefined }, { format: 'pdf', company: currentCompany, customer: snapshotCustomer, legacyReprint: true }),

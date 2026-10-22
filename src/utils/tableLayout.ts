@@ -43,6 +43,12 @@ export interface ListTableLayout {
   inlineActionsMinWidth: number;
   /** Ab dieser Tabellenbreite passt zusätzlich der ausgeschriebene Status. */
   statusLabelMinWidth: number;
+  /**
+   * Ab dieser Breite passt der ausgeschriebene Status, wenn die Aktionen
+   * bereits im Drei-Punkte-Menü stehen: Der dort frei gewordene Platz geht an
+   * den Statustext statt an einen bloßen Punkt.
+   */
+  statusLabelWithMenuMinWidth: number;
 }
 
 /**
@@ -69,5 +75,6 @@ export function listTableLayout({
     actionsColumnWidth,
     inlineActionsMinWidth,
     statusLabelMinWidth: inlineActionsMinWidth + (statusLabelWidth - statusDotWidth),
+    statusLabelWithMenuMinWidth: baseColumnsWidth + flexibleColumnMinWidth + statusLabelWidth + ACTION_MENU_COLUMN_WIDTH,
   };
 }

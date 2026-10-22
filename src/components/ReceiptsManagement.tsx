@@ -7,7 +7,7 @@ import { useInvoices } from '../context/InvoiceContext';
 import { apiService } from '../services/api';
 import type { EuerEntryPayload, EuerVatFields, Receipt, ReceiptExtractedData, ReceiptOcrStatus } from '../types';
 import { formatFileSize } from '../utils/fileUtils';
-import { formatCurrency, formatDate, parseLocalizedNumber } from '../utils/formatters';
+import { formatCurrency, formatDate, getNumberLocale, parseLocalizedNumber } from '../utils/formatters';
 import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUpload';
 import { DialogShell } from './DialogShell';
 import { ImportWizard } from './ImportWizard';
@@ -40,6 +40,10 @@ export interface ReceiptsManagementHandle {
 
 type EditableReceiptField = 'vendorName' | 'documentDate' | 'documentNumber' | 'netAmount' | 'taxAmount' | 'grossAmount' | 'taxRate' | 'currency' | 'suggestedCategory';
 
+// Dateigrößen mit deutschem Dezimalkomma, z. B. 141,6 KB.
+const formatSizeDe = (bytes: number) => formatFileSize(bytes).replace('.', ',');
+const reviewCurrencyOptions = ['EUR', 'USD', 'CHF', 'GBP'];
+
 const statusLabels: Record<ReceiptOcrStatus, string> = {
   pending: 'Wartet auf Erkennung',
   processing: 'Erkennung läuft',
@@ -55,10 +59,28 @@ function comparableValue(value: unknown) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
-function normalizeOptionalNumber(value: string, locale: string, numberFormat?: 'european' | 'american') {
+function normalizeOptionalNumber(value: string, locale: string, numberFormat?: 'european' | 'american', fractionDigits?: number) {
   if (!value.trim()) return undefined;
   const parsed = parseLocalizedNumber(value, locale, numberFormat);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  if (!Number.isFinite(parsed)) return undefined;
+  if (fractionDigits === undefined) return parsed;
+  const factor = 10 ** fractionDigits;
+  return Math.round(parsed * factor) / factor;
+}
+
+/**
+ * Erkannte Beträge kommen als Zahl mit allen Nachkommastellen der Rechnung
+ * (z. B. 41.17647058823529). Angezeigt werden sie im Landesformat mit Cent;
+ * vom Nutzer getippte Werte bleiben unverändert stehen.
+ */
+function amountInputValue(value: string | number | undefined, locale: string, numberFormat?: 'european' | 'american') {
+  if (typeof value !== 'number') return inputValue(value);
+  if (!Number.isFinite(value)) return '';
+  return new Intl.NumberFormat(getNumberLocale(locale, numberFormat), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(value);
 }
 
 export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
@@ -175,9 +197,9 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
     vendorName: data.vendorName?.trim() || undefined,
     documentDate: data.documentDate?.trim() || undefined,
     documentNumber: data.documentNumber?.trim() || undefined,
-    netAmount: normalizeOptionalNumber(inputValue(data.netAmount), locale, company.numberFormat),
-    taxAmount: normalizeOptionalNumber(inputValue(data.taxAmount), locale, company.numberFormat),
-    grossAmount: normalizeOptionalNumber(inputValue(data.grossAmount), locale, company.numberFormat),
+    netAmount: normalizeOptionalNumber(amountInputValue(data.netAmount, locale, company.numberFormat), locale, company.numberFormat, 2),
+    taxAmount: normalizeOptionalNumber(amountInputValue(data.taxAmount, locale, company.numberFormat), locale, company.numberFormat, 2),
+    grossAmount: normalizeOptionalNumber(amountInputValue(data.grossAmount, locale, company.numberFormat), locale, company.numberFormat, 2),
     taxRate: normalizeOptionalNumber(inputValue(data.taxRate), locale, company.numberFormat),
     currency: data.currency?.trim().toUpperCase() || undefined,
     suggestedCategory: data.suggestedCategory,
@@ -450,7 +472,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           <div>
             <h2 className="font-semibold">Lokale Belegerkennung mit Bestätigung</h2>
             <p className="mt-1 text-sm leading-5 text-blue-900 sm:leading-6">
-              Bilder und eingescannte PDFs werden im Backend-Container mit Tesseract gelesen. Bei digital erzeugten PDFs wird der enthaltene Text übernommen. Aussteller, Datum und Beträge sind Vorschläge und werden erst nach deiner Prüfung in die EÜR übernommen.
+              Aussteller, Datum und Beträge sind Vorschläge und werden erst nach Ihrer Prüfung in die EÜR übernommen.
             </p>
             <p className="mt-2 text-xs text-blue-800">Unterstützt: PDF, JPG, PNG und WEBP · maximal 25 MB · keine externe Schnittstelle</p>
           </div>
@@ -463,10 +485,10 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
         <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">EÜR verknüpft</span><span className="hidden sm:inline">Mit EÜR verknüpft</span></p><p className="mt-1 text-xl font-bold text-blue-700 sm:text-2xl">{statistics.linked}</p></div>
       </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+      {/* Eingebettet umschließt die Tab-Fläche der Belegseite den Bereich bereits. */}
+      <section className={embedded ? '' : 'rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-semibold text-gray-900">Meine {receiptLabel}</h2><p className="mt-1 text-sm text-gray-500">Öffne einen Beleg, prüfe die erkannten Felder und übernimm ihn optional als EÜR-Ausgabe.</p></div>
-          <button type="button" onClick={openUpload} className="action-button flex items-center gap-2" disabled={uploading}><Upload className="h-4 w-4" />Beleg hochladen</button>
+          <div><h2 className="text-lg font-semibold text-gray-900">Meine {receiptLabel}</h2><p className="mt-1 text-sm text-gray-500">Öffnen Sie einen Beleg, prüfen Sie die erkannten Felder und übernehmen Sie ihn optional als EÜR-Ausgabe.</p></div>
         </div>
 
         {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : receipts.length === 0 ? (
@@ -480,7 +502,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
               const busy = busyId === receipt.id;
               const displayName = receipt.name || data.documentNumber || 'Beleg';
               const fileMeta = [
-                receipt.size > 0 ? formatFileSize(receipt.size) : '',
+                receipt.size > 0 ? formatSizeDe(receipt.size) : '',
                 receipt.createdAt ? formatDate(receipt.createdAt, locale, company.dateFormat) : '',
               ].filter(Boolean).join(' · ') || 'Datei';
               const statusClassName = receipt.ocrStatus === 'completed'
@@ -499,8 +521,8 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileScan className="h-5 w-5" /></span>
                       <div className="min-w-0 flex-1">
-                        <h3 className="break-words font-medium leading-5 text-gray-900" title={displayName}>{displayName}</h3>
-                        <p className="mt-1 break-words text-xs leading-4 text-gray-500" title={fileMeta}>{fileMeta}</p>
+                        <h3 className="truncate font-medium leading-5 text-gray-900" title={displayName}>{displayName}</h3>
+                        <p className="mt-1 truncate text-xs leading-4 text-gray-500" title={fileMeta}>{fileMeta}</p>
                       </div>
                     </div>
                     <span className={`document-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${statusClassName}`} title={statusLabels[receipt.ocrStatus]} aria-label={`Status: ${statusLabels[receipt.ocrStatus]}`}>
@@ -510,7 +532,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                   </div>
                   <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-gray-500">Aussteller</dt><dd className="truncate font-medium text-gray-800">{data.vendorName || 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Datum</dt><dd className="text-gray-800">{data.documentDate ? formatDate(data.documentDate, locale, company.dateFormat) : 'Nicht erkannt'}</dd></div><div className="flex justify-between gap-3"><dt className="text-gray-500">Brutto</dt><dd className="font-medium text-gray-800">{formatAmount(data.grossAmount)}</dd></div></dl>
                   <div className="mt-3 space-y-1.5">{receipt.linkedEuerEntryId && <p className="flex items-center gap-1.5 text-xs font-medium text-blue-700"><Link2 className="h-3.5 w-3.5" />Mit EÜR verknüpft</p>}{receipt.billedInvoiceId && <button type="button" onClick={() => onNavigate?.('invoices', 'all', undefined, receipt.billedInvoiceId || undefined)} className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:underline"><FilePlus2 className="h-3.5 w-3.5" />Weiterberechnete Rechnung öffnen</button>}</div>
-                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="action-button min-w-0 flex-1 justify-center"><Pencil className="h-4 w-4" />Prüfen</button>{canWrite && receipt.ocrStatus === 'completed' && Number(data.grossAmount) > 0 && !receipt.linkedEuerEntryId && <button type="button" onClick={() => setRecurringReceipt(receipt)} className="action-button min-h-10 justify-center px-3 text-xs">Als Fixkosten speichern</button>}<button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || Boolean(receipt.billedInvoiceId)} aria-label={`${displayName} löschen`} title={receipt.billedInvoiceId ? 'Weiterberechnete Belege bleiben als Nachweis erhalten' : 'Löschen'}><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4"><button type="button" onClick={() => void openReview(receipt)} className="btn-primary inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white"><Pencil className="h-4 w-4" />Prüfen</button>{canWrite && receipt.ocrStatus === 'completed' && Number(data.grossAmount) > 0 && !receipt.linkedEuerEntryId && <button type="button" onClick={() => setRecurringReceipt(receipt)} className="action-button min-h-10 min-w-0 flex-1 justify-center px-3 text-sm">Als Fixkosten speichern</button>}<button type="button" onClick={() => void deleteReceipt(receipt)} className="action-button min-w-10 shrink-0 justify-center border-rose-200 px-3 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={busy || Boolean(receipt.billedInvoiceId)} aria-label={`${displayName} löschen`} title={receipt.billedInvoiceId ? 'Weiterberechnete Belege bleiben als Nachweis erhalten' : 'Löschen'}><Trash2 className="h-4 w-4" /></button>{receipt.ocrStatus === 'failed' && <button type="button" onClick={() => void retryOcr(receipt)} className="action-button min-w-10 shrink-0 justify-center px-3" disabled={busy} aria-label="Erkennung erneut ausführen" title="Erkennung erneut ausführen">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>}</div>
                 </article>
               );
             })}
@@ -523,21 +545,12 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           titleId="receipt-review-title"
           icon={Pencil}
           title="Beleg prüfen"
-          description="Prüfe die erkannten Angaben und korrigiere sie bei Bedarf."
+          description="Erkannte Angaben prüfen und korrigieren."
           onClose={() => void requestReviewClose()}
           size="wide"
           zIndexClassName="z-[1100]"
           footer={(
             <>
-              <button
-                type="button"
-                onClick={() => void openBillingDialog()}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={Boolean(selectedReceipt.billedInvoiceId) || savingReview || busyId === selectedReceipt.id}
-              >
-                <FilePlus2 className="h-4 w-4" />
-                {selectedReceipt.billedInvoiceId ? 'Bereits weiterberechnet' : 'Weiterberechnen'}
-              </button>
               <button
                 type="button"
                 onClick={() => void requestReviewClose()}
@@ -590,31 +603,32 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
               </div>
             </section>
 
-            <section className="rounded-xl border border-primary-custom border-l-2 bg-primary-light-custom p-5 sm:p-6">
+            <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
               <h3 className="text-xl font-semibold text-gray-900">Betrag</h3>
               <p className="mt-1 text-base text-gray-500">Beträge werden für die weitere Verarbeitung übernommen.</p>
-              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label htmlFor="receipt-net" className="block text-sm font-medium text-gray-700">
-                  Netto
-                  <input id="receipt-net" inputMode="decimal" value={inputValue(reviewData.netAmount)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} />
+                  Netto ({reviewData.currency || 'EUR'})
+                  <input id="receipt-net" inputMode="decimal" value={amountInputValue(reviewData.netAmount, locale, company.numberFormat)} onChange={event => updateReviewField('netAmount', event.target.value)} className={fieldClassName('netAmount')} />
                 </label>
                 <label htmlFor="receipt-tax" className="block text-sm font-medium text-gray-700">
-                  MwSt. Betrag
-                  <input id="receipt-tax" inputMode="decimal" value={inputValue(reviewData.taxAmount)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} />
+                  MwSt. Betrag ({reviewData.currency || 'EUR'})
+                  <input id="receipt-tax" inputMode="decimal" value={amountInputValue(reviewData.taxAmount, locale, company.numberFormat)} onChange={event => updateReviewField('taxAmount', event.target.value)} className={fieldClassName('taxAmount')} />
                 </label>
                 <label htmlFor="receipt-gross" className="block text-sm font-medium text-gray-700">
-                  Brutto
-                  <input id="receipt-gross" inputMode="decimal" value={inputValue(reviewData.grossAmount)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} />
+                  Brutto ({reviewData.currency || 'EUR'})
+                  <input id="receipt-gross" inputMode="decimal" value={amountInputValue(reviewData.grossAmount, locale, company.numberFormat)} onChange={event => updateReviewField('grossAmount', event.target.value)} className={fieldClassName('grossAmount')} />
                 </label>
-              </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label htmlFor="receipt-tax-rate" className="block text-sm font-medium text-gray-700">
                   MwSt.-Satz in %
                   <input id="receipt-tax-rate" inputMode="decimal" value={inputValue(reviewData.taxRate)} onChange={event => updateReviewField('taxRate', event.target.value)} className={fieldClassName('taxRate')} />
                 </label>
                 <label htmlFor="receipt-currency" className="block text-sm font-medium text-gray-700">
                   Währung
-                  <input id="receipt-currency" value={inputValue(reviewData.currency)} onChange={event => updateReviewField('currency', event.target.value)} className={fieldClassName('currency')} placeholder="EUR" />
+                  <select id="receipt-currency" value={reviewData.currency || 'EUR'} onChange={event => updateReviewField('currency', event.target.value)} className={fieldClassName('currency')}>
+                    {reviewData.currency && !reviewCurrencyOptions.includes(reviewData.currency) && <option value={reviewData.currency}>{reviewData.currency}</option>}
+                    {reviewCurrencyOptions.map(code => <option key={code} value={code}>{code}</option>)}
+                  </select>
                 </label>
               </div>
             </section>
@@ -640,6 +654,17 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
                   <option value="other_expense">Sonstige Betriebsausgaben</option>
                 </select>
               </label>
+              <div className="mt-5 flex justify-start">
+                <button
+                  type="button"
+                  onClick={() => void openBillingDialog()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={Boolean(selectedReceipt.billedInvoiceId) || savingReview || busyId === selectedReceipt.id}
+                >
+                  <FilePlus2 className="h-4 w-4" />
+                  {selectedReceipt.billedInvoiceId ? 'Bereits weiterberechnet' : 'Weiterberechnen'}
+                </button>
+              </div>
             </section>
 
             {selectedReceipt.ocrError && (
@@ -677,11 +702,11 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
         </DialogShell>
       )}
 
-      {euerDraft && <DialogShell titleId="receipt-euer-dialog-title" icon={Link2} title="EÜR-Ausgabe prüfen" description="OCR-Werte sind Vorschläge. Prüfe Betrag und Umsatzsteuer vor dem Anlegen." onClose={() => setEuerDraft(null)} onSubmit={event => { event.preventDefault(); void createEuerEntry(); }} size="wide" footer={<><button type="button" onClick={() => setEuerDraft(null)} className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700">Abbrechen</button><button type="submit" disabled={Boolean(busyId)} className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium text-white">{busyId ? 'Speichern …' : 'EÜR-Ausgabe anlegen'}</button></>}>
+      {euerDraft && <DialogShell titleId="receipt-euer-dialog-title" icon={Link2} title="EÜR-Ausgabe prüfen" description="OCR-Werte sind Vorschläge. Prüfen Sie Betrag und Umsatzsteuer vor dem Anlegen." onClose={() => setEuerDraft(null)} onSubmit={event => { event.preventDefault(); void createEuerEntry(); }} size="wide" footer={<><button type="button" onClick={() => setEuerDraft(null)} className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700">Abbrechen</button><button type="submit" disabled={Boolean(busyId)} className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium text-white">{busyId ? 'Speichern …' : 'EÜR-Ausgabe anlegen'}</button></>}>
         {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
         <div className="space-y-4"><p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Vorschlag aus der lokalen Belegerkennung. Bitte mit dem Originalbeleg abgleichen.</p>
           <label className="block text-sm font-medium text-gray-700">Zahlungsdatum<input type="date" required value={euerDraft.entryDate} onChange={event => setEuerDraft(current => current ? { ...current, entryDate: event.target.value } : current)} className="form-input mt-1 w-full" /></label>
-          <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium text-gray-700">{euerDraft.vatFields.vatTreatment === 'reverse_charge_eu' || euerDraft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Betrag (Netto)' : 'Betrag (Brutto)'}<LocalizedNumberInput min="0" step="0.01" value={euerDraft.amount} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, amount: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label><label className="block text-sm font-medium text-gray-700">Steuersatz in %<LocalizedNumberInput min="0" max="100" step="0.01" value={euerDraft.taxRate} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, taxRate: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label></div>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium text-gray-700">{euerDraft.vatFields.vatTreatment === 'reverse_charge_eu' || euerDraft.vatFields.vatTreatment === 'reverse_charge_domestic' ? 'Betrag (Netto)' : 'Betrag (Brutto)'}<LocalizedNumberInput minimumFractionDigits={2} min="0" step="0.01" value={euerDraft.amount} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, amount: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label><label className="block text-sm font-medium text-gray-700">Steuersatz in %<LocalizedNumberInput min="0" max="100" step="0.01" value={euerDraft.taxRate} locale={locale} numberFormat={company.numberFormat} onValueChange={value => setEuerDraft(current => current ? { ...current, taxRate: value === '' ? '' : String(value) } : current)} className="mt-1 w-full" /></label></div>
           <VatFieldsEditor entryType="expense" amount={euerDraft.amount} taxRate={euerDraft.taxRate} entryDate={euerDraft.entryDate} value={euerDraft.vatFields} locale={locale} dateFormat={company.dateFormat} numberFormat={company.numberFormat} isSmallBusiness={company.isSmallBusiness} onChange={vatFields => setEuerDraft(current => current ? { ...current, vatFields } : current)} onTaxRateChange={value => setEuerDraft(current => current ? { ...current, taxRate: String(value) } : current)} onAmountChange={value => setEuerDraft(current => current ? { ...current, amount: String(value) } : current)} />
         </div>
       </DialogShell>}
@@ -712,7 +737,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           updateReceiptInState(updatedReceipt);
           setInvoices(current => current.some(item => item.id === invoice.id) ? current : [invoice, ...current]);
           setBillingReceipt(null);
-          setNotice(`Rechnungsentwurf ${invoice.invoiceNumber} wurde erstellt. Du kannst ihn unter Rechnungen prüfen und versenden.`);
+          setNotice(`Rechnungsentwurf ${invoice.invoiceNumber} wurde erstellt. Sie können ihn unter Rechnungen prüfen und versenden.`);
         }}
       />
       {!embedded && (

@@ -496,7 +496,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           {scanBusy
             ? <Loader2 className="mx-auto h-9 w-9 animate-spin text-primary-custom" />
             : <Upload className="mx-auto h-9 w-9 text-primary-custom" aria-hidden="true" />}
-          <p className="mt-3 font-semibold text-gray-900">{scanBusy ? 'Datei wird geprüft …' : 'Datei hierher ziehen oder auswählen'}</p>
+          <p className="mt-3 text-balance font-semibold text-gray-900">{scanBusy ? 'Datei wird geprüft …' : 'Datei hierher ziehen oder auswählen'}</p>
           <p className="mt-1 text-sm text-gray-600">Nach der Prüfung führt Sie ein Formular Schritt für Schritt durch alles, was in der Datei erkannt wurde.</p>
           <button
             type="button"
@@ -704,7 +704,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
               Umzug und Stichtag
               <InfoTooltip align="start" label="Hinweis zu Umzug und Stichtag" text="Der Umzug ist der einmalige Wechsel nach SoloOffice. Der Stichtag sagt, ab wann Sie hier arbeiten: Buchungen und Rechnungen ab diesem Tag werden in der Vorschau markiert, damit nichts doppelt erfasst wird. Für eine vollständige EÜR übernehmen Sie auch das laufende Jahr vor dem Stichtag." />
             </h2>
-            {takeover?.demoMode && <p className="mt-1 text-xs font-medium text-amber-800">Demo: Status nur in dieser Browser-Sitzung.</p>}
             <p className="mt-1 text-sm text-gray-600">
               {!takeover?.session
                 ? 'Noch nicht gestartet. Die Übernahme beginnt mit Ihrer ersten Datei.'
@@ -729,13 +728,14 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="w-full min-w-0 text-sm font-medium text-gray-700 sm:w-auto">
             Stichtag
-            <LocalizedDateInput aria-label="Stichtag" value={cutoverDate} onChange={setCutoverDate} disabled={!canAdmin} locale={company.locale || 'de-DE'} dateFormat={company.dateFormat} className="mt-1 w-full sm:w-44" />
+            <LocalizedDateInput aria-label="Stichtag" value={cutoverDate} onChange={setCutoverDate} disabled={!canAdmin} locale={company.locale || 'de-DE'} dateFormat={company.dateFormat} className="mt-1 w-full sm:w-44 [&_input]:min-h-11" />
           </label>
-          <button type="button" onClick={saveCutover} disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 w-full rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" title={canAdmin ? undefined : 'Nur Administratoren können den Stichtag festlegen'}>
+          <button type="button" onClick={saveCutover} disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 w-full rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" title={!canAdmin ? 'Nur Administratoren können den Stichtag festlegen' : cutoverDate === savedCutoverDate ? 'Bitte zuerst ein neues Datum wählen' : undefined}>
             Speichern
           </button>
           <p className="min-w-0 w-full text-sm text-gray-600 sm:w-auto sm:flex-1">Ab diesem Datum arbeiten Sie mit SoloOffice.{savedCutoverDate ? '' : ' Noch kein Stichtag gesetzt.'}</p>
         </div>
+        {takeover?.demoMode && <p className="mt-3 text-xs text-gray-500">Demo: Status nur in dieser Browser-Sitzung.</p>}
         {onNavigate && <p className="mt-3 text-sm text-gray-600">Prüfen Sie vor der Übernahme Ihre <button type="button" className="font-medium text-primary-custom hover:underline" onClick={() => onNavigate('settings')}>Firmendaten in den Einstellungen</button>.</p>}
       </section>
 

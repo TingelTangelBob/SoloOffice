@@ -397,11 +397,13 @@ export function ReminderSendModal({
   return (
     <>
       {/* Main Modal */}
-      <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="dialog-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+        {/* Kopf und Fuß bleiben stehen, nur der Inhalt scrollt: Vorher lagen die
+            Versandknöpfe auf dem Handy unterhalb des sichtbaren Bereichs. */}
+        <div role="dialog" aria-modal="true" aria-labelledby="reminder-send-modal-title" className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:p-6 border-b border-gray-200">
+            <h2 id="reminder-send-modal-title" className="text-lg sm:text-xl font-semibold text-gray-900">
               {stage}. Mahnung versenden
               {isBulkMode && <span className="ml-2 text-sm font-normal text-gray-600">({bulkInvoices.length} Rechnungen)</span>}
             </h2>
@@ -415,7 +417,7 @@ export function ReminderSendModal({
           </div>
 
           {/* Content */}
-          <div className="form-consistent-fields p-6 space-y-6">
+          <div className="form-consistent-fields min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-6">
             {/* Invoice Info */}
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-3">
@@ -463,10 +465,12 @@ export function ReminderSendModal({
                       <p className="font-medium text-red-600">{formatCurrency(cumulativeFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                     </div>
                   )}
-                  <div className="col-span-2 pt-2 border-t border-gray-200">
-                    <p className="text-sm text-gray-600">Gesamtbetrag</p>
-                    <p className="text-lg font-bold text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
-                  </div>
+                  {cumulativeFee > 0 && (
+                    <div className="col-span-2 pt-2 border-t border-gray-200">
+                      <p className="text-sm text-gray-600">Gesamtbetrag inkl. Mahngebühren</p>
+                      <p className="text-lg font-bold text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -486,7 +490,7 @@ export function ReminderSendModal({
             </div>
 
             {/* Status Update Checkbox */}
-            <div className="flex items-start bg-blue-50 rounded-lg p-3">
+            <div className="flex items-start bg-gray-50 border border-gray-200 rounded-lg p-3">
               <input
                 type="checkbox"
                 id="updateStatus"
@@ -503,7 +507,7 @@ export function ReminderSendModal({
             </div>
 
             {/* Include Original Invoice Checkbox */}
-            <div className="flex items-start bg-green-50 rounded-lg p-3">
+            <div className="flex items-start bg-gray-50 border border-gray-200 rounded-lg p-3">
               <input
                 type="checkbox"
                 id="includeOriginalInvoice"
@@ -701,34 +705,41 @@ export function ReminderSendModal({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-between gap-3 p-6 bg-gray-50 border-t border-gray-200">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:p-6 bg-gray-50 border-t border-gray-200">
             <button
+              type="button"
               onClick={onClose}
               disabled={isLoading}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              className="min-h-10 rounded-lg px-3 text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50 sm:px-4"
             >
               Abbrechen
             </button>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* Preview Button */}
               <button
+                type="button"
                 onClick={handlePreview}
                 disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                aria-label="Vorschau"
+                title="Vorschau"
+                className="inline-flex min-h-10 min-w-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 sm:px-4"
               >
                 <Eye className="h-5 w-5" />
-                Vorschau
+                <span className="hidden sm:inline">Vorschau</span>
               </button>
 
               {/* Download Button */}
               <button
+                type="button"
                 onClick={handleDownload}
                 disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-primary-custom text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
+                aria-label="Als PDF herunterladen"
+                title="Als PDF herunterladen"
+                className="inline-flex min-h-10 min-w-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 sm:px-4"
               >
                 <Download className="h-5 w-5" />
-                {isLoading ? 'Wird heruntergeladen...' : 'Download'}
+                <span className="hidden sm:inline">{isLoading ? 'Wird heruntergeladen …' : 'Herunterladen'}</span>
               </button>
 
               {/* Email Button */}
@@ -740,11 +751,12 @@ export function ReminderSendModal({
                     handleSendEmail();
                   }
                 }}
+                type="button"
                 disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                className="btn-primary inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-white transition hover:brightness-90 disabled:opacity-50"
               >
                 <Mail className="h-5 w-5" />
-                {showEmailSection ? (isLoading ? 'Wird versendet...' : 'Jetzt versenden') : 'Per E-Mail'}
+                {showEmailSection ? (isLoading ? 'Wird versendet …' : 'Jetzt versenden') : 'Per E-Mail'}
               </button>
             </div>
           </div>

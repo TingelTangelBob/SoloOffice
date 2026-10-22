@@ -147,7 +147,7 @@ export function PositionTemplatesPanel() {
           name: rate.name,
           description: rate.description,
           isDefault: rate.isDefault,
-          value: `${money(rate.rate)} / Stunde`,
+          value: `${money(rate.rate)} / h`,
           onEdit: () => setEditingRate(rate),
           onDelete: () => { void handleDeleteRate(rate.id); },
         }))}
@@ -272,8 +272,10 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 px-4 py-2.5 lg:px-6">
               <span className="min-w-0 flex-1">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium text-gray-900">{item.name}</span>
+                {/* Namen brechen um statt zu kürzen; das Badge rückt bei Platzmangel
+                    in die nächste Zeile, statt den Namen auf „Sta…“ zu verkürzen. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="min-w-0 break-words text-sm font-medium text-gray-900">{item.name}</span>
                   {item.isDefault && (
                     <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">Standard</span>
                   )}
@@ -281,7 +283,7 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
                 {item.description && <span className="mt-0.5 block truncate text-xs text-gray-500">{item.description}</span>}
               </span>
               <span className="shrink-0 text-sm text-gray-900 tabular-nums">{item.value}</span>
-              <span className="flex shrink-0 items-center gap-1">
+              <span className="flex shrink-0 items-center gap-2">
                 <button type="button" onClick={item.onEdit} className="action-icon-button action-icon-blue" aria-label={`${item.name} bearbeiten`} title="Bearbeiten">
                   <Edit2 className="h-4 w-4" />
                 </button>
@@ -330,7 +332,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
       titleId="hourly-rate-dialog-title"
       icon={Clock}
       title={rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
-      description="Für Angebote und Rechnungen wiederverwenden."
+      description="Pflegen Sie Bezeichnung, Preis und Steuer für Angebote und Rechnungen."
       onClose={onClose}
       onSubmit={handleSubmit}
       size="md"
@@ -338,7 +340,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
       footer={(
         <>
           <button type="button" onClick={onClose} className="min-h-10 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">Speichern</button>
+          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">{rate ? 'Speichern' : 'Erstellen'}</button>
         </>
       )}
     >
@@ -374,7 +376,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Stundensatz ({currencySymbol}) *
             </label>
-            <LocalizedNumberInput
+            <LocalizedNumberInput minimumFractionDigits={2}
               required
               min="0"
               step="0.01"
@@ -450,7 +452,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
       titleId="material-template-dialog-title"
       icon={Package}
       title={template ? 'Materialvorlage bearbeiten' : 'Neue Materialvorlage'}
-      description="Definieren Sie eine wiederverwendbare Position für Angebote und Rechnungen."
+      description="Pflegen Sie Bezeichnung, Preis, Einheit und Steuer für Angebote und Rechnungen."
       onClose={onClose}
       onSubmit={handleSubmit}
       size="md"
@@ -458,7 +460,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
       footer={(
         <>
           <button type="button" onClick={onClose} className="min-h-10 rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">Speichern</button>
+          <button type="submit" className="btn-primary min-h-10 rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:brightness-90">{template ? 'Speichern' : 'Erstellen'}</button>
         </>
       )}
     >
@@ -495,7 +497,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Preis ({currencySymbol}) *
               </label>
-              <LocalizedNumberInput
+              <LocalizedNumberInput minimumFractionDigits={2}
                 required
                 min="0"
                 step="0.01"

@@ -18,6 +18,7 @@ import {
   MapPin,
   Monitor,
   FileText,
+  Info,
 } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useJobs } from '../context/JobContext';
@@ -1411,7 +1412,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
             <button
               type="button"
               onClick={goToToday}
-              className="calendar-toolbar-control calendar-toolbar-primary min-h-0 h-10 shrink-0 rounded-lg bg-primary-custom px-2 text-sm text-white transition-colors hover:bg-primary-custom/90 sm:px-4"
+              className="calendar-toolbar-control min-h-0 h-10 shrink-0 rounded-lg border border-gray-300 bg-white px-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:px-4"
             >
               Heute
             </button>
@@ -2024,12 +2025,21 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               <span className="text-gray-600">Urlaub</span>
             </div>
           </div>
-          <div className="mt-3 text-xs text-gray-500">
-            <p>• Ziehen Sie {terminology.work.plural} per Drag &amp; Drop, um das Datum zu ändern</p>
-            <p>• Ziehen Sie {terminology.work.plural} innerhalb eines Tages, um die Reihenfolge zu ändern</p>
-            <p>• Doppelklicken Sie auf einen {terminology.work.singular}, um die Übersicht zu öffnen</p>
-            <p>• Doppelklicken Sie auf das Datum, um einen neuen {terminology.work.singular} zu erstellen</p>
-            <p>• Abgerechnete {terminology.work.plural} können nicht verschoben werden</p>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              title={[
+                `Ziehen Sie ${terminology.work.plural} per Drag & Drop, um das Datum zu ändern`,
+                `Ziehen Sie ${terminology.work.plural} innerhalb eines Tages, um die Reihenfolge zu ändern`,
+                `Doppelklicken Sie auf einen ${terminology.work.singular}, um die Übersicht zu öffnen`,
+                `Doppelklicken Sie auf das Datum, um einen neuen ${terminology.work.singular} zu erstellen`,
+                `Abgerechnete ${terminology.work.plural} können nicht verschoben werden`,
+              ].join('\n')}
+            >
+              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              Bedienhinweise
+            </button>
           </div>
         </div>
       </div>

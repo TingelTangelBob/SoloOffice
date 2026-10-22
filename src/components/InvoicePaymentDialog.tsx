@@ -105,7 +105,7 @@ export function InvoicePaymentDialog({ invoice, onClose, onSaved }: InvoicePayme
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="min-w-0 text-sm font-medium text-gray-700">
             Zahlungsbetrag
-            <LocalizedNumberInput
+            <LocalizedNumberInput minimumFractionDigits={2}
               required
               autoFocus
               min="0.01"

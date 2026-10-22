@@ -109,8 +109,10 @@ export function DialogShell({
           </div>
         ) : (
           <div className="flex min-w-0 flex-1 items-start gap-5">
+            {/* Auf dem Handy ohne Symbolkachel: Sie nahm ein Viertel der Breite,
+                der Untertitel lief dadurch über vier bis fünf schmale Zeilen. */}
             {Icon && (
-              <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:h-[60px] sm:w-[60px]">
+              <div className="mt-0.5 hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-primary-light-custom text-primary-custom sm:flex sm:h-[60px] sm:w-[60px]">
                 <Icon className="h-6 w-6 sm:h-8 sm:w-8" />
               </div>
             )}

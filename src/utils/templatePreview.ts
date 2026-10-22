@@ -1,6 +1,15 @@
 import type { Company, Customer, DocumentTemplate, Invoice, JobEntry, Quote } from '../types';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
-import { generateInvoicePDF, generateJobPDF, generateQuotePDF, generateReminderPDF } from './pdfGenerator';
+import jsPDF from 'jspdf';
+import {
+  drawPreparedDocument,
+  prepareInvoiceDocument,
+  prepareJobDocument,
+  prepareQuoteDocument,
+  prepareReminderDocument,
+  type PreparedDocument,
+} from './pdfGenerator';
+import { PreviewRecorder, type PreviewPage } from './pdf/previewRecorder';
 import { getDocumentTemplateTextMode } from './documentTextTemplates';
 import { resolveDocumentTemplate } from './documentTemplateProfiles';
 
@@ -174,37 +183,61 @@ function companyWithPreviewTemplate(company: Company, template: DocumentTemplate
   };
 }
 
-export async function generateTemplatePreview(template: DocumentTemplate, company: Company): Promise<TemplatePreviewResult> {
+/** Beispieldokument der Vorlage mit den Vorschaudaten, bereit zum Zeichnen. */
+function prepareTemplatePreview(template: DocumentTemplate, company: Company): { prepared: PreparedDocument; fileName: string } {
   const previewCompany = companyWithPreviewTemplate(company, template);
   const previewInvoice = previewInvoiceForCompany(company);
-  const previewQuote = previewQuoteForCompany(company);
-  const previewJob = previewJobForCompany(company);
 
   switch (template.documentType) {
-    case 'invoice': {
-      const blob = await generateInvoicePDF(previewInvoice, { format: 'pdf', company: previewCompany, customer: templatePreviewCustomer });
-      return { blob, fileName: `Vorschau_${previewInvoice.invoiceNumber}.pdf` };
-    }
+    case 'invoice':
+      return {
+        prepared: prepareInvoiceDocument(previewInvoice, { format: 'pdf', company: previewCompany, customer: templatePreviewCustomer }),
+        fileName: `Vorschau_${previewInvoice.invoiceNumber}.pdf`,
+      };
     case 'quote': {
-      const blob = await generateQuotePDF(previewQuote, { company: previewCompany, customer: templatePreviewCustomer });
-      return { blob, fileName: `Vorschau_${previewQuote.quoteNumber}.pdf` };
+      const previewQuote = previewQuoteForCompany(company);
+      return {
+        prepared: prepareQuoteDocument(previewQuote, { company: previewCompany, customer: templatePreviewCustomer }),
+        fileName: `Vorschau_${previewQuote.quoteNumber}.pdf`,
+      };
     }
     case 'orderConfirmation': {
-      const blob = await generateJobPDF(previewJob, { company: previewCompany, customer: templatePreviewCustomer });
-      return { blob, fileName: `Vorschau_${previewJob.jobNumber}.pdf` };
+      const previewJob = previewJobForCompany(company);
+      return {
+        prepared: prepareJobDocument(previewJob, { company: previewCompany, customer: templatePreviewCustomer }),
+        fileName: `Vorschau_${previewJob.jobNumber}.pdf`,
+      };
     }
     case 'reminder': {
       const reminderTemplate = resolveDocumentTemplate(previewCompany, 'reminder');
-      const blob = await generateReminderPDF(
-        previewInvoice,
-        1,
-        reminderTemplate.reminderTexts?.stage1?.trim() || 'Bitte begleichen Sie den offenen Rechnungsbetrag innerhalb der Zahlungsfrist.',
-        previewCompany.reminderFeeStage1 || 0,
-        { format: 'pdf', company: previewCompany, customer: templatePreviewCustomer },
-      );
-      return { blob, fileName: `Vorschau_Mahnung_${previewInvoice.invoiceNumber}.pdf` };
+      return {
+        prepared: prepareReminderDocument(
+          previewInvoice,
+          1,
+          reminderTemplate.reminderTexts?.stage1?.trim() || 'Bitte begleichen Sie den offenen Rechnungsbetrag innerhalb der Zahlungsfrist.',
+          { format: 'pdf', company: previewCompany, customer: templatePreviewCustomer },
+        ),
+        fileName: `Vorschau_Mahnung_${previewInvoice.invoiceNumber}.pdf`,
+      };
     }
   }
 
   throw new Error('Unbekannter Vorlagentyp.');
+}
+
+/** Echtes PDF der Vorlage, z. B. zum Öffnen oder Herunterladen. */
+export async function generateTemplatePreview(template: DocumentTemplate, company: Company): Promise<TemplatePreviewResult> {
+  const { prepared, fileName } = prepareTemplatePreview(template, company);
+  const pdf = new jsPDF();
+  pdf.setProperties({ title: fileName.replace(/\.pdf$/, '').replace(/_/g, ' '), creator: 'SoloOffice' });
+  await drawPreparedDocument(pdf, prepared);
+  return { blob: pdf.output('blob'), fileName };
+}
+
+/** Dieselben Seiten als Zeichenschritte für die sofortige Vorschau. */
+export async function renderTemplatePreviewPages(template: DocumentTemplate, company: Company): Promise<PreviewPage[]> {
+  const { prepared } = prepareTemplatePreview(template, company);
+  const recorder = new PreviewRecorder();
+  await drawPreparedDocument(recorder, prepared);
+  return recorder.pages;
 }

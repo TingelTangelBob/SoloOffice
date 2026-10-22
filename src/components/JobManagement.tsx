@@ -84,9 +84,10 @@ type DisplayedJob = {
 };
 
 /**
- * Die Auftragstabelle wächst mit ihrem Inhalt und hat laut `min-w-[820px]` eine
- * Mindestbreite. Eine Zeile zeigt höchstens sieben Icon-Aktionen; dazu kommt
- * der Statuspunkt links davon (14 Pixel plus 8 Pixel Abstand).
+ * Die Auftragstabelle hat feste Spalten und keine Mindestbreite: Titel und
+ * Kunde kürzen sich, und ab 820 Pixeln Tabellenbreite zeigt eine Zeile bis zu
+ * sieben Icon-Aktionen statt des Menüs; dazu kommt der Statuspunkt links davon
+ * (14 Pixel plus 8 Pixel Abstand).
  */
 const JOB_STATUS_INDICATOR_WIDTH = 22;
 const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_COLUMN_WIDTH;
@@ -870,7 +871,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
     <div className="page-root space-y-8 xl:space-y-4 2xl:space-y-8">
       {/* Header */}
       <div className="page-header-slot flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 xl:gap-2 2xl:gap-4">
-        <PageHeader icon={Briefcase} title={terminology.work.managementLabel}>
+        <PageHeader icon={Briefcase} title={terminology.work.managementLabel} shortTitle={terminology.work.navLabel}>
         
         <div className="flex shrink-0 flex-row gap-2">
           <button
@@ -969,7 +970,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       </div>
 
       {/* Compact statistics cards for tablet/mobile */}
-      <div className={`grid min-w-0 gap-2 sm:gap-3 lg:hidden ${showAllStats ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-3 sm:grid-cols-5'}`}>
+      <div className={`grid min-w-0 gap-2 sm:gap-3 lg:hidden ${showAllStats ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-5'}`}>
         <button
           onClick={() => setStatusFilter('not-invoiced')}
           className="order-1 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
@@ -985,7 +986,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
 
         <button
           onClick={() => setStatusFilter('all')}
-          className="order-4 max-[380px]:hidden flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
+          className="order-4 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
             <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Gesamt</p>
@@ -1038,7 +1039,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
           type="button"
           onClick={() => setShowAllStats((isExpanded) => !isExpanded)}
           aria-label={showAllStats ? 'Statistik-Karten zuklappen' : 'Weitere Statistik-Karten anzeigen'}
-          className="order-6 flex min-h-[76px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl border border-gray-100 bg-white px-1.5 text-[10px] font-semibold leading-tight text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
+          className="order-6 col-span-2 flex min-h-[44px] min-w-0 flex-row items-center justify-center gap-1 rounded-xl sm:col-span-1 sm:min-h-[76px] sm:flex-col border border-gray-100 bg-white px-1.5 text-[10px] font-semibold leading-tight text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
         >
           {/* Ohne Symbol und Beschriftung wirkt die Karte wie eine leere Fläche. */}
           {showAllStats
@@ -1328,18 +1329,18 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             </div>
 
             {/* Desktop Table View */}
-            <div ref={tableRef} className="hidden tablet:block w-full max-w-full overflow-x-auto">
-              <table className="w-full min-w-[820px]">
+            <div ref={tableRef} className="hidden tablet:block w-full max-w-full overflow-hidden">
+              <table className="w-full table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-2 py-3 text-left w-12">
                       <span className="sr-only">Auswahl</span>
                     </th>
                     <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
-                    <SortableTableHeader label="Nr." sortKey="jobNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label="Nr." sortKey="jobNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
                     <SortableTableHeader label={terminology.work.singular} sortKey="title" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
-                    <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
-                    <SortableTableHeader label="Std." sortKey="hours" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-20 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-40 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
+                    <SortableTableHeader label="Std." sortKey="hours" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} align="right" className="w-20 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
                     <th style={{ width: (showInlineActions ? actionColumnWidth(7) : ACTION_MENU_COLUMN_WIDTH) + JOB_STATUS_INDICATOR_WIDTH }} className="sticky right-0 z-20 bg-gray-50 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <span className="sr-only">Aktionen</span>
                     </th>
@@ -1408,12 +1409,15 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               </span>
                             )}
                           </div>
+                          {/* Status als Text vor der Beschreibung: Der farbige Punkt in der
+                              Aktionsspalte allein war ohne Legende nicht lesbar. */}
                           <div className="block max-w-full min-w-0 truncate whitespace-nowrap text-xs text-gray-500">
-                            {job.description}
+                            <span className="font-medium text-gray-700">{getStatusText(job.status)}</span>
+                            {job.description && <> · {job.description}</>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-2.5 xl:px-2 xl:py-2 2xl:px-3 2xl:py-2.5 w-32">
+                      <td className="px-3 py-2.5 xl:px-2 xl:py-2 2xl:px-3 2xl:py-2.5 w-40">
                         <span className="text-sm text-gray-900 truncate block">{job.customerName}</span>
                       </td>
                       <td className="hidden">
@@ -1444,7 +1448,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                         </label>
                       </td>
                       <td className="px-3 py-2.5 xl:px-2 xl:py-2 2xl:px-3 2xl:py-2.5 w-20">
-                        <span className="text-sm text-gray-900">{formatNumber(calculateTotalHours(job), locale, company?.numberFormat, 1)}h</span>
+                        <span className="block text-right text-sm tabular-nums text-gray-900">{formatNumber(calculateTotalHours(job), locale, company?.numberFormat, 1)}h</span>
                       </td>
                       <td style={{ width: (showInlineActions ? actionColumnWidth(7) : ACTION_MENU_COLUMN_WIDTH) + JOB_STATUS_INDICATOR_WIDTH }} className="sticky right-0 z-10 bg-white px-3 py-2.5 text-right xl:py-2 2xl:py-2.5">
                         <div className="flex items-center justify-end gap-2">

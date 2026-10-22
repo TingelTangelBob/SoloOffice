@@ -579,16 +579,13 @@ export interface InvoiceTemplate {
 }
 
 export type DocumentTemplateType = 'invoice' | 'quote' | 'reminder' | 'orderConfirmation';
-export type DocumentLayout =
-  | 'classic'
-  | 'minimal'
-  | 'editorial'
-  | 'modern'
-  | 'compact'
-  | 'split'
-  | 'bold'
-  | 'air'
-  | 'frame';
+/** Die fünf PDF-Designs, die für alle Dokumentarten gemeinsam gelten. */
+export type DocumentDesignId = 'classic' | 'modern' | 'minimal' | 'elegant' | 'bold';
+/** Ältere Layoutwerte bleiben lesbar und werden auf ein Design abgebildet. */
+export type LegacyDocumentLayout = 'editorial' | 'compact' | 'split' | 'air' | 'frame';
+export type DocumentLayout = DocumentDesignId | LegacyDocumentLayout;
+/** Standardschriften, die jsPDF ohne eingebettete Schriftdatei unterstützt. */
+export type DocumentFontFamily = 'helvetica' | 'times' | 'courier';
 export type DocumentLogoMode = 'company' | 'none';
 export type DocumentHeaderAlignment = 'left' | 'center' | 'split';
 export type DocumentTableStyle = 'light' | 'dark' | 'accent';
@@ -627,6 +624,7 @@ export interface DocumentTemplate {
   /** Visual PDF layout profile. Older templates without these fields use a safe default. */
   layout?: DocumentLayout;
   accentColor?: string;
+  fontFamily?: DocumentFontFamily;
   logoMode?: DocumentLogoMode;
   headerAlignment?: DocumentHeaderAlignment;
   tableStyle?: DocumentTableStyle;

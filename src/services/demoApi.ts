@@ -238,31 +238,31 @@ const demoProfileFixtures: Record<TerminologyProfile, DemoProfileFixture> = {
     primaryColor: '#2563eb', secondaryColor: '#64748b',
     names: ['Musterkunde GmbH', 'Kolkman & Partner', 'Beispiel Handwerk', 'Nordlicht Design', 'Hanseatische Beratung', 'Berg & Tal Immobilien', 'Studio Morgenrot', 'Klarwerk Solutions'],
     workTitles: ['Website-Relaunch', 'Elektroinstallation', 'Wartungsvertrag', 'Marketingkonzept', 'Fotoproduktion', 'Support-Paket', 'Umzugsplanung', 'Jahresbetreuung'],
-    workDescription: 'Beispielauftrag für den lokalen Frontend-Test',
+    workDescription: 'Konzeption, Umsetzung und Abstimmung vor Ort',
   },
   mandants: {
     primaryColor: '#7c3aed', secondaryColor: '#6d5bbd',
     names: ['Kanzlei Müller', 'Praxisgemeinschaft Weber', 'Steuerberatung Schneider', 'Notariat Albrecht', 'Hansen Architektur', 'Meyer & Kollegen', 'Linden Apotheke', 'Büro am Markt'],
     workTitles: ['Jahresabschluss 2025', 'Steuererklärung', 'Gründungsberatung', 'Lohnbuchhaltung', 'Betriebsprüfung', 'Vertragsprüfung', 'Finanzplanung', 'Laufende Beratung'],
-    workDescription: 'Beispielmandat für den lokalen Frontend-Test',
+    workDescription: 'Beratung und Prüfung der Unterlagen',
   },
   patients: {
     primaryColor: '#0f9f9a', secondaryColor: '#4b7f7b',
     names: ['Anna Müller', 'Jonas Weber', 'Sofia Schneider', 'Paul Hoffmann', 'Mia Fischer', 'Emil Wagner', 'Lina Becker', 'Noah Krause'],
     workTitles: ['Erstuntersuchung', 'Kontrolltermin', 'Therapieplanung', 'Behandlung', 'Nachsorge', 'Diagnostik', 'Beratungsgespräch', 'Folgetermin'],
-    workDescription: 'Beispielbehandlung für den lokalen Frontend-Test',
+    workDescription: 'Erstgespräch und Behandlung',
   },
   students: {
     primaryColor: '#f97316', secondaryColor: '#b45309',
     names: ['Lena Schneider', 'Maximilian Weber', 'Schulträger Berlin', 'Förderverein Nord', 'Noah Hoffmann', 'Mia Fischer', 'Bildungswerk Mitte', 'Kurszentrum West'],
     workTitles: ['Deutsch-Kurs B2', 'Mathematik-Nachhilfe', 'Prüfungsvorbereitung', 'Ferienkurs', 'Integrationskurs', 'Lernbegleitung', 'Elternberatung', 'Abschlussprüfung'],
-    workDescription: 'Beispielkurs für den lokalen Frontend-Test',
+    workDescription: 'Kurseinheit mit Vor- und Nachbereitung',
   },
   clients: {
     primaryColor: '#db3764', secondaryColor: '#9f365c',
     names: ['Sarah König', 'Beratungsstelle Neustart', 'Daniel Richter', 'Familienhilfe West', 'Aylin Yilmaz', 'Projekt Zukunft', 'Thomas Neumann', 'Anlaufstelle Mitte'],
     workTitles: ['Erstberatung', 'Sozialberatung', 'Coaching', 'Fallbesprechung', 'Orientierungsgespräch', 'Begleitung', 'Gruppenangebot', 'Abschlussgespräch'],
-    workDescription: 'Beispielberatung für den lokalen Frontend-Test',
+    workDescription: 'Beratungsgespräch mit Zusammenfassung',
   },
 };
 
@@ -330,7 +330,7 @@ function seedDemoFinance(state: DemoState): void {
       description: 'Beispielhonorar Unterricht', category: 'other_income', amount: 4500, taxRate: vatRates.standardRate,
       vatTreatment: 'taxable', netAmount: Math.round((4500 / (1 + vatRates.standardRate / 100) + Number.EPSILON) * 100) / 100,
       vatAmount: Math.round((4500 - 4500 / (1 + vatRates.standardRate / 100) + Number.EPSILON) * 100) / 100, inputTaxDeductible: null,
-      sourceType: 'manual', status: 'active', notes: 'Synthetischer Zahlungseingang der Demo',
+      sourceType: 'manual', status: 'active', notes: 'Zahlungseingang laut Kontoauszug',
       createdAt: `${year}-${month}-05T09:00:00.000Z`, updatedAt: `${year}-${month}-05T09:00:00.000Z`,
     };
     return entry;
@@ -356,7 +356,7 @@ function seedDemoFinance(state: DemoState): void {
           id: generateUUID(), entryType: 'expense', entryDate: dueDate, description: run.snapshot.name,
           documentDate: dueDate, category: run.snapshot.category, amount: gross, taxRate: rate,
           vatTreatment: treatment, netAmount, vatAmount, inputTaxDeductible: treatment === 'no_vat' ? false : true,
-          sourceType: 'recurring_expense', sourceId: run.id, status: 'active', notes: 'Synthetischer bestätigter Fixkostenlauf',
+          sourceType: 'recurring_expense', sourceId: run.id, status: 'active', notes: 'Aus Fixkosten übernommen',
           createdAt: `${dueDate}T09:00:00.000Z`, updatedAt: `${dueDate}T09:00:00.000Z`,
         };
         run.euerEntryId = entry.id;
@@ -376,7 +376,7 @@ function seedDemoFinance(state: DemoState): void {
     for (const [kind, amount] of [['kv', profile.healthNoticeMonthly], ['pv', profile.careNoticeMonthly], ['rv', profile.pensionNoticeMonthly]] as const) {
       if (!(Number(amount) > 0)) continue;
       state.levyPayments.push({ id: generateUUID(), kind, year, period: `${year}-${month}`, dueDate: `${year}-${month}-15`,
-        paidOn: `${year}-${month}-15`, amount: Number(amount), source: 'notice', expenseRunId: null, notes: 'Synthetische Bescheidzahlung der Demo' });
+        paidOn: `${year}-${month}-15`, amount: Number(amount), source: 'notice', expenseRunId: null, notes: 'Zahlung laut Steuerbescheid' });
     }
   }
   for (const run of state.recurringExpenseRuns.filter(item => item.scope === 'private_levy' && item.status === 'confirmed')) {
@@ -388,15 +388,15 @@ function seedDemoFinance(state: DemoState): void {
   state.euerEntries.push(
     { id: generateUUID(), entryType: 'income', entryDate: `${year}-05-18`, documentDate: `${year}-05-15`, description: 'Beispielhonorar Workshop (7 %)', category: 'other_income', amount: 1070,
       taxRate: vatRates.reducedRate, vatTreatment: 'taxable', netAmount: 1000,
-      vatAmount: Math.round((1000 * vatRates.reducedRate / 100 + Number.EPSILON) * 100) / 100, inputTaxDeductible: null, sourceType: 'manual', status: 'active', notes: 'Synthetische Beispielbuchung' },
+      vatAmount: Math.round((1000 * vatRates.reducedRate / 100 + Number.EPSILON) * 100) / 100, inputTaxDeductible: null, sourceType: 'manual', status: 'active', notes: 'Halbtagesworkshop für Bildungsträger' },
     { id: generateUUID(), entryType: 'income', entryDate: `${year}-09-03`, documentDate: `${year}-09-01`, description: 'Beispielhonorar mit offenem Steuervorschlag', category: 'other_income', amount: 1190,
-      taxRate: vatRates.standardRate, sourceType: 'manual', status: 'active', notes: 'Synthetische ältere Buchung ohne bestätigte USt-Angaben' },
+      taxRate: vatRates.standardRate, sourceType: 'manual', status: 'active', notes: 'Steuersatz noch bestätigen' },
     { id: generateUUID(), entryType: 'expense', entryDate: `${year}-09-04`, documentDate: `${year}-09-02`, description: 'Kleinausgabe ohne Steuersatz', category: 'other_expense', amount: 42,
-      taxRate: 0, sourceType: 'manual', status: 'active', notes: 'Synthetische ältere Buchung ohne USt-Angaben' },
+      taxRate: 0, sourceType: 'manual', status: 'active', notes: 'Quittung ohne ausgewiesene Umsatzsteuer' },
   );
   state.vatPayments = [
-    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q1`, dueDate: `${year}-04-10`, paidOn: `${year}-04-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Synthetische Vorauszahlung Q1' },
-    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q2`, dueDate: `${year}-07-10`, paidOn: `${year}-07-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Synthetische Vorauszahlung Q2' },
+    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q1`, dueDate: `${year}-04-10`, paidOn: `${year}-04-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Umsatzsteuer-Vorauszahlung 1. Quartal' },
+    { id: generateUUID(), kind: 'advance', taxYear: year, periodKey: `${year}-Q2`, dueDate: `${year}-07-10`, paidOn: `${year}-07-10`, amount: 1500, euerEntryId: null, source: 'manual', notes: 'Umsatzsteuer-Vorauszahlung 2. Quartal' },
   ];
   state.vatPayments.forEach(payment => syncDemoVatPaymentEntry(state, payment, profile));
   state.financeSeedVersion = DEMO_FINANCE_SEED_VERSION;
@@ -735,7 +735,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
   const jobs: DemoRecord[] = [0, 1, 2].map((index) => ({
     id: generateUUID(), jobNumber: `AU-${yearOf(index - 1)}-${String(index + 1).padStart(3, '0')}`, customerId: customer(index).id,
     customerName: customer(index).name, customerAddress: customer(index).address, title: ['Website-Relaunch', 'Elektroinstallation', 'Wartungsvertrag'][index],
-    description: 'Beispielauftrag für den lokalen Frontend-Test', date: isoDate(index - 1),
+    description: ['Neues Design, Inhalte übernehmen und Seiten veröffentlichen', 'Leitungen verlegen und Unterverteilung anschließen', 'Jährliche Prüfung und Wartung der Anlage'][index], date: isoDate(index - 1),
     startTime: ['08:00', '10:30', '14:00'][index], endTime: ['10:00', '13:30', '18:00'][index],
     hoursWorked: 2 + index, hourlyRate: 75,
     status: index === 0 ? 'draft' : index === 1 ? 'in-progress' : 'completed', priority: index === 2 ? 'high' : 'medium',
@@ -2125,7 +2125,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     if (method === 'POST' && id === 'bulk') {
       if (!Array.isArray(data.dates) || data.dates.length < 1 || data.dates.length > 400) throw new Error('Bitte zwischen 1 und 400 tatsächliche Arbeitstage auswählen.');
       if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
-      if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die ausgewählten Tage und die Tagesart geprüft hast.');
+      if (data.reviewed !== true) throw new Error('Bitte bestätigen Sie, dass Sie die ausgewählten Tage und die Tagesart geprüft haben.');
       const dates = data.dates.map((value: unknown) => String(value || ''));
       dates.forEach(date => assertDemoDate(date, 'Datum'));
       if (new Set(dates).size !== dates.length) throw new Error('Ein Datum wurde mehrfach ausgewählt.');
@@ -2150,7 +2150,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       assertDemoDate(id, 'Datum');
       if (id > todayLocal(typeof state.company.timeZone === 'string' ? state.company.timeZone : undefined)) throw new Error('Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.');
       if (!['home_majority', 'home_no_other_workspace'].includes(String(data.dayType))) throw new Error('Ungültige Tagesart.');
-      if (data.reviewed !== true) throw new Error('Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.');
+      if (data.reviewed !== true) throw new Error('Bitte bestätigen Sie, dass Sie die tatsächliche Arbeitssituation korrekt erfasst haben.');
       const existing = days.find(day => day.date === id);
       const record = {
         id,
@@ -3017,7 +3017,9 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const totalSubtotal = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.subtotal || 0), 0);
     const totalTax = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.taxAmount || 0), 0);
     const totalAmount = yearInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
-    const incompletePaidInvoiceCount = yearInvoices.filter(invoice => invoice.status === 'paid'
+    // Wie in der EÜR unabhängig vom Rechnungsjahr: Der Zufluss fehlt, bis die
+    // Zahlung mit ihrem tatsächlichen Datum erfasst ist.
+    const incompletePaidInvoiceCount = reportableInvoices.filter(invoice => invoice.status === 'paid'
       && Number(invoice.total || 0) - paidAmountOf(invoice) > 0.005).length;
     return {
       year: selectedYear,

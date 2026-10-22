@@ -4,6 +4,7 @@ import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
 import type { DateFormat, IncomingEInvoice, Receipt } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatFileSize } from '../utils/fileUtils';
 import { RECEIPT_UPLOAD_ACCEPT, uploadReceiptFiles } from '../utils/receiptUpload';
 import { IncomingEInvoicesManagement, type IncomingEInvoicesManagementHandle } from './IncomingEInvoicesManagement';
 import { ImportWizard } from './ImportWizard';
@@ -16,6 +17,9 @@ import { EmptyState } from './EmptyState';
 
 // Auf den Belegseiten werden ausschließlich Ausgaben importiert.
 const EXPENSE_IMPORT_CONSTANTS = { entryType: 'expense' };
+
+// Dateigrößen mit deutschem Dezimalkomma, z. B. 23,93 KB.
+const formatSizeDe = (bytes: number) => formatFileSize(bytes).replace('.', ',');
 
 type DocumentsTab = 'all' | 'receipts' | 'incoming';
 type DocumentKind = Exclude<DocumentsTab, 'all'>;
@@ -63,7 +67,7 @@ function toUnifiedReceipt(receipt: Receipt, locale: string, dateFormat: DateForm
     title: receipt.name || data.documentNumber || 'Beleg',
     typeLabel: 'Sonstiger Beleg',
     meta: [
-      receipt.size > 0 ? `${Math.round(receipt.size / 1024)} KB` : '',
+      receipt.size > 0 ? formatSizeDe(receipt.size) : '',
       receipt.createdAt ? formatDate(receipt.createdAt, locale, dateFormat) : '',
     ].filter(Boolean).join(' · ') || 'Datei',
     date: data.documentDate || receipt.createdAt,
@@ -93,7 +97,7 @@ function toUnifiedIncoming(invoice: IncomingEInvoice, locale: string, dateFormat
     title: invoice.filename || 'E-Rechnung',
     typeLabel: invoice.format,
     meta: [
-      invoice.size > 0 ? `${Math.round(invoice.size / 1024)} KB` : '',
+      invoice.size > 0 ? formatSizeDe(invoice.size) : '',
       invoice.receivedAt ? formatDate(invoice.receivedAt, locale, dateFormat) : '',
     ].filter(Boolean).join(' · ') || 'XML-Datei',
     date: invoice.issueDate || invoice.receivedAt,
@@ -105,7 +109,7 @@ function toUnifiedIncoming(invoice: IncomingEInvoice, locale: string, dateFormat
       ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
       : 'border-rose-100 bg-rose-50 text-rose-700',
     statusDotClassName: validated ? 'bg-emerald-500' : 'bg-rose-500',
-    linkedLabel: invoice.linkedCustomerId ? 'Kunde zugeordnet' : undefined,
+    linkedLabel: invoice.linkedCustomerId ? 'Mit Kunde verknüpft' : undefined,
   };
 }
 
@@ -226,7 +230,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
             <button
               type="button"
               onClick={openReceiptUpload}
-              className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
+              className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
               disabled={uploadingReceipt}
               aria-label={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
               title={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
@@ -234,7 +238,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
               {uploadingReceipt ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               <span className="hidden xl:inline">{uploadingReceipt ? 'Wird verarbeitet …' : 'Beleg hochladen'}</span>
             </button>
-            <button type="button" onClick={() => setIsImportOpen(true)} className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4" aria-label="Ausgaben importieren" title="Ausgaben importieren">
+            <button type="button" onClick={() => setIsImportOpen(true)} className="action-button inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4" aria-label="Ausgaben importieren" title="Ausgaben importieren">
               <FileUp className="h-4 w-4" />
               <span className="hidden xl:inline">Ausgaben importieren</span>
             </button>
@@ -244,7 +248,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
           <button
             type="button"
             onClick={() => onNavigate?.('euer')}
-            className="action-button inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4"
+            className="action-button inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 px-2 xl:min-w-0 xl:px-4"
             aria-label="Zur EÜR öffnen"
             title="Zur EÜR öffnen"
           >
@@ -254,7 +258,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
           </button>
         )}
         {activeTab === 'incoming' && (
-          <button type="button" onClick={openIncomingUpload} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" aria-label="E-Rechnung als XML übernehmen" title="E-Rechnung als XML übernehmen">
+          <button type="button" onClick={openIncomingUpload} className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" aria-label="E-Rechnung als XML übernehmen" title="E-Rechnung als XML übernehmen">
             <Upload className="h-4 w-4" />
             <span className="hidden xl:inline">XML übernehmen</span>
           </button>
@@ -284,20 +288,20 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
       )}
 
       {activeTab === 'all' && (
-        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <section aria-label={`Alle ${receiptLabel}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Alle {receiptLabel}</h2>
-              <p className="mt-1 text-sm text-gray-500">{receiptLabel} und E-Rechnungen werden gemeinsam angezeigt. Die Originalquellen und ihre jeweiligen Prüfregeln bleiben getrennt erhalten.</p>
+              <p className="mt-1 text-sm text-gray-500">{receiptLabel} und E-Rechnungen werden gemeinsam angezeigt.</p>
             </div>
-            <button type="button" onClick={() => void loadOverview()} className="action-button inline-flex items-center gap-2" disabled={loading}>
+            <button type="button" onClick={() => void loadOverview()} className="action-button inline-flex min-h-11 items-center gap-2 sm:min-h-10" disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Aktualisieren
             </button>
           </div>
 
           {loading ? <TableSkeleton rows={5} columns={5} label={`${receiptLabel} werden geladen …`} className="mt-5 overflow-hidden rounded-xl border border-gray-200" /> : documents.length === 0 ? (
-            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState variant="receipts" title={`Noch keine ${receiptLabel}`} description="Nutze die Upload-Aktionen oben oder wähle eine Belegart aus." /></div>
+            <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState variant="receipts" title={`Noch keine ${receiptLabel}`} description="Nutzen Sie die Upload-Aktionen oben oder wählen Sie eine Belegart aus." /></div>
           ) : filteredDocuments.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50"><EmptyState compact variant="metric" title={`Keine passenden ${receiptLabel} gefunden.`} description="Passen Sie den Suchbegriff oder Filter an." /></div>
           ) : (
@@ -311,8 +315,8 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
                       <div className="flex min-w-0 flex-1 items-start gap-3">
                         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isIncoming ? 'bg-violet-50 text-violet-700' : 'bg-blue-50 text-blue-700'}`}><Icon className="h-5 w-5" /></span>
                         <div className="min-w-0 flex-1">
-                          <h3 className="break-words font-medium leading-5 text-gray-900" title={document.title}>{document.title}</h3>
-                          <p className="mt-1 break-words text-xs leading-4 text-gray-500" title={`${document.typeLabel} · ${document.meta}`}>{document.typeLabel} · {document.meta}</p>
+                          <h3 className="truncate font-medium leading-5 text-gray-900" title={document.title}>{document.title}</h3>
+                          <p className="mt-1 truncate text-xs leading-4 text-gray-500" title={`${document.typeLabel} · ${document.meta}`}>{document.typeLabel} · {document.meta}</p>
                         </div>
                       </div>
                       <span className={`document-card-status inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${document.statusClassName}`} title={document.statusLabel} aria-label={`Status: ${document.statusLabel}`}>
@@ -326,9 +330,9 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
                       <div className="flex justify-between gap-3"><dt className="text-gray-500">Betrag</dt><dd className="font-medium text-gray-800">{formatAmount(document)}</dd></div>
                     </dl>
                     {document.linkedLabel && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-700"><CheckCircle2 className="h-3.5 w-3.5" />{document.linkedLabel}</p>}
-                    <button type="button" onClick={() => selectTab(document.kind)} className="action-button mt-auto flex w-full items-center justify-center gap-2 pt-3">
+                    <button type="button" onClick={() => selectTab(document.kind)} className="action-button mt-auto flex min-h-10 w-full items-center justify-center gap-2 pt-3">
                       {isIncoming ? <FileCheck2 className="h-4 w-4" /> : <FileScan className="h-4 w-4" />}
-                      {isIncoming ? 'E-Rechnung prüfen' : 'Beleg prüfen'}
+                      {isIncoming ? 'E-Rechnung prüfen' : `Zu Sonstige ${receiptLabel}`}
                     </button>
                   </article>
                 );

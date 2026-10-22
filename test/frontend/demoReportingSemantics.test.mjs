@@ -106,4 +106,6 @@ test('Demo-Auswertungen trennen ausgestellte Rechnungen und EÜR-Zahlungseingän
   const future = await api.demoRequest('/reporting/statistics?year=2027');
   assert.equal(future.yearOverview.paidAmount, 0, 'Die Jahresverschiebung erzeugt im Zahlungsjahr keine zweite Summe');
   assert.equal(future.yearOverview.otherIncome, 0);
+  assert.equal(future.yearOverview.incompletePaidInvoiceCount, 2,
+    'Fehlende Zahlungen werden wie in der EÜR unabhängig vom Rechnungsjahr gezählt');
 });

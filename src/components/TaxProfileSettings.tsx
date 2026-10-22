@@ -212,7 +212,7 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
       if (targetHasDetails) {
         const confirmed = await confirm({
           title: `Profil ${targetYear} ersetzen?`,
-          message: `Für ${targetYear} sind bereits Angaben gespeichert. Die Übernahme ersetzt die dortigen Profilangaben zu Tätigkeit, Umsatzsteuer, Versicherungen, persönlichen Angaben und Vorauszahlungen. Eine Kirchensteuerangabe wird aus dem Profil ${sourceYear} nicht übernommen; eine vorhandene Einwilligung in ${targetYear} bleibt bestehen. Möchtest du fortfahren?`,
+          message: `Für ${targetYear} sind bereits Angaben gespeichert. Die Übernahme ersetzt die dortigen Profilangaben zu Tätigkeit, Umsatzsteuer, Versicherungen, persönlichen Angaben und Vorauszahlungen. Eine Kirchensteuerangabe wird aus dem Profil ${sourceYear} nicht übernommen; eine vorhandene Einwilligung in ${targetYear} bleibt bestehen. Möchten Sie fortfahren?`,
           confirmText: `Profil ${targetYear} ersetzen`,
         });
         if (!confirmed || !isCurrentContext(sourceKey, version)) return;
@@ -284,9 +284,9 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
 
   if (extensionsLoading) return <StatusCard title="Steuerprofil"><p role="status" className="text-sm text-gray-600">Erweiterungen werden geladen …</p></StatusCard>;
   if (extensionsError) return <StatusCard title="Steuerprofil"><p role="alert" className="text-sm text-red-700">{extensionsError}</p><button type="button" onClick={() => void refreshExtensions()} className="btn-secondary rounded-lg px-4 py-2 text-sm">Erweiterungen erneut laden</button></StatusCard>;
-  if (!workspaceId) return <StatusCard title="Steuerprofil"><p role="status" className="text-sm text-gray-600">Wähle zuerst einen aktiven Arbeitsbereich aus.</p></StatusCard>;
+  if (!workspaceId) return <StatusCard title="Steuerprofil"><p role="status" className="text-sm text-gray-600">Wählen Sie zuerst einen aktiven Arbeitsbereich aus.</p></StatusCard>;
   if (!hasSettingsPermission) return <StatusCard title="Steuerprofil"><p className="text-sm text-gray-600">Zum Bearbeiten des Steuerprofils ist das Recht „Einstellungen verwalten“ erforderlich.</p><button type="button" onClick={() => onNavigate?.('settings', 'extensions')} className="btn-secondary rounded-lg px-4 py-2 text-sm">Zur Erweiterungsverwaltung</button></StatusCard>;
-  if (!taxesEnabled) return <StatusCard title="Erweiterung nicht aktiv"><p className="text-sm text-gray-600">Aktiviere zuerst die Erweiterung „Steuern &amp; Abgaben“, um ein Steuerprofil zu bearbeiten.</p><LegalNotice>{TAX_TEXTS.badge}</LegalNotice><button type="button" onClick={() => onNavigate?.('settings', 'extensions')} className="btn-primary rounded-lg px-4 py-2 text-sm">Erweiterung einrichten</button></StatusCard>;
+  if (!taxesEnabled) return <StatusCard title="Erweiterung nicht aktiv"><p className="text-sm text-gray-600">Aktivieren Sie zuerst die Erweiterung „Steuern &amp; Abgaben“, um ein Steuerprofil zu bearbeiten.</p><LegalNotice>{TAX_TEXTS.badge}</LegalNotice><button type="button" onClick={() => onNavigate?.('settings', 'extensions')} className="btn-primary rounded-lg px-4 py-2 text-sm">Erweiterung einrichten</button></StatusCard>;
 
   if (loadedContextKey !== contextKey || loading) return <StatusCard title={`Steuerprofil ${year}`}><p role="status" className="text-sm text-gray-600">Steuerprofil für {year} wird geladen …</p></StatusCard>;
   if (!profile) return <StatusCard title={`Steuerprofil ${year}`}><p role="alert" className="text-sm text-red-700">{error || 'Das Steuerprofil ist nicht verfügbar.'}</p><button type="button" onClick={() => void loadProfile(year)} className="btn-secondary rounded-lg px-4 py-2 text-sm">Erneut laden</button></StatusCard>;
@@ -333,15 +333,16 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
         icon={Calculator}
         title={`Steuerprofil ${year}`}
         description="Nicht benötigte Fragen können leer bleiben."
+        info={TAX_TEXTS.tooltip(year)}
         actions={<button type="button" onClick={() => setShowHelp(true)} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium"><BookOpenText className="h-4 w-4" aria-hidden="true" />So entstehen die Schätzungen</button>}
       >
        <div className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Steuerjahr"><select className={selectClass} value={year} disabled={dirty || saving} onChange={event => changeYear(Number(event.target.value))}>{Array.from({ length: 7 }, (_, index) => currentYear - 2 + index).map(option => <option key={option} value={option}>{option}</option>)}</select></Field>
           <button type="button" disabled={dirty || saving || year >= 2200} onClick={() => void copyFollowingYear()} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"><Copy className="h-4 w-4" aria-hidden="true" />Folgejahr vorbereiten</button>
-          {dirty && <span className="text-xs text-amber-800">Speichere Änderungen, bevor du Jahr wechselst oder das Folgejahr vorbereitest.</span>}
+          {dirty && <span className="text-xs text-amber-800">Speichern Sie Ihre Änderungen, bevor Sie das Jahr wechseln oder das Folgejahr vorbereiten.</span>}
         </div>
-        <LegalNotice>{TAX_TEXTS.badge}. {TAX_TEXTS.tooltip(year)}</LegalNotice>
+        <LegalNotice>{TAX_TEXTS.badge}</LegalNotice>
         <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
           <strong>Parameterjahr {resolved.parameterYear}</strong> · Version {resolved.params.version} · Stand {resolved.params.asOf} · {resolved.params.sources.length} Quellen
           {resolved.warning && <p role="status" className="mt-2 text-amber-800">{TAX_TEXTS.missingYearNotice(year, resolved.parameterYear, resolved.params.asOf)}</p>}
@@ -372,7 +373,7 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
       </Step>}
 
       {craftStep && <Step step={craftStep}>
-        <LegalNotice>Die Auswahl sagt nichts über eine Pflicht aus. Übernimm einen RV-Status nur, wenn ein Bescheid diesen Status für dich bestätigt.</LegalNotice>
+        <LegalNotice>Die Auswahl sagt nichts über eine Pflicht aus. Übernehmen Sie einen RV-Status nur, wenn ein Bescheid diesen Status für Sie bestätigt.</LegalNotice>
         <div className="flex flex-wrap gap-2">{profile.businessKind === 'craft_a' && <button type="button" onClick={() => setProfile(current => current ? { ...current, pensionStatus: 'craft', pensionMode: 'standard' } : current)} className="btn-secondary rounded-lg px-3 py-2 text-sm">RV-Pflichtstatus und Regelbeitrag laut Bescheid für Anlage A übernehmen</button>}<button type="button" onClick={() => update('chamber', 'hwk')} className="btn-secondary rounded-lg px-3 py-2 text-sm">Handwerkskammer als Angabe übernehmen</button></div>
       </Step>}
 
@@ -418,9 +419,10 @@ export function TaxProfileSettings({ onNavigate }: { onNavigate?: (page: string,
           <label className={checkboxRowClass}><input type="checkbox" checked={profile.unemploymentEnabled} onChange={event => update('unemploymentEnabled', event.target.checked)} className="h-4 w-4 accent-primary-custom" />Arbeitslosenversicherung auf Antrag berücksichtigt</label>
           <Field label="Antragsdatum (optional)"><input className={inputClass} type="date" value={profile.unemploymentAppliedOn ?? ''} onChange={event => update('unemploymentAppliedOn', event.target.value || null)} /></Field>
         </div>
-        {profile.businessKind === 'teacher' && <div className="space-y-3 rounded-lg border border-gray-200 p-3"><p className="text-sm text-gray-700">Ein möglicher Status hängt von deiner konkreten Situation ab. Übernimm die Angabe nur, wenn ein Bescheid sie bestätigt.</p><button type="button" onClick={() => update('pensionStatus', 'teacher')} className="btn-secondary rounded-lg px-3 py-2 text-sm">RV-Angabe aus Bescheid übernehmen</button></div>}
+        {profile.businessKind === 'teacher' && <div className="space-y-3 rounded-lg border border-gray-200 p-3"><p className="text-sm text-gray-700">Ein möglicher Status hängt von Ihrer konkreten Situation ab. Übernehmen Sie die Angabe nur, wenn ein Bescheid sie bestätigt.</p><button type="button" onClick={() => update('pensionStatus', 'teacher')} className="btn-secondary rounded-lg px-3 py-2 text-sm">RV-Angabe aus Bescheid übernehmen</button></div>}
         {hasKskIncome && numberField('Bei der KSK gemeldetes Jahreseinkommen', 'kskIncomeAnnual', true, 0)}
-        <LegalNotice>{TAX_TEXTS.pensionNotice} {TAX_TEXTS.socialNotice} {TAX_TEXTS.kskNotice}</LegalNotice>
+        {/* Bei Lehrkräften steht der Rentenhinweis bereits unter „Tätigkeit“. */}
+        <LegalNotice>{profile.businessKind === 'teacher' ? '' : `${TAX_TEXTS.pensionNotice} `}{TAX_TEXTS.socialNotice} {TAX_TEXTS.kskNotice}</LegalNotice>
       </Step>}
 
       {personalStep && <Step step={personalStep}>

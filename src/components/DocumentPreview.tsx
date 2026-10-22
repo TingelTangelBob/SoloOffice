@@ -11,6 +11,7 @@ import {
   Loader2,
   Maximize,
   Minimize,
+  Printer,
   RotateCcw,
   RotateCw,
   Send,
@@ -102,6 +103,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
   const [isActionPending, setIsActionPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const pdfFrameRef = useRef<HTMLIFrameElement>(null);
   const currentDocument = documents[currentIndex];
   const contentType = effectiveContentType(currentDocument);
   const isPdf = contentType === 'application/pdf';
@@ -275,6 +277,19 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [currentIndex, documents.length, isOpen, navigateDocument, onClose]);
 
+  const handlePrint = () => {
+    // Druckt die eingebettete PDF; gelingt das nicht (z. B. Browser ohne
+    // eingebauten PDF-Viewer), öffnet sie zum Drucken in einem neuen Tab.
+    try {
+      const frameWindow = pdfFrameRef.current?.contentWindow;
+      if (!frameWindow) throw new Error('Kein Vorschaufenster');
+      frameWindow.focus();
+      frameWindow.print();
+    } catch {
+      openInNewTab();
+    }
+  };
+
   const handleDownload = async () => {
     if (!currentDocument || isDownloading) return;
     setIsDownloading(true);
@@ -354,7 +369,7 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             {currentDocument?.name || 'Dokumentvorschau'}
           </h2>
           <div className="flex shrink-0 items-center gap-1">
-            {previewUrl && canPreview && (
+            {previewUrl && canPreview && !(isCompact && isPdf) && (
               <button type="button" onClick={openInNewTab} className={TOOL_BUTTON} title="In neuem Tab öffnen" aria-label="In neuem Tab öffnen">
                 <ExternalLink className="h-5 w-5" />
               </button>
@@ -377,6 +392,11 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
             {canReject && (
               <button type="button" onClick={() => void handleReject()} disabled={isActionPending} className={`${TOOL_BUTTON} text-rose-600 hover:text-rose-700`} title="Als abgelehnt markieren" aria-label="Als abgelehnt markieren">
                 <X className="h-5 w-5" />
+              </button>
+            )}
+            {isPdf && !isCompact && previewUrl && (
+              <button type="button" onClick={handlePrint} className={`${TOOL_BUTTON} hidden sm:inline-flex`} title="Drucken" aria-label="Drucken">
+                <Printer className="h-5 w-5" />
               </button>
             )}
             <button type="button" onClick={() => void handleDownload()} disabled={isDownloading || !currentDocument} className="btn-primary inline-flex h-10 min-h-0 min-w-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-white" title="Dokument herunterladen" aria-label="Dokument herunterladen">
@@ -499,9 +519,12 @@ export function DocumentPreview({ isOpen, onClose, documents = [], initialIndex 
           {/* Das PDF-Modul des Browsers stellt häufig ein leeres contentDocument
               bereit, obwohl die Vorschau bereits sichtbar ist. Deshalb wird
               die Einbettung nicht per Timeout ersetzt. */}
+          {/* Ohne eigene Werkzeugleiste des PDF-Viewers: Herunterladen und
+              Drucken stehen in der Kopfleiste, sonst gab es beides doppelt. */}
           {!isLoading && !error && previewUrl && isPdf && !isCompact && (
             <iframe
-              src={`${previewUrl}#view=FitH&toolbar=1&navpanes=0`}
+              ref={pdfFrameRef}
+              src={`${previewUrl}#view=FitH&toolbar=0&navpanes=0`}
               className="h-full w-full rounded-lg border-0 shadow-sm"
               title={`Vorschau von ${currentDocument.name}`}
             />

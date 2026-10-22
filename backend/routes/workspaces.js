@@ -264,7 +264,7 @@ router.delete('/:workspaceId', requireWorkspaceFromParam('workspaceId'), require
     nextWorkspaceId = alternatives.rows[0]?.id || null;
     if (!nextWorkspaceId) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Lege zuerst einen Ersatz-Workspace an. Danach kannst du diesen Workspace löschen und wirst in den Ersatz gewechselt.', code: 'LAST_WORKSPACE' });
+      return res.status(409).json({ error: 'Legen Sie zuerst einen Ersatz-Workspace an. Danach können Sie diesen Workspace löschen und werden in den Ersatz gewechselt.', code: 'LAST_WORKSPACE' });
     }
     await client.query('UPDATE sessions SET workspace_id = $1 WHERE id = $2 AND user_id = $3', [nextWorkspaceId, req.auth.sessionId, req.auth.userId]);
     await runWithRequestContext({ userId: req.auth.userId, workspaceId }, () => deleteWorkspaceData(client, workspaceId));
@@ -410,7 +410,7 @@ router.patch('/:workspaceId/members/:userId', requireWorkspaceFromParam('workspa
 });
 
 router.delete('/:workspaceId/members/:userId', requireWorkspaceFromParam('workspaceId'), requireRole('owner', 'admin'), async (req, res) => {
-  if (req.params.userId === req.auth.userId) return res.status(400).json({ error: 'Du kannst dich nicht selbst entfernen.' });
+  if (req.params.userId === req.auth.userId) return res.status(400).json({ error: 'Sie können sich nicht selbst entfernen.' });
   const result = await query(`
     DELETE FROM workspace_members
     WHERE workspace_id = $1 AND user_id = $2 AND role <> 'owner'

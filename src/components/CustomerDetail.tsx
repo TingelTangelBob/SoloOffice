@@ -81,11 +81,10 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{statusLabel(status)}</span>;
 }
 
-function EmptyRelation({ message, actionLabel, onAction }: { message: string; actionLabel?: string; onAction?: () => void }) {
+function EmptyRelation({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center">
       <p className="text-sm text-gray-500">{message}</p>
-      {actionLabel && onAction && <button type="button" onClick={onAction} className="btn-primary mt-4 inline-flex min-h-9 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><span aria-hidden="true">+</span>{actionLabel}</button>}
     </div>
   );
 }
@@ -221,10 +220,9 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
 
   const renderDocumentTable = (items: Array<Invoice | CreditNote | Quote | JobEntry>, kind: CustomerDetailTab, compact = false) => {
     if (items.length === 0) {
-      const action = kind === 'invoices' ? startInvoice : kind === 'quotes' ? startQuote : kind === 'jobs' ? startJob : undefined;
-      const actionLabel = kind === 'invoices' ? 'Rechnung schreiben' : kind === 'quotes' ? 'Angebot erstellen' : kind === 'jobs' ? terminology.work.newLabel : undefined;
+      // Die Erstellen-Aktion steht im Reiterkopf; der Leerzustand verzichtet darauf, damit es nur eine gibt.
       const relationLabel = kind === 'jobs' ? terminology.work.plural : tabs.find(tab => tab.id === kind)?.label || 'Einträge';
-      return <EmptyRelation message={`Noch keine ${relationLabel.toLocaleLowerCase('de-DE')} für diesen ${terminology.entity.singular}.`} actionLabel={actionLabel} onAction={action} />;
+      return <EmptyRelation message={`Noch keine ${relationLabel} für diesen ${terminology.entity.accusative}.`} />;
     }
 
     const getDocumentSortValue = (item: Invoice | CreditNote | Quote | JobEntry, key: string) => {
@@ -403,7 +401,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
                     <div className="flex items-start gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><TypeIcon customer={customer} /></span>
                       <div className="min-w-0">
-                        <h2 className="truncate text-xl font-semibold text-gray-900">{customer.name}</h2>
+                        <h2 className="text-base font-semibold text-gray-900">Stammdaten</h2>
                         <p className="mt-1 text-sm text-gray-500">{typeLabel(customer)}</p>
                       </div>
                     </div>
@@ -459,10 +457,10 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
             <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">Angebote</h2><p className="mt-1 text-sm text-gray-500">Alle Angebote dieses Kunden.</p></div>{canWrite && company.quotesEnabled && <button type="button" onClick={startQuote} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><FileCheck className="h-4 w-4" />Angebot erstellen</button>}</div>{renderDocumentTable(customerQuotes, 'quotes')}</div>
           )}
           {activeTab === 'jobs' && (
-            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">{terminology.work.plural}</h2><p className="mt-1 text-sm text-gray-500">Alle {terminology.work.plural.toLocaleLowerCase('de-DE')} dieses Kunden.</p></div>{canWrite && company.jobTrackingEnabled && <button type="button" onClick={startJob} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Briefcase className="h-4 w-4" />{terminology.work.newLabel}</button>}</div>{renderDocumentTable(customerJobs, 'jobs')}</div>
+            <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-gray-900">{terminology.work.plural}</h2><p className="mt-1 text-sm text-gray-500">Alle {terminology.work.plural} dieses Kunden.</p></div>{canWrite && company.jobTrackingEnabled && <button type="button" onClick={startJob} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"><Briefcase className="h-4 w-4" />{terminology.work.newLabel}</button>}</div>{renderDocumentTable(customerJobs, 'jobs')}</div>
           )}
           {activeTab === 'notes' && (
-            <div className="max-w-3xl space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Notizen</h2><p className="mt-1 text-sm text-gray-500">Interne Hinweise, die nur im Workspace sichtbar sind.</p></div><textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={!canWrite || isSavingNotes} maxLength={5000} rows={8} className="form-input w-full resize-y" placeholder="Notizen zum Kunden" /><div className="flex items-center justify-between gap-3"><span className="text-xs text-gray-500">{notes.length} von 5000 Zeichen</span>{canWrite && <button type="button" onClick={() => void saveNotes()} disabled={isSavingNotes} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{isSavingNotes ? 'Speichern …' : 'Notizen speichern'}</button>}</div></div>
+            <div className="space-y-4"><div><h2 className="text-lg font-semibold text-gray-900">Notizen</h2><p className="mt-1 text-sm text-gray-500">Interne Hinweise, die nur im Workspace sichtbar sind.</p></div><textarea value={notes} onChange={event => setNotes(event.target.value)} disabled={!canWrite || isSavingNotes} maxLength={5000} rows={8} className="form-input w-full resize-y" placeholder="Notizen zum Kunden" /><div className="flex items-center justify-between gap-3"><span className="text-xs text-gray-500">{notes.length} von 5000 Zeichen</span>{canWrite && <button type="button" onClick={() => void saveNotes()} disabled={isSavingNotes} className="btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />{isSavingNotes ? 'Speichern …' : 'Notizen speichern'}</button>}</div></div>
           )}
         </div>
       </section>

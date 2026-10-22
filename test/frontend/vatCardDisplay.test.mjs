@@ -37,7 +37,7 @@ test('USt-Kachel zeigt berechneten Wert nur bei vollständigen Daten, sonst Sch�
   try {
     assert.equal(module.vatDisplayedAmount(period('2026-Q2', { liability: 80, estimatedLiability: 95 })), 80);
     assert.equal(module.vatDisplayedAmount(period('2026-Q2', { complete: false, liability: 80, estimatedLiability: 95 })), 95);
-    assert.equal(module.vatBasisText(period('2026-Q2')), 'Aus deinen erfassten Belegen berechnet.');
+    assert.equal(module.vatBasisText(period('2026-Q2')), 'Aus Ihren erfassten Belegen berechnet.');
     assert.equal(module.vatBasisText(period('2026-Q2', { complete: false, incompleteEntryIds: ['a'] })), 'Schätzung · 1 Buchung ohne USt-Angaben.');
     assert.equal(module.vatBasisText(period('2026-Q2', { complete: false, incompleteEntryIds: ['a', 'b', 'c'] })), 'Schätzung · 3 Buchungen ohne USt-Angaben.');
     assert.match(module.vatBasisText(period('2026-Q2', { complete: false })), /^Schätzung/);

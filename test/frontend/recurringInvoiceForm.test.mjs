@@ -32,7 +32,7 @@ function fixture(entry) {
     '../context/CompanyContext': { useCompany: () => ({ company: {} }) },
     '../context/FeedbackContext': { useFeedback: () => ({ confirm: async () => true }) },
     '../utils/terminology': { getTerminology: () => ({ entity: { singular: 'Kunde' } }) },
-    '../utils/formatters': { formatCurrency: String, formatDate: String },
+    '../utils/formatters': { formatCurrency: String, formatDate: String, formatNumber: String },
     '../services/api': { apiService: {
       getRecurringInvoices: async () => [entry],
       updateRecurringInvoice: async (id, payload) => {
@@ -78,7 +78,7 @@ test('Vorlage bearbeiten und speichern erhält 0% MwSt. und ein Zahlungsziel von
   };
   const state = fixture(entry);
   let tree = await state.load();
-  find(tree, node => node.type === 'button' && node.props.children?.includes('Bearbeiten'))[0].props.onClick();
+  find(tree, node => node.type === 'button' && node.props.title === 'Bearbeiten')[0].props.onClick();
   tree = state.render();
   await find(tree, node => node.type === 'DialogShell')[0].props.onSubmit({ preventDefault() {} });
   assert.equal(state.saved.length, 1);
@@ -94,7 +94,7 @@ test('Enddatum im Formular leeren sendet nach JSON-Serialisierung explizit null'
     items: [{ description: 'Leistung', quantity: 1, unitPrice: 100, taxRate: 19 }],
   });
   let tree = await state.load();
-  find(tree, node => node.type === 'button' && node.props.children?.includes('Bearbeiten'))[0].props.onClick();
+  find(tree, node => node.type === 'button' && node.props.title === 'Bearbeiten')[0].props.onClick();
   tree = state.render();
   find(tree, node => node.type === 'input' && node.props.type === 'date' && node.props.value === '2026-12-31')[0]
     .props.onChange({ target: { value: '' } });

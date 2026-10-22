@@ -51,13 +51,13 @@ interface InvoiceManagementProps {
 }
 
 /**
- * Spaltenmaße der Rechnungstabelle: Auswahl 64, Datum 96, Rechnungsnr. 160,
+ * Spaltenmaße der Rechnungstabelle: Auswahl 48, Datum 96, Rechnungsnr. 160,
  * Fällig am 112 und Betrag 96 Pixel. Eine Zeile zeigt höchstens fünf
  * Icon-Aktionen (versenden oder bezahlt melden plus bearbeiten, Vorschau,
  * herunterladen, löschen).
  */
 const INVOICE_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 48 + 96 + 256 + 112 + 96,
+  baseColumnsWidth: 48 + 96 + 160 + 112 + 96,
   flexibleColumnMinWidth: 176,
   maxActions: 5,
   statusLabelWidth: 128,
@@ -119,7 +119,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
   const showInlineActions = tableWidth >= INVOICE_TABLE_LAYOUT.inlineActionsMinWidth;
-  const showStatusLabel = tableWidth >= INVOICE_TABLE_LAYOUT.statusLabelMinWidth;
+  const showStatusLabel = tableWidth >= INVOICE_TABLE_LAYOUT.statusLabelMinWidth
+    || (!showInlineActions && tableWidth >= INVOICE_TABLE_LAYOUT.statusLabelWithMenuMinWidth);
 
   // Email dialog state
   const [emailModal, setEmailModal] = useState<{
@@ -1289,7 +1290,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
             type="button"
             onClick={handlePaymentImport}
             disabled={!canWrite}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+            className="hidden min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex sm:px-4"
             aria-label="Zahlungseingänge aus Datei importieren"
             title="Zahlungseingänge aus Datei importieren"
           >
@@ -1300,13 +1301,25 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
             type="button"
             onClick={handleExportPeriodCsv}
             disabled={filteredInvoices.length === 0 || hasInvalidInvoiceDateRange}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+            className="hidden min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex sm:px-4"
             aria-label="Zeitraum als CSV exportieren"
             title="Gefilterten Zeitraum als CSV exportieren"
           >
             <Table2 className="h-5 w-5" />
             <span className="hidden sm:inline">Zeitraum exportieren</span>
           </button>
+          {/* Auf dem Handy liegen die Nebenaktionen im Menü, damit die Kopfleiste Platz für Titel und Suche lässt. */}
+          <ActionMenu
+            ariaLabel="Weitere Rechnungsaktionen"
+            title="Weitere Aktionen"
+            containerClassName="sm:hidden"
+            triggerClassName="action-icon-button action-icon-blue"
+          >
+            <div className="flex flex-col gap-0.5">
+              <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" disabled={!canWrite} onClick={handlePaymentImport}>Zahlungen importieren</ActionMenuItem>
+              <ActionMenuItem icon={<Table2 className="h-4 w-4" />} tone="blue" disabled={filteredInvoices.length === 0 || hasInvalidInvoiceDateRange} onClick={handleExportPeriodCsv}>Zeitraum exportieren</ActionMenuItem>
+            </div>
+          </ActionMenu>
           <button
             type="button"
             onClick={() => handleOpenEditor()}
@@ -1467,7 +1480,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   <span className="sr-only">Auswahl</span>
                 </th>
                 <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
-                <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-64 px-3 py-3" />
+                <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-40 px-3 py-3" />
                 <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
                 <SortableTableHeader label="Fällig am" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
                 <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
@@ -1626,7 +1639,8 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                     <ActionMenu triggerClassName="action-icon-button action-icon-blue">
                         {invoice.status === 'draft' && <ActionMenuItem icon={<Send className="h-4 w-4" />} tone="blue" onClick={() => handleSendEmail(invoice)}>Per E-Mail versenden</ActionMenuItem>}
                         {(invoice.status === 'sent' || invoice.status === 'overdue' || invoice.status === 'reminded_1x' || invoice.status === 'reminded_2x' || invoice.status === 'reminded_3x') && <ActionMenuItem icon={<Banknote className="h-4 w-4" />} tone="green" onClick={() => handleOpenPaymentDialog(invoice)}>Zahlungseingang erfassen</ActionMenuItem>}
-                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
+                        <div className="my-1 border-t border-gray-100" role="separator" />
+                        <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} title={invoice.status !== 'draft' ? 'Ausgestellte Rechnungen sind gesperrt' : undefined} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                         <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Vorschau (Original)' : 'Vorschau anzeigen'}</ActionMenuItem>
                         <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExport(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Original herunterladen' : 'Herunterladen'}</ActionMenuItem>
                         {invoice.origin === 'imported' && <ActionMenuItem icon={<Printer className="h-4 w-4" />} tone="gray" onClick={() => void downloadLegacyReprint(invoice)} disabled={isExporting === invoice.id}>Kopie / Neudruck im aktuellen Layout</ActionMenuItem>}
@@ -1666,7 +1680,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                 />
 
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-baseline justify-between gap-3">
                     <button
                       type="button"
                       onClick={() => handlePreview(invoice)}
@@ -1675,20 +1689,20 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                     >
                       {invoice.invoiceNumber}
                     </button>
-                    <p className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <p className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
                       {formatCurrency(invoice.total, locale, company?.numberFormat, company?.currency)}
                       {Number(invoice.paidAmount || 0) > 0 && invoice.status !== 'paid' && <span className="block text-right text-xs font-normal text-amber-700">offen {formatCurrency(Number(invoice.outstandingAmount ?? invoice.total - Number(invoice.paidAmount || 0)), locale, company?.numberFormat, company?.currency)}</span>}
                     </p>
                   </div>
                   <DocumentOrigin invoice={invoice} onNavigate={onNavigate} />
                   <p className="mt-1 truncate text-sm text-gray-600">{invoice.customerName}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                  <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-gray-500">
                     <span className={`status-badge inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(invoice.status)}`}>
                       {getStatusLabel(invoice.status)}
                     </span>
-                    <span>{formatDate(invoice.issueDate, locale, company?.dateFormat)}</span>
-                    <span className="whitespace-nowrap">Fällig: {formatDate(invoice.dueDate, locale, company?.dateFormat)}</span>
+                    <span className="min-w-0 truncate tabular-nums">{formatDate(invoice.issueDate, locale, company?.dateFormat)}</span>
                   </div>
+                  <p className="mt-0.5 whitespace-nowrap text-xs text-gray-500">Fällig: {formatDate(invoice.dueDate, locale, company?.dateFormat)}</p>
                 </div>
 
                   {/* Action buttons for mobile */}
@@ -1702,7 +1716,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                     )}
                     
                     <>
-                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
+                      <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" disabled={invoice.status !== 'draft'} title={invoice.status !== 'draft' ? 'Ausgestellte Rechnungen sind gesperrt' : undefined} onClick={() => handleOpenEditor(invoice)}>Bearbeiten</ActionMenuItem>
                       
                       <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(invoice)} disabled={isExporting === invoice.id}>{invoice.origin === 'imported' ? 'Vorschau (Original)' : 'Vorschau anzeigen'}</ActionMenuItem>
                       

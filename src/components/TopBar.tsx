@@ -41,6 +41,59 @@ const NOTICE_DOT: Record<TopBarNotice['tone'], string> = {
  * schwebte er frei über dem Inhalt; in der Leiste kann er nichts mehr
  * verdecken.
  */
+/** Beschriftungen der Seitenaktionen, die erst ab einem Breakpoint eingeblendet werden. */
+const PAGE_ACTION_LABEL_SELECTOR = ['sm', 'tablet', 'md', 'lg', 'xl']
+  .map(breakpoint => `.${breakpoint}\\:inline`)
+  .join(', ');
+const COLLAPSED_ATTRIBUTE = 'data-topbar-collapsed';
+
+/**
+ * Seitenaktionen bleiben in einer Zeile. Reicht der Platz nicht, werden
+ * Beschriftungen von links nach rechts ausgeblendet; die Hauptaktion ganz
+ * rechts behält ihren Text am längsten. Die Seiten rendern ihre Aktionen per
+ * Portal hierher, deshalb wird auch auf Änderungen des Inhalts reagiert.
+ */
+function useCollapsingPageActions(slotRef: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+    const measure = () => {
+      const labels = Array.from(slot.querySelectorAll<HTMLElement>(PAGE_ACTION_LABEL_SELECTOR));
+      labels.forEach(label => label.removeAttribute(COLLAPSED_ATTRIBUTE));
+      const content = slot.firstElementChild as HTMLElement | null;
+      if (!content) return;
+      // Rechtsbündige Aktionen laufen nach links über; das erfasst
+      // `scrollWidth` nicht. Gemessen wird deshalb, ob ein Knopf über den Rand ragt.
+      const overflows = () => {
+        const bounds = slot.getBoundingClientRect();
+        return Array.from(content.querySelectorAll<HTMLElement>('button, a, select, input')).some(element => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && (rect.left < bounds.left - 1 || rect.right > bounds.right + 1);
+        });
+      };
+      for (const label of labels) {
+        if (!overflows()) break;
+        label.setAttribute(COLLAPSED_ATTRIBUTE, '');
+      }
+    };
+    // Direkt messen statt per requestAnimationFrame: Beobachter-Callbacks
+    // laufen nach dem Layout, und verdeckte Fenster liefern keine Frames.
+    const schedule = () => measure();
+    measure();
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    resizeObserver?.observe(slot);
+    if (slot.parentElement) resizeObserver?.observe(slot.parentElement);
+    // Eigene Attributänderungen lösen keinen neuen Lauf aus; beobachtet
+    // werden nur neue Inhalte und geänderte Texte der Seite.
+    const mutationObserver = new MutationObserver(schedule);
+    mutationObserver.observe(slot, { childList: true, subtree: true, characterData: true });
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [slotRef]);
+}
+
 export function TopBar({
   searchSlot,
   searchOpen,
@@ -57,6 +110,7 @@ export function TopBar({
   const hasRunningTask = backgroundTasks.some(task => task.status === 'running');
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const [completedTaskId, setCompletedTaskId] = useState<string | null>(null);
+  const pageActionsRef = useRef<HTMLDivElement>(null);
   const seenTaskIds = useRef(new Set<string>());
   const previousTaskStatuses = useRef(new Map<string, BackgroundTask['status']>());
   const startPulseTimer = useRef<number | null>(null);
@@ -91,6 +145,8 @@ export function TopBar({
     }, 1000);
   }, [backgroundTasks]);
 
+  useCollapsingPageActions(pageActionsRef);
+
   useEffect(() => () => {
     if (startPulseTimer.current !== null) window.clearTimeout(startPulseTimer.current);
     if (completionPulseTimer.current !== null) window.clearTimeout(completionPulseTimer.current);
@@ -105,7 +161,7 @@ export function TopBar({
      `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
      auf null drücken oder die Leiste sprengen. */
   return (
-    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
+    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,1fr)_auto_max-content] sm:grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
       <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
@@ -129,7 +185,9 @@ export function TopBar({
             : <PanelLeftClose className="h-[1.125rem] w-[1.125rem]" />}
         </button>
 
-        <div id="topbar-page-title" className="min-w-0 max-w-[6rem] flex-1 truncate sm:max-w-none" aria-live="polite" />
+        {/* Auf dem Handy nimmt der Titel den Platz, den die (dort nur als
+            Symbole gezeigten) Seitenaktionen übrig lassen. */}
+        <div id="topbar-page-title" className="min-w-0 flex-1 truncate" aria-live="polite" />
       </div>
 
       {/* Die Suche bleibt mittig, ist auf dem Desktop bewusst kompakter und
@@ -137,7 +195,7 @@ export function TopBar({
       <div className="topbar-search-slot shrink-0">{searchSlot}</div>
 
       <div className="topbar-actions-group flex min-w-0 items-center justify-end gap-0.5 sm:gap-1 lg:gap-2">
-        <div id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-full" />
+        <div ref={pageActionsRef} id="topbar-page-actions" className="topbar-page-actions-slot min-w-0 max-w-full" />
 
         {/* Dezente Abtrennung zwischen Seitenaktionen und Hinweisen. */}
         <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-gray-200 sm:mx-1 sm:block" aria-hidden="true" />

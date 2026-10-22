@@ -906,7 +906,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           type="button"
           onClick={() => setShowImport(true)}
           disabled={!canWrite}
-          className="box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-primary-custom px-3 text-primary-custom transition hover:bg-primary-light-custom disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
+          className="box-border hidden h-[38px] min-h-[38px] max-h-[38px] shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
           aria-label="Importieren"
           title={canWrite ? 'Importieren' : 'Nur-Lesen-Zugriff: Import nicht verfügbar'}
         >
@@ -914,6 +914,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           <span className="hidden sm:inline">Importieren</span>
         </button>
         <ActionMenu
+          containerClassName="hidden sm:block"
           ariaLabel="Export"
           title="Kunden exportieren"
           icon={<><Download className="h-4 w-4" /><span className="hidden sm:inline">Export</span></>}
@@ -935,10 +936,38 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
             Als PDF exportieren
           </ActionMenuItem>
         </ActionMenu>
+        <ActionMenu
+          containerClassName="sm:hidden"
+          ariaLabel="Import und Export"
+          title="Import und Export"
+          menuClassName="min-w-52"
+        >
+          <ActionMenuItem
+            icon={<Upload className="h-4 w-4" />}
+            onClick={() => setShowImport(true)}
+            disabled={!canWrite}
+          >
+            Importieren
+          </ActionMenuItem>
+          <ActionMenuItem
+            icon={<Download className="h-4 w-4" />}
+            onClick={() => downloadCustomerCsv(filteredCustomers)}
+            disabled={filteredCustomers.length === 0}
+          >
+            Als CSV exportieren
+          </ActionMenuItem>
+          <ActionMenuItem
+            icon={<Download className="h-4 w-4" />}
+            onClick={() => downloadCustomerPdf(filteredCustomers)}
+            disabled={filteredCustomers.length === 0}
+          >
+            Als PDF exportieren
+          </ActionMenuItem>
+        </ActionMenu>
         <button
           onClick={() => handleOpenModal()}
           disabled={!canWrite}
-          className="btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-white transition-all duration-300 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:px-4"
+          className="btn-primary box-border inline-flex h-[40px] min-h-[40px] max-h-[40px] min-w-[40px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 sm:px-4 text-white transition-all duration-300 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:h-[38px] sm:min-h-[38px] sm:max-h-[38px]"
           aria-label={terminology.entity.newLabel}
           title={canWrite ? terminology.entity.newLabel : 'Nur-Lesen-Zugriff: Anlegen nicht verfügbar'}
         >
@@ -1028,7 +1057,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <div className="flex min-w-0 items-start gap-2 text-gray-700"><Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span title={customer.email || undefined} className="min-w-0 break-all">{customer.email || '–'}</span></div>
                 <div className="flex min-w-0 items-center gap-2 text-gray-700"><Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="truncate">{customer.phone || '–'}</span></div>
-                <div className="flex min-w-0 items-start gap-2 text-gray-600 sm:col-span-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="break-words">{formatCustomerAddress(customer) || '–'}</span></div>
+                <div className="flex min-w-0 items-start gap-2 text-gray-700 sm:col-span-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" /><span className="break-words">{formatCustomerAddress(customer) || '–'}</span></div>
               </div>
             </div>
           ))}
@@ -1061,7 +1090,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
           footer={(
             <>
               <button type="button" onClick={requestCloseModal} disabled={isSavingCustomer} className="min-h-12 flex-1 rounded-lg border border-gray-300 bg-white px-6 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">Abbrechen</button>
-              <button type="submit" disabled={isSavingCustomer} className="btn-primary min-h-12 flex-1 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSavingCustomer ? 'Speichern …' : editingCustomer ? 'Aktualisieren' : 'Erstellen'}</button>
+              <button type="submit" disabled={isSavingCustomer} className="btn-primary min-h-12 flex-1 rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">{isSavingCustomer ? 'Speichern …' : editingCustomer ? 'Speichern' : 'Erstellen'}</button>
             </>
           )}
         >
@@ -1113,22 +1142,23 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
               </div>
               <div className="grid gap-3 tablet:grid-cols-2">
                 <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
-                  E-Mail
+                  E-Mail (optional)
                   <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="form-input form-input-compact mt-1 w-full"
-                    placeholder="optional"
+                    placeholder="name@example.com"
                   />
                 </label>
                 <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
-                  Telefon
+                  Telefon (optional)
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="form-input form-input-compact mt-1 w-full"
+                    placeholder="z. B. 030 1234567"
                   />
                 </label>
               </div>
@@ -1144,7 +1174,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   />
                 </label>
                 <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
-                  Adresszusatz
+                  Adresszusatz (optional)
                   <input
                     type="text"
                     value={formData.addressSupplement}
@@ -1188,7 +1218,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
               </div>
               <div className="grid gap-3 tablet:grid-cols-2">
                 <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
-                  USt-IdNr.
+                  USt-IdNr. (optional)
                   <input
                     type="text"
                     value={formData.taxId}
@@ -1197,7 +1227,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   />
                 </label>
                 <label className="block min-w-0 text-xs font-medium text-gray-700 sm:text-sm">
-                  Leitweg-ID (XRechnung)
+                  Leitweg-ID (XRechnung, optional)
                   <input
                     type="text"
                     value={formData.leitwegId}
@@ -1209,7 +1239,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
               </div>
               <div>
                 <label htmlFor="customer-notes" className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">
-                  Notizen
+                  Notizen (optional)
                 </label>
                 <textarea
                   id="customer-notes"
@@ -1218,7 +1248,6 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   maxLength={5000}
                   rows={3}
                   className="form-input w-full resize-y"
-                  placeholder="Interne Hinweise zum Kunden"
                 />
               </div>
 
@@ -1337,7 +1366,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 
                 {!editingCustomer && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Stundensätze werden beim Speichern des {terminology.entity.genitive} automatisch angelegt.
+                    Wird beim Speichern automatisch angelegt.
                   </p>
                 )}
 
@@ -1410,7 +1439,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 
                 {!editingCustomer && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Materialien werden beim Speichern des {terminology.entity.genitive} automatisch angelegt.
+                    Wird beim Speichern automatisch angelegt.
                   </p>
                 )}
 
@@ -1570,7 +1599,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stundensatz ({currencySymbol}) *
                   </label>
-                  <LocalizedNumberInput
+                  <LocalizedNumberInput minimumFractionDigits={2}
                     step="0.01"
                     min="0"
                     value={newHourlyRateData.rate}
@@ -1622,20 +1651,20 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   </label>
                 </div>
               </div>
-              <div className="flex space-x-2">
-                <button
-                  type="button"
-                  onClick={handleCreateHourlyRate}
-                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Erstellen
-                </button>
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={handleCloseCreateHourlyRateModal}
-                  className="px-3 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateHourlyRate}
+                  className="btn-primary rounded-lg px-3 py-2 text-sm font-medium text-white transition hover:brightness-90"
+                >
+                  Erstellen
                 </button>
               </div>
             </div>
@@ -1676,7 +1705,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Preis ({currencySymbol}) *
                   </label>
-                  <LocalizedNumberInput
+                  <LocalizedNumberInput minimumFractionDigits={2}
                     step="0.01"
                     min="0"
                     value={newMaterialData.unitPrice}
@@ -1740,20 +1769,20 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                   </label>
                 </div>
               </div>
-              <div className="flex space-x-2">
-                <button
-                  type="button"
-                  onClick={handleCreateMaterial}
-                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Erstellen
-                </button>
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={handleCloseCreateMaterialModal}
-                  className="px-3 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
                 >
                   Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateMaterial}
+                  className="btn-primary rounded-lg px-3 py-2 text-sm font-medium text-white transition hover:brightness-90"
+                >
+                  Erstellen
                 </button>
               </div>
             </div>
@@ -1810,7 +1839,7 @@ function HourlyRateEditForm({ rate, currencySymbol, locale, numberFormat, onSave
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Stundensatz ({currencySymbol}) *
           </label>
-          <LocalizedNumberInput
+          <LocalizedNumberInput minimumFractionDigits={2}
             step="0.01"
             min="0"
             value={formData.rate}
@@ -1927,7 +1956,7 @@ function MaterialEditForm({ material, currencySymbol, locale, numberFormat, onSa
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Preis ({currencySymbol}) *
           </label>
-          <LocalizedNumberInput
+          <LocalizedNumberInput minimumFractionDigits={2}
             step="0.01"
             min="0"
             value={formData.unitPrice}

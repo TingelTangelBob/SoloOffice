@@ -518,7 +518,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                 {isLoadingStats ? (
                   <div className="flex h-32 items-center justify-center">
                     <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-                    <span className="ml-2 text-gray-600">Lade Statistiken...</span>
+                    <span className="ml-2 text-gray-600">Statistiken werden geladen …</span>
                   </div>
                 ) : statistics ? (
                   <div className="space-y-6">
@@ -645,7 +645,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                 {isLoading ? (
                   <div className="flex items-center justify-center h-64">
                     <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-                    <span className="ml-2 text-gray-600">Lade E-Mails...</span>
+                    <span className="ml-2 text-gray-600">E-Mails werden geladen …</span>
                   </div>
                 ) : emails.length === 0 ? (
                   <EmptyState variant="metric" title="Noch keine E-Mails vorhanden" description="Versendete E-Mails erscheinen hier im Verlauf." />

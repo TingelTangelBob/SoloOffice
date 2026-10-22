@@ -623,7 +623,7 @@ export function EmailSendModal(props: EmailSendModalProps) {
               <>
                 <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                 <span className="hidden sm:inline">Wird versendet...</span>
-                <span className="sm:hidden">Sende...</span>
+                <span className="sm:hidden">Wird gesendet …</span>
               </>
             ) : (
               <>

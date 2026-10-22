@@ -811,9 +811,11 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
               </div>
             </>
           ) : (
-            <button type="button" disabled={isBusy} onClick={step === 'file' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">
-              {step === 'file' ? <X className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
-              {step === 'file' ? 'Schließen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
+            /* Im ersten Schritt gibt es nur den Abbruch: rechts wie in allen
+               Dialogen; ab dem zweiten Schritt führt der Knopf links zurück. */
+            <button type="button" disabled={isBusy} onClick={step === 'file' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 ${step === 'file' ? 'ml-auto' : ''}`}>
+              {step !== 'file' && <ArrowLeft className="h-4 w-4" />}
+              {step === 'file' ? 'Abbrechen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
             </button>
           )}
           {step === 'mapping' && <button type="button" onClick={runPreview} disabled={isBusy || mappedRows.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Vorschau prüfen</button>}

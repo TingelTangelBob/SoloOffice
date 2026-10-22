@@ -1,457 +1,159 @@
-import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, Copy, Edit2, FileCheck, FileText, LayoutTemplate, Maximize2, Palette, Plus, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Dispatch, FormEvent, KeyboardEvent as ReactKeyboardEvent, SetStateAction, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, Check, ChevronDown, Copy, Edit2, FileText, LayoutTemplate, Loader2, Palette, RotateCcw, SlidersHorizontal, Type, X } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { useCompany } from '../context/CompanyContext';
 import { defaultDocumentTemplates } from '../context/CompanyProvider';
 import {
-  DocumentHeaderAlignment,
-  DocumentLayout,
-  DocumentLogoMode,
-  Company,
-  DocumentTableStyle,
-  DocumentTemplate,
+  DocumentDesignId,
+  DocumentFontFamily,
   DocumentTemplateType,
   DocumentTextTemplate,
   ReminderTemplateTexts,
   TerminologyProfile,
 } from '../types';
-import { getDocumentTemplateFallback } from '../utils/documentTemplateProfiles';
+import {
+  applyDocumentDesign,
+  defaultDocumentDesign,
+  designDefaultFonts,
+  getDocumentDesign,
+  type DocumentDesign,
+} from '../utils/documentTemplateProfiles';
 import {
   defaultDocumentTextTemplates,
   documentTextTemplateTypes,
-  getDocumentTemplateTextMode,
   resolveDocumentTextTemplate,
 } from '../utils/documentTextTemplates';
 import { getTerminology } from '../utils/terminology';
 import { ThemeTabBar } from './ThemeTabBar';
 import { useFeedback } from '../context/FeedbackContext';
-import { TemplatePdfPreview } from './templates/TemplatePdfPreview';
+import { TemplateDocumentPreview } from './templates/TemplatePdfPreview';
 import { restoreDefaultTemplates } from '../utils/templateDefaults';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
-import { EmptyState } from './EmptyState';
+import { choiceCardClass } from './settings/settingsStyles';
 
-type TemplateTab = 'text' | DocumentTemplateType;
+type TemplateTab = 'design' | 'text';
+type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 const templateTabs: Array<{ id: TemplateTab; label: string; icon: typeof FileText }> = [
-  { id: 'invoice', label: 'Rechnungen', icon: FileText },
-  { id: 'quote', label: 'Angebote', icon: FileCheck },
-  { id: 'orderConfirmation', label: 'Bestätigungen', icon: FileCheck },
-  { id: 'reminder', label: 'Mahnungen', icon: FileText },
+  { id: 'design', label: 'PDF-Design', icon: LayoutTemplate },
   { id: 'text', label: 'Textvorlagen', icon: Copy },
 ];
 
-interface LayoutDefinition {
-  id: DocumentLayout;
-  label: string;
-  description: string;
-  defaultAccentColor: string;
-  defaultHeaderAlignment: DocumentHeaderAlignment;
-  defaultTableStyle: DocumentTableStyle;
-  headerAlignments: DocumentHeaderAlignment[];
-  tableStyles: DocumentTableStyle[];
-}
-
-const layoutOptions: LayoutDefinition[] = [
-  { id: 'classic', label: 'Klassisch', description: 'Adressblock, Metadaten und helle Tabelle', defaultAccentColor: '#2563eb', defaultHeaderAlignment: 'split', defaultTableStyle: 'light', headerAlignments: ['split', 'left'], tableStyles: ['light', 'accent'] },
-  { id: 'minimal', label: 'Minimal', description: 'Klare Linien, dunkle Tabelle und viel Weißraum', defaultAccentColor: '#111827', defaultHeaderAlignment: 'split', defaultTableStyle: 'dark', headerAlignments: ['split', 'left', 'center'], tableStyles: ['dark', 'light'] },
-  { id: 'editorial', label: 'Editorial', description: 'Zentriertes Branding mit warmem Akzent', defaultAccentColor: '#b0894f', defaultHeaderAlignment: 'center', defaultTableStyle: 'accent', headerAlignments: ['center', 'left'], tableStyles: ['accent', 'light'] },
-  { id: 'modern', label: 'Modern', description: 'Farbkante, klare Informationshierarchie und starke Akzente', defaultAccentColor: '#0f766e', defaultHeaderAlignment: 'split', defaultTableStyle: 'accent', headerAlignments: ['split', 'left'], tableStyles: ['accent', 'light', 'dark'] },
-  { id: 'compact', label: 'Kompakt', description: 'Dichtes Layout für kurze Rechnungen und Angebote', defaultAccentColor: '#475569', defaultHeaderAlignment: 'left', defaultTableStyle: 'light', headerAlignments: ['left', 'split'], tableStyles: ['light', 'dark'] },
-  { id: 'split', label: 'Split', description: 'Vertikale Markenleiste mit getrennten Bereichen', defaultAccentColor: '#7c3aed', defaultHeaderAlignment: 'left', defaultTableStyle: 'accent', headerAlignments: ['left', 'split'], tableStyles: ['accent', 'light'] },
-  { id: 'bold', label: 'Bold', description: 'Markanter Farbkopf und kontrastreiche Tabelle', defaultAccentColor: '#dc2626', defaultHeaderAlignment: 'left', defaultTableStyle: 'dark', headerAlignments: ['left', 'split'], tableStyles: ['dark', 'accent'] },
-  { id: 'air', label: 'Air', description: 'Sehr luftiges Layout mit feinen Linien', defaultAccentColor: '#0891b2', defaultHeaderAlignment: 'center', defaultTableStyle: 'light', headerAlignments: ['center', 'left'], tableStyles: ['light', 'accent'] },
-  { id: 'frame', label: 'Frame', description: 'Gerahmtes Dokument mit ruhigem, strukturiertem Aufbau', defaultAccentColor: '#334155', defaultHeaderAlignment: 'split', defaultTableStyle: 'light', headerAlignments: ['split', 'center'], tableStyles: ['light', 'accent'] },
+const designOptions: Array<{ id: DocumentDesignId; label: string; description: string }> = [
+  { id: 'classic', label: 'Klassisch', description: 'Geschäftsbrief mit Logo rechts und heller Tabelle' },
+  { id: 'modern', label: 'Modern', description: 'Farbband, großer Titel und farbige Tabelle' },
+  { id: 'minimal', label: 'Minimal', description: 'Feine Linien und viel Weißraum' },
+  { id: 'elegant', label: 'Elegant', description: 'Zentrierter Briefkopf und Serifenschrift' },
+  { id: 'bold', label: 'Markant', description: 'Farbkante und kräftiger Titel' },
 ];
 
-const templateColorPresets = [
-  { name: 'Schwarz', color: '#1f2937' },
+const colorPresets = [
   { name: 'Blau', color: '#2563eb' },
+  { name: 'Petrol', color: '#0e7490' },
   { name: 'Smaragd', color: '#15803d' },
   { name: 'Violett', color: '#7c3aed' },
   { name: 'Koralle', color: '#ea580c' },
+  { name: 'Rot', color: '#dc2626' },
   { name: 'Gold', color: '#b0894f' },
+  { name: 'Graphit', color: '#1f2937' },
 ] as const;
 
-interface TemplateFormState {
-  name: string;
-  description: string;
-  subject: string;
-  introText: string;
-  closingText: string;
-  paymentTerms: string;
-  reminderTexts: ReminderTemplateTexts;
-  textMode: 'global' | 'custom';
-  layout: DocumentLayout;
-  accentColor: string;
-  logoMode: DocumentLogoMode;
-  headerAlignment: DocumentHeaderAlignment;
-  tableStyle: DocumentTableStyle;
-  showPaymentInformation: boolean;
-  showFooter: boolean;
-}
+const fontOptions: Array<{ id: DocumentFontFamily; label: string; hint: string; css: string }> = [
+  { id: 'helvetica', label: 'Helvetica', hint: 'Serifenlos, sachlich', css: 'Helvetica, Arial, sans-serif' },
+  { id: 'times', label: 'Times', hint: 'Mit Serifen, klassisch', css: '"Times New Roman", Times, serif' },
+  { id: 'courier', label: 'Courier', hint: 'Schreibmaschine', css: '"Courier New", Courier, monospace' },
+];
 
-const emptyForm: TemplateFormState = {
-  name: '',
-  description: '',
-  subject: '',
-  introText: '',
-  closingText: '',
-  paymentTerms: '',
-  reminderTexts: {},
-  textMode: 'global',
-  layout: 'classic',
-  accentColor: '#2563eb',
-  logoMode: 'company',
-  headerAlignment: 'split',
-  tableStyle: 'light',
-  showPaymentInformation: true,
-  showFooter: true,
-};
-
-function getLayoutDefinition(layout: DocumentLayout): LayoutDefinition {
-  return layoutOptions.find(option => option.id === layout) || layoutOptions[0];
-}
-
-function getEmptyForm(documentType: DocumentTemplateType, company: Company): TemplateFormState {
-  const fallback = getDocumentTemplateFallback(documentType);
-  const layout = getLayoutDefinition(fallback.layout);
-  const textDefaults = resolveDocumentTextTemplate(company, documentType);
-  return {
-    ...emptyForm,
-    subject: textDefaults.subject || '',
-    introText: textDefaults.introText || '',
-    closingText: textDefaults.closingText || '',
-    paymentTerms: textDefaults.paymentTerms || '',
-    reminderTexts: { ...textDefaults.reminderTexts },
-    layout: fallback.layout,
-    accentColor: fallback.accentColor,
-    logoMode: fallback.logoMode,
-    headerAlignment: layout.defaultHeaderAlignment,
-    tableStyle: layout.defaultTableStyle,
-  };
-}
-
-function templateToForm(template: DocumentTemplate, company: Company): TemplateFormState {
-  const fallback = getDocumentTemplateFallback(template.documentType);
-  const layout = getLayoutDefinition(template.layout || fallback.layout);
-  const textDefaults = resolveDocumentTextTemplate(company, template.documentType);
-  const textMode = getDocumentTemplateTextMode(company, template);
-  const savedHeaderAlignment = template.headerAlignment || fallback.headerAlignment;
-  const savedTableStyle = template.tableStyle || fallback.tableStyle;
-  return {
-    name: template.name,
-    description: template.description || '',
-    subject: textMode === 'custom' ? (template.subject ?? textDefaults.subject ?? '') : (textDefaults.subject || ''),
-    introText: textMode === 'custom' ? (template.introText ?? textDefaults.introText ?? '') : (textDefaults.introText || ''),
-    closingText: textMode === 'custom' ? (template.closingText ?? textDefaults.closingText ?? '') : (textDefaults.closingText || ''),
-    paymentTerms: textMode === 'custom' ? (template.paymentTerms ?? textDefaults.paymentTerms ?? '') : (textDefaults.paymentTerms || ''),
-    reminderTexts: textMode === 'custom'
-      ? { ...textDefaults.reminderTexts, ...template.reminderTexts }
-      : { ...textDefaults.reminderTexts },
-    textMode,
-    layout: template.layout || fallback.layout,
-    accentColor: template.accentColor || fallback.accentColor,
-    logoMode: template.logoMode || fallback.logoMode,
-    headerAlignment: layout.headerAlignments.includes(savedHeaderAlignment) ? savedHeaderAlignment : layout.defaultHeaderAlignment,
-    tableStyle: layout.tableStyles.includes(savedTableStyle) ? savedTableStyle : layout.defaultTableStyle,
-    showPaymentInformation: template.showPaymentInformation ?? true,
-    showFooter: template.showFooter ?? true,
-  };
-}
-
-function getTemplateTabs(terminologyProfile?: TerminologyProfile) {
-  const terminology = getTerminology(terminologyProfile);
-  return templateTabs.map(tab => tab.id === 'orderConfirmation'
-    ? { ...tab, label: terminology.work.confirmationPluralLabel }
-    : tab);
-}
+const DESIGN_SAVE_DELAY_MS = 450;
+const TOOLBAR_COLLAPSE_STEPS = 6;
+const TOOLBAR_TRIGGER = 'action-menu-export-trigger min-h-10 min-w-10 max-w-full shrink-0';
 
 function getTemplateTypeLabel(type: DocumentTemplateType, terminologyProfile?: TerminologyProfile) {
-  if (type === 'reminder') return 'Mahnungen';
-  return getTemplateTabs(terminologyProfile).find(tab => tab.id === type)?.label || 'Dokument';
-}
-
-interface TemplateEditorOverlayProps {
-  activeTab: DocumentTemplateType;
-  editingTemplate: DocumentTemplate | null;
-  formData: TemplateFormState;
-  setFormData: Dispatch<SetStateAction<TemplateFormState>>;
-  company: Company;
-  logo?: string | null;
-  terminologyProfile?: TerminologyProfile;
-  isSaving: boolean;
-  isDirty: boolean;
-  error: string | null;
-  onClose: () => void;
-  onReset: () => void;
-  onSave: (event: FormEvent) => Promise<void>;
-}
-
-function TemplateEditorOverlay({
-  activeTab,
-  editingTemplate,
-  formData,
-  setFormData,
-  company,
-  logo,
-  terminologyProfile,
-  isSaving,
-  isDirty,
-  error,
-  onClose,
-  onReset,
-  onSave,
-}: TemplateEditorOverlayProps) {
   const terminology = getTerminology(terminologyProfile);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const titleId = useId();
-  const errorId = useId();
-  const [editorTab, setEditorTab] = useState<'design' | 'content'>('design');
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ logo: true, color: true, layout: true, details: true, content: true });
-  const toggleSection = (section: string) => setOpenSections(previous => ({ ...previous, [section]: !previous[section] }));
+  switch (type) {
+    case 'invoice': return 'Rechnungen';
+    case 'quote': return 'Angebote';
+    case 'orderConfirmation': return terminology.work.confirmationPluralLabel;
+    case 'reminder': return 'Mahnungen';
+  }
+  return 'Dokumente';
+}
 
-  useEffect(() => {
-    const initialFocus = dialogRef.current?.querySelector<HTMLElement>('[data-editor-initial-focus]');
-    initialFocus?.focus();
-  }, []);
+function sameDesign(a: DocumentDesign, b: DocumentDesign): boolean {
+  return a.layout === b.layout
+    && a.accentColor.toLowerCase() === b.accentColor.toLowerCase()
+    && a.fontFamily === b.fontFamily
+    && a.logoMode === b.logoMode
+    && a.showPaymentInformation === b.showPaymentInformation
+    && a.showFooter === b.showFooter;
+}
 
-  useEffect(() => {
-    if (isSaving) dialogRef.current?.focus();
-  }, [isSaving]);
-
-  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (isSaving) {
-      if (event.key === 'Escape' || event.key === 'Tab') event.preventDefault();
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key !== 'Tab' || !dialogRef.current) return;
-
-    const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-    )).filter(element => !element.matches(':disabled') && element.getClientRects().length > 0);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      dialogRef.current.focus();
-      return;
-    }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (document.activeElement === dialogRef.current) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus();
-    } else if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-  const previewTemplate: DocumentTemplate = {
-    id: editingTemplate?.id || 'template-preview',
-    documentType: activeTab,
-    name: formData.name || 'Neue Vorlage',
-    description: formData.description,
-    subject: formData.subject,
-    introText: formData.introText,
-    closingText: formData.closingText,
-    paymentTerms: formData.paymentTerms,
-    reminderTexts: formData.reminderTexts,
-    textMode: formData.textMode,
-    layout: formData.layout,
-    accentColor: formData.accentColor,
-    logoMode: formData.logoMode,
-    headerAlignment: formData.headerAlignment,
-    tableStyle: formData.tableStyle,
-    showPaymentInformation: formData.showPaymentInformation,
-    showFooter: formData.showFooter,
-  };
-
-  const setValue = <K extends keyof TemplateFormState>(key: K, value: TemplateFormState[K]) => {
-    setFormData(previous => ({ ...previous, [key]: value }));
-  };
-
+/**
+ * Kleine Skizze des Briefkopfs je Design. Die Seite bleibt bewusst weiß –
+ * sie steht für das Papier, nicht für die App-Oberfläche.
+ */
+function DesignThumbnail({ design, accent }: { design: DocumentDesignId; accent: string }) {
+  const line = 'absolute h-[3px] rounded-full';
+  const lineStyle = { backgroundColor: '#d1d5db' };
   return (
-    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={handleDialogKeyDown} className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4">
-      <form noValidate onSubmit={onSave} aria-busy={isSaving} className="template-editor-shell form-consistent-fields flex h-[min(94dvh,900px)] max-h-[calc(100dvh-1rem)] w-full max-w-[1320px] flex-col overflow-hidden rounded-2xl shadow-2xl">
-        <div className="template-editor-header flex shrink-0 items-center gap-3 border-b px-4 py-3">
-          <button type="button" onClick={onClose} disabled={isSaving} data-editor-initial-focus className="inline-flex items-center gap-2 rounded-lg p-2 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">
-            <ArrowLeft className="h-4 w-4" />
-            Zurück
-          </button>
-          <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">{formData.name || (editingTemplate ? 'Vorlage' : 'Neue Vorlage')}</h2>
-          <button type="button" onClick={onClose} disabled={isSaving} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50" aria-label="Editor schließen">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <fieldset disabled={isSaving} className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-        <aside className="template-editor-sidebar z-10 flex w-full shrink-0 flex-col p-4 backdrop-blur lg:min-h-0 lg:w-[370px] lg:overflow-hidden lg:rounded-r-2xl lg:shadow-xl">
-          <div className="template-editor-tabs grid grid-cols-2 rounded-xl p-1 text-sm font-medium">
-            <button type="button" onClick={() => setEditorTab('design')} aria-pressed={editorTab === 'design'} className={`rounded-lg px-3 py-2 transition ${editorTab === 'design' ? 'template-editor-tab-active shadow-sm' : 'text-gray-500'}`}>Design</button>
-            <button type="button" onClick={() => setEditorTab('content')} aria-pressed={editorTab === 'content'} className={`rounded-lg px-3 py-2 transition ${editorTab === 'content' ? 'template-editor-tab-active shadow-sm' : 'text-gray-500'}`}>Inhalt</button>
-          </div>
-
-          <div className="mt-4 space-y-4 pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-            <label className="template-editor-section block rounded-xl border p-3 text-xs font-medium text-gray-600">Name *
-              <input name="templateName" value={formData.name} onChange={event => setValue('name', event.target.value)} aria-required="true" aria-invalid={Boolean(error) && !formData.name.trim()} aria-describedby={error && !formData.name.trim() ? errorId : undefined} required className="form-input form-input-compact mt-1 text-sm font-normal" />
-            </label>
-            {editorTab === 'design' ? (
-              <>
-                <section className="template-editor-section rounded-xl border p-3">
-                  <button type="button" onClick={() => toggleSection('logo')} className="flex w-full items-center justify-between text-left">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><LayoutTemplate className="h-4 w-4 text-primary-custom" /> Logo</h3>
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.logo ? '' : '-rotate-90'}`} />
-                  </button>
-                  {openSections.logo && <div className="mt-3">
-                    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3 text-center">
-                      {formData.logoMode === 'company' && logo ? <img src={logo} alt={terminology.organization.logoLabel} className="mx-auto h-10 max-w-[180px] object-contain" /> : <div className="py-3 text-xs text-gray-500">Kein Logo ausgewählt</div>}
-                    </div>
-                    <select value={formData.logoMode} onChange={event => setValue('logoMode', event.target.value as DocumentLogoMode)} className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                      <option value="company">Standardlogo aus {terminology.organization.dataLabel}</option>
-                      <option value="none">Ohne Logo</option>
-                    </select>
-                    {!logo && formData.logoMode === 'company' && <p className="mt-2 text-xs text-amber-700">Laden Sie zuerst unter {terminology.organization.dataLabel} ein {terminology.organization.logoLabel} hoch.</p>}
-                  </div>}
-                </section>
-
-                <section className="template-editor-section rounded-xl border p-3">
-                  <button type="button" onClick={() => toggleSection('color')} className="flex w-full items-center justify-between text-left">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><Palette className="h-4 w-4 text-primary-custom" /> Farbe</h3>
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.color ? '' : '-rotate-90'}`} />
-                  </button>
-                  {openSections.color && <div className="mt-3 flex flex-wrap gap-2">
-                    {templateColorPresets.map(preset => (
-                      <button key={preset.color} type="button" onClick={() => setValue('accentColor', preset.color)} className={`h-7 w-7 min-h-0 min-w-0 shrink-0 rounded-full border-2 p-0 transition ${formData.accentColor === preset.color ? 'border-gray-900 ring-2 ring-offset-1 ring-primary-custom' : 'border-white shadow'}`} style={{ backgroundColor: preset.color }} aria-label={preset.name} />
-                    ))}
-                    <label className="relative block h-7 w-7 min-h-0 min-w-0 shrink-0 cursor-pointer overflow-hidden rounded-full border border-gray-300 bg-white" style={{ backgroundColor: formData.accentColor }} title="Eigene Farbe">
-                      <input type="color" value={formData.accentColor} onChange={event => setValue('accentColor', event.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="Eigene Farbe auswählen" />
-                    </label>
-                    <p className="mt-2 w-full text-xs text-gray-500">Akzentfarbe: {formData.accentColor}</p>
-                  </div>}
-                </section>
-
-                <section className="template-editor-section rounded-xl border p-3">
-                  <button type="button" onClick={() => toggleSection('layout')} className="flex w-full items-center justify-between text-left">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><SlidersHorizontal className="h-4 w-4 text-primary-custom" /> Layout</h3>
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.layout ? '' : '-rotate-90'}`} />
-                  </button>
-                  {openSections.layout && <div className="mt-3 grid grid-cols-3 gap-2">
-                    {layoutOptions.map(option => (
-                      <button key={option.id} type="button" onClick={() => {
-                        setFormData(previous => ({ ...previous, layout: option.id, accentColor: option.defaultAccentColor, headerAlignment: option.defaultHeaderAlignment, tableStyle: option.defaultTableStyle }));
-                      }} className={`rounded-lg border p-1.5 text-left transition ${formData.layout === option.id ? 'border-primary-custom ring-1 ring-primary-custom' : 'border-gray-200 hover:border-gray-400'}`}>
-                        <div className={`relative h-20 overflow-hidden rounded border ${option.id === 'editorial' || option.id === 'air' ? 'bg-[#fbf8f5]' : 'bg-white'}`}>
-                          <div className="absolute inset-x-2 top-2 h-1 rounded" style={{ backgroundColor: formData.layout === option.id ? formData.accentColor : option.defaultAccentColor }} />
-                          <div className="absolute inset-x-2 top-6 space-y-1"><div className="h-1 w-2/3 rounded bg-gray-300" /><div className="h-1 w-1/2 rounded bg-gray-200" /></div>
-                          <div className={`absolute inset-x-2 bottom-3 h-6 ${option.id === 'frame' ? 'border' : ''} ${option.id === 'split' ? 'border-l-4' : ''}`} style={{ backgroundColor: option.id === 'bold' || option.id === 'minimal' ? '#1f2937' : option.id === 'editorial' || option.id === 'air' ? `${option.defaultAccentColor}25` : '#eef1f5', borderColor: option.defaultAccentColor }} />
-                        </div>
-                        <span className="mt-1 block text-center text-[11px] font-medium text-gray-700">{option.label}</span>
-                      </button>
-                    ))}
-                  </div>}
-                </section>
-
-                <section className="template-editor-section rounded-xl border p-3">
-                  <button type="button" onClick={() => toggleSection('details')} className="flex w-full items-center justify-between text-left">
-                    <h3 className="text-sm font-semibold text-gray-900">Kopf & Inhalt</h3>
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.details ? '' : '-rotate-90'}`} />
-                  </button>
-                  {openSections.details && <div className="mt-3 grid grid-cols-1 gap-3">
-                    <label className="text-xs font-medium text-gray-600">Ausrichtung
-                      <select value={formData.headerAlignment} onChange={event => setValue('headerAlignment', event.target.value as DocumentHeaderAlignment)} className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-normal">
-                        {getLayoutDefinition(formData.layout).headerAlignments.map(alignment => <option key={alignment} value={alignment}>{alignment === 'split' ? 'Logo und Metadaten geteilt' : alignment === 'left' ? 'Linksbündig' : 'Zentriert'}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-xs font-medium text-gray-600">Tabellenstil
-                      <select value={formData.tableStyle} onChange={event => setValue('tableStyle', event.target.value as DocumentTableStyle)} className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-normal">
-                        {getLayoutDefinition(formData.layout).tableStyles.map(style => <option key={style} value={style}>{style === 'light' ? 'Hell und dezent' : style === 'dark' ? 'Dunkle Kopfzeile' : 'Akzentfarbe'}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={formData.showPaymentInformation} onChange={event => setValue('showPaymentInformation', event.target.checked)} className="rounded border-gray-300 text-primary-custom focus:ring-primary-custom" /> Zahlungsinformationen anzeigen</label>
-                    <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={formData.showFooter} onChange={event => setValue('showFooter', event.target.checked)} className="rounded border-gray-300 text-primary-custom focus:ring-primary-custom" /> Fußbereich anzeigen</label>
-                  </div>}
-                </section>
-              </>
-            ) : (
-              <section className="template-editor-section space-y-4 rounded-xl border p-3">
-                <button type="button" onClick={() => toggleSection('content')} className="flex w-full items-center justify-between text-left">
-                  <h3 className="text-sm font-semibold text-gray-900">Vorlageninhalt</h3>
-                  <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.content ? '' : '-rotate-90'}`} />
-                </button>
-                {openSections.content && <div>
-                  <p className="mt-1 text-xs text-gray-500">Die PDF-Vorlage nutzt standardmäßig die passenden Texte aus den Textvorlagen. Für diese Vorlage können Sie sie bei Bedarf überschreiben.</p>
-                  <div className="mt-4 space-y-4">
-                    <div className="template-editor-text-source rounded-lg border p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <div className="text-xs font-semibold text-gray-900">Textquelle</div>
-                          <p className="mt-1 text-xs text-gray-500">Standardtexte gelten für alle {getTemplateTypeLabel(activeTab, terminologyProfile)}.</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setValue('textMode', formData.textMode === 'custom' ? 'global' : 'custom')}
-                          aria-pressed={formData.textMode === 'custom'}
-                          className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${formData.textMode === 'custom' ? 'border-primary-custom bg-primary-custom/10 text-primary-custom' : 'border-gray-200 text-gray-600 hover:border-primary-custom hover:text-primary-custom'}`}
-                        >
-                          {formData.textMode === 'custom' ? 'Eigene Texte aktiv' : 'Eigene Texte verwenden'}
-                        </button>
-                      </div>
-                      <p className="mt-2 text-xs text-gray-500">
-                        {formData.textMode === 'custom' ? 'Diese Texte gelten nur für diese PDF-Vorlage.' : 'Zum Bearbeiten eigene Texte aktivieren.'}
-                      </p>
-                    </div>
-                    <label className="block text-xs font-medium text-gray-600">Vorlagenbeschreibung<input value={formData.description} onChange={event => setValue('description', event.target.value)} className="form-input form-input-compact mt-1 text-sm font-normal" /></label>
-                    <label className="block text-xs font-medium text-gray-600">Betreff<input disabled={formData.textMode === 'global'} value={formData.subject} onChange={event => setValue('subject', event.target.value)} className="form-input form-input-compact mt-1 text-sm font-normal" /></label>
-                    {activeTab !== 'reminder' ? (
-                      <>
-                        <label className="block text-xs font-medium text-gray-600">Einleitung<textarea disabled={formData.textMode === 'global'} value={formData.introText} onChange={event => setValue('introText', event.target.value)} rows={3} className="form-input mt-1 min-h-[5.5rem] resize-y text-sm font-normal" /></label>
-                        <label className="block text-xs font-medium text-gray-600">Abschlusstext<textarea disabled={formData.textMode === 'global'} value={formData.closingText} onChange={event => setValue('closingText', event.target.value)} rows={3} className="form-input mt-1 min-h-[5.5rem] resize-y text-sm font-normal" /></label>
-                        <label className="block text-xs font-medium text-gray-600">Zahlungs-/Gültigkeitshinweis<textarea disabled={formData.textMode === 'global'} value={formData.paymentTerms} onChange={event => setValue('paymentTerms', event.target.value)} rows={3} className="form-input mt-1 min-h-[5.5rem] resize-y text-sm font-normal" /></label>
-                      </>
-                    ) : (
-                      <div className="space-y-3 border-t border-gray-200 pt-3">
-                        <div className="text-xs font-semibold text-gray-900">Mahntexte</div>
-                        {([1, 2, 3] as const).map(stage => (
-                          <label key={stage} className="block text-xs font-medium text-gray-600">{stage}. Mahnung<textarea disabled={formData.textMode === 'global'} value={formData.reminderTexts[`stage${stage}`] || ''} onChange={event => setFormData(previous => ({ ...previous, reminderTexts: { ...previous.reminderTexts, [`stage${stage}`]: event.target.value } }))} rows={3} className="form-input mt-1 min-h-[5.5rem] resize-y text-sm font-normal" /></label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>}
-              </section>
-            )}
-          </div>
-        </aside>
-
-        <main className="template-editor-main relative flex min-h-[480px] min-w-0 flex-1 flex-col overflow-hidden lg:min-h-0">
-          <div className="flex flex-1 items-start justify-center overflow-auto px-4 pb-8 pt-4 sm:px-8">
-            <TemplatePdfPreview template={previewTemplate} company={company} large />
-          </div>
-        </main>
-        </div>
-        <div className="template-editor-footer flex shrink-0 flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="min-w-0 space-y-1">
-            <p className="text-xs text-gray-500" role="status">{isSaving ? 'Vorlage wird gespeichert …' : isDirty ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'}</p>
-            {error && <div id={errorId} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</div>}
-          </div>
-          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Abbrechen</button>
-              <button type="button" onClick={onReset} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Änderungen zurücksetzen</button>
-            </div>
-            <button type="submit" disabled={isSaving} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white shadow-sm hover:brightness-90 disabled:opacity-50">{isSaving ? 'Speichert...' : 'Vorlage speichern'}</button>
-          </div>
-        </div>
-        </fieldset>
-      </form>
-    </div>
+    <span aria-hidden="true" className="relative block h-[72px] w-full overflow-hidden rounded-md max-sm:h-[56px]" style={{ backgroundColor: '#ffffff', boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / 0.08)' }}>
+      {design === 'classic' && (
+        <>
+          <span className="absolute right-2 top-2 h-[6px] w-7 rounded-sm" style={{ backgroundColor: accent }} />
+          <span className={`${line} left-2 top-[22px] w-10`} style={lineStyle} />
+          <span className={`${line} left-2 top-[28px] w-8`} style={lineStyle} />
+          <span className={`${line} right-2 top-[22px] w-7`} style={lineStyle} />
+          <span className="absolute left-2 top-[38px] h-[4px] w-9 rounded-full" style={{ backgroundColor: '#374151' }} />
+          <span className="absolute inset-x-2 top-[48px] h-[6px] rounded-sm" style={{ backgroundColor: '#e5e7eb' }} />
+          <span className="absolute inset-x-2 top-[58px] h-px" style={{ backgroundColor: '#e5e7eb' }} />
+        </>
+      )}
+      {design === 'modern' && (
+        <>
+          <span className="absolute inset-x-0 top-0 h-[4px]" style={{ backgroundColor: accent }} />
+          <span className="absolute left-2 top-[10px] h-[5px] w-8 rounded-sm" style={{ backgroundColor: '#374151' }} />
+          <span className="absolute right-2 top-[9px] h-[7px] w-10 rounded-sm" style={{ backgroundColor: accent }} />
+          <span className={`${line} left-2 top-[26px] w-10`} style={lineStyle} />
+          <span className={`${line} right-2 top-[26px] w-7`} style={lineStyle} />
+          <span className="absolute inset-x-2 top-[42px] h-[7px] rounded-sm" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[53px] h-[5px] rounded-sm" style={{ backgroundColor: `${accent}1f` }} />
+        </>
+      )}
+      {design === 'minimal' && (
+        <>
+          <span className="absolute left-2 top-[9px] h-[4px] w-8 rounded-full" style={{ backgroundColor: '#1f2937' }} />
+          <span className={`${line} right-2 top-[8px] w-6`} style={lineStyle} />
+          <span className={`${line} right-2 top-[13px] w-5`} style={lineStyle} />
+          <span className={`${line} left-2 top-[24px] w-10`} style={lineStyle} />
+          <span className="absolute left-2 top-[36px] h-[7px] w-14 rounded-sm" style={{ backgroundColor: '#374151' }} />
+          <span className="absolute left-2 top-[45px] h-[3px] w-6 rounded-full" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[56px] h-px" style={{ backgroundColor: '#374151' }} />
+          <span className="absolute inset-x-2 top-[63px] h-px" style={{ backgroundColor: '#e5e7eb' }} />
+        </>
+      )}
+      {design === 'elegant' && (
+        <>
+          <span className="absolute left-1/2 top-[7px] h-[6px] w-14 -translate-x-1/2 rounded-sm" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[19px] h-px" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[21px] h-px" style={{ backgroundColor: accent }} />
+          <span className={`${line} left-2 top-[29px] w-10`} style={lineStyle} />
+          <span className="absolute left-2 top-[40px] h-[4px] w-12 rounded-full" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[52px] h-px" style={{ backgroundColor: accent }} />
+          <span className="absolute inset-x-2 top-[60px] h-px" style={{ backgroundColor: accent }} />
+        </>
+      )}
+      {design === 'bold' && (
+        <>
+          <span className="absolute inset-y-0 left-0 w-[5px]" style={{ backgroundColor: accent }} />
+          <span className="absolute left-3 top-[8px] h-[10px] w-14 rounded-sm" style={{ backgroundColor: '#111827' }} />
+          <span className="absolute left-3 top-[21px] h-[3px] w-7 rounded-full" style={{ backgroundColor: accent }} />
+          <span className="absolute right-2 top-[9px] h-[5px] w-6 rounded-sm" style={{ backgroundColor: '#9ca3af' }} />
+          <span className={`${line} left-3 top-[32px] w-9`} style={lineStyle} />
+          <span className="absolute left-3 right-2 top-[44px] h-[7px] rounded-sm" style={{ backgroundColor: '#111827' }} />
+          <span className="absolute left-3 right-2 top-[57px] h-px" style={{ backgroundColor: '#e5e7eb' }} />
+        </>
+      )}
+    </span>
   );
 }
 
@@ -536,20 +238,16 @@ function TextTemplateEditorOverlay({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-custom/10 text-primary-custom"><FileText className="h-5 w-5" /></div>
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-lg font-semibold text-gray-900">{label} – Standardtexte</h2>
-            <p className="mt-1 text-sm text-gray-500">Diese Texte gelten für alle {label.toLowerCase()}. Einzelne PDF-Vorlagen können davon abweichen.</p>
+            <p className="mt-1 text-sm text-gray-500">Diese Texte gelten für alle {label}. Platzhalter wie Rechnungsnummer oder Kundenname werden beim Erstellen ersetzt.</p>
           </div>
           <button type="button" onClick={onClose} disabled={isSaving} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50" aria-label="Texteditor schließen"><X className="h-5 w-5" /></button>
         </div>
 
-        <fieldset disabled={isSaving} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-          <section className="template-editor-section rounded-xl border p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900">Texte bearbeiten</h3>
-                <p className="mt-1 text-xs text-gray-500">Platzhalter wie {'{invoiceNumber}'} bleiben beim Erstellen automatisch erhalten.</p>
-              </div>
-              <span className="rounded-full bg-primary-custom/10 px-2.5 py-1 text-xs font-medium text-primary-custom">Eine Vorlage</span>
-            </div>
+        {/* Gescrollt wird ein normales Element: Ein <fieldset> als Scrollbereich
+            wird in Chromium nicht zuverlässig begrenzt, sodass untere Felder
+            hinter dem Fuß verschwanden. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <fieldset disabled={isSaving} className="min-w-0">
             <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">Betreff<input data-text-editor-initial-focus value={formData.subject} onChange={event => setValue('subject', event.target.value)} className="form-input form-input-compact mt-1" /></label>
               {documentType !== 'reminder' ? (
@@ -570,17 +268,17 @@ function TextTemplateEditorOverlay({
                 </div>
               )}
             </div>
-          </section>
-        </fieldset>
+          </fieldset>
+        </div>
 
         <div className="template-editor-footer flex shrink-0 flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="min-w-0 space-y-1">
             <p className="text-xs text-gray-500" role="status">{isSaving ? 'Textvorlage wird gespeichert …' : isDirty ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'}</p>
             {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</div>}
+            <button type="button" onClick={onReset} disabled={isSaving} className="self-start rounded-lg px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50">Zurücksetzen</button>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Abbrechen</button>
-            <button type="button" onClick={onReset} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">Zurücksetzen</button>
             <button type="submit" disabled={isSaving} className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white shadow-sm hover:brightness-90 disabled:opacity-50">{isSaving ? 'Speichert...' : 'Textvorlage speichern'}</button>
           </div>
         </div>
@@ -597,32 +295,43 @@ interface TextTemplateTableProps {
 
 function TextTemplateTable({ templates, terminologyProfile, onEdit }: TextTemplateTableProps) {
   return (
-    <div className="template-text-table-wrap overflow-x-auto rounded-xl border">
-      <table className="template-text-table w-full min-w-[680px] text-left text-sm">
+    <div className="template-text-table-wrap overflow-hidden rounded-xl border">
+      <table className="template-text-table w-full table-fixed text-left text-sm">
         <thead>
           <tr className="border-b text-xs uppercase tracking-wide text-gray-500">
-            <th scope="col" className="px-4 py-3 font-medium">Dokumentart</th>
-            <th scope="col" className="px-4 py-3 font-medium">Verwendung</th>
-            <th scope="col" className="px-4 py-3 font-medium">Inhalt</th>
-            <th scope="col" className="px-4 py-3 text-right font-medium">Aktion</th>
+            <th scope="col" className="w-[38%] px-3 py-3 font-medium sm:w-[30%] sm:px-4">Dokumentart</th>
+            <th scope="col" className="px-3 py-3 font-medium sm:px-4">Inhalt</th>
+            <th scope="col" className="w-14 px-2 py-3 sm:w-16"><span className="sr-only">Aktion</span></th>
           </tr>
         </thead>
         <tbody>
           {templates.map(template => {
             const label = getTemplateTypeLabel(template.documentType, terminologyProfile);
-            const content = template.documentType === 'reminder'
+            const summary = template.documentType === 'reminder'
               ? '3 Mahnstufen'
-              : [template.subject, template.introText, template.closingText, template.paymentTerms].filter(value => value?.trim()).length + ' Textfelder';
+              : `${[template.subject, template.introText, template.closingText, template.paymentTerms].filter(value => value?.trim()).length} Textfelder`;
+            // Platzhalter wie {invoiceNumber} werden erst beim Erstellen ersetzt;
+            // in der Übersicht stören sie nur und entfallen deshalb.
+            const preview = (template.documentType === 'reminder'
+              ? template.reminderTexts?.stage1 || template.subject
+              : template.subject || template.introText)?.replace(/\{\w+\}/g, '').replace(/\s{2,}/g, ' ').trim();
             return (
               <tr key={template.id} className="border-b last:border-b-0">
-                <th scope="row" className="px-4 py-2.5 font-semibold text-gray-900">
-                  <div>{label}</div>
-                  <div className="mt-1 text-xs font-normal text-gray-500">{template.name}</div>
-                </th>
-                <td className="px-4 py-2.5 text-gray-600">Eine Vorlage für alle {label.toLowerCase()}</td>
-                <td className="max-w-0 px-4 py-2.5 text-gray-600"><span className="block truncate" title={template.subject || content}>{content}</span></td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                  <button type="button" onClick={event => onEdit(template, event.currentTarget)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-primary-custom hover:text-primary-custom"><Edit2 className="h-4 w-4" /> Bearbeiten</button>
+                <th scope="row" lang="de" className="hyphens-auto break-words px-3 py-2.5 align-top font-semibold text-gray-900 sm:px-4">{label}</th>
+                <td className="px-3 py-2.5 align-top text-gray-600 sm:px-4">
+                  <span className="block truncate text-gray-800" title={preview}>{preview || '–'}</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">{summary}</span>
+                </td>
+                <td className="px-2 py-2.5 text-right align-middle">
+                  <button
+                    type="button"
+                    onClick={event => onEdit(template, event.currentTarget)}
+                    className="inline-flex h-10 w-10 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-custom"
+                    aria-label={`Texte für ${label} bearbeiten`}
+                    title="Bearbeiten"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
                 </td>
               </tr>
             );
@@ -635,115 +344,166 @@ function TextTemplateTable({ templates, terminologyProfile, onEdit }: TextTempla
 
 export function TemplatesManagement() {
   const { confirm } = useFeedback();
-  const {
-    company,
-    updateCompany,
-    documentTemplates,
-    addDocumentTemplate,
-    updateDocumentTemplate,
-    deleteDocumentTemplate,
-  } = useCompany();
+  const { company, updateCompany, documentTemplates } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
-  const tabs = getTemplateTabs(company?.terminologyProfile);
-  const [activeTab, setActiveTab] = useState<TemplateTab>('invoice');
-  const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [editorDocumentType, setEditorDocumentType] = useState<DocumentTemplateType | null>(null);
-  const [formData, setFormData] = useState<TemplateFormState>(emptyForm);
-  const [editorInitialFormData, setEditorInitialFormData] = useState<TemplateFormState>(emptyForm);
+  const [activeTab, setActiveTab] = useState<TemplateTab>('design');
   const [editingTextTemplate, setEditingTextTemplate] = useState<DocumentTextTemplate | null>(null);
   const [textFormData, setTextFormData] = useState<TextTemplateFormState>(emptyTextForm);
   const [textEditorInitialFormData, setTextEditorInitialFormData] = useState<TextTemplateFormState>(emptyTextForm);
-  const [selectedPreview, setSelectedPreview] = useState<DocumentTemplate | null>(null);
-  const [previewExpanded, setPreviewExpanded] = useState(false);
-  const previewTitleId = useId();
-  const previewDialogRef = useRef<HTMLDivElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
   const textEditorTriggerRef = useRef<HTMLButtonElement | null>(null);
   const saveInFlightRef = useRef(false);
-  const isEditorDirty = Boolean(editingTemplate || isCreating) && JSON.stringify(formData) !== JSON.stringify(editorInitialFormData);
   const isTextEditorDirty = Boolean(editingTextTemplate) && JSON.stringify(textFormData) !== JSON.stringify(textEditorInitialFormData);
-  const isAnyEditorDirty = isEditorDirty || isTextEditorDirty;
 
+  const sourceTemplates = useMemo(
+    () => documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates,
+    [documentTemplates],
+  );
+  const textTemplates = useMemo(
+    () => documentTextTemplateTypes.map(type => resolveDocumentTextTemplate(company, type)),
+    [company],
+  );
+
+  // ------------------------------------------------------------------ Design
+  // Änderungen gelten sofort in der Vorschau und werden kurz danach für alle
+  // Dokumentarten gespeichert. Bis dahin hält `draftDesign` den Stand.
+  const savedDesign = useMemo(() => getDocumentDesign({ documentTemplates: sourceTemplates }), [sourceTemplates]);
+  const [draftDesign, setDraftDesign] = useState<DocumentDesign | null>(null);
+  const [designSaveState, setDesignSaveState] = useState<SaveState>('idle');
+  const [previewType, setPreviewType] = useState<DocumentTemplateType>('invoice');
+  const design = draftDesign ?? savedDesign;
+  const latestDraftRef = useRef<DocumentDesign | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const templatesRef = useRef(sourceTemplates);
+  const customColorInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  // Wie weit die Leiste verdichtet ist, nach Wichtigkeit: zuerst die Texte
+  // „Optionen“, Schrift und Farbe, dann deren Pfeile, zuletzt die Dokumentart.
+  const [toolbarCollapse, setToolbarCollapse] = useState(0);
+  const toolbarWidthRef = useRef(0);
+  const toolbarContentKey = `${activeTab}|${previewType}|${design.accentColor}|${design.fontFamily}|${designSaveState === 'error'}`;
+  const toolbarContentKeyRef = useRef(toolbarContentKey);
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    // Andere Beschriftungen: vor dem Zeichnen wieder mit allen Texten messen.
+    if (toolbarContentKeyRef.current !== toolbarContentKey) {
+      toolbarContentKeyRef.current = toolbarContentKey;
+      if (toolbarCollapse > 0) {
+        setToolbarCollapse(0);
+        return;
+      }
+    }
+    toolbarWidthRef.current = toolbar.clientWidth;
+    if (toolbar.scrollWidth > toolbar.clientWidth + 1 && toolbarCollapse < TOOLBAR_COLLAPSE_STEPS) {
+      setToolbarCollapse(toolbarCollapse + 1);
+      return;
+    }
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (toolbar.clientWidth === toolbarWidthRef.current) return;
+      toolbarWidthRef.current = toolbar.clientWidth;
+      // Breiter: von vorn messen; schmaler: weiter einklappen.
+      setToolbarCollapse(previous => (toolbar.scrollWidth > toolbar.clientWidth + 1 ? Math.min(previous + 1, TOOLBAR_COLLAPSE_STEPS) : 0));
+    });
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [toolbarCollapse, toolbarContentKey]);
+
+  const flushDesign = useCallback(async () => {
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const next = latestDraftRef.current;
+    if (!next) return;
+    setDesignSaveState('saving');
+    try {
+      await updateCompany({ documentTemplates: applyDocumentDesign(templatesRef.current, defaultDocumentTemplates, next) });
+      if (latestDraftRef.current === next) {
+        latestDraftRef.current = null;
+        setDraftDesign(null);
+      }
+      setDesignSaveState('saved');
+    } catch {
+      setDesignSaveState('error');
+    }
+  }, [updateCompany]);
+
+  // Beim Verlassen der Seite noch ausstehende Änderungen sofort speichern.
+  useEffect(() => () => { void flushDesign(); }, [flushDesign]);
+
+  const updateDesign = (patch: Partial<DocumentDesign>) => {
+    const next = { ...design, ...patch };
+    if (sameDesign(next, design)) return;
+    latestDraftRef.current = next;
+    setDraftDesign(next);
+    setDesignSaveState('pending');
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => { void flushDesign(); }, DESIGN_SAVE_DELAY_MS);
+  };
+
+  const selectDesign = (layout: DocumentDesignId) => {
+    // Eine selbst gewählte Schrift bleibt; sonst bringt das Design seine eigene mit.
+    const keepsCustomFont = design.fontFamily !== designDefaultFonts[design.layout];
+    updateDesign({ layout, fontFamily: keepsCustomFont ? design.fontFamily : designDefaultFonts[layout] });
+  };
+
+  const restoreDefaultDesign = async () => {
+    const confirmed = await confirm({
+      title: 'Standarddesign wiederherstellen',
+      message: 'Design, Farbe, Schrift und Optionen werden für alle Dokumente auf „Klassisch“ in Blau zurückgesetzt. Ihre Texte bleiben unverändert.',
+      confirmText: 'Zurücksetzen',
+      isDestructive: true,
+    });
+    if (confirmed) updateDesign(defaultDocumentDesign);
+  };
+
+  const pendingDesign = designSaveState === 'pending' || designSaveState === 'saving';
   useEffect(() => {
-    if (!isAnyEditorDirty && !isSaving) return;
+    if (!pendingDesign && !isTextEditorDirty && !isSaving) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', warnBeforeUnload);
     return () => window.removeEventListener('beforeunload', warnBeforeUnload);
-  }, [isAnyEditorDirty, isSaving]);
+  }, [pendingDesign, isTextEditorDirty, isSaving]);
 
-  const sourceTemplates = useMemo(
-    () => documentTemplates.length > 0 ? documentTemplates : defaultDocumentTemplates,
-    [documentTemplates],
+  const previewCompany = useMemo(
+    () => ({ ...company, documentTemplates: applyDocumentDesign(sourceTemplates, defaultDocumentTemplates, design) }),
+    [company, sourceTemplates, design],
   );
-  const templates = useMemo(() => activeTab === 'text'
-    ? []
-    : sourceTemplates.filter(template => template.documentType === activeTab), [activeTab, sourceTemplates]);
-  const textTemplates = useMemo(
-    () => documentTextTemplateTypes.map(type => resolveDocumentTextTemplate(company, type)),
-    [company],
-  );
+  const previewTemplate = useMemo(() => {
+    const candidates = previewCompany.documentTemplates.filter(template => template.documentType === previewType);
+    return candidates.find(template => template.isDefault) || candidates[0];
+  }, [previewCompany, previewType]);
 
-  useEffect(() => {
-    if (!editingTemplate) {
-      if (!isCreating) {
-        setFormData(emptyForm);
-        setEditorInitialFormData(emptyForm);
-      }
-      return;
+  const previewTypes: Array<{ id: DocumentTemplateType; label: string }> = [
+    { id: 'invoice', label: 'Rechnung' },
+    { id: 'quote', label: 'Angebot' },
+    { id: 'orderConfirmation', label: terminology.work.confirmationLabel },
+    { id: 'reminder', label: 'Mahnung' },
+  ];
+  const activePreviewType = previewTypes.find(type => type.id === previewType) || previewTypes[0];
+  const activeColor = colorPresets.find(preset => preset.color.toLowerCase() === design.accentColor.toLowerCase());
+  const activeFont = fontOptions.find(option => option.id === design.fontFamily) || fontOptions[0];
+
+  const openCustomColorPicker = () => {
+    const input = customColorInputRef.current;
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      input.click();
     }
-    const nextFormData = templateToForm(editingTemplate, company);
-    setFormData(nextFormData);
-    setEditorInitialFormData(nextFormData);
-  }, [company, editingTemplate, isCreating]);
-
-  useEffect(() => {
-    if (!selectedPreview) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedPreview(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    previewDialogRef.current?.querySelector<HTMLElement>('[data-preview-close]')?.focus();
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedPreview]);
-
-  const closePreview = () => {
-    setSelectedPreview(null);
-    setPreviewExpanded(false);
   };
 
-  const openCreate = (documentType: DocumentTemplateType) => {
-    setEditingTextTemplate(null);
-    setEditingTemplate(null);
-    const nextFormData = getEmptyForm(documentType, company);
-    setFormData(nextFormData);
-    setEditorInitialFormData(nextFormData);
-    setEditorDocumentType(documentType);
-    setIsCreating(true);
-    setError(null);
-  };
-
-  const openEdit = (template: DocumentTemplate) => {
-    setEditingTextTemplate(null);
-    const nextFormData = templateToForm(template, company);
-    setIsCreating(false);
-    setEditingTemplate(template);
-    setEditorDocumentType(template.documentType);
-    setFormData(nextFormData);
-    setEditorInitialFormData(nextFormData);
-    setError(null);
-  };
+  // ------------------------------------------------------------------ Texte
 
   const openEditText = (template: DocumentTextTemplate) => {
     const nextFormData = textTemplateToForm(template);
-    setEditingTemplate(null);
-    setIsCreating(false);
-    setEditorDocumentType(null);
     setEditingTextTemplate(template);
     setTextFormData(nextFormData);
     setTextEditorInitialFormData(nextFormData);
@@ -757,29 +517,6 @@ export function TemplatesManagement() {
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     });
     return confirmed;
-  };
-
-  const closeEditor = async (skipConfirmation = false) => {
-    if (saveInFlightRef.current && !skipConfirmation) return;
-    if (!skipConfirmation && isEditorDirty) {
-      const confirmed = await confirmEditorAction({
-        title: 'Ungespeicherte Änderungen',
-        message: 'Ungespeicherte Änderungen wirklich verwerfen?',
-        confirmText: 'Verwerfen',
-        isDestructive: true,
-      });
-      if (!confirmed) return;
-    }
-    const trigger = editorTriggerRef.current;
-    setEditingTemplate(null);
-    setIsCreating(false);
-    setEditorDocumentType(null);
-    setFormData(emptyForm);
-    setEditorInitialFormData(emptyForm);
-    setError(null);
-    window.requestAnimationFrame(() => {
-      if (trigger?.isConnected) trigger.focus();
-    });
   };
 
   const closeTextEditor = async (skipConfirmation = false) => {
@@ -803,21 +540,6 @@ export function TemplatesManagement() {
     });
   };
 
-  const resetEditorChanges = async () => {
-    if (saveInFlightRef.current) return;
-    if (isEditorDirty) {
-      const confirmed = await confirmEditorAction({
-        title: 'Änderungen zurücksetzen',
-        message: 'Alle ungespeicherten Änderungen wirklich zurücksetzen?',
-        confirmText: 'Zurücksetzen',
-        isDestructive: true,
-      });
-      if (!confirmed) return;
-    }
-    setFormData(editorInitialFormData);
-    setError(null);
-  };
-
   const resetTextEditorChanges = async () => {
     if (saveInFlightRef.current) return;
     if (isTextEditorDirty) {
@@ -833,83 +555,16 @@ export function TemplatesManagement() {
     setError(null);
   };
 
-  const handleTemplateTabChange = async (tab: TemplateTab) => {
-    if (tab === activeTab || saveInFlightRef.current) return;
-    if (isAnyEditorDirty) {
-      const confirmed = await confirmEditorAction({
-        title: 'Ungespeicherte Änderungen',
-        message: 'Ungespeicherte Änderungen wirklich verwerfen?',
-        confirmText: 'Verwerfen',
-        isDestructive: true,
-      });
-      if (!confirmed) return;
-    }
-    setActiveTab(tab);
-    if (editingTemplate || isCreating) await closeEditor(true);
-    if (editingTextTemplate) await closeTextEditor(true);
-  };
-
-  const handleSave = async (event: FormEvent) => {
-    event.preventDefault();
-    if (saveInFlightRef.current) return;
-    if (!formData.name.trim()) {
-      setError('Bitte vergeben Sie einen Namen für die Vorlage.');
-      event.currentTarget.querySelector<HTMLInputElement>('input[name="templateName"]')?.focus();
-      return;
-    }
-
-    const documentType = editorDocumentType || 'invoice';
-    const documentTypeTemplates = documentTemplates.filter(template => template.documentType === documentType);
-    const usesCustomText = formData.textMode === 'custom';
-    const templateData: Omit<DocumentTemplate, 'id' | 'createdAt' | 'updatedAt'> = {
-      documentType,
-      name: formData.name.trim(),
-      description: formData.description.trim(),
-      textMode: formData.textMode,
-      subject: usesCustomText ? formData.subject.trim() : undefined,
-      introText: usesCustomText ? formData.introText.trim() : undefined,
-      closingText: usesCustomText ? formData.closingText.trim() : undefined,
-      paymentTerms: usesCustomText ? formData.paymentTerms.trim() : undefined,
-      reminderTexts: usesCustomText && documentType === 'reminder'
-        ? Object.fromEntries(Object.entries(formData.reminderTexts).map(([key, value]) => [key, value?.trim()]))
-        : undefined,
-      layout: formData.layout,
-      accentColor: formData.accentColor,
-      logoMode: formData.logoMode,
-      headerAlignment: formData.headerAlignment,
-      tableStyle: formData.tableStyle,
-      showPaymentInformation: formData.showPaymentInformation,
-      showFooter: formData.showFooter,
-      isDefault: editingTemplate ? editingTemplate.isDefault : documentTypeTemplates.length === 0,
-    };
-
-    try {
-      saveInFlightRef.current = true;
-      setIsSaving(true);
-      setError(null);
-      if (editingTemplate) {
-        await updateDocumentTemplate(editingTemplate.id, templateData);
-      } else {
-        await addDocumentTemplate(templateData);
-      }
-      await closeEditor(true);
-    } catch {
-      setError('Die Vorlage konnte nicht gespeichert werden.');
-    } finally {
-      saveInFlightRef.current = false;
-      setIsSaving(false);
-    }
-  };
-
   const handleSaveText = async (event: FormEvent) => {
     event.preventDefault();
     if (saveInFlightRef.current || !editingTextTemplate) return;
 
     const now = new Date();
+    const editedType = editingTextTemplate.documentType;
     const updatedTextTemplates = documentTextTemplateTypes.map(type => {
       const existing = company.documentTextTemplates?.find(template => template.documentType === type);
       const resolved = resolveDocumentTextTemplate(company, type);
-      if (type !== editingTextTemplate.documentType) {
+      if (type !== editedType) {
         return existing || resolved;
       }
 
@@ -926,12 +581,22 @@ export function TemplatesManagement() {
         updatedAt: now,
       };
     });
+    // Frühere Vorlagen konnten eigene Texte tragen. Die Oberfläche pflegt nur
+    // noch die Standardtexte; damit das Bearbeitete auch gedruckt wird, gilt
+    // für diese Dokumentart danach wieder der Standardtext.
+    const hasOwnTexts = sourceTemplates.some(template => template.documentType === editedType && template.textMode !== 'global');
+    const updatedDocumentTemplates = hasOwnTexts
+      ? sourceTemplates.map(template => template.documentType === editedType ? { ...template, textMode: 'global' as const } : template)
+      : undefined;
 
     try {
       saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
-      await updateCompany({ documentTextTemplates: updatedTextTemplates });
+      await updateCompany({
+        documentTextTemplates: updatedTextTemplates,
+        ...(updatedDocumentTemplates ? { documentTemplates: updatedDocumentTemplates } : {}),
+      });
       await closeTextEditor(true);
     } catch {
       setError('Die Textvorlage konnte nicht gespeichert werden.');
@@ -941,46 +606,37 @@ export function TemplatesManagement() {
     }
   };
 
-  const handleSetDefault = async (template: DocumentTemplate) => {
-    try {
-      await updateDocumentTemplate(template.id, { isDefault: true });
-    } catch {
-      setError('Die Standardvorlage konnte nicht geändert werden.');
-    }
-  };
-
-  const handleDelete = async (template: DocumentTemplate) => {
+  const handleRestoreTextDefaults = async () => {
     const confirmed = await confirm({
-      title: 'Vorlage löschen',
-      message: `Vorlage „${template.name}“ wirklich löschen?`,
-      confirmText: 'Löschen',
-      isDestructive: true,
-    });
-    if (!confirmed) return;
-    try {
-      await deleteDocumentTemplate(template.id);
-    } catch {
-      setError('Die Vorlage konnte nicht gelöscht werden.');
-    }
-  };
-
-  const handleRestoreDefaults = async () => {
-    const confirmed = await confirm({
-      title: 'Standardvorlagen wiederherstellen',
-      message: 'Die mitgelieferten PDF- und Textvorlagen werden auf ihre Ausgangswerte zurückgesetzt; gelöschte Standardvorlagen kommen zurück. Eigene Vorlagen und die Wahl der Standardvorlage bleiben erhalten.',
-      confirmText: 'Standards wiederherstellen',
+      title: 'Standardtexte wiederherstellen',
+      message: 'Betreff, Einleitung, Abschluss, Zahlungshinweise und Mahntexte werden für alle Dokumentarten auf die mitgelieferten Texte zurückgesetzt.',
+      confirmText: 'Standardtexte wiederherstellen',
       isDestructive: true,
     });
     if (!confirmed) return;
     try {
       await updateCompany({
-        documentTemplates: restoreDefaultTemplates(company.documentTemplates || [], defaultDocumentTemplates, true),
         documentTextTemplates: restoreDefaultTemplates(company.documentTextTemplates || [], defaultDocumentTextTemplates, false),
       });
       setError(null);
     } catch {
-      setError('Die Standardvorlagen konnten nicht wiederhergestellt werden.');
+      setError('Die Standardtexte konnten nicht wiederhergestellt werden.');
     }
+  };
+
+  const handleTemplateTabChange = async (tab: TemplateTab) => {
+    if (tab === activeTab || saveInFlightRef.current) return;
+    if (isTextEditorDirty) {
+      const confirmed = await confirmEditorAction({
+        title: 'Ungespeicherte Änderungen',
+        message: 'Ungespeicherte Änderungen wirklich verwerfen?',
+        confirmText: 'Verwerfen',
+        isDestructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setActiveTab(tab);
+    if (editingTextTemplate) await closeTextEditor(true);
   };
 
   return (
@@ -988,24 +644,8 @@ export function TemplatesManagement() {
       <PageHeader
         icon={Copy}
         title="Vorlagen"
-        subtitle="PDF-Layouts und Textbausteine zentral verwalten"
-      >
-        <ActionMenu
-          variant="primary"
-          ariaLabel="PDF-Vorlage hinzufügen"
-          title="PDF-Vorlage hinzufügen"
-          triggerClassName="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white sm:px-4"
-          icon={<><Plus className="h-4 w-4" /><span className="hidden sm:inline">PDF-Vorlage hinzufügen</span></>}
-        >
-          <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">PDF-Vorlage für</div>
-          <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('invoice')}>Rechnung</ActionMenuItem>
-          <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('quote')}>Angebot</ActionMenuItem>
-          <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} onClick={() => openCreate('orderConfirmation')}>{terminology.work.confirmationLabel}</ActionMenuItem>
-          <ActionMenuItem icon={<FileText className="h-4 w-4" />} onClick={() => openCreate('reminder')}>Mahnung</ActionMenuItem>
-          <div className="my-1 border-t border-gray-200" role="separator" />
-          <ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} onClick={() => { void handleRestoreDefaults(); }}>Standardvorlagen wiederherstellen</ActionMenuItem>
-        </ActionMenu>
-      </PageHeader>
+        subtitle="Ein Design für Rechnungen, Angebote, Bestätigungen und Mahnungen"
+      />
 
       <div className="theme-tab-group">
         <ThemeTabBar
@@ -1013,47 +653,218 @@ export function TemplatesManagement() {
           ariaLabel="Vorlagenbereiche"
           activeTab={activeTab}
           onChange={handleTemplateTabChange}
-          tabs={tabs}
+          tabs={templateTabs}
         />
 
-        <div className="theme-tab-panel space-y-6">
-          {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}
+        <div className="theme-tab-panel space-y-5">
+          {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}
 
-          {activeTab !== 'text' && <section className="rounded-xl border border-gray-200 bg-white p-4 lg:p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">PDF-Header Layout</h2>
-                <p className="mt-1 max-w-2xl text-sm text-gray-500">Zweizeilige Darstellung der Firmendaten im PDF-Header. Ermöglicht eine strukturiertere Darstellung im PDF-Kopfbereich.</p>
-              </div>
-              <label className="relative inline-flex shrink-0 cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  checked={company.companyHeaderTwoLine || false}
-                  onChange={event => { void updateCompany({ companyHeaderTwoLine: event.target.checked }); }}
-                  className="sr-only peer"
-                />
-                <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 peer-checked:bg-primary-custom peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-['']" />
-              </label>
-            </div>
-            {company.companyHeaderTwoLine && (
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <label className="block text-xs font-medium text-gray-600">Erste Zeile
-                  <input defaultValue={company.companyHeaderLine1 || ''} onBlur={event => { void updateCompany({ companyHeaderLine1: event.target.value }); }} className="form-input form-input-compact mt-1 text-sm font-normal" placeholder="z. B. Firmenname / Service" />
-                </label>
-                <label className="block text-xs font-medium text-gray-600">Zweite Zeile
-                  <input defaultValue={company.companyHeaderLine2 || ''} onBlur={event => { void updateCompany({ companyHeaderLine2: event.target.value }); }} className="form-input form-input-compact mt-1 text-sm font-normal" placeholder="z. B. Inhaber, Adresse" />
-                </label>
-              </div>
-            )}
-          </section>}
-
-          {activeTab === 'text' ? (
+          {activeTab === 'design' ? (
             <>
-              <div className="flex items-center justify-between gap-3">
+              {/* Bewusst immer eine Zeile (Vorgabe): Auf schmalen Bildschirmen wird gewischt statt umbrochen. */}
+              <div role="radiogroup" aria-label="PDF-Design" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                {designOptions.map(option => {
+                  const selected = design.layout === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      title={option.description}
+                      onClick={() => selectDesign(option.id)}
+                      className={`${choiceCardClass(selected)} flex min-w-[5.5rem] flex-1 flex-col gap-2 !p-2`}
+                    >
+                      <DesignThumbnail design={option.id} accent={design.accentColor} />
+                      <span className="flex items-center justify-between gap-1 px-0.5">
+                        <span className="truncate text-sm font-medium text-gray-900">{option.label}</span>
+                        {selected && <Check className="h-4 w-4 shrink-0 text-primary-custom max-sm:hidden" aria-hidden="true" />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Immer eine Zeile: Passen die Beschriftungen nicht, bleiben nur die Symbole. */}
+              <div ref={toolbarRef} className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden">
+                <ActionMenu
+                  ariaLabel={`Dokumentart der Vorschau: ${activePreviewType.label}`}
+                  title="Dokumentart der Vorschau"
+                  menuClassName="min-w-56"
+                  triggerClassName={TOOLBAR_TRIGGER}
+                  align="start"
+                  icon={(
+                    <>
+                      <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {toolbarCollapse < 5 && <span className="truncate">{activePreviewType.label}</span>}
+                      {toolbarCollapse < 6 && <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </>
+                  )}
+                >
+                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Vorschau als</div>
+                  {previewTypes.map(type => (
+                    <ActionMenuItem
+                      key={type.id}
+                      role="menuitemradio"
+                      aria-checked={previewType === type.id}
+                      trailing={previewType === type.id ? <Check className="h-4 w-4 text-primary-custom" /> : undefined}
+                      onClick={() => setPreviewType(type.id)}
+                    >
+                      {type.label}
+                    </ActionMenuItem>
+                  ))}
+                </ActionMenu>
+                <span className="mx-0.5 h-6 w-px shrink-0 bg-gray-200" aria-hidden="true" />
+                <ActionMenu
+                  ariaLabel={`Farbe: ${activeColor?.name || design.accentColor}`}
+                  title="Akzentfarbe"
+                  menuClassName="min-w-56"
+                  triggerClassName={TOOLBAR_TRIGGER}
+                  align="start"
+                  icon={(
+                    <>
+                      <span className="h-4 w-4 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: design.accentColor }} aria-hidden="true" />
+                      {toolbarCollapse < 3 && <span className="truncate">{activeColor?.name || 'Eigene Farbe'}</span>}
+                      {toolbarCollapse < 4 && <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </>
+                  )}
+                >
+                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Akzentfarbe</div>
+                  {colorPresets.map(preset => (
+                    <ActionMenuItem
+                      key={preset.color}
+                      role="menuitemradio"
+                      aria-checked={preset.color === activeColor?.color}
+                      icon={<span className="block h-4 w-4 rounded-full border border-black/10" style={{ backgroundColor: preset.color }} />}
+                      trailing={preset.color === activeColor?.color ? <Check className="h-4 w-4 text-primary-custom" /> : undefined}
+                      onClick={() => updateDesign({ accentColor: preset.color })}
+                    >
+                      {preset.name}
+                    </ActionMenuItem>
+                  ))}
+                  <div className="my-1 border-t border-gray-200" role="separator" />
+                  <ActionMenuItem
+                    icon={<Palette className="h-4 w-4" />}
+                    trailing={!activeColor ? <span className="font-mono text-xs text-gray-500">{design.accentColor}</span> : undefined}
+                    onClick={openCustomColorPicker}
+                  >
+                    Eigene Farbe …
+                  </ActionMenuItem>
+                </ActionMenu>
+                <input
+                  ref={customColorInputRef}
+                  type="color"
+                  value={design.accentColor}
+                  onChange={event => updateDesign({ accentColor: event.target.value })}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+
+                <ActionMenu
+                  ariaLabel={`Schrift: ${activeFont.label}`}
+                  title="Schrift"
+                  menuClassName="min-w-60"
+                  triggerClassName={TOOLBAR_TRIGGER}
+                  align="start"
+                  icon={(
+                    <>
+                      <Type className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {toolbarCollapse < 2 && <span className="truncate" style={{ fontFamily: activeFont.css }}>{activeFont.label}</span>}
+                      {toolbarCollapse < 4 && <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </>
+                  )}
+                >
+                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Schrift</div>
+                  {fontOptions.map(option => (
+                    <ActionMenuItem
+                      key={option.id}
+                      role="menuitemradio"
+                      aria-checked={option.id === design.fontFamily}
+                      multiline
+                      trailing={option.id === design.fontFamily ? <Check className="h-4 w-4 text-primary-custom" /> : undefined}
+                      onClick={() => updateDesign({ fontFamily: option.id })}
+                    >
+                      <span className="block text-sm text-gray-900" style={{ fontFamily: option.css }}>{option.label}</span>
+                      <span className="block text-xs text-gray-600">{option.hint}</span>
+                    </ActionMenuItem>
+                  ))}
+                </ActionMenu>
+
+                <ActionMenu
+                  ariaLabel="Weitere Optionen"
+                  title="Weitere Optionen"
+                  menuClassName="min-w-64"
+                  closeOnClick={false}
+                  triggerClassName={TOOLBAR_TRIGGER}
+                  align="start"
+                  icon={(
+                    <>
+                      <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {toolbarCollapse < 1 && <span>Optionen</span>}
+                      {toolbarCollapse < 4 && <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </>
+                  )}
+                >
+                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Im Dokument anzeigen</div>
+                  {([
+                    { key: 'logo', label: 'Logo', checked: design.logoMode !== 'none', toggle: () => updateDesign({ logoMode: design.logoMode === 'none' ? 'company' : 'none' }) },
+                    { key: 'payment', label: 'Zahlungsinformationen', checked: design.showPaymentInformation, toggle: () => updateDesign({ showPaymentInformation: !design.showPaymentInformation }) },
+                    { key: 'footer', label: 'Fußzeile mit Firmendaten', checked: design.showFooter, toggle: () => updateDesign({ showFooter: !design.showFooter }) },
+                  ]).map(option => (
+                    <ActionMenuItem
+                      key={option.key}
+                      role="menuitemcheckbox"
+                      aria-checked={option.checked}
+                      icon={(
+                        <span className={`flex h-4 w-4 items-center justify-center rounded border ${option.checked ? 'border-primary-custom bg-primary-custom text-white' : 'border-gray-300 bg-white'}`}>
+                          {option.checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                        </span>
+                      )}
+                      onClick={option.toggle}
+                    >
+                      {option.label}
+                    </ActionMenuItem>
+                  ))}
+                  {!company.logo && design.logoMode !== 'none' && (
+                    <p className="px-3 pb-2 pt-1 text-xs text-gray-500">Noch kein {terminology.organization.logoLabel} hinterlegt. Ohne Logo steht der Name im Briefkopf.</p>
+                  )}
+                  <div className="my-1 border-t border-gray-200" role="separator" />
+                  <ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} onClick={() => { void restoreDefaultDesign(); }}>
+                    Standarddesign wiederherstellen
+                  </ActionMenuItem>
+                </ActionMenu>
+
+                {/* Gespeichert wird automatisch; sichtbar ist nur ein laufender
+                    Speichervorgang oder ein Fehler. */}
+                <span className="ml-auto flex min-w-0 shrink-0 items-center" role="status" aria-live="polite">
+                  {pendingDesign && (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" aria-label="Wird gespeichert" />
+                  )}
+                  {designSaveState === 'error' && (
+                    <button type="button" onClick={() => { void flushDesign(); }} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50" title="Speichern fehlgeschlagen – erneut versuchen">
+                      <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {toolbarCollapse === 0 && <span>Nicht gespeichert – erneut versuchen</span>}
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              <div className="template-design-preview flex justify-center rounded-xl p-3 sm:p-6">
+                {previewTemplate && <TemplateDocumentPreview template={previewTemplate} company={previewCompany} />}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Textvorlagen</h2>
-                  <p className="mt-1 text-sm text-gray-500">Betreff, Einleitung, Abschluss und Zahlungshinweise je Dokumentart verwalten.</p>
+                  <p className="mt-1 text-sm text-gray-500">Betreff, Einleitung, Abschluss und Zahlungshinweise je Dokumentart. Das PDF-Design gilt für alle gemeinsam.</p>
                 </div>
+                <button type="button" onClick={() => { void handleRestoreTextDefaults(); }} className={`${TOOLBAR_TRIGGER} shrink-0`}>
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Standardtexte wiederherstellen
+                </button>
               </div>
 
               <TextTemplateTable
@@ -1061,70 +872,10 @@ export function TemplatesManagement() {
                 terminologyProfile={company.terminologyProfile}
                 onEdit={(item, trigger) => { textEditorTriggerRef.current = trigger; openEditText(item); }}
               />
-              <p className="text-xs text-gray-500">{textTemplates.length} Vorlagen</p>
-            </>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {templates.map(template => (
-                  <article key={template.id} className={`template-card relative rounded-xl border bg-white shadow-sm ${template.isDefault ? 'border-primary-custom' : 'border-gray-200'}`}>
-                    {template.isDefault && <span className="absolute left-1/2 top-0 z-10 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary-custom bg-white px-3 py-1 text-xs font-medium text-primary-custom">Standard</span>}
-                    <button type="button" onClick={() => setSelectedPreview(template)} className="template-card-preview-surface group relative block min-h-[520px] w-full overflow-hidden rounded-t-xl p-[2.5%]" aria-label={`${template.name} in großer Vorschau öffnen`}>
-                      <div className="mx-auto w-full space-y-2">
-                        <TemplatePdfPreview template={template} company={company} thumbnail />
-                      </div>
-                      <span className="absolute bottom-6 right-6 inline-flex items-center gap-1 rounded-md bg-white/95 px-2 py-1 text-xs font-medium text-gray-700 opacity-0 shadow transition group-hover:opacity-100">
-                        <Maximize2 className="h-3 w-3" /> Große Vorschau
-                      </span>
-                    </button>
-                    <div className="p-3">
-                      <div className="flex flex-wrap items-center justify-center gap-2">
-                        <div className="w-full min-w-0">
-                          <h3 className="truncate text-center font-semibold text-gray-900">{template.name}</h3>
-                        </div>
-                        <div className="template-card-actions flex shrink-0 items-center gap-1">
-                          <button type="button" onClick={event => { editorTriggerRef.current = event.currentTarget; openEdit(template); }} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-custom" aria-label={`${template.name} bearbeiten`}>
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button type="button" onClick={() => handleDelete(template)} className="inline-flex h-8 w-8 min-h-0 min-w-0 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label={`${template.name} löschen`}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <button type="button" onClick={() => handleSetDefault(template)} disabled={template.isDefault} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary-custom bg-white px-3 py-1.5 text-xs font-medium text-primary-custom transition-colors hover:bg-primary-light-custom disabled:cursor-default disabled:opacity-100" aria-label={template.isDefault ? `${template.name} ist Standard` : `${template.name} als Standard festlegen`}>
-                          {template.isDefault ? <><Check className="h-4 w-4" />Standard</> : 'Als Standard'}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              {templates.length === 0 && (
-                <EmptyState variant={activeTab === 'quote' ? 'quotes' : activeTab === 'orderConfirmation' ? 'jobs' : 'invoices'} title="Noch keine Layoutvorlagen vorhanden." description="Legen Sie für diese Dokumentart eine Vorlage an." action={{ label: 'Vorlage hinzufügen', onClick: () => openCreate(activeTab) }} />
-              )}
-
             </>
           )}
         </div>
       </div>
-
-      {(isCreating || editingTemplate) && editorDocumentType && (
-        <TemplateEditorOverlay
-          activeTab={editorDocumentType}
-          editingTemplate={editingTemplate}
-          formData={formData}
-          setFormData={setFormData}
-          company={company}
-          logo={company.logo}
-          terminologyProfile={company.terminologyProfile}
-          isSaving={isSaving}
-          isDirty={isEditorDirty}
-          error={error}
-          onClose={() => { void closeEditor(); }}
-          onReset={() => { void resetEditorChanges(); }}
-          onSave={handleSave}
-        />
-      )}
 
       {editingTextTemplate && (
         <TextTemplateEditorOverlay
@@ -1139,39 +890,6 @@ export function TemplatesManagement() {
           onReset={() => { void resetTextEditorChanges(); }}
           onSave={handleSaveText}
         />
-      )}
-
-      {selectedPreview && (
-        <div
-          className={`dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-gray-950/60 ${previewExpanded ? '' : 'sm:p-4'}`}
-          onMouseDown={event => { if (event.target === event.currentTarget) closePreview(); }}
-        >
-          <div
-            ref={previewDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={previewTitleId}
-            className={`min-h-0 w-full overflow-hidden bg-white shadow-2xl ${previewExpanded
-              ? 'h-[100dvh] max-w-none rounded-none'
-              : 'h-[100dvh] max-w-4xl rounded-none sm:h-[calc(100dvh-2rem)] sm:rounded-2xl'}`}
-            onMouseDown={event => event.stopPropagation()}
-          >
-            <TemplatePdfPreview
-              template={selectedPreview}
-              company={company}
-              dialog={{
-                titleId: previewTitleId,
-                expanded: previewExpanded,
-                onToggleExpanded: () => setPreviewExpanded(value => !value),
-                onClose: closePreview,
-                onEdit: () => {
-                  closePreview();
-                  openEdit(selectedPreview);
-                },
-              }}
-            />
-          </div>
-        </div>
       )}
     </div>
   );

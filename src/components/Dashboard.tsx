@@ -906,12 +906,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         compareMonth={comparisonMonth} comparisonForecast={comparisonYearForecast?.monthly.find(item => item.month === comparisonMonth)}
         privateLeviesVisible={preferences.showPrivateLevies || id === 'small-business'}
         loading={(forecastLoading || (preferences.monthView && comparisonYear !== selectedPeriodYear && comparisonForecastLoading)) && !allYears}
-        error={allYears ? 'Wähle ein einzelnes Steuerjahr, um die Schätzung anzuzeigen.' : forecastError ?? comparisonForecastError}
+        error={allYears ? 'Wählen Sie ein einzelnes Steuerjahr, um die Schätzung anzuzeigen.' : forecastError ?? comparisonForecastError}
         onSetup={() => onNavigate('settings', 'taxes')} onFixedCosts={() => onNavigate('fixed-costs')} />;
     }
     if (id === 'vat-return') {
       return <VatDashboardCard overview={vatOverview} loading={vatOverviewLoading && !allYears} year={dashboardYear}
-        error={allYears ? 'Wähle ein einzelnes Steuerjahr, um die Umsatzsteuer anzuzeigen.' : vatOverviewError}
+        error={allYears ? 'Wählen Sie ein einzelnes Steuerjahr, um die Umsatzsteuer anzuzeigen.' : vatOverviewError}
         onOpen={() => onNavigate('vat')} onSetup={() => onNavigate('settings', 'taxes')} />;
     }
     switch (id) {
@@ -1028,8 +1028,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </MetricCardHeader>
 
             {currentWeekJobs.length > 0 ? (
+              <>
               <div className="overflow-x-auto">
-                <div className="grid min-w-[700px] grid-cols-7 divide-x divide-gray-200">
+                <div className="grid grid-cols-1 divide-y divide-gray-200 tablet:min-w-[700px] tablet:grid-cols-7 tablet:divide-x tablet:divide-y-0">
                   {currentWeekDays.map(({ date, jobs }) => {
                     const isToday = date.getTime() === parseLocalJobDate(today).getTime();
 
@@ -1043,7 +1044,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                             {formatDate(date, locale, company?.dateFormat)}
                           </div>
                         </div>
-                        <div className="min-h-[5.5rem] space-y-2 p-2">
+                        <div className="space-y-2 p-2 tablet:min-h-[5.5rem]">
                           {jobs.length > 0 ? jobs.map((job) => (
                             <button
                               key={job.id}
@@ -1051,7 +1052,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                               onClick={() => onNavigate('jobs', undefined, job.jobNumber)}
                               className="group relative w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 py-2 pl-3 pr-2 text-left transition-colors hover:border-primary-custom hover:bg-primary-custom/5"
                               aria-label={`${job.title} am ${formatDate(date, locale, company?.dateFormat)} · ${getJobStatusLabel(job.status)} öffnen`}
-                              title={getJobStatusLabel(job.status)}
+                              title={`${job.title} · ${getJobStatusLabel(job.status)}`}
                             >
                               {/* Der Status liegt als Streifen am linken Rand statt
                                   als Punkt in der Zeile: In den schmalen Tagesspalten
@@ -1062,8 +1063,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                               />
                               <span className="block min-w-0">
                                 <span className="block truncate text-xs font-semibold text-gray-900 group-hover:text-primary-custom">{job.title}</span>
-                                <span className="mt-1 block truncate text-[11px] text-gray-500">{job.customerName}</span>
-                                <span className="mt-1 block truncate text-[11px] text-gray-500">
+                                <span className="mt-1 block truncate text-xs text-gray-500">{job.customerName}</span>
+                                <span className="mt-1 block truncate text-xs text-gray-500">
                                   {getJobTimeRange(job, locale, company?.timeFormat, company?.numberFormat)}
                                 </span>
                               </span>
@@ -1077,6 +1078,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   })}
                 </div>
               </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-200 px-4 py-2.5 text-xs text-gray-600 lg:px-6">
+                {(['draft', 'in-progress', 'completed', 'invoiced'] as const).map(status => (
+                  <span key={status} className="inline-flex items-center gap-1.5">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${getJobStatusDotColor(status)}`} aria-hidden="true" />
+                    {getJobStatusLabel(status)}
+                  </span>
+                ))}
+              </div>
+              </>
             ) : (
               <DashboardEmptyState variant="calendar" title="Keine Termine in dieser Woche"
                 description={`Geplante ${terminology.work.plural} erscheinen hier tageweise.`}
@@ -1115,7 +1125,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     className={listButtonClass}
                     aria-label={`${job.title} öffnen`}
                   >
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getJobStatusDotColor(job.status)}`} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-gray-900">{job.title}</span>
                       <span className="mt-0.5 block truncate text-xs text-gray-500">
@@ -1123,6 +1132,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${getJobStatusDotColor(job.status)}`} aria-hidden="true" />
+                        {getJobStatusLabel(job.status)}
+                      </span>
                       <span className="hidden tabular-nums sm:inline">{formatDate(job.date, locale, company?.dateFormat)}</span>
                       <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </span>
@@ -1221,6 +1234,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                                 >
                                   <Banknote className="h-4 w-4" />
                                 </button>
+                              )}
+                              {!['draft', 'sent', 'overdue'].includes(invoice.status) && (
+                                <span className="inline-flex h-8 w-8 items-center justify-center text-gray-300" title="Für diesen Status gibt es keine Schnellaktion">
+                                  <span aria-hidden="true">–</span>
+                                  <span className="sr-only">Keine Schnellaktion verfügbar</span>
+                                </span>
                               )}
                             </div>
                           </td>
@@ -1617,7 +1636,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   return (
-    <div className="dashboard-metrics page-root space-y-6" aria-busy={!preferencesLoaded}>
+    <div className="dashboard-metrics page-root space-y-6 pb-24 tablet:pb-0" aria-busy={!preferencesLoaded}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-3">
         <h1 className="min-w-0 max-w-full truncate text-lg font-semibold text-gray-900 sm:text-2xl">Willkommen<span className="hidden min-[400px]:inline"> zurück</span>{greetingName ? `, ${greetingName}` : ''}</h1>
         {!editing && <div className="ml-auto flex shrink-0 items-center gap-1.5">

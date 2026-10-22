@@ -357,9 +357,13 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     settingsNavItem,
     workspaceNavItem,
   ];
-  const isNavItemActive = (itemId: string) => itemId === 'customers'
-    ? currentPage === 'customers' || currentPage === 'customer'
-    : currentPage === itemId;
+  const isNavItemActive = (itemId: string) => {
+    if (itemId === 'customers') return currentPage === 'customers' || currentPage === 'customer';
+    // Die Datenübernahme wird aus den Einstellungen (System) geöffnet und hat
+    // keinen eigenen Menüpunkt; markiert bleibt dann „Einstellungen“.
+    if (itemId === 'settings') return currentPage === 'settings' || currentPage === 'data-import';
+    return currentPage === itemId;
+  };
 
   const navItems: NavItem[] = [
     ...baseNavItems,
@@ -818,10 +822,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/datenschutz')}>Datenschutzerklärung</ActionMenuItem>
                       <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/impressum')}>Impressum</ActionMenuItem>
                     </div>
+                    {appVersion && appVersion !== 'dev' && (
                     <div className="sidebar-account-meta">
-                      <span>Kundennummer: —</span>
                       <span>{versionLabel}</span>
                     </div>
+                    )}
                     <div className="sidebar-account-menu-section">
                       <ActionMenuItem icon={<LogOut className="h-4 w-4" />} tone="red" onClick={() => { void logout(); }}>Abmelden</ActionMenuItem>
                     </div>

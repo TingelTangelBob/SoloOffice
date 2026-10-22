@@ -24,7 +24,7 @@ export function BulkSelectionHeader({
     // Vorher lagen sie in einem 40 Pixel hohen Streifen mit horizontalem
     // Scroll: ohne sichtbare Bildlaufleiste waren sie faktisch nicht erreichbar.
     <div className="flex min-h-10 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-gray-200 bg-gray-50 px-3 py-1.5 sm:flex-nowrap sm:px-4">
-      <label className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-gray-700">
+      <label className="flex min-h-10 cursor-pointer items-center gap-2 pr-2 text-sm text-gray-700">
         <input
           type="checkbox"
           checked={allSelected && visibleCount > 0}

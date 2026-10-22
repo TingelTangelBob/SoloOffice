@@ -79,6 +79,7 @@ export function ProfileManagement() {
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-3"><UserRound className="h-5 w-5 text-primary-custom" /><div><h2 className="font-semibold text-gray-900">Persönliche Daten</h2><p className="text-sm text-gray-500">{user?.email}</p></div></div>
+          {user ? (
           <form onSubmit={submitProfile} className="form-consistent-fields space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <label className="text-sm text-gray-700">Vorname<input value={firstName} onChange={event => setFirstName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
@@ -86,6 +87,9 @@ export function ProfileManagement() {
             </div>
             <button className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white">Profil speichern</button>
           </form>
+          ) : (
+          <div role="status" aria-label="Benutzerdaten werden geladen" className="animate-pulse space-y-4"><div className="grid grid-cols-2 gap-3"><div className="h-14 rounded-lg bg-gray-200" /><div className="h-14 rounded-lg bg-gray-200" /></div><div className="h-10 w-32 rounded-lg bg-gray-200" /></div>
+          )}
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

@@ -1,5 +1,6 @@
+import { SwitchTrack } from './ToggleSwitch';
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Send, Clock, AlertCircle, Download, Eye, History, ShieldAlert, Save, Settings as SettingsIcon } from 'lucide-react';
+import { Bell, Send, Clock, AlertCircle, Download, Eye, History, Info, ShieldAlert, Save, Settings as SettingsIcon } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useCompany } from '../context/CompanyContext';
@@ -448,13 +449,21 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
     <div className="max-w-4xl space-y-6">
       <div className="flex items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Zahlungserinnerungen Konfiguration</h2>
+          <h2 className="text-base font-semibold text-gray-900">Zahlungserinnerungen</h2>
           <p className="mt-1 text-sm text-gray-500">Fristen und Gebühren des Mahnwesens zentral festlegen.</p>
         </div>
-        <label className="relative inline-flex shrink-0 cursor-pointer items-center">
-          <input type="checkbox" checked={settings.remindersEnabled} onChange={event => onChange('remindersEnabled', event.target.checked)} className="sr-only peer" />
-          <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-custom/20 peer-checked:bg-primary-custom peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-['']" />
-        </label>
+        {/* Gemeinsamer Schalter: Der frühere Eigenbau war im Dunkelmodus
+            eingeschaltet kaum von ausgeschaltet zu unterscheiden. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.remindersEnabled}
+          aria-label="Zahlungserinnerungen aktivieren"
+          onClick={() => onChange('remindersEnabled', !settings.remindersEnabled)}
+          className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom focus-visible:ring-offset-2"
+        >
+          <SwitchTrack checked={settings.remindersEnabled} showLabel={false} />
+        </button>
       </div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
@@ -462,11 +471,11 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm font-medium text-gray-700">Tage nach Fälligkeit bis zur 1. Mahnung
             <input type="number" min="0" value={settings.reminderDaysAfterDue} onChange={event => onChange('reminderDaysAfterDue', Number(event.target.value) || 0)} className="form-input form-input-compact mt-1" />
-            <span className="mt-1 block text-xs font-normal text-gray-500">0 = sofort nach Fälligkeit mahnbar</span>
+            <span className="mt-1 block text-sm font-normal text-gray-600">0 = sofort nach Fälligkeit mahnbar</span>
           </label>
           <label className="block text-sm font-medium text-gray-700">Tage zwischen Mahnstufen
             <input type="number" min="0" value={settings.reminderDaysBetween} onChange={event => onChange('reminderDaysBetween', Number(event.target.value) || 0)} className="form-input form-input-compact mt-1" />
-            <span className="mt-1 block text-xs font-normal text-gray-500">0 = sofort erneut mahnbar</span>
+            <span className="mt-1 block text-sm font-normal text-gray-600">0 = sofort erneut mahnbar</span>
           </label>
         </div>
       </section>
@@ -485,13 +494,13 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
                   locale={locale}
                   numberFormat={numberFormat}
                   onValueChange={value => onChange(key, value === '' ? 0 : value)}
-                  className="form-input form-input-compact mt-1"
+                  className="form-input form-input-compact mt-1 text-right tabular-nums"
                 />
               </label>
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-gray-500">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen.</p>
+        <p className="mt-2 text-sm text-gray-600">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen.</p>
       </section>
 
       <div className="flex justify-end">
@@ -571,21 +580,20 @@ function EligibleRemindersTab({
         </button>
       </BulkSelectionHeader>
 
-      {/* Reminders Table */}
-      <div className="hidden w-full max-w-full overflow-x-auto tablet:block">
-        <table className="w-full min-w-[820px] divide-y divide-gray-200">
+      {/* Reminders Table: Fälligkeit und Verzug sowie Status und nächste Stufe
+          teilen sich je eine Spalte, damit die Tabelle ohne Querscrollen passt. */}
+      <div className="hidden w-full max-w-full overflow-hidden tablet:block">
+        <table className="w-full table-fixed divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="w-10 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span className="sr-only">Auswahl</span>
               </th>
-              <SortableTableHeader label="Fälligkeitsdatum" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
-              <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Fällig" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-2 py-2" />
+              <SortableTableHeader label="Rechnungsnr." sortKey="invoiceNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-2 py-2" />
               <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
-              <SortableTableHeader label="Tage überfällig" sortKey="daysSinceDue" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
-              <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
-              <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
-              <SortableTableHeader label="Nächste Mahnung" sortKey="nextStage" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
+              <SortableTableHeader label="Offen" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} align="right" className="w-24 px-2 py-2" />
+              <SortableTableHeader label="Status" sortKey="nextStage" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-36 px-2 py-2" />
               <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span className="sr-only">Aktionen</span>
               </th>
@@ -595,46 +603,36 @@ function EligibleRemindersTab({
             {sortedReminders.map((reminder) => (
               <tr key={reminder.invoiceId} className={!reminder.isEligible ? 'bg-gray-50' : ''}>
                 <td className="px-2 py-2 whitespace-nowrap">
-                  {reminder.isEligible && (
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(reminder.invoiceId)}
-                      onChange={() => onSelect(reminder.invoiceId)}
-                      className="custom-checkbox"
-                    />
-                  )}
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(reminder.invoiceId)}
+                    onChange={() => onSelect(reminder.invoiceId)}
+                    disabled={!reminder.isEligible}
+                    title={reminder.isEligible ? undefined : notEligibleHint(reminder)}
+                    className="custom-checkbox disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={`${reminder.invoiceNumber} auswählen`}
+                  />
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-900">
                   {formatDate(reminder.dueDate)}
+                  <span className="block text-xs text-gray-500">{overdueLabel(reminder.daysSinceDue)}</span>
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="truncate px-2 py-2 text-sm font-medium text-gray-900" title={reminder.invoiceNumber}>
                   {reminder.invoiceNumber}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-900">
-                  {reminder.customerName}
+                <td className="max-w-0 px-2 py-2 text-sm text-gray-900">
+                  <span className="block truncate" title={reminder.customerName}>{reminder.customerName}</span>
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-900">
-                  {reminder.daysSinceDue} Tage
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium tabular-nums text-gray-900">
                   {formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap">
+                <td className="px-2 py-2">
                   {getStatusBadgeForReminder(reminder.currentStatus)}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    reminder.nextStage === 1 ? 'bg-yellow-100 text-yellow-800' :
-                    reminder.nextStage === 2 ? 'bg-orange-100 text-orange-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {reminder.nextStage}. Mahnung
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                    Nächste Mahnung:
+                    <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${stageBadgeClassName(reminder.nextStage)}`}>{reminder.nextStage}. Mahnung</span>
+                    {!reminder.isEligible && reminder.nextEligibleDate && <span>ab {formatDate(reminder.nextEligibleDate)}</span>}
                   </span>
-                  {!reminder.isEligible && reminder.nextEligibleDate && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      ab {formatDate(reminder.nextEligibleDate)}
-                    </div>
-                  )}
                 </td>
                 {/* Es gibt nur eine Aktion; ein Drei-Punkte-Menü wäre hier ein
                     zusätzlicher Klick ohne Nutzen. */}
@@ -643,13 +641,9 @@ function EligibleRemindersTab({
                     type="button"
                     onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
                     disabled={!reminder.isEligible}
-                    title="Mahnung senden"
-                    aria-label="Mahnung senden"
-                    className={`action-icon-button ${
-                      reminder.isEligible
-                        ? 'action-icon-blue'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    }`}
+                    title={reminder.isEligible ? `${reminder.nextStage}. Mahnung senden` : notEligibleHint(reminder)}
+                    aria-label={`${reminder.nextStage}. Mahnung senden`}
+                    className="action-icon-button action-icon-blue disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Send className="h-4 w-4" />
                   </button>
@@ -665,15 +659,15 @@ function EligibleRemindersTab({
           <div key={reminder.invoiceId} className={`p-4 ${!reminder.isEligible ? 'bg-gray-50' : ''}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
-                {reminder.isEligible ? (
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(reminder.invoiceId)}
-                    onChange={() => onSelect(reminder.invoiceId)}
-                    className="custom-checkbox mt-0.5 shrink-0"
-                    aria-label={`${reminder.invoiceNumber} auswählen`}
-                  />
-                ) : null}
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(reminder.invoiceId)}
+                  onChange={() => onSelect(reminder.invoiceId)}
+                  disabled={!reminder.isEligible}
+                  title={reminder.isEligible ? undefined : notEligibleHint(reminder)}
+                  className="custom-checkbox mt-0.5 shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label={`${reminder.invoiceNumber} auswählen`}
+                />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-gray-900">{reminder.invoiceNumber}</p>
                   <p className="truncate text-sm text-gray-600">{reminder.customerName}</p>
@@ -683,18 +677,16 @@ function EligibleRemindersTab({
                 type="button"
                 onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
                 disabled={!reminder.isEligible}
-                title="Mahnung senden"
+                title={reminder.isEligible ? 'Mahnung senden' : notEligibleHint(reminder)}
                 aria-label="Mahnung senden"
-                className={`action-icon-button shrink-0 ${
-                  reminder.isEligible ? 'action-icon-blue' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                }`}
+                className="action-icon-button action-icon-blue shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Send className="h-4 w-4" />
               </button>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <div><span className="block text-xs text-gray-500">Fällig</span>{formatDate(reminder.dueDate)}</div>
-              <div><span className="block text-xs text-gray-500">Überfällig</span>{reminder.daysSinceDue} Tage</div>
+              <div><span className="block text-xs text-gray-500">Verzug</span>{overdueLabel(reminder.daysSinceDue)}</div>
               <div><span className="block text-xs text-gray-500">Offen</span>{formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</div>
               <div><span className="block text-xs text-gray-500">Status</span>{getStatusBadgeForReminder(reminder.currentStatus)}</div>
               <div className="col-span-2"><span className="block text-xs text-gray-500">Nächste Mahnung</span>
@@ -730,6 +722,7 @@ function ReminderHistoryTab({ invoices, formatDate, getStatusBadge, company, onD
       <div className="text-center py-12">
         <Clock className="h-12 w-12 text-gray-300 mx-auto mb-4" />
         <p className="text-gray-600">Keine Mahnhistorie vorhanden</p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">Sobald für eine Rechnung eine Mahnung versendet wurde, erscheint sie hier.</p>
       </div>
     );
   }
@@ -880,12 +873,12 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
   if (invoices.length === 0) {
     return (
       <div className="text-center py-12">
-        <AlertCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+        <Info className="h-16 w-16 text-gray-300 mx-auto mb-4" aria-hidden="true" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">Keine Härtefälle</h3>
         <p className="text-gray-600">
           Es gibt derzeit keine Rechnungen, die als Härtefälle eingestuft sind.
         </p>
-        <p className="text-sm text-gray-500 mt-2">
+        <p className="text-sm text-gray-600 mt-2">
           (Rechnungen mit 3x Mahnung und noch nicht bezahlt)
         </p>
       </div>
@@ -1005,6 +998,23 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
 }
 
 // Helper function for status badge
+/** Verzug in Worten; noch nicht fällige Rechnungen zeigen die Restlaufzeit. */
+function overdueLabel(daysSinceDue: number): string {
+  if (daysSinceDue > 0) return `${daysSinceDue} ${daysSinceDue === 1 ? 'Tag' : 'Tage'} überfällig`;
+  if (daysSinceDue === 0) return 'heute fällig';
+  return `in ${-daysSinceDue} ${daysSinceDue === -1 ? 'Tag' : 'Tagen'} fällig`;
+}
+
+function notEligibleHint(reminder: ReminderEligibility) {
+  return reminder.nextEligibleDate
+    ? `Noch nicht mahnbar – ab ${formatDateValue(reminder.nextEligibleDate)}`
+    : 'Noch nicht mahnbar';
+}
+
+function stageBadgeClassName(stage: number) {
+  return stage === 1 ? 'bg-yellow-100 text-yellow-800' : stage === 2 ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800';
+}
+
 function getStatusBadgeForReminder(status: Invoice['status']) {
   const statusConfig: Record<Invoice['status'], { label: string; color: string }> = {
     draft: { label: 'Entwurf', color: 'bg-gray-100 text-gray-800' },

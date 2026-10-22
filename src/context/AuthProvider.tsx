@@ -233,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!workspace) return;
     if (isDemoMode) {
       const remaining = readDemoWorkspaces().filter(item => item.id !== workspace.id);
-      if (!remaining.length) throw new Error('Lege zuerst einen Ersatz-Workspace an. Danach kannst du diesen Workspace löschen.');
+      if (!remaining.length) throw new Error('Legen Sie zuerst einen Ersatz-Workspace an. Danach können Sie diesen Workspace löschen.');
       deleteDemoWorkspaceData(workspace.id);
       persistDemoWorkspaces(remaining);
       setDemoActiveWorkspaceId(remaining[0].id);

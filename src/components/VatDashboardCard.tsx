@@ -68,7 +68,7 @@ export function VatDashboardCard({ overview, loading, error, year, onOpen, onSet
       <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0"><MetricCardTitle>{TITLE}</MetricCardTitle></div>
         <FloatingInfoTooltip
-          text={`Orientierung aus deinen erfassten Rechnungen und Belegen (Steuerjahr ${year}). Keine Steuerberatung, keine Voranmeldung und keine ELSTER-Übermittlung.`}
+          text={`Orientierung aus Ihren erfassten Rechnungen und Belegen (Steuerjahr ${year}). Keine Steuerberatung, keine Voranmeldung und keine ELSTER-Übermittlung.`}
           label={`Hinweise zu ${TITLE}`}
         />
       </div>

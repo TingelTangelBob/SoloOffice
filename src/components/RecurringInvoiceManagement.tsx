@@ -17,7 +17,7 @@ import {
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { apiService } from '../services/api';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
 import { PageHeader } from './PageHeader';
 import type {
   RecurringInvoice,
@@ -31,6 +31,7 @@ import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
 
 type ItemDraft = {
   description: string;
@@ -104,7 +105,8 @@ const runStatusLabels: Record<string, string> = {
 
 const fieldLabelClassName = 'block min-w-0 text-sm font-medium text-gray-700';
 const controlClassName = 'form-input form-input-compact mt-1.5 w-full text-sm text-gray-900 shadow-sm transition disabled:cursor-not-allowed disabled:bg-gray-100';
-const textAreaClassName = 'form-input mt-1.5 min-h-24 resize-y text-sm text-gray-900 shadow-sm transition';
+const amountControlClassName = `${controlClassName} text-right tabular-nums`;
+const textAreaClassName = 'form-input form-input-compact mt-1.5 w-full min-h-10 resize-y text-sm text-gray-900 shadow-sm transition';
 
 export function RecurringInvoiceManagement() {
   const { confirm } = useFeedback();
@@ -349,6 +351,7 @@ export function RecurringInvoiceManagement() {
       <PageHeader
         icon={CalendarClock}
         title="Wiederkehrende Rechnungen"
+        shortTitle="Wiederkehrend"
         subtitle="Vorlagen planen und zum nächsten Termin als Entwurf erzeugen."
       >
         <button
@@ -401,59 +404,69 @@ export function RecurringInvoiceManagement() {
 
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <dt className="text-gray-500">Intervall</dt>
+                  <dt className="text-gray-500 min-h-[2.5rem] sm:min-h-0">Intervall</dt>
                   <dd className="font-medium">{frequency(entry)}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Nächste Ausführung</dt>
+                  <dt className="text-gray-500 min-h-[2.5rem] sm:min-h-0">Nächste Ausführung</dt>
                   <dd className="font-medium">{entry.nextRunDate ? formatDate(entry.nextRunDate, locale, company?.dateFormat) : '–'}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Voraussichtlicher Betrag</dt>
+                  <dt className="text-gray-500 min-h-[2.5rem] sm:min-h-0">Voraussichtlicher Betrag</dt>
                   <dd className="font-medium">{formatCurrency(total(entry), locale, company?.numberFormat, company?.currency)}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">Start</dt>
+                  <dt className="text-gray-500 min-h-[2.5rem] sm:min-h-0">Start</dt>
                   <dd className="font-medium">{formatDate(entry.startDate, locale, company?.dateFormat)}</dd>
                 </div>
               </dl>
 
-              <div className="mt-5 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
-                <button type="button" onClick={() => openEdit(entry)} className="action-button">
-                  <Edit className="h-4 w-4" />Bearbeiten
-                </button>
-                {entry.status === 'active' ? (
-                  <button type="button" onClick={() => void updateStatus(entry, 'paused')} className="action-button" disabled={busy === entry.id}>
-                    <Pause className="h-4 w-4" />Pausieren
-                  </button>
-                ) : entry.status === 'paused' ? (
-                  <button type="button" onClick={() => void updateStatus(entry, 'active')} className="action-button" disabled={busy === entry.id}>
-                    <Play className="h-4 w-4" />Fortsetzen
-                  </button>
-                ) : null}
+              {/* Häufige Aktionen direkt, seltene und folgenreiche im Menü:
+                  So bleibt die Leiste einzeilig statt sechs Knöpfe umzubrechen. */}
+              <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
                 {entry.status !== 'ended' && (
-                  <>
-                    <button type="button" onClick={() => void generate(entry)} className="action-button text-primary-custom" disabled={busy === `generate-${entry.id}`}>
-                      <FilePlus2 className="h-4 w-4" />Jetzt erzeugen
-                    </button>
-                    <button type="button" onClick={() => void updateStatus(entry, 'ended')} className="action-button text-red-600">
-                      <XCircle className="h-4 w-4" />Beenden
-                    </button>
-                  </>
+                  <button type="button" onClick={() => void generate(entry)} className="action-button text-primary-custom" disabled={busy === `generate-${entry.id}`}>
+                    <FilePlus2 className="h-4 w-4" />Jetzt erzeugen
+                  </button>
                 )}
-                <button type="button" onClick={() => void toggleRuns(entry)} className="action-button">
+                <button type="button" onClick={() => openEdit(entry)} className="action-button" aria-label={`${entry.name} bearbeiten`} title="Bearbeiten">
+                  <Edit className="h-4 w-4" />
+                  <span className="hidden sm:inline">Bearbeiten</span>
+                </button>
+                <button type="button" onClick={() => void toggleRuns(entry)} className="action-button" aria-expanded={expanded === entry.id} aria-label="Laufprotokoll" title="Laufprotokoll">
                   <History className="h-4 w-4" />
-                  Laufprotokoll
+                  <span className="hidden sm:inline">Laufprotokoll</span>
                   {expanded === entry.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
-                <button type="button" onClick={() => void remove(entry)} className="action-button ml-auto text-red-600">
-                  <Trash2 className="h-4 w-4" />Löschen
-                </button>
+                <ActionMenu
+                  ariaLabel={`Weitere Aktionen für ${entry.name}`}
+                  title="Weitere Aktionen"
+                  containerClassName="ml-auto"
+                  triggerClassName="action-menu-export-trigger h-8 w-8 min-h-0 min-w-0 !px-0"
+                  disabled={busy === entry.id}
+                >
+                  {entry.status === 'active' && (
+                    <ActionMenuItem icon={<Pause className="h-4 w-4" />} onClick={() => void updateStatus(entry, 'paused')}>Pausieren</ActionMenuItem>
+                  )}
+                  {entry.status === 'paused' && (
+                    <ActionMenuItem icon={<Play className="h-4 w-4" />} onClick={() => void updateStatus(entry, 'active')}>Fortsetzen</ActionMenuItem>
+                  )}
+                  {entry.status !== 'ended' && (
+                    <ActionMenuItem icon={<XCircle className="h-4 w-4" />} tone="red" onClick={() => void updateStatus(entry, 'ended')}>Beenden</ActionMenuItem>
+                  )}
+                  <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(entry)}>Löschen</ActionMenuItem>
+                </ActionMenu>
               </div>
 
               {expanded === entry.id && (
-                <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-                  {busy === `runs-${entry.id}` ? 'Laufprotokoll wird geladen …' : orderedRuns(entry.id).length === 0 ? 'Noch keine Läufe protokolliert.' : orderedRuns(entry.id).map(run => (
+                <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+                  {busy === `runs-${entry.id}` ? 'Laufprotokoll wird geladen …' : orderedRuns(entry.id).length === 0 ? (
+                    <div className="flex flex-col items-center gap-1.5 py-3 text-center">
+                      <History className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      <p className="font-medium text-gray-700">Noch keine Läufe protokolliert.</p>
+                      <p className="max-w-xs text-xs text-gray-500">Ein Lauf entsteht, sobald diese Vorlage fällig wird oder Sie „Jetzt erzeugen“ wählen.</p>
+                    </div>
+                  ) : orderedRuns(entry.id).map(run => (
                     <div key={run.id} className="space-y-1 border-b border-gray-200 py-2 last:border-0">
                       <div className="flex justify-between">
                         <span>{formatDate(run.scheduledDate, locale, company?.dateFormat)}</span>
@@ -474,7 +487,7 @@ export function RecurringInvoiceManagement() {
         <DialogShell
           titleId="recurring-invoice-dialog-title"
           icon={CalendarClock}
-          title={dialog.entry ? 'Vorlage bearbeiten' : 'Wiederkehrende Rechnung anlegen'}
+          title={dialog.entry ? 'Wiederkehrende Rechnung bearbeiten' : 'Wiederkehrende Rechnung anlegen'}
           description="Definieren Sie Kunde, Zeitplan und Positionen für die automatisch erzeugten Entwürfe."
           onClose={() => setDialog({ open: false })}
           onSubmit={submit}
@@ -488,7 +501,7 @@ export function RecurringInvoiceManagement() {
           )}
         >
               <div className="space-y-5 sm:space-y-6">
-                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-master-data-title">
+                <section className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0" aria-labelledby="recurring-master-data-title">
                   <div className="mb-3">
                     <h3 id="recurring-master-data-title" className="text-base font-semibold text-gray-900">Stammdaten</h3>
                     <p className="mt-1 text-sm text-gray-500">Name und Kunde der wiederkehrenden Rechnung.</p>
@@ -519,7 +532,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-schedule-title">
+                <section className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0" aria-labelledby="recurring-schedule-title">
                   <div className="mb-3">
                     <h3 id="recurring-schedule-title" className="text-base font-semibold text-gray-900">Zeitplan</h3>
                     <p className="mt-1 text-sm text-gray-500">Legen Sie fest, wann die nächste Rechnung und die folgenden Entwürfe entstehen.</p>
@@ -609,7 +622,7 @@ export function RecurringInvoiceManagement() {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-details-title">
+                <section className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0" aria-labelledby="recurring-details-title">
                   <div className="mb-3">
                     <h3 id="recurring-details-title" className="text-base font-semibold text-gray-900">Zahlung und Notizen</h3>
                     <p className="mt-1 text-sm text-gray-500">Diese Angaben werden in die erzeugten Rechnungsentwürfe übernommen.</p>
@@ -632,14 +645,14 @@ export function RecurringInvoiceManagement() {
                         value={form.notes}
                         onChange={event => setForm(current => ({ ...current, notes: event.target.value }))}
                         className={textAreaClassName}
-                        rows={3}
+                        rows={1}
                         placeholder="z. B. Leistungszeitraum oder interne Hinweise"
                       />
                     </label>
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="recurring-items-title">
+                <section className="border-t border-gray-200 pt-6 first:border-t-0 first:pt-0" aria-labelledby="recurring-items-title">
                   <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 id="recurring-items-title" className="text-base font-semibold text-gray-900">Positionen</h3>
@@ -657,14 +670,9 @@ export function RecurringInvoiceManagement() {
 
                   <div className="space-y-3">
                     {form.items.map((item, index) => (
-                      <div key={index} className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 shadow-sm sm:p-4">
+                      <div key={index} className="border-t border-gray-200 pt-4 first:border-t-0 first:pt-0">
                         <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-light text-sm font-semibold text-primary-custom">
-                              {index + 1}
-                            </span>
-                            <span className="text-sm font-semibold text-gray-900">Position {index + 1}</span>
-                          </div>
+                          <span className="text-sm font-semibold text-gray-900">Position {index + 1}</span>
                           {form.items.length > 1 && (
                             <button
                               type="button"
@@ -699,12 +707,12 @@ export function RecurringInvoiceManagement() {
                               locale={locale}
                               numberFormat={company?.numberFormat}
                               onValueChange={value => updateItem(index, { quantity: value === '' ? '' : String(value) })}
-                              className={controlClassName}
+                              className={amountControlClassName}
                             />
                           </label>
                           <label className={`${fieldLabelClassName} col-span-1 min-[480px]:col-span-1`}>
                             Einzelpreis (€) <span className="text-red-600">*</span>
-                            <LocalizedNumberInput
+                            <LocalizedNumberInput minimumFractionDigits={2}
                               required
                               min="0"
                               step="0.01"
@@ -712,7 +720,7 @@ export function RecurringInvoiceManagement() {
                               locale={locale}
                               numberFormat={company?.numberFormat}
                               onValueChange={value => updateItem(index, { unitPrice: value === '' ? '' : String(value) })}
-                              className={controlClassName}
+                              className={amountControlClassName}
                             />
                           </label>
                           <label className={`${fieldLabelClassName} col-span-1 min-[480px]:col-span-1`}>
@@ -725,13 +733,13 @@ export function RecurringInvoiceManagement() {
                               locale={locale}
                               numberFormat={company?.numberFormat}
                               onValueChange={value => updateItem(index, { taxRate: value === '' ? '' : String(value) })}
-                              className={controlClassName}
+                              className={amountControlClassName}
                             />
                           </label>
                           <div className="col-span-1 min-w-0">
-                            <span className="block text-sm font-medium text-gray-700">Gesamt</span>
-                            <div className="mt-1.5 flex min-h-10 items-center overflow-hidden rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-900 sm:px-3 sm:text-sm">
-                              {formatCurrency(itemTotal(item), locale, company?.numberFormat, company?.currency)}
+                            <span className="block text-sm font-medium text-gray-700">Gesamt (€)</span>
+                            <div className="mt-1.5 flex min-h-10 items-center justify-end overflow-hidden rounded-lg border border-gray-200 bg-white px-2 text-right text-xs font-semibold tabular-nums text-gray-900 sm:px-3 sm:text-sm">
+                              {formatNumber(itemTotal(item), locale, company?.numberFormat)}
                             </div>
                           </div>
                         </div>

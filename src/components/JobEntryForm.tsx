@@ -121,7 +121,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
   const sectionSelectClass = 'form-input form-input-compact text-xs sm:px-3 sm:text-sm';
   const sectionIconButtonClass = 'theme-control-button box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
-  const sectionActionButtonClass = 'btn-primary box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
+  const sectionActionButtonClass = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
 
   const { getHourlyRatesForCustomer, getCombinedHourlyRatesForCustomer, getCombinedMaterialTemplatesForCustomer } = useDocumentHelpers();
 
@@ -986,13 +986,12 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 </div>
 
                 <div className="min-w-0">
-                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Externe {terminology.work.numberLabel}</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-700 sm:text-sm">Externe {terminology.work.numberLabel} (optional)</label>
                   <input
                     type="text"
                     value={formData.externalJobNumber}
                     onChange={(e) => setFormData(prev => ({ ...prev, externalJobNumber: e.target.value }))}
                     className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
-                    placeholder="Optional"
                   />
                 </div>
 
@@ -1305,7 +1304,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Hinweis <span className="text-xs font-normal text-gray-500">(optional)</span>
+                Hinweis (optional)
               </label>
               <textarea
                 value={formData.notes || ''}
@@ -1597,12 +1596,14 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
           {/* Materials */}
           <div className="bg-gray-50 rounded-lg p-3 md:p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <h4 className="min-w-0 shrink whitespace-nowrap text-xs font-medium text-gray-900 sm:text-sm">
+            {/* Die lange Überschrift lief schmal über die Vorlagenauswahl; reicht
+                der Platz nicht, rücken die Bedienelemente in eine eigene Zeile. */}
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h4 className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-900 sm:text-sm">
                 <DollarSign className="mr-1 inline h-4 w-4 align-text-bottom sm:mr-2" />
                 Materialien & Zusatzkosten
               </h4>
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+              <div className="flex min-w-[13rem] flex-1 items-center justify-end gap-1.5">
                 <label className="sr-only" htmlFor="material-template">Materialvorlage</label>
                 <SelectWithChevron
                   containerClassName="min-w-0 flex-[1_1_0%] sm:w-48 sm:flex-none"
@@ -1708,7 +1709,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Preis {currencySymbol}</label>
-                        <LocalizedNumberInput
+                        <LocalizedNumberInput minimumFractionDigits={2}
                           step="0.01"
                           min="0"
                           value={material.unitPrice}
@@ -1995,7 +1996,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
             </div>
             <div className="p-4 sm:p-5">
               <p className="text-sm leading-6 text-gray-600">
-                Du hast Eingaben im Formular geändert. Sollen sie gespeichert werden, bevor du die Verwaltung öffnest?
+                Sie haben Eingaben im Formular geändert. Sollen sie gespeichert werden, bevor Sie die Verwaltung öffnen?
               </p>
             </div>
             <div className="form-action-bar border-t border-gray-200 p-4 sm:p-5">

@@ -223,7 +223,7 @@ export function WorkspaceManagement() {
               <input required maxLength={255} value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="z. B. Nebenprojekt" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
             </label>
             <div className="mt-3 flex items-center justify-between gap-2">
-              <p className="text-xs text-gray-500">Du wirst danach automatisch gewechselt.</p>
+              <p className="text-xs text-gray-500">Sie werden danach automatisch gewechselt.</p>
               <button type="submit" className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700"><Plus className="h-4 w-4" />Anlegen</button>
             </div>
           </form>
@@ -289,22 +289,22 @@ export function WorkspaceManagement() {
         </div>
       ) : (
         <section className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-500 shadow-sm">
-          Du hast Leserechte in diesem Workspace. Workspace- und Teamänderungen sind nur für Administratoren und Eigentümer verfügbar.
+          Sie haben Leserechte in diesem Workspace. Workspace- und Teamänderungen sind nur für Administratoren und Eigentümer verfügbar.
         </section>
       )}
 
       {workspace?.role === 'owner' && <section className="rounded-xl border border-red-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-red-900">Workspace zurücksetzen oder löschen</h2>
-        <p className="mt-1 text-sm text-gray-600">Beide Aktionen verlangen dein Passwort, den exakten Workspace-Namen und eine zweite Bestätigung.</p>
+        <p className="mt-1 text-sm text-gray-600">Beide Aktionen verlangen Ihr Passwort, den exakten Workspace-Namen und eine zweite Bestätigung.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="font-medium text-gray-900">Workspace zurücksetzen</h3><p className="mt-1 text-sm text-gray-600">Löscht Fachdaten, Belege, Importläufe, Sicherungen und offene Einladungen. Im nächsten Schritt wählen Sie, ob Firmendaten und der Umzugsstatus der Datenübernahme mit zurückgesetzt werden. Team und Workspace-Identität bleiben.</p><button type="button" onClick={() => beginDangerAction('reset')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500 px-3 py-2 text-sm font-medium text-amber-900"><RotateCcw className="h-4 w-4" />Zurücksetzen</button></div>
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4"><h3 className="font-medium text-gray-900">Workspace löschen</h3><p className="mt-1 text-sm text-gray-600">Löscht Daten, Team, Einladungen, Umzugs-/Setup-Zustand und Sicherungsdateien dauerhaft. Bei weiteren Mitgliedern ist die Löschung gesperrt. Lege zuerst einen Ersatz-Workspace an, wenn dies dein letzter ist; danach wirst du dorthin gewechselt.</p><button type="button" onClick={() => beginDangerAction('delete')} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white"><Trash2 className="h-4 w-4" />Workspace löschen</button></div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="font-medium text-gray-900">Workspace zurücksetzen</h3><p className="mt-1 text-sm text-gray-600">Löscht Fachdaten, Belege und Importläufe.</p><details className="mt-2 text-sm text-gray-600"><summary className="cursor-pointer font-medium text-gray-700">Details anzeigen</summary><p className="mt-1">Löscht außerdem Sicherungen und offene Einladungen. Im nächsten Schritt wählen Sie, ob Firmendaten und der Umzugsstatus mit zurückgesetzt werden. Team und Workspace-Identität bleiben.</p></details><button type="button" onClick={() => beginDangerAction('reset')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500 px-3 py-2 text-sm font-medium text-amber-900"><RotateCcw className="h-4 w-4" />Zurücksetzen</button></div>
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4"><h3 className="font-medium text-gray-900">Workspace löschen</h3><p className="mt-1 text-sm text-gray-600">Löscht Daten und Team dauerhaft. Bei weiteren Mitgliedern ist die Löschung gesperrt.</p><details className="mt-2 text-sm text-gray-600"><summary className="cursor-pointer font-medium text-gray-700">Details anzeigen</summary><p className="mt-1">Löscht außerdem Einladungen, Umzugs-/Setup-Zustand und Sicherungsdateien. Legen Sie zuerst einen Ersatz-Workspace an, wenn dies Ihr letzter ist; danach werden Sie dorthin gewechselt.</p></details><button type="button" onClick={() => beginDangerAction('delete')} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white"><Trash2 className="h-4 w-4" />Workspace löschen</button></div>
         </div>
       </section>}
 
       {dangerAction && dangerStep === 1 && <DialogShell
         title={dangerAction === 'reset' ? 'Workspace zurücksetzen' : 'Workspace löschen'}
-        description={`Gib dein aktuelles Passwort und zur Bestätigung exakt „${workspace?.name}“ ein.`}
+        description={`Geben Sie Ihr aktuelles Passwort und zur Bestätigung exakt „${workspace?.name}“ ein.`}
         titleId="workspace-danger-title"
         onClose={() => setDangerAction(null)}
         onSubmit={event => { event.preventDefault(); setDangerStep(2); }}

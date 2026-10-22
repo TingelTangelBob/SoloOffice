@@ -55,7 +55,7 @@ function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
           className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2"
           style={{ borderBottomColor: 'var(--primary-color, #2563eb)' }}
         />
-        <p className="mt-4 text-gray-600">Lade Ansicht...</p>
+        <p className="mt-4 text-gray-600">Ansicht wird geladen …</p>
       </div>
     </div>
   );

@@ -68,7 +68,7 @@ function makeOverlay(context: RevenueSeriesContext, spec: typeof seriesSpecs[num
 }
 
 const forecastReason = (context: RevenueSeriesContext) => {
-  if (context.allYears || context.year === 'all' || !Number.isInteger(context.year)) return 'Wähle ein einzelnes Jahr für die Monatsprognose.';
+  if (context.allYears || context.year === 'all' || !Number.isInteger(context.year)) return 'Wählen Sie ein einzelnes Jahr für die Monatsprognose.';
   if (!context.taxesEnabled) return 'Die Erweiterung „Steuern & Abgaben“ ist nicht aktiv.';
   if (!context.forecast || context.forecast.year !== context.year) return FORECAST_DISABLED;
   if (!context.forecast.profileComplete) return `Für eine vollständigere Prognose fehlen Angaben: ${context.forecast.missingFields.join(', ')}.`;

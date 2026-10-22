@@ -99,19 +99,16 @@ function SettingsSearch({ onSelectResult }: Pick<SettingsNavProps, 'onSelectResu
  * Seitennavigation der Einstellungen. Ab `lg` eine gruppierte Leiste links.
  * Darunter zeigen schmale Geräte alle Bereiche als Chips, die in Zeilen
  * umbrechen: Jeder Bereich ist mit einem Tipp erreichbar, ohne Auswahlfeld
- * und ohne waagerecht scrollende Reiter.
+ * und ohne waagerecht scrollende Reiter. Die Gruppenüberschriften entfallen
+ * dort, damit die Chips dicht stehen und der Inhalt früher beginnt.
  */
 export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResult }: SettingsNavProps) {
   return (
     <nav aria-label="Einstellungsbereiche" className="settings-nav">
       <SettingsSearch onSelectResult={onSelectResult} />
 
-      <div className="mt-3 space-y-3 lg:hidden">
-        {SETTINGS_GROUPS.map(group => (
-          <div key={group.id}>
-            <p className="settings-nav-group">{group.label}</p>
-            <ul className="mt-1.5 flex flex-wrap gap-2">
-              {group.areas.map(area => {
+      <ul className="mt-3 flex flex-wrap gap-2 lg:hidden">
+              {SETTINGS_GROUPS.flatMap(group => group.areas).map(area => {
                 const Icon = AREA_ICONS[area];
                 const active = area === activeArea;
                 const dirty = dirtyAreas.has(area);
@@ -125,7 +122,7 @@ export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResu
                         onSelectArea(area);
                       }}
                       aria-current={active ? 'page' : undefined}
-                      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? 'border-transparent bg-[var(--accent-tint)] text-[var(--primary-on-surface,var(--primary-color))]' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                      className={`inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${active ? 'border-transparent bg-[var(--accent-tint)] text-[var(--primary-on-surface,var(--primary-color))]' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
                     >
                       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                       <span>{SETTINGS_AREA_DEFINITIONS[area].label}</span>
@@ -134,10 +131,7 @@ export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResu
                   </li>
                 );
               })}
-            </ul>
-          </div>
-        ))}
-      </div>
+      </ul>
 
       <div className="mt-4 hidden space-y-4 lg:block">
         {SETTINGS_GROUPS.map(group => (

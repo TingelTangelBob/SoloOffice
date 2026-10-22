@@ -84,7 +84,7 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
           <SettingsField id="company-city" label="Stadt" required error={error('city')}>
             <input id="company-city" type="text" required name="address-level2" autoComplete="section-company address-level2" aria-invalid={Boolean(error('city'))} aria-describedby={error('city') ? 'company-city-message' : undefined} value={formData.city} onChange={event => set('city', event.target.value)} className={settingsInputClass} />
           </SettingsField>
-          <SettingsField id="company-country" label="Land" required error={error('country')}>
+          <SettingsField id="company-country" label="Land" required className="md:col-span-2" error={error('country')}>
             <input id="company-country" type="text" required name="country-name" autoComplete="section-company country-name" aria-invalid={Boolean(error('country'))} aria-describedby={error('country') ? 'company-country-message' : undefined} value={formData.country} onChange={event => set('country', event.target.value)} className={settingsInputClass} />
           </SettingsField>
         </div>

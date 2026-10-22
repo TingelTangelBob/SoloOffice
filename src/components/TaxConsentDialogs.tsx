@@ -89,7 +89,7 @@ export function ChurchConsentDialog({ onClose, onConfirm, editing = false }: Chu
       <div className="space-y-4 text-sm leading-6 text-gray-700">
         <p>{TAX_TEXTS.churchBody}</p>
         <fieldset className="space-y-2">
-          <legend className="font-medium text-gray-800">Bist du kirchensteuerpflichtig?</legend>
+          <legend className="font-medium text-gray-800">Sind Sie kirchensteuerpflichtig?</legend>
           <label className="flex items-center gap-2"><input type="radio" name="church-tax-liable" checked={liable === true} onChange={() => setLiable(true)} /> Ja</label>
           <label className="flex items-center gap-2"><input type="radio" name="church-tax-liable" checked={liable === false} onChange={() => setLiable(false)} /> Nein</label>
         </fieldset>

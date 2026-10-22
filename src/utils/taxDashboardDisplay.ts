@@ -6,7 +6,7 @@ export interface ReserveRatioDisplay {
 }
 
 export function vatReserveLabel(basis: 'calculated' | 'estimate' | 'rough', incompleteEntries: number, remainder = false): string {
-  if (basis === 'calculated') return 'Umsatzsteuer, aus deinen erfassten Belegen berechnet';
+  if (basis === 'calculated') return 'Umsatzsteuer, aus Ihren erfassten Belegen berechnet';
   if (basis === 'estimate') return `Umsatzsteuer, Schätzung · ${incompleteEntries} Buchungen ohne USt-Angaben`;
   return remainder ? 'Umsatzsteuer-Restbedarf (grob), separat' : 'Umsatzsteuer-Richtwert, separat';
 }

@@ -481,7 +481,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
             {isLoading ? (
               <div className="py-10 text-center">
                 <RefreshCw className="mx-auto mb-2 h-8 w-8 animate-spin text-gray-400" />
-                <p className="text-gray-500">Lade Backups...</p>
+                <p className="text-gray-500">Sicherungen werden geladen …</p>
               </div>
             ) : backups.length === 0 && zipBackups.length === 0 ? (
               <div className="py-10 text-center">

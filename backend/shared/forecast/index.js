@@ -491,7 +491,7 @@ export function buildForecast({ year, profile = {}, entries = [], expenses = [],
     { id: 'social', label: 'Sozialbeiträge', points: monthly.map(item => ({ label: item.month, value: item.social, forecast: item.forecast })), kind: 'bar', tooltip: 'Auf aktive Kalendermonate verteilte Jahresprognose; geleistete Zahlungen sind separat erfasst.' },
     { id: 'tax_reserve', label: 'Steuerrücklage', points: monthly.map(item => ({ label: item.month, value: item.taxReserve, forecast: item.forecast })), kind: 'bar', tooltip: 'Gleichmäßig verteilte Steuerprognose.' },
     { id: 'vat_reserve', label: 'Umsatzsteuer', points: monthly.map(item => ({ label: item.month, value: item.vatReserve, forecast: item.forecast })), kind: 'bar', tooltip: vatBasis === 'calculated'
-      ? 'Aus deinen erfassten Belegen berechnet.'
+      ? 'Aus Ihren erfassten Belegen berechnet.'
       : vatBasis === 'estimate' ? `Schätzung – ${vatIncompleteEntries} Buchungen ohne USt-Angaben.`
         : 'Schätzung aus erfassten Bruttowerten und Steuersätzen.' },
     { id: 'available', label: 'Verfügbar', points: monthly.map(item => ({ label: item.month, value: item.available, forecast: item.forecast })), kind: 'line', tooltip: 'Umsatz abzüglich variabler Ausgaben, Fixkosten und geschätzter Abgaben; die Diagrammauswahl wird separat berücksichtigt.' },

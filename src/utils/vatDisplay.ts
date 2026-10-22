@@ -17,7 +17,10 @@ export function vatStatusLabel(status: VatPeriodResult['paymentStatus'], overdue
 }
 
 export function vatPaymentStatusLabel(status: VatPaymentStatus, overdue = false): string {
-  if (overdue && (status === 'open' || status === 'partial')) return 'Überfällig';
+  // Nach Teilzahlung ist nur der Rest überfällig; ein bloßes „Überfällig“ las
+  // sich so, als sei die erfasste Zahlung übersehen worden.
+  if (overdue && status === 'partial') return 'Rest überfällig';
+  if (overdue && status === 'open') return 'Überfällig';
   return paymentStatusLabels[status];
 }
 

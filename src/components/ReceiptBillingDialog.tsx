@@ -122,7 +122,7 @@ export function ReceiptBillingDialog({ receipt, customers, onClose, onCreated }:
         </label>
         <div className="grid grid-cols-3 gap-3">
           <label className="text-sm font-medium text-gray-700">Menge<LocalizedNumberInput required min="0.01" step="0.01" value={quantity} locale={locale} numberFormat={company?.numberFormat} onValueChange={setQuantity} className="form-input mt-1 w-full" /></label>
-          <label className="text-sm font-medium text-gray-700">Netto<LocalizedNumberInput required min="0" step="0.01" value={unitPrice} locale={locale} numberFormat={company?.numberFormat} onValueChange={setUnitPrice} className="form-input mt-1 w-full" /></label>
+          <label className="text-sm font-medium text-gray-700">Netto<LocalizedNumberInput minimumFractionDigits={2} required min="0" step="0.01" value={unitPrice} locale={locale} numberFormat={company?.numberFormat} onValueChange={setUnitPrice} className="form-input mt-1 w-full" /></label>
           <label className="text-sm font-medium text-gray-700">MwSt. %<LocalizedNumberInput required min="0" max="100" step="0.01" value={taxRate} locale={locale} numberFormat={company?.numberFormat} onValueChange={setTaxRate} className="form-input mt-1 w-full" /></label>
         </div>
         <div className="flex items-center justify-between rounded-lg bg-primary-light-custom px-4 py-3 text-sm"><span className="text-gray-600">Voraussichtlicher Bruttobetrag</span><strong className="text-primary-custom">{formatCurrency(total, locale, company?.numberFormat, company?.currency)}</strong></div>

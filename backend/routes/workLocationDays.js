@@ -69,7 +69,7 @@ router.post('/bulk', async (req, res, next) => {
   }
   if (!dayTypes.has(dayType)) return res.status(400).json({ error: 'Ungültige Tagesart.' });
   if (req.body?.reviewed !== true) {
-    return res.status(400).json({ error: 'Bitte bestätige, dass du die ausgewählten Tage und die Tagesart geprüft hast.' });
+    return res.status(400).json({ error: 'Bitte bestätigen Sie, dass Sie die ausgewählten Tage und die Tagesart geprüft haben.' });
   }
 
   const workDates = rawDates.map(value => parseDate(value));
@@ -98,7 +98,7 @@ router.put('/:date', async (req, res, next) => {
   const dayType = String(req.body?.dayType || '');
   if (!workDate) return res.status(400).json({ error: 'Ungültiges Datum.' });
   if (!dayTypes.has(dayType)) return res.status(400).json({ error: 'Ungültige Tagesart.' });
-  if (req.body?.reviewed !== true) return res.status(400).json({ error: 'Bitte bestätige, dass du die tatsächliche Arbeitssituation korrekt erfasst hast.' });
+  if (req.body?.reviewed !== true) return res.status(400).json({ error: 'Bitte bestätigen Sie, dass Sie die tatsächliche Arbeitssituation korrekt erfasst haben.' });
 
   try {
     if (workDate > await workspaceToday()) return res.status(400).json({ error: 'Ein Arbeitstag kann erst nach der tatsächlichen Tätigkeit erfasst werden.' });

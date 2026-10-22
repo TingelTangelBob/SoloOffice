@@ -24,6 +24,8 @@ interface ActionMenuProps {
   disabled?: boolean;
   /** Nutzt für umfangreiche Menüs den Platz bis zum unteren Fensterrand. */
   fitViewport?: boolean;
+  /** Bündig zur linken (`start`) oder rechten (`end`, Standard) Kante des Auslösers. */
+  align?: 'start' | 'end';
 }
 
 interface MenuPosition {
@@ -75,7 +77,7 @@ export function ActionMenuItem({
     <button
       {...buttonProps}
       type={type}
-      className={`action-menu-item flex min-h-0 ${(accessory || before) ? 'min-w-0 flex-1' : 'w-full'} ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
+      className={`action-menu-item ${tone === 'red' ? 'action-menu-item-destructive' : ''} flex min-h-0 ${(accessory || before) ? 'min-w-0 flex-1' : 'w-full'} ${multiline ? 'items-start action-menu-item-multiline' : 'items-center'} gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${colors.item} ${className}`}
     >
       {icon != null && <span className={`shrink-0 ${colors.icon}`}>{icon}</span>}
       <span className={`min-w-0 flex-1 ${multiline ? '' : 'truncate'}`}>{children}</span>
@@ -105,6 +107,7 @@ export function ActionMenu({
   closeOnClick = true,
   disabled = false,
   fitViewport = false,
+  align = 'end',
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
@@ -131,10 +134,10 @@ export function ActionMenu({
       : triggerRect.bottom + MENU_GAP;
 
     setPosition({
-      left: Math.min(Math.max(VIEWPORT_PADDING, triggerRect.right - menuWidth), maxLeft),
+      left: Math.min(Math.max(VIEWPORT_PADDING, align === 'start' ? triggerRect.left : triggerRect.right - menuWidth), maxLeft),
       top: Math.min(Math.max(VIEWPORT_PADDING, preferredTop), maxTop)
     });
-  }, []);
+  }, [align]);
 
   const toggleMenu = () => {
     if (isOpen) {

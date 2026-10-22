@@ -259,7 +259,7 @@ export function WorkspaceArea({
                       Ausgewählt
                     </span>
                   )}
-                  <span className="flex min-h-[2.75rem] items-start justify-center pt-1 text-center">
+                  <span className="flex min-h-[2.75rem] items-center justify-center pt-1 text-center">
                     <span className="block text-sm font-semibold text-gray-900">{profile.label}</span>
                   </span>
                   <TerminologyPreview profile={profile} receiptLabel={normalizedReceiptLabel || 'Belege'} previewOverride={preview} />

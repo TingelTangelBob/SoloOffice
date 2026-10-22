@@ -1,12 +1,14 @@
 import { useEffect, useState, type FocusEvent, type InputHTMLAttributes } from 'react';
 import type { NumberFormat } from '../types';
-import { formatDecimalInput, parseLocalizedNumber, type DecimalInputValue } from '../utils/formatters';
+import { formatDecimalInput, getNumberLocale, parseLocalizedNumber, type DecimalInputValue } from '../utils/formatters';
 
 interface LocalizedNumberInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> {
   value: DecimalInputValue;
   locale?: string;
   numberFormat?: NumberFormat;
   allowNegative?: boolean;
+  /** Mindestanzahl Nachkommastellen in der Anzeige, z. B. 2 für Geldbeträge („510,00“). */
+  minimumFractionDigits?: number;
   onValueChange: (value: number | '') => void;
 }
 
@@ -15,6 +17,7 @@ export function LocalizedNumberInput({
   locale = 'de-DE',
   numberFormat,
   allowNegative = true,
+  minimumFractionDigits,
   onValueChange,
   onBlur,
   onFocus,
@@ -22,14 +25,26 @@ export function LocalizedNumberInput({
   className = '',
   ...inputProps
 }: LocalizedNumberInputProps) {
-  const [draftValue, setDraftValue] = useState(() => formatDecimalInput(value, locale, numberFormat));
+  const display = (input: DecimalInputValue) => {
+    const formatted = formatDecimalInput(input, locale, numberFormat);
+    if (!minimumFractionDigits || formatted === '') return formatted;
+    const parsed = parseLocalizedNumber(input, locale, numberFormat);
+    return new Intl.NumberFormat(getNumberLocale(locale, numberFormat), {
+      useGrouping: false,
+      minimumFractionDigits,
+      maximumFractionDigits: Math.max(minimumFractionDigits, 6),
+    }).format(parsed);
+  };
+  const [draftValue, setDraftValue] = useState(() => display(value));
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     if (!isEditing) {
-      setDraftValue(formatDecimalInput(value, locale, numberFormat));
+      setDraftValue(display(value));
     }
-  }, [isEditing, locale, numberFormat, value]);
+  // `display` hängt nur an locale, numberFormat und minimumFractionDigits.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, locale, numberFormat, value, minimumFractionDigits]);
 
   const handleBlur = (event: FocusEvent<HTMLInputElement>) => {
     const parsedValue = parseLocalizedNumber(draftValue, locale, numberFormat);
@@ -38,9 +53,9 @@ export function LocalizedNumberInput({
 
     if (nextValue !== undefined) {
       onValueChange(nextValue);
-      setDraftValue(formatDecimalInput(nextValue, locale, numberFormat));
+      setDraftValue(display(nextValue));
     } else {
-      setDraftValue(formatDecimalInput(value, locale, numberFormat));
+      setDraftValue(display(value));
     }
 
     setIsEditing(false);

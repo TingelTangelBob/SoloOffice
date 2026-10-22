@@ -36,18 +36,32 @@ interface QuoteManagementProps {
 }
 
 /**
- * Spaltenmaße der Angebotstabelle: Auswahl 64, Datum 96, Angebotsnummer 176,
- * Gültig bis 112 und Betrag 96 Pixel. Eine Zeile zeigt höchstens sechs
+ * Spaltenmaße der Angebotstabelle: Auswahl 48, Datum 96, Angebotsnr. 160,
+ * Gültig bis 112 und Betrag 112 Pixel. Wie bei den Rechnungen hat die Tabelle
+ * keine Mindestbreite: Status und Aktionen verdichten sich, statt zu scrollen. Eine Zeile zeigt höchstens sechs
  * Icon-Aktionen (Entwurf: versenden, als versendet markieren, bearbeiten,
  * Vorschau, herunterladen, löschen).
  */
+/** Feste Anzahl Aktions-Slots je Zeile; fehlende Aktionen werden als Platzhalter belegt. */
+const QUOTE_MAX_INLINE_ACTIONS = 6;
+
 const QUOTE_TABLE_LAYOUT = listTableLayout({
-  baseColumnsWidth: 64 + 96 + 176 + 112 + 96,
+  baseColumnsWidth: 48 + 96 + 160 + 112 + 112,
   flexibleColumnMinWidth: 176,
-  maxActions: 6,
+  maxActions: QUOTE_MAX_INLINE_ACTIONS,
   statusLabelWidth: 128,
   statusDotWidth: 32,
 });
+
+/** Icon-Aktionen einer Zeile: Bearbeiten, Vorschau, Herunterladen, Löschen sowie Statusaktionen. */
+const countQuoteInlineActions = (quote: Quote) => {
+  const statusActions = quote.status === 'draft' || quote.status === 'sent'
+    ? 2
+    : quote.status === 'accepted' && !quote.convertedToInvoiceId
+      ? 1
+      : 0;
+  return 4 + statusActions;
+};
 
 export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const { notify } = useFeedback();
@@ -85,7 +99,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const [previewDocuments, setPreviewDocuments] = useState<PreviewDocument[]>([]);
   const { ref: tableRef, width: tableWidth } = useElementWidth<HTMLDivElement>();
   const showInlineActions = tableWidth >= QUOTE_TABLE_LAYOUT.inlineActionsMinWidth;
-  const showStatusLabel = tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelMinWidth;
+  const showStatusLabel = tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelMinWidth
+    || (!showInlineActions && tableWidth >= QUOTE_TABLE_LAYOUT.statusLabelWithMenuMinWidth);
 
   // Get locale from company settings, default to 'de-DE'
   const locale = company?.locale || 'de-DE';
@@ -874,15 +889,15 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           </button>
         </BulkSelectionHeader>
         {/* Desktop/Tablet Table View */}
-        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-x-auto tablet:block">
-            <table className="w-full table-fixed min-w-[820px]">
+        <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden tablet:block">
+            <table className="w-full table-fixed">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left w-12">
                   <span className="sr-only">Auswahl</span>
                 </th>
                 <SortableTableHeader label="Datum" sortKey="date" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-24 px-3 py-3" />
-                <SortableTableHeader label="Angebotsnummer" sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-44 px-3 py-3" />
+                <SortableTableHeader label="Angebotsnr." sortKey="quoteNumber" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-40 px-3 py-3" />
                 <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3" />
                 <SortableTableHeader label="Gültig bis" sortKey="validUntil" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
                 <SortableTableHeader label="Betrag" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-28 px-3 py-3" />
@@ -956,7 +971,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                     className={`sticky right-0 z-10 bg-white py-2.5 whitespace-nowrap text-sm font-medium transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}
                   >
                     {showInlineActions ? (
-                    <div className="flex flex-nowrap items-center gap-1">
+                    <div className="flex flex-nowrap items-center justify-end gap-1">
+                      {Array.from({ length: QUOTE_MAX_INLINE_ACTIONS - countQuoteInlineActions(quote) }, (_, slot) => (
+                        <span key={`placeholder-${slot}`} aria-hidden="true" className="action-icon-button invisible" />
+                      ))}
                       {quote.status === 'draft' && (
                         <>
                           <button
@@ -1075,13 +1093,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           {filteredQuotes.map((quote) => (
             <div key={quote.id} className="p-4 border-b border-gray-200 last:border-b-0">
               <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={selectedQuoteIds.includes(quote.id)}
-                  onChange={(e) => handleQuoteSelection(quote.id, e.target.checked)}
-                  className="custom-checkbox mt-1 shrink-0"
-                  title="Angebot auswählen"
-                />
+                <label className="-m-2 flex shrink-0 cursor-pointer p-2 pt-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedQuoteIds.includes(quote.id)}
+                    onChange={(e) => handleQuoteSelection(quote.id, e.target.checked)}
+                    className="custom-checkbox"
+                    title="Angebot auswählen"
+                    aria-label="Angebot auswählen"
+                  />
+                </label>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">

@@ -57,7 +57,7 @@ export function vatDisplayedAmount(period: Pick<VatPeriodResult, 'complete' | 'l
 }
 
 export function vatBasisText(period: Pick<VatPeriodResult, 'complete' | 'incompleteEntryIds'>): string {
-  if (period.complete) return 'Aus deinen erfassten Belegen berechnet.';
+  if (period.complete) return 'Aus Ihren erfassten Belegen berechnet.';
   const count = period.incompleteEntryIds.length;
   if (count === 0) return 'Schätzung · Zeitraum enthält noch unvollständige Angaben.';
   return `Schätzung · ${count} ${count === 1 ? 'Buchung' : 'Buchungen'} ohne USt-Angaben.`;
