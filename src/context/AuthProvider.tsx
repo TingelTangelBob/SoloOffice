@@ -6,6 +6,7 @@ import { generateUUID } from '../utils/uuid';
 import type { AuthResponse, AuthUser, RegistrationPayload, WorkspaceResetOptions, WorkspaceRole, WorkspaceSummary } from '../types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
 import { trackTelemetry } from '../services/telemetry';
+import { sessionWriteBoundary } from '../utils/sessionWriteBoundary';
 
 const demoUser: AuthUser = {
   id: 'demo-user',
@@ -67,14 +68,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sessionRevision, setSessionRevision] = useState(() => sessionWriteBoundary.capture());
+
+  const runSessionChange = useCallback(async <T,>(change: () => T | Promise<T>): Promise<T> => {
+    return sessionWriteBoundary.transition(change);
+  }, []);
 
   const applyResponse = useCallback((response: AuthResponse) => {
+    setSessionRevision(sessionWriteBoundary.capture());
     applyAuthResponse(response, { setUser, setWorkspace, setWorkspaces });
   }, []);
 
   useEffect(() => {
     let active = true;
+    const initialSessionScope = sessionWriteBoundary.capture();
     const handleAuthExpired = () => {
+      setSessionRevision(sessionWriteBoundary.invalidate());
       setUser(null);
       setWorkspace(null);
       setWorkspaces([]);
@@ -106,10 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     apiService.getAuthSession()
       .then(response => {
-        if (active) applyResponse(response);
+        if (active && sessionWriteBoundary.isCurrent(initialSessionScope)) applyResponse(response);
       })
       .catch(() => {
-        if (active) {
+        if (active && sessionWriteBoundary.isCurrent(initialSessionScope)) {
           setUser(null);
           setWorkspace(null);
           setWorkspaces([]);
@@ -128,43 +137,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string, workspaceId?: string) => {
     if (isDemoMode) return;
-    applyResponse(await apiService.loginAccount({ email, password, workspaceId }));
-  }, [applyResponse]);
+    applyResponse(await runSessionChange(() => apiService.loginAccount({ email, password, workspaceId })));
+  }, [applyResponse, runSessionChange]);
 
   const register = useCallback(async (payload: RegistrationPayload) => {
     if (isDemoMode) return {};
-    const response = await apiService.registerAccount(payload);
+    const response = await runSessionChange(() => apiService.registerAccount(payload));
+    setSessionRevision(sessionWriteBoundary.capture());
     if (response.user && response.workspace && response.workspaces) {
       applyResponse({ user: response.user, workspace: response.workspace, workspaces: response.workspaces });
     }
     return response;
-  }, [applyResponse]);
+  }, [applyResponse, runSessionChange]);
 
   const logout = useCallback(async () => {
-    if (!isDemoMode) await apiService.logoutAccount();
+    await runSessionChange(() => isDemoMode ? undefined : apiService.logoutAccount());
+    setSessionRevision(sessionWriteBoundary.capture());
     setUser(null);
     setWorkspace(null);
     setWorkspaces([]);
-  }, []);
+  }, [runSessionChange]);
 
   const logoutAll = useCallback(async () => {
-    if (!isDemoMode) await apiService.logoutAllSessions();
+    await runSessionChange(() => isDemoMode ? undefined : apiService.logoutAllSessions());
+    setSessionRevision(sessionWriteBoundary.capture());
     setUser(null);
     setWorkspace(null);
     setWorkspaces([]);
-  }, []);
+  }, [runSessionChange]);
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     if (isDemoMode) {
       const nextWorkspace = readDemoWorkspaces().find(item => item.id === workspaceId);
       if (nextWorkspace) {
-        setDemoActiveWorkspaceId(nextWorkspace.id);
+        await runSessionChange(() => setDemoActiveWorkspaceId(nextWorkspace.id));
+        setSessionRevision(sessionWriteBoundary.capture());
         setWorkspace(nextWorkspace);
       }
       return;
     }
-    applyResponse(await apiService.switchWorkspace(workspaceId));
-  }, [applyResponse]);
+    applyResponse(await runSessionChange(() => apiService.switchWorkspace(workspaceId)));
+  }, [applyResponse, runSessionChange]);
 
   const updateProfile = useCallback(async (firstName: string, lastName: string) => {
     if (isDemoMode) {
@@ -180,16 +193,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteAccount = useCallback(async (currentPassword: string) => {
-    if (!isDemoMode) await apiService.deleteAccount(currentPassword);
+    await runSessionChange(() => isDemoMode ? undefined : apiService.deleteAccount(currentPassword));
+    setSessionRevision(sessionWriteBoundary.capture());
     setUser(null);
     setWorkspace(null);
     setWorkspaces([]);
-  }, []);
+  }, [runSessionChange]);
 
   const acceptInvitation = useCallback(async (payload: { token: string; email: string; password: string; firstName?: string; lastName?: string }) => {
     if (isDemoMode) return;
-    applyResponse(await apiService.acceptInvitation(payload));
-  }, [applyResponse]);
+    applyResponse(await runSessionChange(() => apiService.acceptInvitation(payload)));
+  }, [applyResponse, runSessionChange]);
 
   const createWorkspace = useCallback(async (name: string) => {
     if (isDemoMode) {
@@ -223,25 +237,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resetWorkspace = useCallback(async (currentPassword: string, workspaceName: string, resetOptions: WorkspaceResetOptions) => {
     if (!workspace) return;
     if (isDemoMode) {
-      resetDemoWorkspaceData(resetOptions);
+      await runSessionChange(() => resetDemoWorkspaceData(resetOptions));
+      setSessionRevision(sessionWriteBoundary.capture());
       return;
     }
-    await apiService.resetWorkspace(workspace.id, { currentPassword, workspaceName, resetOptions });
-  }, [workspace]);
+    await runSessionChange(() => apiService.resetWorkspace(workspace.id, { currentPassword, workspaceName, resetOptions }));
+    setSessionRevision(sessionWriteBoundary.capture());
+  }, [workspace, runSessionChange]);
 
   const deleteWorkspace = useCallback(async (currentPassword: string, workspaceName: string) => {
     if (!workspace) return;
     if (isDemoMode) {
       const remaining = readDemoWorkspaces().filter(item => item.id !== workspace.id);
       if (!remaining.length) throw new Error('Legen Sie zuerst einen Ersatz-Workspace an. Danach können Sie diesen Workspace löschen.');
-      deleteDemoWorkspaceData(workspace.id);
-      persistDemoWorkspaces(remaining);
-      setDemoActiveWorkspaceId(remaining[0].id);
+      await runSessionChange(() => {
+        deleteDemoWorkspaceData(workspace.id);
+        persistDemoWorkspaces(remaining);
+        setDemoActiveWorkspaceId(remaining[0].id);
+      });
+      setSessionRevision(sessionWriteBoundary.capture());
       setWorkspace(remaining[0]);
       setWorkspaces(remaining);
       return;
     }
-    const result = await apiService.deleteWorkspace(workspace.id, { currentPassword, workspaceName });
+    const result = await runSessionChange(() => apiService.deleteWorkspace(workspace.id, { currentPassword, workspaceName }));
+    setSessionRevision(sessionWriteBoundary.capture());
     if (result.signedOut || !result.workspace) {
       setUser(null);
       setWorkspace(null);
@@ -250,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWorkspace(result.workspace);
       setWorkspaces(result.workspaces);
     }
-  }, [workspace]);
+  }, [workspace, runSessionChange]);
 
   const can = useCallback((permission: string) => {
     if (!workspace) return false;
@@ -272,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     workspace,
     workspaces,
     loading,
+    sessionRevision,
     isAuthenticated: Boolean(user && workspace),
     login,
     register,
@@ -294,7 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getWorkspaceInvitations,
     createWorkspaceInvitation,
     revokeWorkspaceInvitation,
-  }), [user, workspace, workspaces, loading, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, resetWorkspace, deleteWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation, revokeWorkspaceInvitation]);
+  }), [user, workspace, workspaces, loading, sessionRevision, login, register, logout, logoutAll, switchWorkspace, updateProfile, changePassword, deleteAccount, acceptInvitation, createWorkspace, updateWorkspace, resetWorkspace, deleteWorkspace, can, getWorkspaceMembers, updateWorkspaceMember, removeWorkspaceMember, getWorkspaceInvitations, createWorkspaceInvitation, revokeWorkspaceInvitation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

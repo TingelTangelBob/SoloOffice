@@ -4,6 +4,7 @@ import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { numberPatternError } from '../utils/invoiceNumberPattern.js';
 import { validateCompanyFormats, validateCompanyRequiredFields } from '../shared/companyValidation.js';
+import { requireCompanyWriteContext } from '../middleware/companyWriteContext.js';
 
 const router = express.Router();
 const LOCALES = new Set(['de-DE', 'en-US', 'fr-FR', 'es-ES']);
@@ -43,7 +44,7 @@ router.get('/', async (req, res) => {
 });
 
 // Update company information
-router.put('/', async (req, res) => {
+router.put('/', requireCompanyWriteContext, async (req, res) => {
   try {
     let formatContext = {};
     if (req.body.postalCode !== undefined || req.body.country !== undefined) {

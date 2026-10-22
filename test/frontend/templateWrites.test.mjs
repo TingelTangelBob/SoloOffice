@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSerialStateWriter } from '../../.test-dist/utils/serialStateWriter.js';
 import { documentTextSavePatch, documentTextResetPatch } from '../../.test-dist/utils/documentTemplateWrites.js';
+import { resolveDocumentTextTemplate, defaultDocumentTextTemplates } from '../../.test-dist/utils/documentTextTemplates.js';
 
 const deferred = () => {
   let resolve, reject;
@@ -57,11 +58,15 @@ test('Textspeichern und anschließendes Design verwenden den bestätigten aktuel
 
 test('Textreset aktiviert globale Texte auch für Altvorlagen und erhält das Design', () => {
   const before = company();
+  before.documentTextTemplates = [{ id: 'custom-invoice', documentType: 'invoice', introText: 'Alt' }];
   const patch = documentTextResetPatch(before, []);
   assert.ok(patch.documentTemplates.every(template => template.textMode === 'global'));
   assert.equal(patch.documentTemplates[0].accentColor, '#112233');
   assert.notEqual(patch.documentTextTemplates.find(template => template.documentType === 'invoice').introText, 'Alt');
   assert.equal(before.documentTemplates[0].textMode, 'custom');
+  assert.equal(patch.documentTextTemplates.filter(template => template.documentType === 'invoice').length, 1);
+  assert.equal(resolveDocumentTextTemplate({ ...before, ...patch }, 'invoice').introText,
+    defaultDocumentTextTemplates.find(template => template.documentType === 'invoice').introText);
 });
 
 test('Speicherfehler blockiert keine späteren Änderungen', async () => {

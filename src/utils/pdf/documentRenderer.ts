@@ -783,10 +783,17 @@ class DocumentWriter {
   }
 
   signature(signature: NonNullable<PdfDocumentModel['signature']>): void {
-    this.ensure(14 + signature.lines.length * 4.3 + (signature.image ? 30 : 0));
+    this.font('normal', 9);
+    const textLines = signature.lines.reduce((sum, text) => sum
+      + text.split('\n').reduce((count, line) => count + this.wrap(line, CONTENT_WIDTH).length, 0), 0);
+    const height = 5 + textLines * lineHeight(9, 1.45) + (signature.image ? 30 : 0);
+    this.ensure(height <= this.bottomLimit - 29 ? height : 10);
     this.heading(signature.heading);
     for (const line of signature.lines) this.paragraph(line, { size: 9, color: MUTED });
     if (!signature.image) return;
+    // Absätze können selbst auf die nächste Seite gewechselt haben. Das
+    // Bild braucht deshalb unmittelbar vor dem Zeichnen seine eigene Prüfung.
+    this.ensure(30);
     this.y += 1;
     try {
       this.pdf.addImage(signature.image, 'PNG', LEFT, this.y, 80, 25);

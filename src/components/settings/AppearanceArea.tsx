@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Globe, Monitor, Moon, Palette, Sun, SunMoon } from 'lucide-react';
 import type { DateFormat, NumberFormat, ThemeMode, TimeFormat } from '../../types';
 import { ColorPicker } from '../ColorPicker';
-import { useMotionPreference } from '../../context/MotionProvider';
+import { useMotionPreference } from '../../context/MotionContext';
 import { getCurrencySymbol } from '../../utils/formatters';
 import { terminologyProfiles } from '../../utils/terminology';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../../utils/timeZones';

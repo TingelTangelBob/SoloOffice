@@ -197,7 +197,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
 }
 
 function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps) {
-  const { loading, isAuthenticated, workspace } = useAuth();
+  const { loading, isAuthenticated, workspace, sessionRevision } = useAuth();
 
   useEffect(() => {
     if (loading || !isAuthenticated || !workspace || typeof sessionStorage === 'undefined') return;
@@ -211,7 +211,7 @@ function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps)
   if (!isAuthenticated || !workspace) return <AuthPage />;
 
   return (
-    <AppProvider key={workspace.id}>
+    <AppProvider key={`${workspace.id}:${sessionRevision}`}>
       <MotionProvider><AppContent currentPageState={currentPageState} onPageChange={onPageChange} /></MotionProvider>
     </AppProvider>
   );

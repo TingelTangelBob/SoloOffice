@@ -1,10 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
+import { MotionContext } from './MotionContext';
 
-interface MotionContextValue { animationsEnabled: boolean; setAnimationsEnabled: (enabled: boolean) => Promise<void>; }
-const MotionContext = createContext<MotionContextValue>({ animationsEnabled: true, setAnimationsEnabled: async () => undefined });
 const DEMO_KEY = 'solooffice-demo-animations-enabled-v1';
 
 export function MotionProvider({ children }: { children: ReactNode }) {
@@ -44,5 +43,3 @@ export function MotionProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ animationsEnabled, setAnimationsEnabled }), [animationsEnabled, setAnimationsEnabled]);
   return <MotionContext.Provider value={value}>{children}</MotionContext.Provider>;
 }
-
-export function useMotionPreference() { return useContext(MotionContext); }

@@ -1,8 +1,9 @@
 import { documentRequestBody } from '../utils/documentPayload';
 import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
-import { demoRequest, isDemoMode } from './demoApi';
+import { demoRequest, getDemoActiveWorkspaceId, isDemoMode } from './demoApi';
 import type { DashboardPreferences } from '../utils/dashboardPreferences';
+import { sessionWriteBoundary } from '../utils/sessionWriteBoundary';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -102,6 +103,7 @@ class ApiService {
   // --------------------------------------------------------------------------
 
   private async request<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+    const requestSessionScope = sessionWriteBoundary.capture();
     if (isDemoMode) {
       return demoRequest<T>(endpoint, options);
     }
@@ -124,7 +126,7 @@ class ApiService {
       const response = await fetch(url, config);
 
       if (!response.ok && !(allowPartialStatus && response.status === 207)) {
-        if (response.status === 401 && typeof window !== 'undefined') {
+        if (response.status === 401 && typeof window !== 'undefined' && sessionWriteBoundary.isCurrent(requestSessionScope)) {
           window.dispatchEvent(new Event('solooffice-auth-expired'));
         }
         throw await responseError(response, `HTTP error! status: ${response.status}`);
@@ -633,10 +635,14 @@ class ApiService {
     return this.request<Company>('/company');
   }
 
-  async updateCompany(company: Partial<Company>): Promise<Company> {
+  async updateCompany(company: Partial<Company>, context: { workspaceId: string; userId: string }): Promise<Company> {
+    if (!context.workspaceId || !context.userId || (isDemoMode && context.workspaceId !== getDemoActiveWorkspaceId())) {
+      throw new ApiResponseError('Die Sitzung oder der Arbeitsbereich wurde gewechselt.', 409, undefined, 'COMPANY_CONTEXT_CHANGED');
+    }
     return this.request<Company>('/company', {
       method: 'PUT',
       body: JSON.stringify(company),
+      headers: { 'X-SoloOffice-Workspace': context.workspaceId, 'X-SoloOffice-User': context.userId },
     });
   }
 

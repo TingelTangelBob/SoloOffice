@@ -51,20 +51,35 @@ test('Geschäftsdokumente: echte jsPDF-Metriken, Seitenumbrüche und gemeinsame 
     const { renderBusinessDocument, PreviewRecorder, loadPdfImage } = await import(pathToFileURL(outputFile).href);
     async function render(chosenModel, chosenSettings = settings, chosenCompany = company) {
       const preview = new PreviewRecorder();
+      // render() wechselt erst zum Zeichnen der Fußzeilen über setPage().
+      // Die Grenze stammt damit aus der Zeichenreihenfolge, nicht aus einer
+      // y-Heuristik, die überlaufenden Inhalt versehentlich ausblenden könnte.
+      const bodyEnds = [];
+      const setPage = preview.setPage.bind(preview);
+      preview.setPage = pageNumber => {
+        bodyEnds[pageNumber - 1] = preview.pages[pageNumber - 1].length;
+        setPage(pageNumber);
+      };
       const pdf = new jsPDF();
       await renderBusinessDocument(preview, chosenModel, chosenSettings, chosenCompany);
       await renderBusinessDocument(pdf, chosenModel, chosenSettings, chosenCompany);
       const parsed = await PDFDocument.load(pdf.output('arraybuffer'));
       assert.equal(parsed.getPageCount(), preview.pages.length);
-      const body = preview.pages.map(page => page.filter(op => op.kind === 'text' && op.y > 25 && op.y < 270));
-      // Der Standardfuß beginnt bei 271; der Inhaltsbereich endet bei 265.
-      for (const page of preview.pages) {
-        for (const op of page.filter(op => op.kind === 'text' && op.y > 25 && !op.lines[0].startsWith('Seite '))) {
-          if (op.y >= 271) continue; // reguläre Fußzeilen
-          assert.ok(op.y <= 265, `Text ragt in den Fuß: ${op.lines.join(' ')} bei ${op.y}`);
+      const bodyPages = preview.pages.map((page, index) => page.slice(0, bodyEnds[index]));
+      const body = bodyPages.map(page => page.filter(op => op.kind === 'text'));
+      for (let index = 0; index < bodyPages.length; index += 1) {
+        const footerRule = preview.pages[index].slice(bodyEnds[index]).find(op => op.kind === 'line');
+        const limit = footerRule ? footerRule.y1 - 6 : 279;
+        for (const op of bodyPages[index]) {
+          if (op.kind === 'text') {
+            const lastY = op.y + (op.lines.length - 1) * op.lineStep;
+            assert.ok(lastY <= limit, `Text ragt auf Seite ${index + 1} in den Fuß: ${op.lines.join(' ')} bis ${lastY}, Grenze ${limit}`);
+          } else if (op.kind === 'image') {
+            assert.ok(op.y + op.height <= limit, `Bild ragt auf Seite ${index + 1} in den Fuß: ${op.y + op.height}, Grenze ${limit}`);
+          }
         }
       }
-      return { preview, pdf, body };
+      return { preview, pdf, body, bodyPages };
     }
 
     await t.test('normale Rechnung, Gutschrift, Angebot und Mahnung bleiben einseitig lesbar', async () => {
@@ -113,6 +128,29 @@ test('Geschäftsdokumente: echte jsPDF-Metriken, Seitenumbrüche und gemeinsame 
           for (const op of page.filter(op => op.kind === 'text' && op.lines.some(line => /^(?:QA-|KONTO-|Zahlungsbedingung)/.test(line)))) assert.ok(op.y <= 265);
         }
       }
+    });
+
+    await t.test('lange Unterschriftsnamen und Bild umbrechen gemeinsam ohne Fußüberlagerung', async () => {
+      for (const count of [8, 13, 18, 23, 30, 45, 80]) {
+        const result = await render({
+          ...model,
+          texts: [Array.from({ length: count }, (_, index) => `Zusatztext ${index}`).join('\n')],
+          signature: {
+            heading: 'Unterschrift',
+            lines: [Array(22).fill('Langer Unterschriftsname').join(' ').slice(0, 200), 'Ort und Datum'],
+            image: png,
+          },
+        });
+        const images = result.bodyPages.flat().filter(op => op.kind === 'image');
+        assert.equal(images.length, 1);
+        assert.equal(images[0].href, png);
+        assert.equal(images[0].height, 25);
+        assert.equal(Object.keys(result.pdf.internal.collections.addImage_images).length, 1);
+        assert.equal(result.body.flat().filter(op => op.lines.includes('Ort und Datum')).length, 1);
+      }
+      // Ein sehr langer Signaturtext darf selbst Seiten wechseln. Auch dann
+      // muss das folgende echte PNG auf der letzten Seite Platz erhalten.
+      await render({ ...model, signature: { heading: 'Unterschrift', lines: [Array(100).fill('Signaturzeile').join('\n')], image: png } });
     });
 
     await t.test('SVG wird vor beiden Zeichenflächen zu einem gültigen PNG normalisiert', async () => {

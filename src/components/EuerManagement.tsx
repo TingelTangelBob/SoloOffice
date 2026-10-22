@@ -256,7 +256,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const entriesReady = !loading && entriesLoadedScope === currentEntriesScope;
 
 
-  const formatAmount = (amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency);
+  const formatAmount = useCallback((amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency), [locale, company?.numberFormat, company?.currency]);
   // Zehn Jahre, damit auch übernommene Altdaten erreichbar sind.
   const years = Array.from({ length: 10 }, (_, index) => currentYear - index);
   const invoiceOptions = useMemo(() => invoices.filter(invoice => invoice.documentType !== 'credit_note'), [invoices]);
@@ -268,10 +268,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     });
     return totals;
   }, [paymentEntries]);
-  const getRemainingAmount = (invoice: { id: string; total: number }, excludingEntryId?: string) => {
+  const getRemainingAmount = useCallback((invoice: { id: string; total: number }, excludingEntryId?: string) => {
     const excluded = excludingEntryId ? paymentEntries.find(entry => entry.id === excludingEntryId && entry.sourceId === invoice.id) : undefined;
     return Math.max(0, Math.round(Number(invoice.total || 0) * 100) - Math.round((paymentTotals.get(invoice.id) || 0) * 100) + Math.round(Number(excluded?.amount || 0) * 100)) / 100;
-  };
+  }, [paymentEntries, paymentTotals]);
   const entriesById = useMemo(() => new Map(entries.map(entry => [entry.id, entry])), [entries]);
 
   const loadEntries = useCallback(async () => {
@@ -432,7 +432,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       if (invoice.status === 'paid' && remaining > 0.005) hints.push(`Bei ${invoice.invoiceNumber} fehlen noch ${formatAmount(remaining)} an erfassten Zahlungseingängen.`);
     });
     return hints;
-  }, [activeEntries, invoiceOptions, paymentTotals]);
+  }, [activeEntries, invoiceOptions, paymentTotals, formatAmount, getRemainingAmount]);
 
   const openNew = () => { setQuickExpenseMonth(null); setDraft(emptyDraft()); setDialogEntry(null); setError(''); };
   const openExpenseForMonth = (month: number) => {

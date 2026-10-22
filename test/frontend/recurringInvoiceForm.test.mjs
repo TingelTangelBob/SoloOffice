@@ -4,13 +4,14 @@ import { setImmediate } from 'node:timers/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as formatters from '../../.test-dist/utils/formatters.js';
 
 const source = readFileSync(new URL('../../src/components/RecurringInvoiceManagement.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function fixture(entry) {
+function fixture(entry, company = {}) {
   const states = [];
   const effects = [];
   const saved = [];
@@ -29,10 +30,10 @@ function fixture(entry) {
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'Fragment' },
     '../context/CustomerContext': { useCustomers: () => ({ customers: [{ id: 'customer-1', name: 'Testkunde' }] }) },
-    '../context/CompanyContext': { useCompany: () => ({ company: {} }) },
+    '../context/CompanyContext': { useCompany: () => ({ company }) },
     '../context/FeedbackContext': { useFeedback: () => ({ confirm: async () => true }) },
     '../utils/terminology': { getTerminology: () => ({ entity: { singular: 'Kunde' } }) },
-    '../utils/formatters': { formatCurrency: String, formatDate: String, formatNumber: String },
+    '../utils/formatters': formatters,
     '../services/api': { apiService: {
       getRecurringInvoices: async () => [entry],
       updateRecurringInvoice: async (id, payload) => {
@@ -103,4 +104,31 @@ test('Enddatum im Formular leeren sendet nach JSON-Serialisierung explizit null'
   assert.equal(state.saved.length, 1);
   assert.ok(Object.hasOwn(state.saved[0].payload, 'endDate'));
   assert.equal(state.saved[0].payload.endDate, null);
+});
+
+function textContent(tree) {
+  if (Array.isArray(tree)) return tree.map(textContent).join('');
+  if (typeof tree === 'string' || typeof tree === 'number') return String(tree);
+  return tree && typeof tree === 'object' ? textContent(tree.props?.children) : '';
+}
+
+test('Formularlabels und Gesamtbetrag folgen der Firmenwährung EUR, USD, CHF und GBP', async () => {
+  for (const currency of ['EUR', 'USD', 'CHF', 'GBP']) {
+    const state = fixture({
+      id: 'template-1', customerId: 'customer-1', name: 'Wartung', frequency: 'monthly', intervalUnit: 'month', intervalValue: 1,
+      startDate: '2026-10-20', nextRunDate: '2026-10-20', dueDays: 14, status: 'active',
+      items: [{ description: 'Leistung', quantity: 1, unitPrice: 100, taxRate: 19 }],
+    }, { locale: 'de-DE', numberFormat: 'european', currency });
+    let tree = await state.load();
+    find(tree, node => node.type === 'button' && node.props.title === 'Bearbeiten')[0].props.onClick();
+    tree = state.render();
+    const dialog = find(tree, node => node.type === 'DialogShell')[0];
+    const symbol = new Intl.NumberFormat('de-DE', { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(0).find(part => part.type === 'currency').value;
+    assert.equal(find(dialog, node => node.type === 'label' && textContent(node).startsWith(`Einzelpreis (${symbol})`)).length, 1, `${currency}: Einzelpreislabel`);
+    assert.equal(find(dialog, node => node.type === 'span' && textContent(node) === `Gesamt (${symbol})`).length, 1, `${currency}: Positionssumme`);
+    const expectedTotal = new Intl.NumberFormat('de-DE', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(119);
+    assert.ok(textContent(dialog).includes(expectedTotal), `${currency}: formatierter Gesamtbetrag`);
+    if (currency !== 'EUR') assert.ok(!textContent(dialog).includes('€'), `${currency}: keine Euro-Beschriftung`);
+  }
 });

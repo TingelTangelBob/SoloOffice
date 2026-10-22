@@ -15,6 +15,7 @@ export interface AuthContextValue {
   workspace: WorkspaceSummary | null;
   workspaces: WorkspaceSummary[];
   loading: boolean;
+  sessionRevision: number;
   isAuthenticated: boolean;
   login: (email: string, password: string, workspaceId?: string) => Promise<void>;
   register: (payload: RegistrationPayload) => Promise<RegistrationResponse>;

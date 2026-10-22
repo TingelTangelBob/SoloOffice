@@ -10,6 +10,8 @@ import { CompanyContext, type CompanyContextType } from './CompanyContext';
 import { defaultDocumentTextTemplates } from '../utils/documentTextTemplates';
 import { trackTelemetry } from '../services/telemetry';
 import { createSerialStateWriter } from '../utils/serialStateWriter';
+import { useAuth } from './AuthContext';
+import { sessionWriteBoundary } from '../utils/sessionWriteBoundary';
 
 // ============================================================================
 // Default Values
@@ -174,6 +176,8 @@ export function CompanyProvider({
   initialMaterialTemplates = [],
   loading = false,
 }: CompanyProviderProps) {
+  const { workspace, user } = useAuth();
+  const [writeScope] = useState(() => sessionWriteBoundary.capture());
   const [company, setCompany] = useState<Company>(initialCompany);
   const [hourlyRates, setHourlyRates] = useState<HourlyRate[]>(initialHourlyRates);
   const [materialTemplates, setMaterialTemplates] = useState<MaterialTemplate[]>(initialMaterialTemplates);
@@ -199,10 +203,11 @@ export function CompanyProvider({
 
   const [updateCompanyData] = useState(() => createSerialStateWriter<Company>({
     current: () => companyRef.current,
-    active: () => activeRef.current,
+    active: () => activeRef.current && sessionWriteBoundary.matches(writeScope),
     save: async companyData => {
       try {
-        return await apiService.updateCompany(companyData);
+        if (!sessionWriteBoundary.isCurrent(writeScope)) throw new Error('Die Sitzung oder der Arbeitsbereich wird gewechselt.');
+        return await apiService.updateCompany(companyData, { workspaceId: workspace?.id || '', userId: user?.id || '' });
       } catch (error) {
         logger.error('Error updating company:', { error: error instanceof Error ? error.message : String(error) });
         throw error;
