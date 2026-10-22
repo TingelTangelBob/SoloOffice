@@ -1,52 +1,67 @@
 # Aktueller Stand SoloOffice
 
-**Stand:** 2026-10-20
+**Stand:** 2026-10-22
+**Vorbereitet:** Beta `v0.9.11b`, interne Build-Version `0.9.11`
+**Veröffentlichung:** noch kein neuer Tag, GitHub-Release, Push oder Deploy
 
-**Fachapp:** `release/v0.9.7` · Beta-Pre-Release `v0.9.7b` veröffentlicht
+Letzter veröffentlichter Release ist [v0.9.10b](https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.9.10b).
+Der anschließend veröffentlichte Vite-Patch liegt auf `main` (`c5774f6`).
+Dieser Stand ist im neuen Kandidaten auch in der Git-Historie integriert.
+Der ursprüngliche lokale Arbeitsbestand wurde erhalten und um die geprüften
+Korrekturen ergänzt; die Editor-Swapdatei gehört nicht zum Release.
 
-**Release-Commit:** `8b566fb94bb19b8c22d1d1148802290f14173fbd`
+## Nächste Beta
 
-**GitHub-Release:** [SoloOffice v0.9.7b](https://github.com/TingelTangelBob/SoloOffice/releases/tag/v0.9.7b)
+[Release Notes v0.9.11b](releases/v0.9.11b.md) und [Changelog](../CHANGELOG.md)
+beschreiben den vorbereiteten Umfang: gemeinsame PDF-Designs und Vorschau,
+verlässlicher Vorlagen-Autosave, wirksamer Textreset, Seitenumbrüche für lange
+Dokumentinhalte, gemeinsame Logo-Aufbereitung, Schutz bei Sitzungswechseln,
+konsistente Reporting-Filter und Währungen sowie kompaktere Listen und Dialoge.
 
-Der Tag `v0.9.7b` zeigt auf den geprüften Beta-Release-Commit. Ein öffentlicher Hosted-/SaaS-Start ist weiterhin nicht freigegeben.
+Die Landingpage-Versionsangabe ist lokal auf dieselbe Beta vorbereitet. Ihre
+älteren Produktaufnahmen wurden nicht erneuert und bleiben im Landingpage-README
+datiert. Der separate Control-Plane-Fix korrigiert die Stripe-UGX-Umrechnung.
 
-## Produktstand
+## Technische Prüfung
 
-SoloOffice ist eine deutschsprachige Webanwendung für Rechnungen, Kunden- und Auftragsverwaltung sowie vorbereitende Buchhaltung. Der aktuelle Stand umfasst unter anderem E-Rechnungen, Belege mit lokaler OCR, Workspace- und Rollenverwaltung, Datenübernahme, EÜR und die optionale Erweiterung „Steuern & Abgaben“.
+Die Prüfungen erfolgen auf dem vorgesehenen LAN-Testserver in eigenen temporären
+Docker-Ressourcen. Laufende Staging-, Demo- und Fremdprojekt-Instanzen werden dabei
+nicht aktualisiert. Vollständige Protokolle und der genaue geprüfte Commit werden
+im Abschlussnachweis unter `107_SoloOffice/tmp/release-fixes-20261022/` im gemeinsamen
+Projektordner gesichert.
 
-## Änderungen in v0.9.7b
+- Frontend-Regressionssuite, ESLint, TypeScript und Vite-Produktionsbuild.
+- Backend-Unit-Tests und Produktionsimage.
+- Verpflichtende Frontend-/Backend-Abhängigkeits-Audits.
+- Migrationen und Workspace-RLS gegen eine frische PostgreSQL-15-Datenbank.
+- Vollständige isolierte Compose-Laufzeitprüfung samt Health, Proxy, Migrationen,
+  Rollenentmachtung und Image-Provenienz.
+- Echte jsPDF-Regressionen für Normalfälle, lange Positionen, Zahlungsblöcke,
+  Signaturen und gemeinsame normalisierte Bildquellen.
+- Separater Control-Plane-Kennzahlenlauf und Landingpage-Docker-Build.
 
-- Rechnungszahlungen in der EÜR übernehmen standardmäßig den noch offenen Rechnungsbetrag, einschließlich Zahlungen aus anderen EÜR-Jahren. Ein kleinerer Betrag erfasst weiterhin eine Teilzahlung.
-- EÜR-Monatsdurchschnitt und bisherige Berechnung zeigen ihre Zeiträume an einer Info-Schaltfläche. Die Ausgabenaktion und PDF-Vorschau sind kompakter.
-- Das Anpassungssymbol im Dashboard öffnet ein Menü zum bestehenden Kachel-Editor.
-- Einstellungen enthalten weniger redundante Beschreibungen. SMTP-Server, Port und Verschlüsselung lassen sich ohne feste Anbieterauswahl eintragen.
+Der CSS-Parser wird gezielt auf 7.1.7 überschrieben; Tailwind bleibt auf Version 3.
+Der Kompatibilitätstest prüft Verschachtelung, responsive und beliebige Varianten
+sowie `@apply`. DOMPurify steht auf 3.4.17, Vite auf 8.3.5.
 
-Details zur Steuererfassung stehen in [docs/steuern-abgaben.md](steuern-abgaben.md); Versionshinweise in [CHANGELOG.md](../CHANGELOG.md).
+Ein vollständiger neuer Browserdurchlauf auf allen Gerätebreiten und Themes
+sowie die tatsächliche Browser-Canvas-Rasterisierung bleiben gesonderte manuelle
+Nachweise. Der automatische PDF-Test injiziert den Browser-Decoder/Canvas und
+prüft anschließend echte jsPDF-Dokumente mit dem PDF-Parser. Er ersetzt keinen
+Browser-Decoder-Test. Die größeren Vite-Chunks bleiben ein nicht blockierender
+Buildhinweis.
 
-## Prüfstand und Nachweise
+## Umgebungen und offene Freigaben
 
-- GitHub CI für den Release-Commit bestanden: [Lauf 39399549078](https://github.com/TingelTangelBob/SoloOffice/actions/runs/39399549078). Frontend-Tests, Lint, Typprüfung, Produktionsbuild, Audit, Backend-Image und 394 Backend-Unit-Tests liefen erfolgreich; die Compose-Prüfung sowie Migrationen und Workspace-RLS gegen PostgreSQL bestanden.
-- ESLint meldet eine nicht blockierende Warnung in `src/context/MotionProvider.tsx`.
-- Staging unter [app.staging.solooffice.de](https://app.staging.solooffice.de) wurde auf Version `0.9.7` und Commit `8b566fb94bb1` aktualisiert. Die Betriebsprüfung war erfolgreich.
-- Das Demo-Image folgt weiterhin dem Branch `main`; der Beta-Tag `v0.9.7b` wurde nicht auf `main` übertragen.
-- Lokal bestanden: `git diff --check`, `bash -n deploy/solooffice-update-all.sh`, `node scripts/verify-audit-contracts.mjs`, `npm run typecheck` und `npm run lint`.
-- Docker ist auf der Arbeitsmaschine nicht verfügbar. Docker-Builds und die vollständigen Containerprüfungen liefen deshalb in GitHub CI.
-- Die manuelle Release-Checkliste nennt 13 offene Punkte. Sie wurden nicht erneut geprüft oder geschlossen.
-- Betriebsnachweise zu Offsite-Backup, externer Überwachung und Rückfallplan für den Gesamtbetrieb sind weiterhin offen. Das Staging-Backup ersetzt diese Nachweise nicht.
+- `solooffice.de`: öffentliche Landingpage; lokale Release-Vorbereitung ist kein Deploy.
+- `app.staging.solooffice.de`: zuletzt am 22.10.2026 lesend als `0.9.10` / `c5774f6` geprüft.
+- `demo.solooffice.de`: Demo, kein produktiver SaaS-Endpunkt.
+- Die [manuelle Release-Checkliste](manual-release-checklist.md) hat weiterhin
+  **13 offene Punkte**. Bestehende Haken bleiben erhalten; ohne Datum und
+  Nachweis werden keine weiteren Haken gesetzt.
+- Reale Mailzustellung, vollständige Fachabläufe, externe E-Rechnungsvalidierung
+  sowie die vorgesehenen Rechts- und Betriebsfreigaben bleiben gesondert offen.
+- Offsite-Backup, externe Überwachung und Rückfallplan für den Gesamtbetrieb
+  sind durch einen lokalen Teststack nicht nachgewiesen.
 
-## Umgebungen und Freigaben
-
-- `solooffice.de` ist die öffentliche Landingpage.
-- `app.staging.solooffice.de` enthält den geprüften v0.9.7b-Release-Commit.
-- `demo.solooffice.de` läuft als Demo und nicht als produktiver SaaS-Endpunkt.
-- Selbsthosting ist möglich, ersetzt jedoch keine manuelle, rechtliche oder steuerliche Prüfung.
-- Vor einem späteren öffentlichen Hosted-/SaaS-Start bleiben die dafür vorgesehenen Freigaben und Prüfungen offen. Das blockiert nicht die interne Erfassung eigener EÜR-Werte in SoloOffice.
-
-## Nächste Schritte
-
-1. Die 13 offenen Punkte aus [docs/manual-release-checklist.md](manual-release-checklist.md) mit Steffen manuell prüfen; bestehende Haken bleiben unverändert.
-2. Offsite-Backup, externe Überwachung und Rückfallplan für den Gesamtbetrieb nachweisen.
-3. Die vorbereiteten Dashboard-Zielzuordnungen aus SO-40 über Steffens Dashboard-Anmeldung anwenden.
-4. Vor einem öffentlichen SaaS-Start die dafür vorgesehenen Produkt- und Rechtsfreigaben abschließen.
-
-Ein erfolgreicher Beta-Release ist keine öffentliche SaaS-Freigabe.
+Weiterhin Beta unter v1; keine öffentliche Hosted-/SaaS-Freigabe.

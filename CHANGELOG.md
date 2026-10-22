@@ -2,6 +2,33 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## v0.9.11b – Vorlagen, Dokumente und verlässliche Auswertungen (vorbereitet)
+
+- Ein gemeinsames PDF-Design mit fünf Layouts, Farbe, Schrift und Optionen
+  gilt für Rechnungen, Angebote, Bestätigungen und Mahnungen. Die Vorschau
+  verwendet denselben Renderer wie die PDF-Ausgabe.
+- Designänderungen werden seriell auf dem aktuellen Firmenstand gespeichert.
+  Textänderungen und das Wiederherstellen der Standardtexte wirken auch bei
+  älteren Vorlagen mit eigenen Texten; ein späterer Autosave setzt sie nicht zurück.
+- Verzögerte Firmenspeicherungen werden bei Sitzungs- und Workspace-Wechseln
+  gesperrt und zusätzlich serverseitig dem erwarteten Benutzer und Workspace zugeordnet.
+- Lange Tabellenpositionen, Zahlungsbedingungen, Bankfelder und Signaturtexte
+  umbrechen vor dem PDF-Fuß. Tabellenköpfe erscheinen auf Fortsetzungsseiten erneut.
+- Firmenlogos werden für Vorschau und PDF gemeinsam in PNG umgewandelt,
+  einschließlich im Browser lesbarer SVG- und WebP-Logos.
+- Das Rechnungsjournal wechselt Jahr und Standardzeitraum gemeinsam. Veraltete
+  Antworten dürfen neue Filter, CSV-Daten oder Ladezustände nicht überschreiben.
+- Wiederkehrende Rechnungen und Anlagen zeigen die konfigurierte Firmenwährung.
+  Belege erlauben frei eingegebene dreistellige Währungscodes und speichern
+  einen fehlenden Wert einheitlich als EUR.
+- Kalenderhinweise sind per Touch und Tastatur erreichbar. Angebotstabellen
+  wechseln bei schmaler Inhaltsbreite auf Karten; die mobile Aktionsleiste kann schrumpfen.
+- Zahlreiche Dialoge, Listen, EÜR- und Steueransichten wurden vereinheitlicht und verdichtet.
+- Sicherheitspatches: Vite 8.3.5, DOMPurify 3.4.17 und CSS-Parser 7.1.7.
+  Tailwind bleibt auf Version 3; ein Kompatibilitätstest deckt den Parser-Override ab.
+- Weiterhin Beta: keine v1 und keine öffentliche SaaS-Freigabe. Die manuellen
+  Abnahmen in `docs/manual-release-checklist.md` bleiben gesondert offen.
+
 ## v0.9.10b – EÜR-Erfassung und Oberfläche
 
 - Ausgaben lassen sich mit einem Beleg verknüpfen. Die Auswahl zeigt die noch
