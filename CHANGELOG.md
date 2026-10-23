@@ -2,7 +2,7 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
-## v0.9.11b – Vorlagen, Dokumente und verlässliche Auswertungen (vorbereitet)
+## v0.9.11b – Vorlagen, Dokumente und verlässliche Auswertungen (23. Oktober 2026)
 
 - Ein gemeinsames PDF-Design mit fünf Layouts, Farbe, Schrift und Optionen
   gilt für Rechnungen, Angebote, Bestätigungen und Mahnungen. Die Vorschau
