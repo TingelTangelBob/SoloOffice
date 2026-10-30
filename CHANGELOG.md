@@ -2,6 +2,18 @@
 
 Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
+## Unreleased
+
+- Fixkostenvorlagen mit bestätigter oder übersprungener Historie werden beim
+  Entfernen archiviert. Künftige Läufe werden entfernt; offene bereits fällige
+  Läufe müssen zuerst gebucht oder übersprungen werden.
+- Der Fixkostendialog zeigt den Umsatzsteuersatz direkt bei den Grunddaten und
+  bündelt weitere Angaben unter einem aufklappbaren Abschnitt.
+- EÜR-Prognosen lassen sich unabhängig von Ist-Buchungen erfassen, bearbeiten
+  und löschen. Sie werden getrennt ausgewiesen und fließen nicht in Exporte,
+  USt-Auswertungen oder Steuerberechnungen ein.
+- EÜR-Buchungszeilen wurden in Tabellen- und Mobilansicht verdichtet.
+
 ## v0.9.11b – Vorlagen, Dokumente und verlässliche Auswertungen (23. Oktober 2026)
 
 - Ein gemeinsames PDF-Design mit fünf Layouts, Farbe, Schrift und Optionen

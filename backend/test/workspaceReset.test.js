@@ -42,6 +42,7 @@ test('behaltene Firmendaten lassen Betriebsdaten, Nummernkreise und SMTP stehen'
   }
   assert.ok(plan.tables.includes('customers'));
   assert.ok(plan.tables.includes('euer_entries'));
+  assert.ok(plan.tables.includes('euer_forecasts'));
   assert.ok(plan.tables.includes('migration_sessions'));
   assert.ok(!plan.tables.includes('hourly_rates'), 'eigene Stundensätze bleiben erhalten');
   assert.ok(!plan.tables.includes('material_templates'), 'eigene Materialvorlagen bleiben erhalten');

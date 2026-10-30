@@ -34,7 +34,7 @@ export interface RecurringExpense {
   noticePeriodDays: number; cancelledOn: string | null; status: 'active' | 'paused' | 'ended';
   pauses: ExpensePause[]; priceChanges: PriceChange[]; automaticBooking: boolean;
   scope: 'business' | 'private_levy'; levyKind: LevyKind | null; linkedReceiptId: string | null; notes: string;
-  nextDueDate?: string | null; createdAt?: string; updatedAt?: string;
+  nextDueDate?: string | null; createdAt?: string; updatedAt?: string; archivedAt?: string | null;
 }
 export type RecurringExpensePayload = Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt' | 'nextDueDate'>;
 export interface RecurringExpenseRun {

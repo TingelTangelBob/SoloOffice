@@ -3,6 +3,7 @@ import type { ForecastResult, LevyPayment, LevyPaymentPayload, RecurringExpense,
 import type { VatOverview, VatPayment, VatPaymentPayload } from '../types/vat';
 
 const json = (method: string, data: unknown) => ({ method, body: JSON.stringify(data) });
+export interface EuerForecastPlan { id: string; entryType: 'income' | 'expense'; date: string; description: string; category: string | null; amount: number; }
 function vatPaymentPayload(payment: VatPaymentPayload): VatPaymentPayload {
   const { kind, taxYear, periodKey, dueDate, paidOn, amount, notes } = payment;
   return { kind, taxYear, periodKey, dueDate, paidOn, amount, notes };
@@ -18,6 +19,9 @@ async function mutate<T>(path: string, options: RequestInit): Promise<T> {
 }
 /** Ein Auth-, CSRF-, Fehler- und Demo-Pfad für alle Finanz-Endpunkte. */
 export const financeApi = {
+  getEuerForecasts: (year: number) => apiService.financeRequest<EuerForecastPlan[]>(`/euer-forecasts?year=${year}`),
+  saveEuerForecast: (payload: Omit<EuerForecastPlan, 'id'>, id?: string) => mutate<EuerForecastPlan>(id ? `/euer-forecasts/${id}` : '/euer-forecasts', json(id ? 'PUT' : 'POST', payload)),
+  deleteEuerForecast: (id: string) => mutate<{ deleted: boolean }>(`/euer-forecasts/${id}`, { method: 'DELETE' }),
   getProfile: (year: number) => apiService.financeRequest<TaxProfile>(`/tax-profile/${year}`),
   saveProfile: (year: number, payload: TaxProfilePayload) => mutate<TaxProfile>(`/tax-profile/${year}`, json('PUT', payload)),
   copyProfile: (year: number, targetYear: number) => mutate<TaxProfile>(`/tax-profile/${year}/copy`, json('POST', { targetYear })),
@@ -25,7 +29,7 @@ export const financeApi = {
   churchConsent: (year: number, consented: boolean, liable?: boolean) => mutate<TaxProfile>(`/tax-profile/${year}/church-consent`, json('POST', { consented, ...(liable === undefined ? {} : { liable }) })),
   getExpenses: () => apiService.financeRequest<RecurringExpense[]>('/recurring-expenses'),
   saveExpense: (payload: RecurringExpensePayload, id?: string) => mutate<RecurringExpense>(id ? `/recurring-expenses/${id}` : '/recurring-expenses', json(id ? 'PUT' : 'POST', payload)),
-  deleteExpense: (id: string) => mutate<void>(`/recurring-expenses/${id}`, { method: 'DELETE' }),
+  deleteExpense: (id: string) => mutate<{ deleted?: boolean; archived?: boolean }>(`/recurring-expenses/${id}`, { method: 'DELETE' }),
   getRuns: (year?: number, dueOnly = false) => apiService.financeRequest<RecurringExpenseRun[]>(`/recurring-expenses/runs?${year === undefined ? '' : `year=${year}&`}dueOnly=${dueOnly}`),
   generateRuns: (throughDate: string) => mutate<RecurringExpenseRun[]>('/recurring-expenses/generate', json('POST', { throughDate })),
   confirmRun: (id: string, paidOn: string) => mutate<RecurringExpenseRun>(`/recurring-expenses/runs/${id}/confirm`, json('POST', { paidOn })),

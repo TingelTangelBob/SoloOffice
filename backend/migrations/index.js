@@ -66,6 +66,7 @@ import * as migration057 from './057_vat_payments.js';
 import * as migration058 from './058_invoice_item_course_names.js';
 import * as migration059 from './059_work_location_days.js';
 import * as migration060 from './060_recurring_expense_archive.js';
+import * as migration061 from './061_euer_forecasts.js';
 
 // List of all migrations in execution order
 export const migrations = [
@@ -129,6 +130,7 @@ export const migrations = [
   migration058,
   migration059,
   migration060,
+  migration061,
 ];
 
 /**

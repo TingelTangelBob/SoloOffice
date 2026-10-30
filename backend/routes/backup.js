@@ -33,7 +33,7 @@ const JSONB_COLUMNS = {
 };
 
 const BACKUP_TABLES = [
-  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'levy_payments', 'vat_payments',
+  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'levy_payments', 'vat_payments', 'euer_forecasts',
   'customers',
   'customer_emails',
   'recurring_invoices',
@@ -75,7 +75,7 @@ const BACKUP_TABLES = [
 // Nachweis, wer wann was geändert hat, darf durch das Einspielen einer
 // Sicherung nicht verschwinden. Die Sätze aus der Sicherung kommen hinzu.
 const RESTORE_CLEAR_TABLES = [
-  'vat_payments', 'levy_payments', 'recurring_expense_runs', 'recurring_expenses', 'tax_profiles', 'workspace_extensions',
+  'vat_payments', 'levy_payments', 'recurring_expense_runs', 'recurring_expenses', 'euer_forecasts', 'tax_profiles', 'workspace_extensions',
   'email_history', 'customer_emails', 'customer_hourly_rates',
   'customer_specific_hourly_rates', 'customer_specific_materials',
   'recurring_invoice_runs', 'recurring_invoices',
@@ -90,7 +90,7 @@ const RESTORE_ORDER = [
   'company',
   'customers',
   'yearly_invoice_start_numbers',
-  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs',
+  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'euer_forecasts',
   'euer_entries',
   'euer_entry_history',
   'fixed_assets',
@@ -141,7 +141,7 @@ async function setAuditSuppressed(client, suppressed) {
 }
 
 const WORKSPACE_SCOPED_TABLES = new Set([
-  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'levy_payments', 'vat_payments',
+  'workspace_extensions', 'tax_profiles', 'recurring_expenses', 'recurring_expense_runs', 'levy_payments', 'vat_payments', 'euer_forecasts',
   'customers', 'customer_emails', 'recurring_invoices', 'recurring_invoice_runs', 'invoices', 'invoice_items', 'invoice_attachments', 'invoice_original_documents', 'invoice_job_sources',
   'quotes', 'quote_items', 'quote_attachments', 'job_recurrences', 'job_entries', 'job_attachments',
   'calendar_events', 'work_location_days', 'job_time_entries', 'company', 'hourly_rates', 'material_templates',
