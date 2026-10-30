@@ -933,7 +933,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       <label className="mx-5 mb-4 flex w-fit items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={showVoided} onChange={event => setShowVoided(event.target.checked)} className="rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />Stornierte Buchungen anzeigen</label>
       {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : listedRows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden xl:block">
-          <table className="w-full table-fixed">
+          <table className="euer-bookings-table w-full table-fixed">
             <colgroup>
               <col style={{ width: EUER_COLUMN_WIDTHS.date }} />
               <col />

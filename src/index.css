@@ -2126,6 +2126,12 @@
     #app-shell table :is(th, td) button:not(.btn-primary):not(.btn-secondary) {
       min-height: 0;
     }
+
+    /* EÜR-Buchungen: rund 10 % niedrigere Zeilen (56 → 50 px). */
+    #app-shell table.euer-bookings-table tbody td {
+      padding-top: 0.3125rem;
+      padding-bottom: 0.3125rem;
+    }
   }
 }
 
