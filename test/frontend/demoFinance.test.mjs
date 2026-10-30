@@ -218,6 +218,46 @@ test('Terminänderung löscht nur geplante Zukunftsläufe; bestätigte Schnappsc
   assert.equal(state.recurringExpenseRuns.some(run => run.expenseId === created.id && run.status === 'planned' && run.dueDate > today), false);
 });
 
+test('Demo archiviert Fixkosten mit Historie, entfernt Zukunftsläufe und blockiert offene heutige Fälligkeiten', async t => {
+  globalThis.localStorage = new MemoryStorage(); globalThis.sessionStorage = new MemoryStorage();
+  const { module: demo, temp } = await loadDemoApi(); t.after(async () => { await rm(temp, { recursive: true, force: true }); });
+  const call = (url, method = 'GET', body) => demo.demoRequest(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const now = new Date(); const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const base = { name: 'Archivvorlage', category: 'software', scope: 'business', amountGross: 10, taxRate: null, interval: 'monthly', intervalCount: 1, intervalUnit: 'months', startDate: today, endDate: null, cancelledOn: null, noticePeriodDays: 0, status: 'active', pauses: [], priceChanges: [], automaticBooking: false, linkedReceiptId: null, notes: '' };
+  const historical = await call('/recurring-expenses', 'POST', base);
+  const through = new Date(`${today}T00:00:00Z`); through.setUTCDate(through.getUTCDate() + 40);
+  const throughDate = through.toISOString().slice(0, 10);
+  await call('/recurring-expenses/generate', 'POST', { throughDate, autoConfirm: false });
+  const runs = await call('/recurring-expenses/runs');
+  const current = runs.find(run => run.expenseId === historical.id && run.dueDate === today);
+  assert.ok(current);
+  await call(`/recurring-expenses/runs/${current.id}/confirm`, 'POST', { paidOn: today });
+  const result = await call(`/recurring-expenses/${historical.id}`, 'DELETE', {});
+  assert.equal(result.archived, true);
+  assert.equal((await call('/recurring-expenses')).some(item => item.id === historical.id), false);
+  const state = JSON.parse(globalThis.localStorage.getItem('solooffice-demo-data-v1'));
+  assert.equal(state.recurringExpenseRuns.find(run => run.id === current.id).status, 'confirmed');
+  assert.equal(state.recurringExpenseRuns.some(run => run.expenseId === historical.id && run.status === 'planned' && run.dueDate > today), false);
+
+  const open = await call('/recurring-expenses', 'POST', { ...base, name: 'Offene Vorlage' });
+  await call('/recurring-expenses/generate', 'POST', { throughDate: today, autoConfirm: false });
+  await assert.rejects(call(`/recurring-expenses/${open.id}`, 'DELETE', {}), /Buchen oder überspringen/);
+});
+
+test('Demo-Prognosen lassen sich anlegen, ändern, listen und echt löschen', async t => {
+  globalThis.localStorage = new MemoryStorage(); globalThis.sessionStorage = new MemoryStorage();
+  const { module: demo, temp } = await loadDemoApi(); t.after(async () => { await rm(temp, { recursive: true, force: true }); });
+  const call = (url, method = 'GET', body) => demo.demoRequest(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const year = new Date().getFullYear();
+  const created = await call('/euer-forecasts', 'POST', { entryType: 'expense', date: `${year}-11-15`, description: 'Geplante Software', category: 'software', amount: 24.5 });
+  assert.equal(created.amount, 24.5);
+  assert.equal((await call(`/euer-forecasts?year=${year}`)).length, 1);
+  await call(`/euer-forecasts/${created.id}`, 'PUT', { entryType: 'income', date: `${year}-12-01`, description: 'Geplanter Auftrag', category: 'other_income', amount: 900 });
+  assert.equal((await call(`/euer-forecasts?year=${year}`))[0].entryType, 'income');
+  await call(`/euer-forecasts/${created.id}`, 'DELETE', {});
+  assert.deepEqual(await call(`/euer-forecasts?year=${year}`), []);
+});
+
 test('Profilkopie behält Ziel-ID und vorhandene Kirchensteuer-Einwilligung samt Angabe', async t => {
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();

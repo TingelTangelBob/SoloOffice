@@ -50,6 +50,7 @@ interface DemoState {
   calendarEvents: DemoRecord[];
   workLocationDays: DemoRecord[];
   euerEntries: DemoRecord[];
+  euerForecasts?: DemoRecord[];
   euerEntryHistory: DemoRecord[];
   invoiceHistory: DemoRecord[];
   fixedAssets: DemoRecord[];
@@ -755,6 +756,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
     calendarEvents: [],
     workLocationDays: [],
     euerEntries: [],
+    euerForecasts: [],
     euerEntryHistory: [],
     invoiceHistory: [],
     fixedAssets: [],
@@ -894,6 +896,7 @@ function readState(): DemoState {
       workLocationDays: parsed.workLocationDays || [],
       recurringInvoices: parsed.recurringInvoices || [],
       euerEntries: parsed.euerEntries || [],
+      euerForecasts: parsed.euerForecasts || [],
       euerEntryHistory: parsed.euerEntryHistory || [],
       extensions: parsed.extensions || [],
       taxProfiles: parsed.taxProfiles || [],
@@ -2301,7 +2304,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const expenses = state.recurringExpenses!;
     const runs = state.recurringExpenseRuns!;
     const privateAllowed = () => taxesActive();
-    const visibleExpense = (expense: RecurringExpense) => expense.scope === 'business' || privateAllowed();
+    const visibleExpense = (expense: RecurringExpense) => !expense.archivedAt && (expense.scope === 'business' || privateAllowed());
     const expenseFromInput = (input: DemoRecord, current?: RecurringExpense): RecurringExpense => {
       if ((input.scope === 'private_levy' && input.category === 'ust') || input.category === 'ust') throw new Error('Umsatzsteuer wird als betriebliche Zahlung verwaltet und kann nicht als private Abgabe oder Fixkosten-Vorlage angelegt werden.');
       const immutablePriceChanges = (current?.priceChanges || []).filter(change => change.validFrom <= todayLocal())
@@ -2446,11 +2449,39 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const index = expenses.findIndex(expense => expense.id === id);
       if (index < 0) throw new Error('Fixkosten-Vorlage nicht gefunden.');
       if (expenses[index].scope === 'private_levy') assertTaxesActive();
-      if (runs.some(run => run.expenseId === id)) throw new Error('Zu dieser Vorlage bestehen Fälligkeitsläufe. Beenden Sie sie, damit die Historie erhalten bleibt.');
-      state.recurringExpenses = expenses.filter(expense => expense.id !== id);
+      const today = todayLocal();
+      if (runs.some(run => run.expenseId === id && run.status === 'planned' && run.dueDate <= today)) throw new Error('Es gibt noch offene Fälligkeiten. Buchen oder überspringen Sie diese zuerst.');
+      state.recurringExpenseRuns = runs.filter(run => !(run.expenseId === id && run.status === 'planned' && run.dueDate > today));
+      const hasHistory = runs.some(run => run.expenseId === id && ['confirmed', 'skipped'].includes(run.status));
+      if (hasHistory) {
+        expenses.find(expense => expense.id === id)!.archivedAt = new Date().toISOString();
+        expenses.find(expense => expense.id === id)!.status = 'ended';
+      } else state.recurringExpenses = expenses.filter(expense => expense.id !== id);
       saveState(state);
-      return undefined as T;
+      return (hasHistory ? { archived: true } : { deleted: true }) as T;
     }
+  }
+
+  if (resource === 'euer-forecasts') {
+    state.euerForecasts ||= [];
+    const forecasts = state.euerForecasts;
+    const normalize = (input: DemoRecord, current?: DemoRecord): DemoRecord => {
+      const entryType = String(input.entryType || ''), description = String(input.description || '').trim();
+      const amount = Number(input.amount), date = assertDemoDate(input.date, 'Prognosedatum');
+      const category = input.category ? String(input.category) : null;
+      const allowed = ['other_income','materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','allowance','other_expense'];
+      if (!['income','expense'].includes(entryType) || !description || description.length > 255 || !Number.isFinite(amount) || amount < 0 || category && !allowed.includes(category)) throw new Error('Bitte Art, Datum, Bezeichnung, Kategorie und Betrag prüfen.');
+      return { id: current?.id || generateUUID(), entryType, date, description, category, amount,
+        createdAt: current?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    };
+    if (!id && method === 'GET') {
+      const year = Number(queryParams.get('year'));
+      if (!Number.isInteger(year) || year < 2000 || year > 2200) throw new Error('Ungültiges Jahr.');
+      return forecasts.filter(item => String(item.date).startsWith(`${year}-`)) as unknown as T;
+    }
+    if (!id && method === 'POST') { const created = normalize(data); forecasts.push(created); saveState(state); return created as unknown as T; }
+    if (id && method === 'PUT') { const index = forecasts.findIndex(item => item.id === id); if (index < 0) throw new Error('Prognose nicht gefunden.'); forecasts[index] = normalize(data, forecasts[index]); saveState(state); return forecasts[index] as unknown as T; }
+    if (id && method === 'DELETE') { const next = forecasts.filter(item => item.id !== id); if (next.length === forecasts.length) throw new Error('Prognose nicht gefunden.'); state.euerForecasts = next; saveState(state); return { deleted: true } as T; }
   }
 
   if (resource === 'levy-payments') {
@@ -3847,7 +3878,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     }
   }
 
-  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'financeSeedVersion' | 'importRuns' | 'invoiceOriginals' | 'extensions' | 'taxProfiles' | 'recurringExpenses' | 'recurringExpenseRuns' | 'levyPayments' | 'vatPayments'>;
+  type DemoCollectionKey = Exclude<keyof DemoState, 'company' | 'workspaceSetup' | 'seedProfile' | 'seedVersion' | 'seededAt' | 'touched' | 'financeSeedVersion' | 'importRuns' | 'invoiceOriginals' | 'extensions' | 'taxProfiles' | 'recurringExpenses' | 'recurringExpenseRuns' | 'levyPayments' | 'vatPayments' | 'euerForecasts'>;
   const resourceMap: Record<string, DemoCollectionKey> = {
     customers: 'customers', invoices: 'invoices', quotes: 'quotes', jobs: 'jobs',
     'material-templates': 'materialTemplates', 'hourly-rates': 'hourlyRates',
@@ -4150,6 +4181,7 @@ export function resetDemoWorkspaceData(options: WorkspaceResetOptions = { compan
   state.calendarEvents = [];
   state.workLocationDays = [];
   state.euerEntries = [];
+  state.euerForecasts = [];
   state.euerEntryHistory = [];
   state.extensions = options.companyProfile
     ? (state.extensions || []).map(extension => extension.id === 'taxes' ? { ...extension, enabled: false, acceptedAt: null } : extension)
