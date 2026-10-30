@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, assertDateOnly, isPausedOn, isRecurringExpenseDue, nextOccurrence, occurrenceAt, occurrenceOnOrAfter } from '../shared/recurrence.js';
-import { confirmRun, generateRuns, makeSnapshot, mapExpense, mapRun, normalizePauses, normalizePriceChanges, priceForDate, updateExpense, validateExpense } from '../services/recurringExpenses.js';
+import { confirmRun, deleteExpense, generateRuns, makeSnapshot, mapExpense, mapRun, normalizePauses, normalizePriceChanges, priceForDate, updateExpense, validateExpense } from '../services/recurringExpenses.js';
 import { mapPayment, validate as validateLevyPayment } from '../routes/levyPayments.js';
 
 test('Monatsfälligkeiten bleiben am Starttag verankert und behandeln Schaltjahre', () => {
@@ -10,6 +10,48 @@ test('Monatsfälligkeiten bleiben am Starttag verankert und behandeln Schaltjahr
   assert.equal(occurrenceAt('2024-01-31', 1), '2024-02-29');
   assert.equal(occurrenceAt('2024-01-31', 2), '2024-03-31');
   assert.equal(nextOccurrence('2025-01-31', '2025-02-28'), '2025-03-31');
+});
+
+test('Fixkosten ohne Historie werden nach Entfernen künftiger Pläne echt gelöscht', async () => {
+  const calls = [];
+  const executor = async (sql, params) => {
+    calls.push(sql);
+    if (sql.startsWith('SELECT id FROM recurring_expenses')) return { rows: [{ id: 'expense' }] };
+    if (sql.startsWith('SELECT id,due_date')) return { rows: [] };
+    if (sql.startsWith('DELETE FROM recurring_expense_runs')) return { rowCount: 2 };
+    if (sql.startsWith('SELECT 1 FROM recurring_expense_runs')) return { rows: [] };
+    if (sql.startsWith('DELETE FROM recurring_expenses')) return { rowCount: 1 };
+    throw new Error(`Unerwartete SQL: ${sql} ${params}`);
+  };
+  assert.deepEqual(await deleteExpense(executor, 'expense', '2026-10-30'), { deleted: true });
+  assert.ok(calls.some(sql => sql.startsWith('DELETE FROM recurring_expense_runs')));
+});
+
+test('Fixkosten mit bestätigter oder übersprungener Historie werden beendet archiviert', async () => {
+  for (const status of ['confirmed', 'skipped']) {
+    const changes = [];
+    const executor = async sql => {
+      if (sql.startsWith('SELECT id FROM recurring_expenses')) return { rows: [{ id: 'expense' }] };
+      if (sql.startsWith('SELECT id,due_date')) return { rows: [] };
+      if (sql.startsWith('DELETE FROM recurring_expense_runs')) return { rowCount: 1 };
+      if (sql.startsWith('SELECT 1 FROM recurring_expense_runs')) { assert.match(sql, /'confirmed','skipped'/); return { rows: [{ status }] }; }
+      if (sql.startsWith('UPDATE recurring_expenses SET archived_at')) { changes.push(sql); return { rowCount: 1 }; }
+      throw new Error(`Unerwartete SQL: ${sql}`);
+    };
+    assert.deepEqual(await deleteExpense(executor, 'expense', '2026-10-30'), { archived: true });
+    assert.equal(changes.length, 1);
+    assert.match(changes[0], /status='ended'/);
+  }
+});
+
+test('Offene fällige oder überfällige Fixkostenläufe blockieren Löschung', async () => {
+  const executor = async sql => {
+    if (sql.startsWith('SELECT id FROM recurring_expenses')) return { rows: [{ id: 'expense' }] };
+    if (sql.startsWith('SELECT id,due_date')) return { rows: [{ id: 'open' }] };
+    throw new Error(`Es darf nach einem offenen Lauf keine Änderung erfolgen: ${sql}`);
+  };
+  const result = await deleteExpense(executor, 'expense', '2026-10-30');
+  assert.match(result.conflict, /Buchen oder überspringen/);
 });
 
 test('Wochen-, Mehrmonats- und Jahresintervalle nutzen UTC-Datumsarithmetik', () => {

@@ -51,7 +51,7 @@ function dateOnly(value) {
 }
 
 export async function listExpenses(executor) {
-  const result = await executor('SELECT * FROM recurring_expenses ORDER BY next_due_date, name');
+  const result = await executor('SELECT * FROM recurring_expenses WHERE archived_at IS NULL ORDER BY next_due_date, name');
   return result.rows.map(mapExpense);
 }
 
@@ -111,9 +111,18 @@ export async function updateExpense(executor, id, input, today) {
   return { expense: mapExpense(updated.rows[0]) };
 }
 
-export async function deleteExpense(executor, id) {
-  const result = await executor('SELECT id FROM recurring_expense_runs WHERE expense_id=$1 LIMIT 1', [id]);
-  if (result.rows.length) return { conflict: 'Zu dieser Vorlage bestehen Fälligkeitsläufe. Beenden Sie sie, damit die Historie erhalten bleibt.' };
+export async function deleteExpense(executor, id, today = new Date().toISOString().slice(0, 10)) {
+  assertDateOnly(today, 'Heutiges Datum');
+  const current = await executor('SELECT id FROM recurring_expenses WHERE id=$1 FOR UPDATE', [id]);
+  if (!current.rows.length) return { missing: true };
+  const open = await executor("SELECT id,due_date FROM recurring_expense_runs WHERE expense_id=$1 AND status='planned' AND due_date <= $2 FOR UPDATE", [id, today]);
+  if (open.rows.length) return { conflict: 'Es gibt noch offene Fälligkeiten. Buchen oder überspringen Sie diese zuerst.' };
+  await executor("DELETE FROM recurring_expense_runs WHERE expense_id=$1 AND status='planned' AND due_date > $2", [id, today]);
+  const history = await executor("SELECT 1 FROM recurring_expense_runs WHERE expense_id=$1 AND status IN ('confirmed','skipped') LIMIT 1", [id]);
+  if (history.rows.length) {
+    await executor("UPDATE recurring_expenses SET archived_at=COALESCE(archived_at,NOW()),status='ended',updated_at=NOW() WHERE id=$1", [id]);
+    return { archived: true };
+  }
   const deleted = await executor('DELETE FROM recurring_expenses WHERE id=$1 RETURNING id', [id]);
   return deleted.rowCount ? { deleted: true } : { missing: true };
 }
@@ -122,7 +131,7 @@ export async function generateRuns(client, throughDate, { autoConfirm = false, c
   assertDateOnly(throughDate, 'Stichtag');
   assertDateOnly(today, 'Heutiges Datum');
   if (throughDate > occurrenceAt(today, 2, 1, 'year')) throw new TypeError('Der Vorschauzeitraum darf höchstens zwei Jahre umfassen.');
-  const expenses = await client.query(`SELECT * FROM recurring_expenses WHERE (status IN ('active','paused') OR (status='ended' AND end_date IS NOT NULL)) AND next_due_date <= $1 ORDER BY next_due_date,id FOR UPDATE`, [throughDate]);
+  const expenses = await client.query(`SELECT * FROM recurring_expenses WHERE archived_at IS NULL AND (status IN ('active','paused') OR (status='ended' AND end_date IS NOT NULL)) AND next_due_date <= $1 ORDER BY next_due_date,id FOR UPDATE`, [throughDate]);
   const generated = [];
   let processedDueDates = 0;
   for (const expense of expenses.rows) {

@@ -159,10 +159,13 @@ export function RecurringExpensesManagement(props: Props) {
   const deleteExpense = async (expense: RecurringExpense) => {
     if (expense.scope === 'business' ? !businessWritable : !privateAllowed) return;
     const targetWorkspace = workspaceId;
-    const accepted = await confirm({ title: 'Vorlage löschen', message: `„${expense.name}“ und noch nicht gebuchte Fälligkeiten wirklich löschen? Bereits erfasste Zahlungen und EÜR-Buchungen bleiben bestehen.`, confirmText: 'Löschen', isDestructive: true });
+    const hasHistory = runs.some(run => run.expenseId === expense.id && (run.status === 'confirmed' || run.status === 'skipped'));
+    const accepted = await confirm({ title: hasHistory ? 'Vorlage archivieren' : 'Vorlage löschen', message: hasHistory
+      ? `„${expense.name}“ wird archiviert, da bereits Fälligkeiten gebucht oder übersprungen wurden. Diese Historie und gebuchte EÜR-Werte bleiben erhalten; künftige Fälligkeiten werden entfernt.`
+      : `„${expense.name}“ und künftige Fälligkeiten wirklich löschen?`, confirmText: hasHistory ? 'Archivieren' : 'Löschen', isDestructive: true });
     if (!accepted || activeWorkspace.current !== targetWorkspace) return;
     setBusy(expense.id); setError('');
-    try { await financeApi.deleteExpense(expense.id); if (activeWorkspace.current !== targetWorkspace) return; await load(); setNotice('Vorlage wurde gelöscht.'); }
+    try { const result = await financeApi.deleteExpense(expense.id); if (activeWorkspace.current !== targetWorkspace) return; await load(); setNotice(result.archived ? 'Vorlage wurde archiviert. Die Fälligkeitshistorie bleibt erhalten.' : 'Vorlage wurde gelöscht.'); }
     catch (e) { if (activeWorkspace.current === targetWorkspace) setError(e instanceof Error ? e.message : 'Vorlage konnte nicht gelöscht werden.'); }
     finally { if (activeWorkspace.current === targetWorkspace) setBusy(''); }
   };

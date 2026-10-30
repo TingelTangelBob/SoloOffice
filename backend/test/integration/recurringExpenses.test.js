@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { pool, query } from '../../database.js';
 import { runWithRequestContext } from '../../utils/requestContext.js';
-import { confirmRun, createExpense, generateRuns, listExpenses, updateExpense } from '../../services/recurringExpenses.js';
+import { confirmRun, createExpense, deleteExpense, generateRuns, listExpenses, updateExpense } from '../../services/recurringExpenses.js';
 import recurringExpensesRouter from '../../routes/recurringExpenses.js';
 import { assertDateOnly } from '../../shared/recurrence.js';
 import { cleanupFinanceWorkspaces } from './financeTestCleanup.js';
@@ -97,6 +97,38 @@ test('Bestätigter betrieblicher Lauf erzeugt idempotent genau eine EÜR-Ausgabe
       assert.equal(first.run.euerEntryId, second.run.euerEntryId);
       const entries = await query("SELECT id,source_type,source_id FROM euer_entries WHERE source_type='recurring_expense' AND source_id=$1", [confirmedRunId]);
       assert.equal(entries.rowCount, 1);
+    } finally { client.release(); }
+  });
+});
+
+test('Löschen bewahrt historische Läufe durch Archivierung und blockiert offene überfällige Läufe', async () => {
+  await inWorkspace(workspaceA,userA,async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const next = new Date(`${today}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 40);
+    const futureDate = next.toISOString().slice(0, 10);
+    const historyTemplate = await createExpense(query, { name: `Archiv ${suffix}`, category: 'rent', amountGross: 15, startDate: today, nextDueDate: today, intervalUnit: 'month' }, today);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await generateRuns(client, futureDate, { today });
+      const runs = await client.query('SELECT id,due_date FROM recurring_expense_runs WHERE expense_id=$1 ORDER BY due_date', [historyTemplate.expense.id]);
+      await confirmRun(client, runs.rows[0].id, today, today);
+      const deleted = await deleteExpense(client.query.bind(client), historyTemplate.expense.id, today);
+      assert.deepEqual(deleted, { archived: true });
+      const history = await client.query('SELECT id,status,euer_entry_id FROM recurring_expense_runs WHERE expense_id=$1', [historyTemplate.expense.id]);
+      assert.deepEqual(history.rows.map(row => row.status), ['confirmed']);
+      const preservedEntry = await client.query('SELECT id FROM euer_entries WHERE id=$1', [history.rows[0].euer_entry_id]);
+      assert.equal(preservedEntry.rowCount, 1);
+      const archived = await client.query('SELECT archived_at,status FROM recurring_expenses WHERE id=$1', [historyTemplate.expense.id]);
+      assert.ok(archived.rows[0].archived_at);
+      assert.equal(archived.rows[0].status, 'ended');
+      assert.ok(!(await listExpenses(client.query.bind(client))).some(item => item.id === historyTemplate.expense.id));
+
+      const openTemplate = await createExpense(client.query.bind(client), { name: `Offen ${suffix}`, category: 'rent', amountGross: 15, startDate: today, nextDueDate: today, intervalUnit: 'month' }, today);
+      await generateRuns(client, today, { today });
+      const conflict = await deleteExpense(client.query.bind(client), openTemplate.expense.id, today);
+      assert.match(conflict.conflict, /Buchen oder überspringen/);
+      await client.query('ROLLBACK');
     } finally { client.release(); }
   });
 });

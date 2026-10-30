@@ -101,11 +101,11 @@ router.delete('/:id', async (req, res, next) => {
     await client.query('BEGIN');
     const current = await client.query('SELECT scope FROM recurring_expenses WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (current.rows[0]?.scope === 'private_levy' && !(await allowPrivateMutation(req, res, client.query.bind(client)))) { await client.query('ROLLBACK'); return; }
-    const result = await deleteExpense(client.query.bind(client), req.params.id);
+    const result = await deleteExpense(client.query.bind(client), req.params.id, today());
     if (result.missing) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Fixkosten-Vorlage nicht gefunden.' }); }
     if (result.conflict) { await client.query('ROLLBACK'); return res.status(409).json({ error: result.conflict }); }
     await client.query('COMMIT');
-    res.json({ deleted: true });
+    res.json(result.archived ? { archived: true } : { deleted: true });
   } catch (error) { await client.query('ROLLBACK'); next(error); }
   finally { client.release(); }
 });
