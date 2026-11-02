@@ -26,15 +26,17 @@ export function generateXRechnungXML(invoice: Invoice, options: PDFOptions): Pro
   const bic = paymentInfo?.bic || options.company.bic || '';
   const paymentTerms = paymentInfo?.paymentTerms
     || (options.company.defaultPaymentDays !== undefined ? `Zahlbar innerhalb von ${options.company.defaultPaymentDays} Tagen.` : '');
-  const paymentMeans = bankAccount ? `
+  // BG-16 is mandatory in XRechnung even if no bank account is configured.
+  // Code 1 (instrument not defined) carries no account data requirements.
+  const paymentMeans = `
   <cac:PaymentMeans>
-    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
-    <cac:PayeeFinancialAccount>
+    <cbc:PaymentMeansCode>${bankAccount ? '58' : '1'}</cbc:PaymentMeansCode>
+    ${bankAccount ? `<cac:PayeeFinancialAccount>
       <cbc:ID>${escapeXML(bankAccount.replace(/\s/g, ''))}</cbc:ID>
       <cbc:Name>${escapeXML(accountHolder)}</cbc:Name>
       ${bic ? `<cac:FinancialInstitutionBranch><cbc:ID>${escapeXML(bic)}</cbc:ID></cac:FinancialInstitutionBranch>` : ''}
-    </cac:PayeeFinancialAccount>
-  </cac:PaymentMeans>` : '';
+    </cac:PayeeFinancialAccount>` : ''}
+  </cac:PaymentMeans>`;
   const paymentTermsXml = paymentTerms ? `<cac:PaymentTerms><cbc:Note>${escapeXML(paymentTerms)}</cbc:Note></cac:PaymentTerms>` : '';
   const reverseChargeNote = hasOnlyZeroTaxRate(invoice.items) && !isSmallBusiness
     ? 'Gemäß § 13b UStG geht die Steuerschuld auf den Leistungsempfänger über'

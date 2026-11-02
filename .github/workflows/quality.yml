@@ -64,13 +64,15 @@ jobs:
 
       - name: Beispielrechnungen gegen XRechnung validieren
         run: |
+          failed=0
           for invoice in "$RUNNER_TEMP"/xrechnung-fixtures/*.xml; do
             echo "Validiere $(basename "$invoice")"
             java -jar "$RUNNER_TEMP/kosit/validator-1.6.3-standalone.jar" \
               -s "$RUNNER_TEMP/kosit/config/scenarios.xml" \
               -r "$RUNNER_TEMP/kosit/config" \
-              -h "$invoice"
+              -h "$invoice" || failed=1
           done
+          exit "$failed"
 
   quality:
     runs-on: ubuntu-latest

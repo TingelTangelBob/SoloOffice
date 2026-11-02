@@ -40,7 +40,7 @@ await mkdir(outputDirectory, { recursive: true });
 const company: Company = {
   name: 'Muster & Partner GmbH', address: 'Hauptstraße 1', city: 'Berlin', postalCode: '10115',
   country: 'Deutschland', phone: '+49 30 123456', email: 'rechnung@example.test', taxId: 'DE123456789',
-  defaultPaymentDays: 14,
+  bankAccount: 'DE02120300000000202051', bic: 'BYLADEM1001', defaultPaymentDays: 14,
 };
 const customer: Customer = {
   id: 'customer-fixture', customerNumber: 'K-2026-01', name: 'Beispielkunde GmbH', customerType: 'organization',
