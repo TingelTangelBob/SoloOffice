@@ -71,7 +71,8 @@ export const pool = new Pool({
   idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
   connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
   // Set statement timeout via connection options (in milliseconds, converted to PostgreSQL format)
-  options: `-c statement_timeout=30000`, // 30 seconds timeout for queries
+  // Date-only business rules use the same UTC calendar day as the application.
+  options: `-c timezone=UTC -c statement_timeout=30000`, // UTC plus 30 seconds timeout for queries
   keepAlive: true, // Enable TCP keep-alive
   keepAliveInitialDelayMillis: 10000, // Start keep-alive after 10 seconds of inactivity
 });
