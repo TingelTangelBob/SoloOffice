@@ -213,19 +213,28 @@ test('Preiswechsel ab künftiger Gültigkeit lässt bestätigte Snapshots unver�
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await generateRuns(client, '2026-11-30', { canAccessPrivate: true, today: '2026-10-09' });
+      const today = (await client.query('SELECT CURRENT_DATE::text AS today')).rows[0].today;
+      const firstDueDate = new Date(`${today}T00:00:00Z`);
+      firstDueDate.setUTCDate(firstDueDate.getUTCDate() + 1);
+      const startDate = firstDueDate.toISOString().slice(0, 10);
+      const generationEnd = new Date(firstDueDate);
+      generationEnd.setUTCDate(generationEnd.getUTCDate() + 90);
+      const newExpense = await createExpense(client.query.bind(client), { name: `Preiswechsel ${suffix}`, category: 'rent', amountGross: 500,
+        startDate, nextDueDate: startDate, interval: 'monthly' }, today);
+      assert.ok(newExpense.expense, newExpense.error);
+      await generateRuns(client, generationEnd.toISOString().slice(0, 10), { canAccessPrivate: true, today });
       const confirmedBefore = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [fixtures.businessRunId]);
-      const changed = await updateExpense(client.query.bind(client), fixtures.businessId, {
-        priceChanges: [{ validFrom: '2026-11-30', amountGross: 650 }],
-      }, '2026-10-09');
+      const changed = await updateExpense(client.query.bind(client), newExpense.expense.id, {
+        priceChanges: [{ validFrom: today, amountGross: 650 }],
+      }, today);
       assert.ok(changed.expense);
       const confirmedAfter = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [fixtures.businessRunId]);
       assert.equal(Number(confirmedBefore.rows[0].snapshot.amount), 500);
       assert.equal(Number(confirmedAfter.rows[0].snapshot.amount), 500);
       const future = await client.query(`SELECT snapshot FROM recurring_expense_runs
-        WHERE expense_id=$1 AND due_date='2026-11-30' AND status='planned'`, [fixtures.businessId]);
+        WHERE expense_id=$1 AND status='planned' ORDER BY due_date LIMIT 1`, [newExpense.expense.id]);
       assert.equal(Number(future.rows[0].snapshot.amount), 650);
-      await client.query('COMMIT');
+      await client.query('ROLLBACK');
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

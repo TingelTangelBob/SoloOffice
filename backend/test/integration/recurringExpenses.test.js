@@ -162,16 +162,25 @@ test('Preisänderung ab heute aktualisiert geplante Läufe, bestätigter Snapsho
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await generateRuns(client, '2026-11-30', { canAccessPrivate: true, today: '2026-10-09' });
+      const today = dateKey((await client.query('SELECT CURRENT_DATE')).rows[0].current_date);
+      const firstDueDate = new Date(`${today}T00:00:00Z`);
+      firstDueDate.setUTCDate(firstDueDate.getUTCDate() + 1);
+      const startDate = firstDueDate.toISOString().slice(0, 10);
+      const generationEnd = new Date(firstDueDate);
+      generationEnd.setUTCDate(generationEnd.getUTCDate() + 90);
+      const newExpense = await createExpense(client.query.bind(client), { name: `Preiswechsel ${suffix}`, category: 'rent', amountGross: 500,
+        startDate, nextDueDate: startDate, interval: 'monthly' }, today);
+      assert.ok(newExpense.expense, newExpense.error);
+      await generateRuns(client, generationEnd.toISOString().slice(0, 10), { canAccessPrivate: true, today });
       const before = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [confirmedRunId]);
-      const changed = await updateExpense(client.query.bind(client), businessExpenseId, {
-        priceChanges: [{ validFrom: '2026-10-09', amountGross: 650 }],
-      }, '2026-10-09');
+      const changed = await updateExpense(client.query.bind(client), newExpense.expense.id, {
+        priceChanges: [{ validFrom: today, amountGross: 650 }],
+      }, today);
       assert.ok(changed.expense);
       const confirmed = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [confirmedRunId]);
       assert.equal(Number(before.rows[0].snapshot.amount),500);
       assert.equal(Number(confirmed.rows[0].snapshot.amount),500);
-      const future = await client.query("SELECT snapshot FROM recurring_expense_runs WHERE expense_id=$1 AND due_date >= '2026-10-09' AND status='planned' ORDER BY due_date LIMIT 1", [businessExpenseId]);
+      const future = await client.query("SELECT snapshot FROM recurring_expense_runs WHERE expense_id=$1 AND status='planned' ORDER BY due_date LIMIT 1", [newExpense.expense.id]);
       assert.equal(Number(future.rows[0].snapshot.amount),650);
       await client.query('ROLLBACK');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
