@@ -14,7 +14,22 @@ Validatoren zu prüfen:
 5. B2G-Rechnung mit Leitweg-ID
 6. ZUGFeRD-PDF mit `factur-x.xml`, XMP, ICC-OutputIntent und eingebetteten Schriften
 
-Der KOSIT-Validator (XRechnung) und der FeRD-/Factur-X-Validator (ZUGFeRD)
-werden bewusst nicht automatisch aus dem Internet heruntergeladen. Die
-Validator-Artefakte und die erzeugten Testdokumente gehören in eine geschützte
-CI-/Release-Umgebung und nicht in dieses Repository.
+Die Anwendung lädt keine Validatoren oder Prüfkonfigurationen zur Laufzeit aus
+dem Internet. Der CI-Job lädt für die externe XRechnungsprüfung fest gepinnte
+KoSIT-Artefakte und prüft ihre SHA-256-Prüfsummen vor jedem Lauf. Der
+GitHub-Actions-Cache darf die Downloads wiederverwenden; auch Cache-Dateien
+werden erneut geprüft. Validator, Konfiguration und erzeugte Rechnungen werden
+nicht ins Repository übernommen.
+
+Der Job baut drei Beispielrechnungen mit dem Anwendungsgenerator und prüft
+Regelbesteuerung mit mehreren Steuersätzen, Kleinunternehmer nach § 19 UStG
+sowie einen Auslandskunden mit Sonderzeichen. Er nutzt den offiziellen
+[KoSIT-Validator v1.6.3](https://github.com/itplr-kosit/validator/releases/tag/v1.6.3)
+und die [XRechnung-Konfiguration v2026-08-31](https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/tag/v2026-08-31)
+für XRechnung 3.0.2. Der Validator benötigt Java 11 oder neuer; die CI nutzt
+Java 17. Details zur offiziellen Aufrufsyntax stehen in der
+[KoSIT-Konfigurationsdokumentation](https://github.com/itplr-kosit/validator-configuration-xrechnung/blob/master/docs/usage.md).
+
+Der FeRD-/Factur-X-Validator für ZUGFeRD wird weiterhin nicht automatisch
+heruntergeladen. Der ZUGFeRD-PDF-Fall aus der manuellen Release-Prüfung bleibt
+offen.

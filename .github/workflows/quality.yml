@@ -8,6 +8,70 @@ permissions:
   contents: read
 
 jobs:
+  xrechnung:
+    name: XRechnung mit KoSIT validieren
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v5
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Gepinnte KoSIT-Artefakte aus Cache laden
+        id: kosit-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kosit
+          key: kosit-validator-1.6.3-xrechnung-2026-08-31
+
+      - name: Validator und XRechnung-Konfiguration laden
+        run: |
+          mkdir -p "$RUNNER_TEMP/kosit"
+          if [ ! -f "$RUNNER_TEMP/kosit/validator-1.6.3-standalone.jar" ]; then
+            curl --fail --location --silent --show-error \
+              https://github.com/itplr-kosit/validator/releases/download/v1.6.3/validator-1.6.3-standalone.jar \
+              --output "$RUNNER_TEMP/kosit/validator-1.6.3-standalone.jar"
+          fi
+          if [ ! -f "$RUNNER_TEMP/kosit/xrechnung-3.0.2-validator-configuration-2026-08-31.zip" ]; then
+            curl --fail --location --silent --show-error \
+              https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/download/v2026-08-31/xrechnung-3.0.2-validator-configuration-2026-08-31.zip \
+              --output "$RUNNER_TEMP/kosit/xrechnung-3.0.2-validator-configuration-2026-08-31.zip"
+          fi
+          echo '799e64befca97d4080e03608c80b85dd5a5ecc5f4ae4f35d1116ec2855b9a7c9  '"$RUNNER_TEMP/kosit/validator-1.6.3-standalone.jar" | sha256sum --check --status
+          echo '2530cd107c414511c5d0462ec10f886910395abfca820db82e83d70bf01221a8  '"$RUNNER_TEMP/kosit/xrechnung-3.0.2-validator-configuration-2026-08-31.zip" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/kosit/config"
+          unzip -q -o "$RUNNER_TEMP/kosit/xrechnung-3.0.2-validator-configuration-2026-08-31.zip" -d "$RUNNER_TEMP/kosit/config"
+
+      - name: Beispielrechnungen aus dem Anwendungsgenerator erzeugen
+        run: |
+          npx vite build --ssr scripts/generate-xrechnung-fixtures.ts \
+            --outDir "$RUNNER_TEMP/xrechnung-generator" --emptyOutDir
+          node "$RUNNER_TEMP/xrechnung-generator/generate-xrechnung-fixtures.js" "$RUNNER_TEMP/xrechnung-fixtures"
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Beispielrechnungen gegen XRechnung validieren
+        run: |
+          for invoice in "$RUNNER_TEMP"/xrechnung-fixtures/*.xml; do
+            echo "Validiere $(basename "$invoice")"
+            java -jar "$RUNNER_TEMP/kosit/validator-1.6.3-standalone.jar" \
+              -s "$RUNNER_TEMP/kosit/config/scenarios.xml" \
+              -r "$RUNNER_TEMP/kosit/config" \
+              -h "$invoice"
+          done
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30
