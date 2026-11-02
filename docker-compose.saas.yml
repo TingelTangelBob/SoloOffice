@@ -41,6 +41,7 @@ services:
       # Öffentliche Registrierung gehört in den Control Plane. Bis dahin nur
       # auf Einladung (auth.js wertet 'invite-only' aus).
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite-only}
+      - REGISTRATION_MAX_WORKSPACES=${REGISTRATION_MAX_WORKSPACES:-0}
       - REQUIRE_EMAIL_VERIFICATION=true
       - CORS_ORIGIN=${CORS_ORIGIN:?CORS_ORIGIN muss die echte Adresse sein, z. B. https://app.solooffice.de}
       # Interne Control-Plane-Schnittstelle (AP-4.4). Ohne Geheimnis

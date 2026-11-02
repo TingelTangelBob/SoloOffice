@@ -35,3 +35,19 @@ Offen bleiben der Nachweis gegen einen laufenden Control Plane, der Export-
 und Löschworkflow (AP-5.5) sowie ein sichtbarer Sperrhinweis in der
 Oberfläche. Bis dahin bleibt der SaaS-Betrieb ein 🟠 offener Betriebsbaustein;
 Self-Hosting ist davon nicht abhängig.
+
+## Workspace-Kapazität
+
+Die Fachapp besitzt derzeit keinen Tarifvertrag mit Plan- oder Speicherquoten
+pro Workspace. Deshalb setzt `REGISTRATION_MAX_WORKSPACES` ein
+instanzweites Maximum für Registrierungen, normale Workspace-Erstellung und
+Control-Plane-Bereitstellung. Der Standardwert ist 0 (kein Maximum), sodass
+Self-Hosting ohne ausdrückliche Konfiguration unverändert bleibt. Bei einem
+positiven Wert werden parallele Anlagevorgänge transaktionsweit serialisiert
+und bei Erreichen des Maximums mit HTTP 429 und `WORKSPACE_LIMIT_REACHED`
+abgewiesen. Die Workspace-Verwaltung zeigt Verbrauch und Maximum der Instanz.
+
+Das ist eine Kapazitätsgrenze für die Instanz und keine individuelle
+Tarifquote. Für Speicher-, Mitglieder- oder monatliche Rechnungsquoten fehlt
+im bestehenden App-/Control-Plane-Vertrag eine definierte Planstruktur samt
+Zählregeln; solche Grenzen werden daher hier nicht erfunden.

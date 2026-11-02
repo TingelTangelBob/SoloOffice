@@ -17,12 +17,18 @@ import { systemMails } from '../services/emailTemplates.js';
 import logger from '../utils/logger.js';
 import { clearWorkspaceBusinessData } from '../services/workspaceData.js';
 import { deleteWorkspaceData } from '../services/workspaceDeletion.js';
+import { assertWorkspaceCapacity, getWorkspaceCapacity, WorkspaceLimitError } from '../services/workspaceQuota.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+router.get('/limits', async (req, res) => {
+  const capacity = await getWorkspaceCapacity(pool);
+  return res.json(capacity);
+});
 
 async function verifyDestructiveAction(req, res) {
   const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
@@ -80,6 +86,7 @@ router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await assertWorkspaceCapacity(client);
     await client.query(`
       INSERT INTO workspaces (id, name, slug, created_by)
       VALUES ($1, $2, $3, $4)
@@ -108,6 +115,9 @@ router.post('/', async (req, res) => {
     return res.status(201).json({ ...publicWorkspace(result.rows[0], 'owner'), permissions: {} });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
+    if (error instanceof WorkspaceLimitError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     return res.status(500).json({ error: 'Workspace konnte nicht angelegt werden' });
   } finally {
     client.release();

@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceCapacity, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, getDemoActiveWorkspaceId, isDemoMode } from './demoApi';
 import type { DashboardPreferences } from '../utils/dashboardPreferences';
@@ -271,6 +271,10 @@ class ApiService {
 
   async createWorkspace(name: string): Promise<WorkspaceSummary> {
     return this.request<WorkspaceSummary>('/workspaces', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+
+  async getWorkspaceCapacity(): Promise<WorkspaceCapacity> {
+    return this.request<WorkspaceCapacity>('/workspaces/limits');
   }
 
   async sendTelemetry(events: Array<{ name: string; occurredAt: string; props?: { count?: number } }>): Promise<void> {

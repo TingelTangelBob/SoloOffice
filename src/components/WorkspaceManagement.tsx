@@ -7,6 +7,9 @@ import { formatCountLabel } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { apiService } from '../services/api';
+import { isDemoMode } from '../services/demoApi';
+import type { WorkspaceCapacity } from '../types';
 
 const roleLabels: Record<WorkspaceRole, string> = {
   owner: 'Eigentümer',
@@ -55,6 +58,7 @@ export function WorkspaceManagement() {
   const [latestInviteLink, setLatestInviteLink] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [capacity, setCapacity] = useState<WorkspaceCapacity | null>(null);
   const [dangerAction, setDangerAction] = useState<'reset' | 'delete' | null>(null);
   const [dangerStep, setDangerStep] = useState<1 | 2>(1);
   const [dangerPassword, setDangerPassword] = useState('');
@@ -64,6 +68,17 @@ export function WorkspaceManagement() {
   useEffect(() => {
     setWorkspaceName(workspace?.name || '');
   }, [workspace?.id, workspace?.name]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    apiService.getWorkspaceCapacity().then(value => {
+      if (active) setCapacity(value);
+    }).catch(() => {
+      if (active) setCapacity(null);
+    });
+    return () => { active = false; };
+  }, [workspaces.length]);
 
   useEffect(() => {
     if (workspace?.role !== 'owner' && inviteRole === 'admin') setInviteRole('member');
@@ -118,6 +133,7 @@ export function WorkspaceManagement() {
       const created = await createWorkspace(newWorkspaceName);
       setNewWorkspaceName('');
       await switchWorkspace(created.id);
+      if (!isDemoMode) setCapacity(await apiService.getWorkspaceCapacity());
     }, 'Workspace erstellt und aktiviert.');
   };
 
@@ -186,7 +202,7 @@ export function WorkspaceManagement() {
       />
 
       {message && <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"><Check className="h-4 w-4" />{message}</div>}
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -218,13 +234,19 @@ export function WorkspaceManagement() {
           </form>
 
           <form onSubmit={handleCreateWorkspace} className="form-consistent-fields rounded-lg border border-gray-100 bg-gray-50 p-4">
+            {capacity && <p className="mb-3 text-sm text-gray-600" aria-live="polite">
+              Workspaces auf dieser Instanz: {capacity.used}{capacity.limit === null ? ' · kein Limit gesetzt' : ` von ${capacity.limit}`}
+            </p>}
+            {capacity?.remaining === 0 && <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Das Workspace-Limit dieser Instanz ist erreicht. Weitere Workspaces können derzeit nicht angelegt werden.
+            </p>}
             <label className="block text-sm font-medium text-gray-700">
               Neuer Workspace
               <input required maxLength={255} value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="z. B. Nebenprojekt" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
             </label>
             <div className="mt-3 flex items-center justify-between gap-2">
               <p className="text-xs text-gray-500">Sie werden danach automatisch gewechselt.</p>
-              <button type="submit" className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700"><Plus className="h-4 w-4" />Anlegen</button>
+              <button type="submit" disabled={capacity?.remaining === 0} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" />Anlegen</button>
             </div>
           </form>
         </div>

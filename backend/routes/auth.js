@@ -6,6 +6,7 @@ import { requireAuth, loadSession, clearAuthCookies } from '../middleware/auth.j
 import { sendSystemEmail } from '../services/emailService.js';
 import { systemMails } from '../services/emailTemplates.js';
 import { lockRegistrationBootstrap } from '../services/registrationBootstrap.js';
+import { assertWorkspaceCapacity, WorkspaceLimitError } from '../services/workspaceQuota.js';
 import { persistentRateLimit } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
 import {
@@ -160,6 +161,8 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'Für diese E-Mail-Adresse existiert bereits ein Konto.' });
     }
 
+    await assertWorkspaceCapacity(client);
+
     const emailVerificationToken = verificationRequired() ? createOpaqueToken() : null;
     const userResult = await client.query(`
       INSERT INTO users (
@@ -243,6 +246,9 @@ router.post('/register', async (req, res) => {
     return res.status(201).json(payload);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
+    if (error instanceof WorkspaceLimitError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     return res.status(500).json({ error: 'Registrierung konnte nicht abgeschlossen werden' });
   } finally {
     client.release();

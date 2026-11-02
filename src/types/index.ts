@@ -824,6 +824,13 @@ export interface WorkspaceSummary {
   suspendedAt?: string | null;
 }
 
+export interface WorkspaceCapacity {
+  used: number;
+  /** null bedeutet: Auf dieser Instanz ist kein Workspace-Limit gesetzt. */
+  limit: number | null;
+  remaining: number | null;
+}
+
 export interface AuthResponse {
   user: AuthUser;
   workspace: WorkspaceSummary;

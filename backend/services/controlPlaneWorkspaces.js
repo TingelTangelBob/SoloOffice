@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { pool } from '../database.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
+import { assertWorkspaceCapacity, WorkspaceLimitError } from './workspaceQuota.js';
 import {
   INVITATION_MAX_AGE_MS,
   createOpaqueToken,
@@ -122,6 +123,35 @@ export async function provisionWorkspace({ name, ownerEmail, idempotencyKey, ope
       }
       await client.query('COMMIT');
       return { status: stored.response_status, body: stored.response_body, replayed: true, ownerInvitationToken: null };
+    }
+
+    try {
+      await assertWorkspaceCapacity(client);
+    } catch (error) {
+      if (error instanceof WorkspaceLimitError) {
+        const body = { error: error.message, code: error.code };
+        await recordAudit(client, {
+          operation: 'provision',
+          workspaceId: null,
+          idempotencyKey,
+          operationId,
+          previousState: null,
+          nextState: 'rejected',
+          reason: error.code,
+        });
+        await storeRequest(client, {
+          idempotencyKey,
+          operation: 'provision',
+          requestHash,
+          operationId,
+          workspaceId: null,
+          status: error.status,
+          body,
+        });
+        await client.query('COMMIT');
+        return { status: error.status, body, replayed: false, ownerInvitationToken: null };
+      }
+      throw error;
     }
 
     const workspaceId = randomUUID();
