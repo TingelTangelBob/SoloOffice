@@ -162,16 +162,19 @@ test('Preisänderung ab heute aktualisiert geplante Läufe, bestätigter Snapsho
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await generateRuns(client, '2026-11-30', { canAccessPrivate: true, today: '2026-10-09' });
+      // Der Trigger prüft Snapshots gegen CURRENT_DATE der Datenbank. Das Datum
+      // des Tests muss daher dazu passen, sonst gilt ein Lauf als vergangen.
+      const { rows: [{ today, horizon }] } = await client.query("SELECT CURRENT_DATE::text AS today, (CURRENT_DATE + INTERVAL '60 days')::date::text AS horizon");
+      await generateRuns(client, horizon, { canAccessPrivate: true, today });
       const before = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [confirmedRunId]);
       const changed = await updateExpense(client.query.bind(client), businessExpenseId, {
-        priceChanges: [{ validFrom: '2026-10-09', amountGross: 650 }],
-      }, '2026-10-09');
+        priceChanges: [{ validFrom: today, amountGross: 650 }],
+      }, today);
       assert.ok(changed.expense);
       const confirmed = await client.query('SELECT snapshot FROM recurring_expense_runs WHERE id=$1', [confirmedRunId]);
       assert.equal(Number(before.rows[0].snapshot.amount),500);
       assert.equal(Number(confirmed.rows[0].snapshot.amount),500);
-      const future = await client.query("SELECT snapshot FROM recurring_expense_runs WHERE expense_id=$1 AND due_date >= '2026-10-09' AND status='planned' ORDER BY due_date LIMIT 1", [businessExpenseId]);
+      const future = await client.query("SELECT snapshot FROM recurring_expense_runs WHERE expense_id=$1 AND due_date >= $2 AND status='planned' ORDER BY due_date LIMIT 1", [businessExpenseId, today]);
       assert.equal(Number(future.rows[0].snapshot.amount),650);
       await client.query('ROLLBACK');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
