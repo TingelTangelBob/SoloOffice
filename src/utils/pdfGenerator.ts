@@ -23,6 +23,7 @@ import type { ResolvedDocumentTemplate } from './documentTemplateProfiles';
 import { getEffectivePaymentInformation } from './paymentInformation';
 import { buildServiceDatePdfField } from './serviceDate';
 import { getTerminology } from './terminology';
+import { downloadBlob } from './blobUtils';
 
 // Export types for external use
 export interface PDFOptions {
@@ -47,19 +48,7 @@ export interface QuotePDFOptions {
   customer: Customer;
 }
 
-/**
- * Download a blob as a file
- */
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+export { downloadBlob };
 
 const LEGACY_REPRINT_TITLE = 'Kopie / Neudruck – kein Originalbeleg';
 const LEGACY_REPRINT_NOTICE = 'Diese Rechnung wurde aus einem anderen Programm übernommen und hier im aktuellen Layout neu gedruckt. '

@@ -6,7 +6,7 @@ import type { YearlyInvoiceStartNumber } from '../../types';
 import { formatInvoiceNumberPattern, validateInvoiceNumberPattern } from '../../utils/invoiceNumberPattern';
 import { parsePaymentMethods } from '../../utils/paymentInformation';
 import { SettingsCard, SettingsField, type SettingsSaveMessage } from './SettingsUi';
-import { choiceCardClass, DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN, settingsInputClass } from './settingsStyles';
+import { choiceCardClass, DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN } from './settingsStyles';
 import type { CompanySettingsAreaProps } from './settingsAreaProps';
 import { ibanFormatError } from '../../../backend/shared/companyValidation.js';
 
@@ -73,10 +73,10 @@ function YearlyStartNumbers() {
       )}
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <SettingsField id="yearly-start-year" label="Jahr" className="w-28">
-          <input id="yearly-start-year" type="number" min="2000" max="2100" value={newYear} onChange={event => setNewYear(parseInt(event.target.value) || new Date().getFullYear())} className={settingsInputClass} />
+          <input id="yearly-start-year" type="number" min="2000" max="2100" value={newYear} onChange={event => setNewYear(parseInt(event.target.value) || new Date().getFullYear())} className="form-input" />
         </SettingsField>
         <SettingsField id="yearly-start-number" label="Startnummer" className="w-32">
-          <input id="yearly-start-number" type="number" min="1" max="9999" value={newStartNumber} onChange={event => setNewStartNumber(parseInt(event.target.value) || 1)} className={settingsInputClass} />
+          <input id="yearly-start-number" type="number" min="1" max="9999" value={newStartNumber} onChange={event => setNewStartNumber(parseInt(event.target.value) || 1)} className="form-input" />
         </SettingsField>
         <button type="button" onClick={() => void add()} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -107,7 +107,7 @@ function PaymentMethodsInput({ methods, onChange }: { methods: string[]; onChang
       }}
       onBlur={() => setDraft(null)}
       placeholder="z.B. Überweisung, PayPal, Barzahlung"
-      className={settingsInputClass}
+      className="form-input"
     />
   );
 }
@@ -170,17 +170,17 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               onChange={event => setPayment({ accountHolder: event.target.value })}
               disabled={linkedHolder}
               placeholder={`${formData.name} (${terminology.organization.nameLabel} als Standard)`}
-              className={settingsInputClass}
+              className="form-input"
             />
           </SettingsField>
           <SettingsField id="payment-iban" label="IBAN" error={bankAccountError || undefined}>
-            <input id="payment-iban" type="text" name="iban" autoComplete="off" aria-invalid={Boolean(bankAccountError)} aria-describedby={bankAccountError ? 'payment-iban-message' : undefined} value={bankAccount} onChange={event => setPayment({ bankAccount: event.target.value })} placeholder="DE89 3704 0044 0532 0130 00" className={settingsInputClass} />
+            <input id="payment-iban" type="text" name="iban" autoComplete="off" aria-invalid={Boolean(bankAccountError)} aria-describedby={bankAccountError ? 'payment-iban-message' : undefined} value={bankAccount} onChange={event => setPayment({ bankAccount: event.target.value })} placeholder="DE89 3704 0044 0532 0130 00" className="form-input" />
           </SettingsField>
           <SettingsField id="payment-bic" label="BIC">
-            <input id="payment-bic" type="text" name="bic" autoComplete="off" value={formData.paymentInformation?.bic || formData.bic || ''} onChange={event => setPayment({ bic: event.target.value })} placeholder="COBADEFFXXX" className={settingsInputClass} />
+            <input id="payment-bic" type="text" name="bic" autoComplete="off" value={formData.paymentInformation?.bic || formData.bic || ''} onChange={event => setPayment({ bic: event.target.value })} placeholder="COBADEFFXXX" className="form-input" />
           </SettingsField>
           <SettingsField id="payment-bank-name" label="Bankname" className="md:col-span-2">
-            <input id="payment-bank-name" type="text" name="bank-name" autoComplete="off" value={formData.paymentInformation?.bankName || ''} onChange={event => setPayment({ bankName: event.target.value })} placeholder="z.B. Commerzbank AG" className={settingsInputClass} />
+            <input id="payment-bank-name" type="text" name="bank-name" autoComplete="off" value={formData.paymentInformation?.bankName || ''} onChange={event => setPayment({ bankName: event.target.value })} placeholder="z.B. Commerzbank AG" className="form-input" />
           </SettingsField>
         </div>
       </SettingsCard>
@@ -199,7 +199,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
                 const value = parseInt(event.target.value);
                 setFormData(previous => ({ ...previous, defaultPaymentDays: isNaN(value) ? 30 : value }));
               }}
-              className={settingsInputClass}
+              className="form-input"
             />
           </SettingsField>
           <SettingsField id="payment-methods" label="Zahlungsarten" hint="Mehrere Zahlungsarten durch Komma trennen.">
@@ -213,7 +213,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               id="payment-immediate-clause"
               value={formData.immediatePaymentClause || 'Rechnung ist per sofort fällig, ohne Abzug'}
               onChange={event => setFormData(previous => ({ ...previous, immediatePaymentClause: event.target.value }))}
-              className={settingsInputClass}
+              className="form-input"
               rows={2}
               placeholder="Text, der bei sofortiger Zahlung in der Rechnung angezeigt wird"
             />
@@ -224,7 +224,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               value={formData.paymentInformation?.paymentTerms || ''}
               onChange={event => setPayment({ paymentTerms: event.target.value })}
               placeholder="z.B. Bei Zahlungsrückstand werden Verzugszinsen berechnet"
-              className={settingsInputClass}
+              className="form-input"
               rows={3}
             />
           </SettingsField>
@@ -249,7 +249,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               value={invoiceNumberPattern}
               maxLength={50}
               onChange={event => setFormData(previous => ({ ...previous, invoiceNumberPattern: event.target.value }))}
-              className={`${settingsInputClass} font-mono text-sm ${invoiceNumberPatternError ? 'border-red-300' : ''}`}
+              className={`form-input font-mono ${invoiceNumberPatternError ? 'border-red-300' : ''}`}
               aria-invalid={Boolean(invoiceNumberPatternError)}
               aria-describedby="invoice-number-pattern-message"
             />
@@ -265,7 +265,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               value={creditNoteNumberPattern}
               maxLength={50}
               onChange={event => setFormData(previous => ({ ...previous, creditNoteNumberPattern: event.target.value }))}
-              className={`${settingsInputClass} font-mono text-sm ${creditNoteNumberPatternError ? 'border-red-300' : ''}`}
+              className={`form-input font-mono ${creditNoteNumberPatternError ? 'border-red-300' : ''}`}
               aria-invalid={Boolean(creditNoteNumberPatternError)}
               aria-describedby="credit-note-number-pattern-message"
             />
@@ -279,7 +279,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
               max="999999"
               value={formData.invoiceStartNumber ?? 1}
               onChange={event => setFormData(previous => ({ ...previous, invoiceStartNumber: parseInt(event.target.value, 10) || 1 }))}
-              className={settingsInputClass}
+              className="form-input"
             />
           </SettingsField>
         </div>

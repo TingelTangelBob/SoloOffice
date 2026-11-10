@@ -42,7 +42,7 @@ export function BackupManagement({ onClose }: BackupManagementProps) {
   const { confirm } = useFeedback();
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [zipBackups, setZipBackups] = useState<BackupInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isCreatingZipBackup, setIsCreatingZipBackup] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);

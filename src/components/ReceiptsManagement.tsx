@@ -449,7 +449,7 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
           type="button"
           onClick={openUpload}
           disabled={uploading}
-          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
+          className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-0 sm:h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-white transition-colors hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
           aria-label={uploading ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
           title={uploading ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
         >
@@ -484,9 +484,9 @@ export const ReceiptsManagement = forwardRef(function ReceiptsManagement(
       </section>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs">Gesamt</p><p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">{statistics.total}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">Erkannt</span><span className="hidden sm:inline">Erkennung fertig</span></p><p className="mt-1 text-xl font-bold text-emerald-700 sm:text-2xl">{statistics.completed}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase leading-4 tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">EÜR verknüpft</span><span className="hidden sm:inline">Mit EÜR verknüpft</span></p><p className="mt-1 text-xl font-bold text-blue-700 sm:text-2xl">{statistics.linked}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head leading-4 text-gray-500">Gesamt</p><p className="mt-1 text-xl font-semibold tabular-nums text-gray-900 sm:text-2xl">{statistics.total}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head leading-4 text-gray-500"><span className="sm:hidden">Erkannt</span><span className="hidden sm:inline">Erkennung fertig</span></p><p className="mt-1 text-xl font-semibold tabular-nums text-emerald-700 sm:text-2xl">{statistics.completed}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head leading-4 text-gray-500"><span className="sm:hidden">EÜR verknüpft</span><span className="hidden sm:inline">Mit EÜR verknüpft</span></p><p className="mt-1 text-xl font-semibold tabular-nums text-blue-700 sm:text-2xl">{statistics.linked}</p></div>
       </div>
 
       {/* Eingebettet umschließt die Tab-Fläche der Belegseite den Bereich bereits. */}

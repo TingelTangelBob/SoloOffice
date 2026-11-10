@@ -432,12 +432,13 @@ router.post('/diagnose-smtp', async (req, res) => {
 router.post('/test-smtp', async (req, res) => {
   let transporter;
   let timeout;
+  let config;
+  let password;
   try {
     const { use_database_settings = true, settings = null } = req.body;
     const result = await query('SELECT * FROM smtp_settings WHERE id = 1');
     const stored = result.rows[0];
     let input;
-    let password;
     if (use_database_settings) {
       if (stored?.is_enabled) {
         input = stored;
@@ -452,7 +453,7 @@ router.post('/test-smtp', async (req, res) => {
       input = settings;
       password = smtpPassword(settings?.smtp_pass) || (stored?.smtp_pass_encrypted ? decryptSecret(stored.smtp_pass_encrypted) : '');
     }
-    const config = validateSmtpSettings(input, { hasStoredPassword: Boolean(password), forConnection: true });
+    config = validateSmtpSettings(input, { hasStoredPassword: Boolean(password), forConnection: true });
     const { default: nodemailer } = await import('nodemailer');
     transporter = nodemailer.createTransport(smtpTransportOptions(config, password));
     await Promise.race([
@@ -464,8 +465,28 @@ router.post('/test-smtp', async (req, res) => {
     res.json({ success: true, message: 'Verbindung und Anmeldung erfolgreich geprüft. Dabei wurde keine E-Mail gesendet.' });
   } catch (error) {
     logger.warn('SMTP test failed', { code: error.code });
-    res.status(error.status || 502).json({ success: false,
-      message: error.status === 400 ? error.message : smtpErrorMessage(error) });
+    // Port 465 ist in vielen Netzen gesperrt: Läuft derselbe Server mit STARTTLS auf 587, den Wechsel anbieten.
+    let suggestion;
+    const timedOut = error.code === 'ETIMEDOUT' || /timeout|timed out|greeting never received/i.test(String(error.message));
+    if (error.status !== 400 && timedOut && config && config.smtp_secure && Number(config.smtp_port) === 465) {
+      let alternative;
+      try {
+        const { default: nodemailer } = await import('nodemailer');
+        alternative = nodemailer.createTransport(smtpTransportOptions({ ...config, smtp_port: 587, smtp_secure: false }, password));
+        await alternative.verify();
+        suggestion = { smtp_port: 587, smtp_secure: false };
+      } catch (alternativeError) {
+        logger.warn('SMTP alternative port failed', { code: alternativeError.code });
+      } finally {
+        alternative?.close();
+      }
+    }
+    // Mit Vorschlag Status 200: Der Hinweis ist ein Befund der Prüfung, kein Serverfehler.
+    res.status(suggestion ? 200 : error.status || 502).json({ success: false,
+      message: suggestion
+        ? 'Port 465 antwortet nicht, aber der Server ist über Port 587 mit STARTTLS erreichbar und die Anmeldung funktioniert dort.'
+        : error.status === 400 ? error.message : smtpErrorMessage(error, config),
+      ...(suggestion ? { suggestion } : {}) });
   } finally {
     clearTimeout(timeout);
     transporter?.close();
@@ -629,7 +650,7 @@ router.post('/send-test-email', async (req, res) => {
       messageId: info.messageId, recipient, ...(historyWarning ? { warning: historyWarning } : {}) });
   } catch (error) {
     logger.warn('Test email failed', { code: error.code });
-    const message = error.status === 400 ? error.message : smtpErrorMessage(error);
+    const message = error.status === 400 ? error.message : smtpErrorMessage(error, dbSettings);
     if (dbSettings && error.status !== 400) {
       try {
         await query(`INSERT INTO email_history (sender_email, sender_name, recipient_email, subject,

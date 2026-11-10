@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, formatTime } from '../utils/formatters';
 import type { Invoice, InvoiceHistoryEntry } from '../types';
 import { DialogShell } from './DialogShell';
 import logger from '../utils/logger';
+import { isKnownState, stateLabel } from '../../backend/shared/stateMachines.js';
 
 interface InvoiceHistoryDialogProps {
   invoice: Invoice | null;
@@ -35,16 +36,6 @@ const ITEM_FIELDS: HistoryField[] = [
   { keys: ['discount_amount', 'discountAmount'], label: 'Rabatt', kind: 'amount' },
   { keys: ['total'], label: 'Positionswert', kind: 'amount' },
 ];
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'Entwurf',
-  sent: 'Versendet',
-  paid: 'Bezahlt',
-  overdue: 'Überfällig',
-  reminded_1x: '1. Mahnung',
-  reminded_2x: '2. Mahnung',
-  reminded_3x: '3. Mahnung',
-};
 
 const ACTION_LABELS: Record<InvoiceHistoryEntry['action'], string> = {
   created: 'Angelegt',
@@ -91,7 +82,7 @@ export function InvoiceHistoryDialog({ invoice, onClose }: InvoiceHistoryDialogP
     if (kind === 'percent') return `${Number(value).toLocaleString(locale, { maximumFractionDigits: 2 })} %`;
     if (kind === 'date') return formatDate(new Date(String(value)), locale, company?.dateFormat);
     const text = String(value);
-    return STATUS_LABELS[text] || text;
+    return isKnownState('invoice', text) ? stateLabel('invoice', text) : text;
   };
 
   const describeChanges = (entry: InvoiceHistoryEntry) => {

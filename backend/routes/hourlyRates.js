@@ -1,5 +1,8 @@
 import express from 'express';
 import logger from '../utils/logger.js';
+import { withNumericFields } from '../utils/numericFields.js';
+
+const toNumericRate = row => withNumericFields(row, ['rate', 'taxRate']);
 
 const router = express.Router();
 
@@ -20,7 +23,7 @@ router.get('/', async (req, res) => {
       FROM hourly_rates 
       ORDER BY is_default DESC, name ASC
     `);
-    res.json(result.rows);
+    res.json(result.rows.map(toNumericRate));
   } catch (error) {
     logger.error('Error fetching hourly rates:', error);
     res.status(500).json({ error: 'Fehler beim Laden der Stundensätze' });
@@ -57,7 +60,7 @@ router.post('/', async (req, res) => {
         updated_at as "updatedAt"
     `, [name, description || '', rate, taxRate ?? 19, isDefault || false]);
     
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(toNumericRate(result.rows[0]));
   } catch (error) {
     logger.error('Error creating hourly rate:', error);
     res.status(500).json({ error: 'Fehler beim Erstellen des Stundensatzes' });
@@ -100,7 +103,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Stundensatz nicht gefunden' });
     }
     
-    res.json(result.rows[0]);
+    res.json(toNumericRate(result.rows[0]));
   } catch (error) {
     logger.error('Error updating hourly rate:', error);
     res.status(500).json({ error: 'Fehler beim Aktualisieren des Stundensatzes' });

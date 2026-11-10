@@ -50,10 +50,11 @@ import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorag
 import { Notice } from './Notice';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { DialogShell } from './DialogShell';
+import { EuerForecastDialog } from './EuerForecastDialog';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
-import { TableSkeleton } from './TableSkeleton';
+import { SkeletonBlock, TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { ImportWizard } from './ImportWizard';
 import { getTerminology } from '../utils/terminology';
@@ -68,7 +69,7 @@ import { useAuth } from '../context/AuthContext';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
-import { loadImportedInvoiceOriginal } from '../utils/pdfGenerator';
+import { loadImportedInvoiceOriginal } from '../utils/pdfLazy';
 import { blobToBase64 } from '../utils/blobUtils';
 import { FloatingInfoTooltip } from './InfoTooltip';
 import { getEuerHistoryChanges, isActiveEuerEntry } from '../utils/euerHistory';
@@ -215,6 +216,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   const [forecastDraft, setForecastDraft] = useState<Omit<EuerForecastPlan, 'id'>>({ entryType: 'expense', date: `${currentYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, description: '', category: null, amount: 0 });
   const [editingForecastId, setEditingForecastId] = useState<string | null>(null);
   const [forecastFormOpen, setForecastFormOpen] = useState(false);
+  const [forecastDialogOpen, setForecastDialogOpen] = useState(false);
   const entries = useMemo(() => allEntries.filter(entry => Number(entry.euerYear ?? dateKey(entry.entryDate).slice(0, 4)) === year), [allEntries, year]);
   const activeEntries = useMemo(() => entries.filter(isActiveEuerEntry), [entries]);
   const paymentEntries = useMemo(() => allEntries.filter(entry => isActiveEuerEntry(entry)
@@ -259,6 +261,14 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
   templateWorkspace.current = workspace?.id ?? null;
   const currentEntriesScope = `${workspaceId ?? ''}:${year}`;
   const entriesReady = !loading && entriesLoadedScope === currentEntriesScope;
+  // Die Seite baut beim ersten Laden einmal vollständig auf: Bis Buchungen und
+  // fällige Fixkosten da sind, steht ein Skelett, danach blendet alles zusammen
+  // ein. Spätere Jahreswechsel laden in der fertigen Seite nach.
+  const [dueNoticeSettled, setDueNoticeSettled] = useState(false);
+  const [initialReady, setInitialReady] = useState(false);
+  useEffect(() => {
+    if (entriesReady && dueNoticeSettled) setInitialReady(true);
+  }, [entriesReady, dueNoticeSettled]);
 
 
   const formatAmount = useCallback((amount: number) => formatCurrency(amount, locale, company?.numberFormat, company?.currency), [locale, company?.numberFormat, company?.currency]);
@@ -481,7 +491,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     setDialogEntry(null); setError('');
   };
   const addExpenseAction = (month: number, mobile = false) => can('data.write') && (
-    <button type="button" aria-label={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`} title={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`} disabled={!entriesReady || busy} onClick={() => openExpenseForMonth(month)} className={mobile ? 'inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 text-primary-custom transition hover:border-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5' : 'pointer-events-none absolute inset-y-0 right-0 inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-md border border-primary-custom bg-white px-2 text-sm font-medium text-primary-custom opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 2xl:whitespace-nowrap'}>
+    <button type="button" aria-label={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`} title={`Ausgabe für ${monthLabel(locale, year, month)} hinzufügen`} disabled={!entriesReady || busy} onClick={() => openExpenseForMonth(month)} className={mobile ? 'inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 text-primary-custom transition hover:border-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5' : 'pointer-events-none absolute inset-y-0 right-0 inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 rounded-md border border-primary-custom bg-white px-2 text-sm font-medium text-primary-custom opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:cursor-not-allowed group-hover:disabled:opacity-50 2xl:whitespace-nowrap'}>
       <Plus className="h-4 w-4 shrink-0" aria-hidden="true" /><span className={mobile ? 'sr-only' : 'hidden 2xl:inline'}>Ausgaben</span>
     </button>
   );
@@ -776,7 +786,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         variant="primary"
         icon={<><Plus className="h-4 w-4" /><span className="hidden sm:inline">Buchung</span><ChevronDown className="hidden h-4 w-4 sm:inline" /></>}
         containerClassName="shrink-0"
-        triggerClassName="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-all duration-300 sm:min-w-0 sm:px-4"
+        triggerClassName="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors duration-300 sm:min-w-0 sm:px-4"
         menuClassName="min-w-60"
       >
         <ActionMenuItem icon={<Plus className="h-4 w-4" />} tone="orange" onClick={openNew}>Manuelle Buchung</ActionMenuItem>
@@ -809,6 +819,15 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
       onRemoveExistingHomeOfficeEntry={removeHomeOfficeEntry}
     />}
 
+    {!initialReady && <div role="status" aria-live="polite" className="space-y-6">
+      <span className="sr-only">EÜR wird geladen …</span>
+      <div aria-hidden="true" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map(index => <div key={index} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><SkeletonBlock className="h-3 w-20" /><SkeletonBlock className="mt-4 h-6 w-28" /></div>)}
+      </div>
+      <div aria-hidden="true" className="rounded-xl border border-gray-100 bg-white shadow-sm"><div className="p-5"><SkeletonBlock className="h-4 w-40" /></div><TableSkeleton rows={8} columns={6} label="Monatsübersicht wird geladen …" className="border-t border-gray-100" /></div>
+    </div>}
+
+    <div className={initialReady ? 'content-reveal space-y-6' : 'hidden'}>
     {!infoNoticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice(getEuerInfoNoticeId(year)); setInfoNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis schließen"><X className="h-5 w-5" /></button>
       <div className="flex items-start gap-3"><Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" /><div><h2 className="font-semibold text-blue-950">Ihre EÜR für {year}</h2><p className="mt-1 text-sm leading-5 text-blue-900 sm:leading-6">Erfasste Zahlungen, Belege und Geschäftsvorfälle bilden Ihre EÜR. Ein Rechnungsstatus allein erzeugt keine Einnahme; erfassen Sie Zahlungen mit dem tatsächlichen Zahlungsdatum.</p></div></div>
@@ -831,46 +850,54 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     {notice && <Notice variant="success" onDismiss={() => setNotice('')}>{notice}</Notice>}
     {error && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Fehler schließen"><X className="h-4 w-4" /></button></div>}
 
-    <DueRecurringExpensesNotice onBooked={() => { void loadEntries(); }} />
+    <DueRecurringExpensesNotice onBooked={() => { void loadEntries(); }} onSettled={() => setDueNoticeSettled(true)} />
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-bold text-emerald-700">{formatAmount(summary.income)}</p></article>
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />Ausgaben</div><p className="mt-3 text-2xl font-bold text-rose-700">{formatAmount(summary.expenses)}</p></article>
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><Calculator className="h-4 w-4 text-primary-custom" />Überschuss</div><p className={`mt-3 text-2xl font-bold ${summary.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(summary.profit)}</p></article>
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-bold text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">aktive Einnahmen und Ausgaben</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-semibold tabular-nums text-emerald-700">{formatAmount(summary.income)}</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />Ausgaben</div><p className="mt-3 text-2xl font-semibold tabular-nums text-rose-700">{formatAmount(summary.expenses)}</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><Calculator className="h-4 w-4 text-primary-custom" />Überschuss</div><p className={`mt-3 text-2xl font-semibold tabular-nums ${summary.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(summary.profit)}</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-semibold tabular-nums text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">aktive Einnahmen und Ausgaben</p></article>
     </div>
 
-    <section className="rounded-xl border border-dashed border-gray-300 bg-gray-50/70 p-4" aria-labelledby="euer-forecast-heading">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="euer-forecast-heading" className="font-semibold text-gray-700">Prognose · Planwerte für {year}</h2><p className="mt-1 text-sm text-gray-500">Diese Werte bleiben von Ist-Buchungen, Exporten, Umsatzsteuer und Steuerberechnungen getrennt.</p></div>
-        {can('data.write') && <button type="button" disabled={!entriesReady || busy} onClick={() => { setForecastDraft({ entryType: 'expense', date: `${year}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, description: '', category: null, amount: 0 }); setEditingForecastId(null); setForecastFormOpen(value => !value); }} className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 disabled:opacity-50"><Plus className="mr-1 inline h-4 w-4" />Prognose hinzufügen</button>}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-600"><span>Prognose-Einnahmen: {formatAmount(forecastTotals.income)}</span><span>Prognose-Ausgaben: {formatAmount(forecastTotals.expense)}</span><span>Einnahmen inkl. Prognose: {formatAmount(summary.income + forecastTotals.income)}</span><span>Ausgaben inkl. Prognose: {formatAmount(summary.expenses + forecastTotals.expense)}</span><span>Überschuss inkl. Prognose: {formatAmount(summary.profit + forecastTotals.income - forecastTotals.expense)}</span></div>
-      {forecastFormOpen && <form onSubmit={event => void saveForecastPlan(event)} className="mt-4 grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-2 xl:grid-cols-5">
-        <label className="text-sm font-medium text-gray-700">Art<select className="form-input form-input-compact mt-1 w-full" value={forecastDraft.entryType} onChange={event => setForecastDraft(value => ({ ...value, entryType: event.target.value as 'income' | 'expense', category: event.target.value === 'income' ? 'other_income' : null }))}><option value="income">Einnahme</option><option value="expense">Ausgabe</option></select></label>
-        <label className="text-sm font-medium text-gray-700">Datum<input type="date" required min={`${year}-01-01`} max={`${year}-12-31`} className="form-input form-input-compact mt-1 w-full" value={forecastDraft.date} onChange={event => setForecastDraft(value => ({ ...value, date: event.target.value }))} /></label>
-        <label className="text-sm font-medium text-gray-700 sm:col-span-2">Bezeichnung<input required maxLength={255} className="form-input form-input-compact mt-1 w-full" value={forecastDraft.description} onChange={event => setForecastDraft(value => ({ ...value, description: event.target.value }))} /></label>
-        <label className="text-sm font-medium text-gray-700">Kategorie<select className="form-input form-input-compact mt-1 w-full" value={forecastDraft.category || ''} onChange={event => setForecastDraft(value => ({ ...value, category: event.target.value || null }))}><option value="">Keine</option>{Object.entries(categoryLabels).filter(([key]) => key !== 'vat_payment' && key !== 'vat_refund' && (forecastDraft.entryType === 'expense' || key === 'other_income')).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        <label className="text-sm font-medium text-gray-700">Betrag<input type="number" min="0" step="0.01" required className="form-input form-input-compact mt-1 w-full" value={forecastDraft.amount || ''} onChange={event => setForecastDraft(value => ({ ...value, amount: Number(event.target.value) }))} /></label>
-        <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-5"><button type="submit" disabled={busy} className="btn-primary min-h-10 rounded-lg px-4 text-sm text-white">{editingForecastId ? 'Änderungen speichern' : 'Prognose speichern'}</button><button type="button" onClick={() => { setForecastFormOpen(false); setEditingForecastId(null); }} className="min-h-10 rounded-lg border border-gray-300 px-4 text-sm text-gray-700">Abbrechen</button></div>
-      </form>}
-      <div className="mt-3 divide-y divide-gray-200/80">{forecastPlans.length === 0 ? <p className="py-3 text-sm text-gray-500">Für {year} sind keine Planwerte erfasst.</p> : forecastPlans.map(plan => <article key={plan.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-gray-500"><div className="min-w-0"><p className="font-medium text-gray-600">{plan.description} <span className="ml-1 rounded border border-dashed border-gray-300 px-1.5 py-0.5 text-xs font-normal">Prognose</span></p><p className="mt-1 text-xs">{formatDate(new Date(`${plan.date}T00:00:00`), locale, company?.dateFormat)} · {plan.category ? categoryLabels[plan.category as EuerEntryCategory] || plan.category : 'Keine Kategorie'}</p></div><div className="flex items-center gap-3"><span className="text-sm font-medium">{plan.entryType === 'expense' ? '−' : '+'}{formatAmount(plan.amount)}</span>{can('data.write') && <><button type="button" disabled={busy} onClick={() => { setForecastDraft({ entryType: plan.entryType, date: plan.date, description: plan.description, category: plan.category, amount: plan.amount }); setEditingForecastId(plan.id); setForecastFormOpen(true); }} className="min-h-10 rounded-md border border-gray-300 bg-white px-3 text-xs text-gray-700">Bearbeiten</button><button type="button" disabled={busy} onClick={() => void removeForecastPlan(plan)} className="min-h-10 rounded-md border border-gray-300 bg-white px-3 text-xs text-gray-700">Löschen</button></>}</div></article>)}</div>
-    </section>
+    {forecastDialogOpen && <EuerForecastDialog
+      year={year}
+      plans={forecastPlans}
+      draft={forecastDraft}
+      setDraft={setForecastDraft}
+      formOpen={forecastFormOpen}
+      editingId={editingForecastId}
+      canWrite={can('data.write')}
+      busy={busy}
+      ready={entriesReady}
+      actual={{ income: summary.income, expenses: summary.expenses, profit: summary.profit }}
+      planned={forecastTotals}
+      categoryLabels={categoryLabels}
+      formatAmount={formatAmount}
+      formatPlanDate={date => formatDate(new Date(`${date}T00:00:00`), locale, company?.dateFormat)}
+      onAdd={() => { setForecastDraft({ entryType: 'expense', date: `${year}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, description: '', category: null, amount: 0 }); setEditingForecastId(null); setForecastFormOpen(true); }}
+      onEdit={plan => { setForecastDraft({ entryType: plan.entryType, date: plan.date, description: plan.description, category: plan.category, amount: plan.amount }); setEditingForecastId(plan.id); setForecastFormOpen(true); }}
+      onRemove={plan => void removeForecastPlan(plan)}
+      onCancelForm={() => { setForecastFormOpen(false); setEditingForecastId(null); }}
+      onSubmit={event => void saveForecastPlan(event)}
+      onClose={() => { setForecastDialogOpen(false); setForecastFormOpen(false); setEditingForecastId(null); }}
+    />}
 
-    {checkHints.length > 0 && <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><h2 className="font-semibold text-amber-950">Prüfhinweise ({checkHints.length})</h2><p className="mt-1 text-sm text-amber-900">Diese Hinweise helfen bei der Vorbereitung und ersetzen keine steuerliche Prüfung.</p><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{checkHints.slice(0, 6).map(hint => <li key={hint}>{hint}</li>)}</ul>{checkHints.length > 6 && <p className="mt-2 text-xs text-amber-800">Weitere Hinweise sind im Steuerberater-Export enthalten.</p>}</div></div></section>}
+    {checkHints.length > 0 && <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><h2 className="font-semibold text-amber-950">Prüfhinweise ({checkHints.length})</h2><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">{checkHints.slice(0, 6).map(hint => <li key={hint}>{hint}</li>)}</ul>{checkHints.length > 6 && <p className="mt-2 text-xs text-amber-800">Weitere Hinweise sind im Steuerberater-Export enthalten.</p>}</div></div></section>}
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1"><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2><p className="mt-1 text-sm text-gray-500">Schneller Überblick über Einnahmen, Ausgaben und Überschuss. Ein Klick auf einen Monat filtert die Buchungen darunter.</p>{hasEuerYearShift && <p className="mt-1 text-xs text-gray-500">Monatswerte folgen dem Buchungsdatum. Einzelne Zahlungen können nach § 11 EStG einem anderen EÜR-Jahr zugeordnet sein.</p>}</div>
+          <div className="min-w-0 flex-1"><h2 className="text-lg font-semibold text-gray-900">Monatsübersicht</h2>{hasEuerYearShift && <p className="mt-1 text-xs text-gray-500">Monatswerte folgen dem Buchungsdatum. Einzelne Zahlungen können nach § 11 EStG einem anderen EÜR-Jahr zugeordnet sein.</p>}</div>
+          <button type="button" onClick={() => setForecastDialogOpen(true)} className="inline-flex h-8 shrink-0 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700">Prognose</button>
           <ActionMenu ariaLabel="Steuerberater-Export öffnen" title="Steuerberater-Export" icon={<Download className="h-4 w-4" />} containerClassName="shrink-0" menuClassName="min-w-56">
             <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={exportCsv}>CSV Steuerberater</ActionMenuItem>
             <ActionMenuItem icon={<FileJson className="h-4 w-4" />} tone="indigo" onClick={exportJson}>JSON Steuerberater</ActionMenuItem>
             <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="green" onClick={exportPdf}>PDF Steuerberater</ActionMenuItem>
           </ActionMenu>
         </div>
-        <div className="mt-5 hidden overflow-x-auto xl:block">
-          <table className="w-full min-w-[640px]">
-            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead>
+        <div className="mt-5 hidden overflow-x-auto lg:block">
+          <table className="w-full min-w-[480px]">
+            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left table-head text-gray-500">Monat</th><th className="px-4 py-3 text-right table-head text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right table-head text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right table-head text-gray-500">Überschuss</th></tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}>
                 <td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td>
@@ -900,7 +927,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             </tfoot>
           </table>
         </div>
-        <div className="divide-y divide-gray-100 xl:hidden">{monthly.map(item => (
+        <div className="divide-y divide-gray-100 lg:hidden">{monthly.map(item => (
           <article key={item.month} className="py-2 first:pt-0 last:pb-0">
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} aria-pressed={selectedMonth === item.month} className={`flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left ${selectedMonth === item.month ? 'bg-primary-light-custom' : ''}`}>
@@ -912,7 +939,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
             <p className="mt-0.5 px-2 text-xs text-gray-500">Einnahmen <span className="font-medium text-emerald-700">{formatAmount(item.income)}</span> · Ausgaben <span className="font-medium text-rose-700">{formatAmount(item.expenses)}</span></p>
           </article>
         ))}</div>
-        <div className="mt-4 border-t-2 border-gray-200 pt-4 xl:hidden">
+        <div className="mt-4 border-t-2 border-gray-200 pt-4 lg:hidden">
           <div className="flex items-start justify-between gap-3">
             <span><span className="inline-flex items-center gap-1 font-semibold text-gray-900">Ø pro Monat<FloatingInfoTooltip label="Berechnung des Monatsdurchschnitts" text={MONTHLY_AVERAGE_HELP} /></span><span className="mt-1 block text-xs font-normal text-gray-500">{activeAverageLabel}</span></span>
             <span className="text-right">
@@ -929,8 +956,12 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     </section>
 
     <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2><p className="mt-1 text-sm text-gray-500">Erfasste Zahlungen, Belege und weitere Geschäftsvorfälle.</p>{selectedMonth !== null && <p className="mt-2 text-sm text-gray-700">Nur <strong>{monthLabel(locale, year, selectedMonth)}</strong> · {monthFilteredRows.length} {monthFilteredRows.length === 1 ? 'Buchung' : 'Buchungen'} <button type="button" onClick={() => setSelectedMonth(null)} className="ml-2 font-medium text-primary-custom hover:underline">Alle Monate anzeigen</button></p>}</div><button type="button" aria-pressed={vatIncompleteOnly} onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700'}`}>USt unvollständig ({incompleteCount})</button></div>
-      <label className="mx-5 mb-4 flex w-fit items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={showVoided} onChange={event => setShowVoided(event.target.checked)} className="rounded border-gray-300 text-primary-custom focus:ring-primary-custom" />Stornierte Buchungen anzeigen</label>
+      <div className="flex flex-wrap items-start justify-between gap-3 p-5"><div><h2 className="text-lg font-semibold text-gray-900">Buchungen</h2>{selectedMonth !== null && <p className="mt-2 text-sm text-gray-700">Nur <strong>{monthLabel(locale, year, selectedMonth)}</strong> · {monthFilteredRows.length} {monthFilteredRows.length === 1 ? 'Buchung' : 'Buchungen'} <button type="button" onClick={() => setSelectedMonth(null)} className="ml-2 font-medium text-primary-custom hover:underline">Alle Monate anzeigen</button></p>}</div>
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
+          <button type="button" aria-pressed={showVoided} onClick={() => setShowVoided(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${showVoided ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 bg-white text-gray-700'}`}>Stornierte Buchungen</button>
+          <button type="button" aria-pressed={vatIncompleteOnly} onClick={() => setVatIncompleteOnly(value => !value)} className={`rounded-lg border px-3 py-2 text-sm ${vatIncompleteOnly ? 'border-primary-custom bg-primary-light-custom text-gray-900' : 'border-gray-300 bg-white text-gray-700'}`}>USt unvollständig ({incompleteCount})</button>
+        </div>
+      </div>
       {loading ? <TableSkeleton rows={6} columns={6} label="EÜR-Buchungen werden geladen …" className="border-t border-gray-100" /> : listedRows.length === 0 ? <EmptyState variant="bars" title={`Für ${year} sind noch keine Buchungen vorhanden.`} action={{ label: 'Buchung erfassen', onClick: openNew }} /> : <>
         <div ref={tableRef} className="hidden w-full min-w-0 max-w-full overflow-hidden xl:block">
           <table className="euer-bookings-table w-full table-fixed">
@@ -942,7 +973,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
               <col style={{ width: EUER_COLUMN_WIDTHS.amount }} />
               <col style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} />
             </colgroup>
-            <thead className="bg-gray-50"><tr><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Beschreibung</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kategorie</th><th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Quelle</th><th className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
+            <thead className="bg-gray-50"><tr><th className="whitespace-nowrap px-3 py-3 text-left table-head text-gray-500">Datum</th><th className="whitespace-nowrap px-3 py-3 text-left table-head text-gray-500">Beschreibung</th><th className="whitespace-nowrap px-3 py-3 text-left table-head text-gray-500">Kategorie</th><th className="whitespace-nowrap px-3 py-3 text-left table-head text-gray-500">Quelle</th><th className="whitespace-nowrap px-3 py-3 text-right table-head text-gray-500">Betrag</th><th style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-20 whitespace-nowrap bg-gray-50 py-3 text-left table-head text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}><span className="sr-only">Aktionen</span></th></tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white">{visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">{emptyBookingsMessage}</td></tr>}{visibleRows.map(row => { const entry = entriesById.get(row.id); return <tr key={row.id} className={`group ${row.status === 'voided' ? 'bg-gray-50' : 'hover:bg-gray-50'}`}><td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900">{formatDate(row.entryDate, locale, company?.dateFormat)}</td><td className="max-w-0 px-3 py-2 text-sm"><div className="flex min-w-0 items-center gap-1"><div className="min-w-0 truncate font-medium text-gray-900" title={row.description}>{row.description}</div>{row.invoiceId && <button type="button" onClick={() => void openInvoicePreview(row.invoiceId!)} disabled={previewLoadingInvoiceId === row.invoiceId} aria-label="PDF-Vorschau öffnen" title="PDF-Vorschau" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-primary-custom hover:bg-primary-light-custom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom disabled:opacity-60">{previewLoadingInvoiceId === row.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}</button>}</div>{row.status === 'voided' && <span className="mt-1 inline-block text-xs font-medium text-gray-500">Storniert · nicht in den Summen</span>}{row.notes && <div className="mt-1 truncate text-xs text-gray-500" title={row.notes}>{row.notes}</div>}{entry && isActiveEuerEntry(entry) && needsVatData(entry, Boolean(company?.isSmallBusiness)) && <div className="mt-1 text-xs text-amber-700">USt-Angaben unvollständig</div>}{entry?.euerYear && entry.euerYear !== Number(String(entry.entryDate).slice(0, 4)) && <div className="mt-1 text-xs text-gray-500">zählt zu {entry.euerYear} (§ 11 EStG)</div>}</td><td className="max-w-0 px-3 py-2 text-sm text-gray-600"><span className="block truncate" title={categoryLabels[row.category]}>{categoryLabels[row.category]}</span></td><td className="max-w-0 px-3 py-2 text-xs text-gray-500"><span className="block truncate" title={row.sourceLabel || 'Manuell'}>{row.sourceLabel || 'Manuell'}</span></td><td className={`whitespace-nowrap px-3 py-2 text-right text-sm font-medium ${row.status === 'voided' ? 'text-gray-500 line-through' : row.entryType === 'income' ? 'text-emerald-700' : 'text-rose-700'}`}>{row.entryType === 'expense' ? '-' : row.amount < 0 ? '-' : '+'}{formatAmount(Math.abs(row.amount))}</td><td style={{ width: showInlineActions ? EUER_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }} className={`sticky right-0 z-10 bg-white py-2 text-sm transition-colors group-hover:bg-gray-50 ${showInlineActions ? 'px-3' : 'px-2'}`}>{entry && !isActiveEuerEntry(entry) ? <button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" aria-label="Änderungsverlauf der stornierten Buchung öffnen" title="Änderungsverlauf" disabled={busy}><History className="h-4 w-4" /></button> : entry && entry.sourceType === 'vat_payment' ? <button type="button" onClick={() => onNavigate?.('vat')} className="action-icon-button action-icon-blue" title="USt-Zahlung verwalten" aria-label="USt-Zahlung in der Umsatzsteuer-Übersicht verwalten"><Landmark className="h-4 w-4" /></button> : entry && (showInlineActions ? <div className="flex flex-nowrap items-center justify-end gap-1"><button type="button" onClick={() => openEdit(entry)} className="action-icon-button action-icon-indigo" title="Bearbeiten" disabled={busy}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => openCorrection(entry)} className="action-icon-button action-icon-blue" title="Korrektur" disabled={busy}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={() => void openHistory(entry)} className="action-icon-button action-icon-blue" title="Historie" disabled={busy}><History className="h-4 w-4" /></button>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <button type="button" onClick={() => setExpenseTemplateEntry(entry)} className="action-icon-button action-icon-blue" title="Als Fixkosten speichern" disabled={busy}><CalendarClock className="h-4 w-4" /></button>}<button type="button" onClick={() => void remove(row)} className="action-icon-button action-icon-red" title="Stornieren" disabled={busy}><Trash2 className="h-4 w-4" /></button></div> : <ActionMenu triggerClassName="action-icon-button action-icon-blue"><ActionMenuItem icon={<Pencil className="h-4 w-4" />} tone="indigo" onClick={() => openEdit(entry)} disabled={busy}>Bearbeiten</ActionMenuItem><ActionMenuItem icon={<RotateCcw className="h-4 w-4" />} tone="blue" onClick={() => openCorrection(entry)} disabled={busy}>Korrektur</ActionMenuItem><ActionMenuItem icon={<History className="h-4 w-4" />} tone="blue" onClick={() => void openHistory(entry)} disabled={busy}>Historie</ActionMenuItem>{entry.entryType === 'expense' && entry.category !== 'allowance' && can('data.write') && <ActionMenuItem icon={<CalendarClock className="h-4 w-4" />} tone="blue" onClick={() => setExpenseTemplateEntry(entry)} disabled={busy}>Als Fixkosten speichern</ActionMenuItem>}<ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => void remove(row)} disabled={busy}>Stornieren</ActionMenuItem></ActionMenu>)}</td></tr>; })}</tbody>
           </table>
         </div>
@@ -951,7 +982,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     </section>
 
     {dialogEntry !== undefined && (
-      <DialogShell
+      <DialogShell unsavedChangesGuard
         titleId="euer-entry-dialog-title"
         icon={dialogEntry ? Pencil : draft.sourceType === 'correction' ? RotateCcw : Plus}
         title={isQuickExpense ? 'Ausgabe erfassen' : dialogEntry ? 'EÜR-Buchung bearbeiten' : draft.sourceType === 'invoice_payment' ? 'Rechnungszahlung erfassen' : draft.sourceType === 'correction' ? 'Korrektur erfassen' : 'EÜR-Buchung erfassen'}
@@ -1067,5 +1098,6 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         setNotice('Fixkostenvorlage wurde aus der EÜR-Buchung erstellt. Die bestehende EÜR-Ausgabe blieb unverändert.');
       }}
     />}
+    </div>
   </div>;
 }

@@ -297,7 +297,7 @@ function TextTemplateTable({ templates, terminologyProfile, onEdit }: TextTempla
     <div className="template-text-table-wrap overflow-hidden rounded-xl border">
       <table className="template-text-table w-full table-fixed text-left text-sm">
         <thead>
-          <tr className="border-b text-xs uppercase tracking-wide text-gray-500">
+          <tr className="border-b table-head text-gray-500">
             <th scope="col" className="w-[38%] px-3 py-3 font-medium sm:w-[30%] sm:px-4">Dokumentart</th>
             <th scope="col" className="px-3 py-3 font-medium sm:px-4">Inhalt</th>
             <th scope="col" className="w-14 px-2 py-3 sm:w-16"><span className="sr-only">Aktion</span></th>
@@ -689,7 +689,7 @@ export function TemplatesManagement() {
                     </>
                   )}
                 >
-                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Vorschau als</div>
+                  <div className="px-3 pb-1 pt-2 table-head text-gray-500">Vorschau als</div>
                   {previewTypes.map(type => (
                     <ActionMenuItem
                       key={type.id}
@@ -717,7 +717,7 @@ export function TemplatesManagement() {
                     </>
                   )}
                 >
-                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Akzentfarbe</div>
+                  <div className="px-3 pb-1 pt-2 table-head text-gray-500">Akzentfarbe</div>
                   {colorPresets.map(preset => (
                     <ActionMenuItem
                       key={preset.color}
@@ -763,7 +763,7 @@ export function TemplatesManagement() {
                     </>
                   )}
                 >
-                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Schrift</div>
+                  <div className="px-3 pb-1 pt-2 table-head text-gray-500">Schrift</div>
                   {fontOptions.map(option => (
                     <ActionMenuItem
                       key={option.id}
@@ -794,7 +794,7 @@ export function TemplatesManagement() {
                     </>
                   )}
                 >
-                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Im Dokument anzeigen</div>
+                  <div className="px-3 pb-1 pt-2 table-head text-gray-500">Im Dokument anzeigen</div>
                   {([
                     { key: 'logo', label: 'Logo', checked: design.logoMode !== 'none', toggle: () => updateDesign({ logoMode: design.logoMode === 'none' ? 'company' : 'none' }) },
                     { key: 'payment', label: 'Zahlungsinformationen', checked: design.showPaymentInformation, toggle: () => updateDesign({ showPaymentInformation: !design.showPaymentInformation }) },

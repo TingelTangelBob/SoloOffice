@@ -5,7 +5,7 @@ export const contentWidth = {
 } as const;
 
 /** Verwaltungs- und Kontoseiten bleiben kompakt; Datenlisten erhalten mehr Platz. */
-const compactPages = new Set(['settings', 'profile', 'workspace', 'support']);
+const compactPages = new Set(['settings', 'profile', 'workspace', 'support', 'customers', 'positions', 'templates']);
 
 /** Dashboard und Kalender nutzen die komplette verfügbare Breite. */
 const fullWidthPages = new Set(['dashboard', 'calendar']);

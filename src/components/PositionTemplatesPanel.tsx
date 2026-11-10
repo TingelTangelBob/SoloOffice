@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Clock, Edit2, Package, Plus, Trash2, Upload } from 'lucide-react';
 import logger from '../utils/logger';
 import { useCompany } from '../context/CompanyContext';
+import { useCustomers } from '../context/CustomerContext';
 import { useFeedback } from '../context/FeedbackContext';
 import { getTerminology } from '../utils/terminology';
 import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
@@ -40,10 +41,23 @@ export function PositionTemplatesPanel() {
     updateMaterialTemplate,
     deleteMaterialTemplate,
   } = useCompany();
+  const { customers } = useCustomers();
   const terminology = getTerminology(company.terminologyProfile);
   const locale = company.locale || 'de-DE';
   const currencySymbol = getCurrencySymbol(locale, company.numberFormat, company.currency);
   const money = (value: number) => formatCurrency(value, locale, company.numberFormat, company.currency);
+
+  // Kundenspezifische Stundensätze liegen am Kunden und erscheinen hier nur,
+  // wenn die Anzeigeoption aktiv ist – wie der Hinweis darunter verspricht.
+  const specificRateItems = company.showCombinedDropdowns === true
+    ? customers.flatMap(customer => (customer.hourlyRates ?? []).map(rate => ({
+      id: `${customer.id}-${rate.id}`,
+      name: rate.name,
+      description: customer.name,
+      value: `${money(rate.rate)} / h`,
+    })))
+    : [];
+  const specificLabel = terminology.entity.specificLabel;
 
   const [editingRate, setEditingRate] = useState<HourlyRate | null>(null);
   const [isAddingRate, setIsAddingRate] = useState(false);
@@ -153,6 +167,15 @@ export function PositionTemplatesPanel() {
         }))}
       />
 
+      {company.showCombinedDropdowns === true && (
+        <PositionList
+          title={`${specificLabel.charAt(0).toUpperCase()}${specificLabel.slice(1)} Stundensätze`}
+          icon={<Clock className="h-4 w-4 text-primary-custom" aria-hidden="true" />}
+          emptyText={`Noch keine ${specificLabel} Stundensätze angelegt.`}
+          items={specificRateItems}
+        />
+      )}
+
       <PositionList
         title="Materialvorlagen"
         icon={<Package className="h-4 w-4 text-primary-custom" aria-hidden="true" />}
@@ -220,18 +243,19 @@ interface PositionListItem {
   description?: string;
   isDefault?: boolean;
   value: string;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** Ohne Bearbeiten/Löschen ist der Eintrag nur zur Ansicht hier. */
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 interface PositionListProps {
   title: string;
   icon: React.ReactNode;
   emptyText: string;
-  addLabel: string;
+  addLabel?: string;
   items: PositionListItem[];
-  onAdd: () => void;
-  onImport: () => void;
+  onAdd?: () => void;
+  onImport?: () => void;
 }
 
 /**
@@ -247,24 +271,30 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
           <h3 className="truncate text-sm font-semibold text-gray-900">{title}</h3>
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 tabular-nums">{items.length}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={onImport}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Importieren</span>
-          </button>
-          <button
-            type="button"
-            onClick={onAdd}
-            className="btn-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{addLabel}</span>
-          </button>
-        </div>
+        {(onImport || onAdd) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {onImport && (
+              <button
+                type="button"
+                onClick={onImport}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Importieren</span>
+              </button>
+            )}
+            {onAdd && (
+              <button
+                type="button"
+                onClick={onAdd}
+                className="btn-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{addLabel}</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {items.length > 0 ? (
@@ -283,14 +313,16 @@ function PositionList({ title, icon, emptyText, addLabel, items, onAdd, onImport
                 {item.description && <span className="mt-0.5 block truncate text-xs text-gray-500">{item.description}</span>}
               </span>
               <span className="shrink-0 text-sm text-gray-900 tabular-nums">{item.value}</span>
-              <span className="flex shrink-0 items-center gap-2">
-                <button type="button" onClick={item.onEdit} className="action-icon-button action-icon-blue" aria-label={`${item.name} bearbeiten`} title="Bearbeiten">
-                  <Edit2 className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={item.onDelete} className="action-icon-button action-icon-red" aria-label={`${item.name} löschen`} title="Löschen">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </span>
+              {item.onEdit && item.onDelete && (
+                <span className="flex shrink-0 items-center gap-2">
+                  <button type="button" onClick={item.onEdit} className="action-icon-button action-icon-blue" aria-label={`${item.name} bearbeiten`} title="Bearbeiten">
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={item.onDelete} className="action-icon-button action-icon-red" aria-label={`${item.name} löschen`} title="Löschen">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -328,7 +360,7 @@ function HourlyRateModal({ rate, currencySymbol, locale, numberFormat, onSave, o
   };
 
   return (
-    <DialogShell
+    <DialogShell unsavedChangesGuard
       titleId="hourly-rate-dialog-title"
       icon={Clock}
       title={rate ? 'Stundensatz bearbeiten' : 'Neuer Stundensatz'}
@@ -448,7 +480,7 @@ function MaterialTemplateModal({ template, currencySymbol, locale, numberFormat,
   };
 
   return (
-    <DialogShell
+    <DialogShell unsavedChangesGuard
       titleId="material-template-dialog-title"
       icon={Package}
       title={template ? 'Materialvorlage bearbeiten' : 'Neue Materialvorlage'}

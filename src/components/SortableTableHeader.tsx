@@ -31,7 +31,7 @@ export function SortableTableHeader({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex min-h-0 w-full min-w-0 items-center gap-1 text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom ${align === 'right' ? 'justify-end text-right' : 'justify-start text-left'}`}
+        className={`inline-flex min-h-0 w-full min-w-0 items-center gap-1 table-head text-gray-500 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom ${align === 'right' ? 'justify-end text-right' : 'justify-start text-left'}`}
         aria-label={`${label} sortieren`}
         title={`${label} sortieren`}
       >

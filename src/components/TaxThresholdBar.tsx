@@ -41,7 +41,7 @@ export function TaxThresholdBar({ threshold, valueLabel, modeLabel, projectionVa
         {projectionValue !== undefined && <span className="absolute -top-0.5 h-5 w-1 rounded border border-white bg-amber-600" style={{ left: `${Math.min(100, Math.max(0, ((projectionValue - first) / span) * 100))}%` }} title={`Jahresprognose: ${money(projectionValue)}`} aria-hidden="true" />}
       </div>
       {projectionValue !== undefined && <p className="text-xs text-gray-600">Ist: {valueText} · Jahresprognose: {money(projectionValue)}</p>}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-4 text-gray-500" aria-label="Grenzbereiche">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-gray-500" aria-label="Grenzbereiche">
         {bands.map(band => <span key={band.id}>{band.label}: {money(band.from)}{band.to === null ? ' und mehr' : `–${money(band.to)}`}</span>)}
       </div>
       {zone && <p className="text-xs text-gray-700">Aktuelle Zone: <strong>{zone.activeBand.label}</strong>{zone.aboveLastBoundary ? ' · oberhalb der letzten Grenze' : zone.nextBoundary !== null && <> · nächste Grenze {money(zone.nextBoundary)}, Abstand {money(zone.distance ?? 0)}</>}</p>}

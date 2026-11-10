@@ -29,6 +29,7 @@ import { JobEntryForm } from './JobEntryForm';
 import { EmptyState } from './EmptyState';
 import { ConfirmationModal } from './ConfirmationModal';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
 import { PageHeader } from './PageHeader';
 import { getTerminology } from '../utils/terminology';
 import { calculateTotalHours } from '../utils/jobUtils';
@@ -40,6 +41,7 @@ import { trackTelemetry } from '../services/telemetry';
 import { getCalendarJobTitle, hasCalendarJobTitle } from '../utils/calendarJobTitle';
 import { getWorkLocationDayLabel } from '../utils/workLocationDays';
 import { useAuth } from '../context/AuthContext';
+import { statusLabel } from '../utils/statusDisplay';
 
 interface CalendarProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string) => void;
@@ -198,7 +200,7 @@ function CalendarDayScroll({ enabled, children }: CalendarDayScrollProps) {
       {enabled && scrollbar.visible && (
         <div className="pointer-events-none absolute inset-y-1 right-0.5 w-1.5 opacity-0 transition-opacity group-hover:opacity-100">
           <div
-            className="absolute left-0 w-1.5 rounded-full bg-slate-300/90"
+            className="absolute left-0 w-1.5 rounded-full bg-gray-300"
             style={{ top: `${scrollbar.top}px`, height: `${scrollbar.height}px` }}
           />
         </div>
@@ -760,6 +762,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       setCalendarEvents((previous) => previous.filter((item) => item.id !== event.id));
     } catch (error) {
       logger.error('Error deleting calendar event:', error);
+      notify({ variant: 'error', message: actionErrorMessage('Der Termin konnte nicht entfernt werden.', error) });
     }
   };
 
@@ -1098,15 +1101,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     }
   };
 
-  const getStatusLabel = (status: JobEntry['status']) => {
-    switch (status) {
-      case 'draft': return 'Entwurf';
-      case 'in-progress': return 'In Bearbeitung';
-      case 'completed': return 'Abgeschlossen';
-      case 'invoiced': return 'Abgerechnet';
-      default: return status;
-    }
-  };
+  const getStatusLabel = (status: JobEntry['status']) => statusLabel('job', status);
 
   // Double click opens the compact job summary first.
   const handleJobDoubleClick = (job: JobEntry) => {
@@ -1324,11 +1319,14 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         </PageHeader>
       </div>
 
-      {calendarEventsLoading && (
-        <div role="status" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-          Kalenderdaten werden geladen …
-        </div>
-      )}
+      {/* Ladehinweis als Overlay ohne Platzbedarf: der Kalender bleibt beim Laden und beim Ausblenden an seiner Stelle. */}
+      <div className="relative h-0">
+        {calendarEventsLoading && (
+          <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-0 top-2 z-20 mx-auto w-fit max-w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-600 shadow-sm">
+            Kalenderdaten werden geladen …
+          </div>
+        )}
+      </div>
       {calendarEventsError && (
         <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between">
           <p>{calendarEventsError}</p>
@@ -1350,7 +1348,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       )}
 
       {/* Calendar Controls */}
-      <div className="calendar-controls rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:p-3">
+      <div className="calendar-controls">
         <div className="calendar-controls-row flex flex-wrap items-center justify-between gap-2">
           <div className="calendar-period-controls grid h-10 min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 sm:w-auto sm:flex-1 lg:max-w-[22rem]">
             <button
@@ -1403,7 +1401,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   onClick={() => changeViewMode(mode)}
                   className={`calendar-view-option min-h-0 inline-flex h-full min-w-0 flex-1 items-center justify-center rounded-md px-1 text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${viewMode === mode ? 'bg-primary-custom text-white shadow-sm' : 'text-gray-600 hover:bg-white'}`}
                 >
-                  <span className="sm:hidden">{mode === 'day' ? 'T' : mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : 'M'}</span>
+                  <span className="sm:hidden">{mode === 'day' ? 'Tag' : mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : 'Monat'}</span>
                   <span className="hidden sm:inline xl:hidden">{mode === 'week' ? 'KW' : mode === 'workweek' ? 'AW' : label}</span>
                   <span className="hidden xl:inline">{label}</span>
                 </button>
@@ -1423,17 +1421,22 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
         {viewMode === 'month' && <div className="mt-3 overflow-hidden">
           <div
             ref={monthGridRef}
-            className="grid h-[calc(100vh-280px)] min-h-[24rem] w-full min-w-0 grid-cols-[32px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-slate-200 sm:h-[calc(100vh-180px)] sm:min-h-0"
+            className="grid h-[calc(100vh-280px)] min-h-[24rem] w-full min-w-0 grid-cols-[32px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-xl border border-gray-300 sm:h-[calc(100vh-180px)] sm:min-h-0"
             style={{ gridTemplateRows: `${MONTH_HEADER_HEIGHT}px repeat(${calendarDays.length / 7}, minmax(0, 1fr))` }}
           >
+            {/* Die Flächen und Linien nutzen dieselben Grau-Klassen wie die
+                Zeitraster der Tages- und Wochenansicht. Die App legt diese im
+                Hellmodus auf ihre neutralen Oberflächen-Token und im Dunkelmodus
+                auf die Dunkelwerte; die bläulichen `slate`-Töne taten das nicht
+                und standen deshalb als kühle Fremdkörper im Raster. */}
             {/* Week day headers */}
-            <div className="flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 p-1 text-center text-xs font-semibold text-slate-600">
+            <div className="flex items-center justify-center border-b border-r border-gray-200 bg-gray-100 p-1 text-center text-xs font-semibold text-gray-600">
               KW
             </div>
             {weekDays.map((day) => (
               <div
                 key={day.short}
-                className="flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1 text-center text-sm font-semibold text-slate-600 lg:px-2 lg:py-1.5 lg:text-base"
+                className="flex items-center justify-center border-b border-r border-gray-200 bg-gray-100 px-1.5 py-1 text-center text-sm font-semibold text-gray-600 lg:px-2 lg:py-1.5"
               >
                 <span className="lg:hidden">{day.short}</span>
                 <span className="hidden lg:inline">{day.long}</span>
@@ -1453,7 +1456,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               return (
                 <React.Fragment key={date.toISOString()}>
                   {index % 7 === 0 && (
-                    <div className="flex h-full min-h-0 items-center justify-center border-b border-r border-slate-200 bg-white p-1 text-xs font-semibold text-primary-custom">
+                    <div className="flex h-full min-h-0 items-center justify-center border-b border-r border-gray-200 bg-gray-50 p-1 text-xs font-medium text-gray-500">
                       {getCalendarWeek(date)}
                     </div>
                   )}
@@ -1464,20 +1467,20 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, date)}
                   className={`
-                    h-full min-w-0 min-h-0 overflow-hidden border-b border-r border-slate-200
+                    h-full min-w-0 min-h-0 overflow-hidden border-b border-r border-gray-200
                     ${isSelectedDate(date)
                       ? 'z-10 bg-primary-light-custom'
                       : !isInCurrentMonth
-                        ? 'bg-slate-50 text-slate-400'
-                        : 'bg-white hover:bg-slate-50'}
-                    ${isDragOver ? 'bg-blue-100 border-blue-400 border-2 shadow-md' : ''}
-                    transition-all duration-200 relative flex flex-col
+                        ? 'bg-gray-50 text-gray-400'
+                        : 'bg-white hover:bg-gray-50'}
+                    ${isDragOver ? 'bg-primary-light-custom border-primary-custom border-2 shadow-md' : ''}
+                    transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 relative flex flex-col
                   `}
                 >
                   {/* Date header - clickable area for creating new jobs */}
                   <div 
                     className={`
-                      px-1 py-0.5
+                      p-1
                     `}
                     title={`Doppelklick zum Erstellen eines neuen ${terminology.work.singular}`}
                   >
@@ -1571,7 +1574,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                       e.stopPropagation();
                                       handleJobDrop(e, date, job.id);
                                     }}
-                                    className="h-2 border-2 border-dashed border-blue-300 rounded bg-blue-50 opacity-50"
+                                    className="h-2 border-2 border-dashed border-primary-custom rounded bg-primary-light-custom opacity-50"
                                     title="Hier ablegen"
                                   />
                                 )}
@@ -1601,14 +1604,14 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                     if (!compactEntries && density === 'indicator') openDayPreview(date, clickEvent);
                                   }}
                                   className={`
-                                    calendar-event-enter transition-all duration-150 ${job.status === 'invoiced' || isPastCalendarJob(job) ? 'cursor-pointer' : 'cursor-move'}
+                                    calendar-event-enter transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 ${job.status === 'invoiced' || isPastCalendarJob(job) ? 'cursor-pointer' : 'cursor-move'}
                                     ${!compactEntries && density === 'indicator'
                                       ? `h-2 w-2 rounded-full ${getStatusIndicatorColor(job.status)}`
                                       : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
                                     ${job.status === 'invoiced' ? 'opacity-75' : (!compactEntries && density !== 'indicator') ? 'hover:shadow-sm' : ''}
                                     ${draggedJob && draggedJob.id !== job.id && 
                                       new Date(draggedJob.date).toDateString() === date.toDateString() ? 
-                                      'border-blue-300 border-dashed' : ''}
+                                      'border-primary-custom border-dashed' : ''}
                                   `}
                                   title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                                 >
@@ -1679,7 +1682,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
               className="sticky top-0 z-30 grid w-full min-w-0 bg-white pr-[6px]"
               style={{ gridTemplateColumns: '52px minmax(0, 1fr)' }}
             >
-                <div className="border-b border-r border-gray-300 bg-gray-100 p-1 text-center text-[10px] font-semibold uppercase text-gray-600">
+                <div className="border-b border-r border-gray-300 bg-gray-100 p-1 text-center table-head text-gray-600">
                   Zeit
                 </div>
                 <div
@@ -1722,7 +1725,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   {timeGridHours.map((hour) => (
                     <div
                       key={hour}
-                      className="border-b border-r border-gray-200 px-1 pt-1 text-right text-[10px] font-medium text-gray-500"
+                      className="border-b border-r border-gray-200 px-1 pt-1 text-right text-[11px] font-medium text-gray-500"
                       style={{ height: `${CALENDAR_HOUR_HEIGHT}px` }}
                     >
                       {String(hour).padStart(2, '0')}:00
@@ -1755,7 +1758,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                           isToday(date) ? 'bg-primary-custom/5' : 'bg-white'
                         } ${isSelectedDate(date) ? 'bg-primary-light-custom' : ''} ${
                           dragOverDate && date.toDateString() === dragOverDate.toDateString()
-                            ? 'bg-blue-100'
+                            ? 'bg-primary-light-custom'
                             : ''
                         }`}
                         style={{
@@ -1765,7 +1768,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                       >
                         {isPreviewDay && draggedJob && timeGridDragPreview && (
                           <div
-                            className="pointer-events-none absolute left-1 right-1 z-30 overflow-hidden rounded border-2 border-dashed border-primary-custom bg-blue-100/80 p-1.5 text-xs text-primary-custom shadow-sm"
+                            className="pointer-events-none absolute left-1 right-1 z-30 overflow-hidden rounded border-2 border-dashed border-primary-custom bg-primary-light-custom p-1.5 text-xs text-primary-custom shadow-sm"
                             style={{
                               top: `${((timeGridDragPreview.startMinutes - dayStartMinutes) / 60) * CALENDAR_HOUR_HEIGHT}px`,
                               height: `${Math.max(32, (previewDuration / 60) * CALENDAR_HOUR_HEIGHT)}px`,
@@ -1855,8 +1858,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                   border border-gray-300 rounded-lg overflow-hidden
                   ${isDayToday ? 'border-primary-custom bg-primary-custom/5' : 'bg-white'}
                   ${isSelectedDate(date) ? 'ring-2 ring-inset ring-primary-custom' : ''}
-                  ${isDragOver ? 'bg-blue-100 border-blue-400 border-2 shadow-md' : ''}
-                  transition-all duration-200
+                  ${isDragOver ? 'bg-primary-light-custom border-primary-custom border-2 shadow-md' : ''}
+                  transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200
                 `}
               >
                 {/* Date header */}
@@ -1934,7 +1937,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                 e.stopPropagation();
                                 handleJobDrop(e, date, job.id);
                               }}
-                              className="h-3 border-2 border-dashed border-blue-300 rounded bg-blue-50 opacity-50 mx-3"
+                              className="h-3 border-2 border-dashed border-primary-custom rounded bg-primary-light-custom opacity-50 mx-3"
                               title="Hier ablegen"
                             />
                           )}
@@ -1958,8 +1961,8 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               ${job.status === 'invoiced' ? 'opacity-75' : 'hover:shadow-sm'}
                               ${draggedJob && draggedJob.id !== job.id && 
                                 new Date(draggedJob.date).toDateString() === date.toDateString() ? 
-                                'border-blue-300 border-dashed' : ''}
-                              transition-all duration-150
+                                'border-primary-custom border-dashed' : ''}
+                              transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150
                             `}
                             title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
                           >
@@ -2213,7 +2216,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                             setPreviewingJob(null);
                             onNavigate?.('invoices', undefined, undefined, previewInvoice.id);
                           }}
-                          className="truncate text-left text-sm font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                          className="link-primary truncate text-left text-sm font-medium underline underline-offset-2"
                         >{previewInvoice.invoiceNumber}</button> : <span className="text-sm text-gray-500">Noch keine Rechnung</span>}
                         {previewingJob.status === 'invoiced' && <span className="text-xs font-medium text-emerald-700">Abgerechnet</span>}
                       </div>
@@ -2427,6 +2430,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Error creating customer:', error);
+                notify({ variant: 'error', message: actionErrorMessage('Der Kunde konnte nicht angelegt werden.', error) });
               }
             }} className="form-consistent-fields space-y-4">
               <div>
@@ -2545,7 +2549,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  className="btn-primary px-4 py-2 text-white rounded-md transition-colors"
                 >
                   {terminology.entity.createLabel}
                 </button>

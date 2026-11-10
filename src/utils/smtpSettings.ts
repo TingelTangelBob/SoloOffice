@@ -20,6 +20,15 @@ export const SMTP_PROVIDERS = {
   hetzner: { label: 'Hetzner (KonsoleH)', smtp_host: 'mail.your-server.de', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des Postfachs verwenden.' },
   gmail: { label: 'Gmail (App-Passwort)', smtp_host: 'smtp.gmail.com', smtp_port: '465', smtp_secure: true, hint: 'Ein App-Passwort von Google verwenden, nicht das normale Gmail-Passwort.' },
   icloud: { label: 'iCloud', smtp_host: 'smtp.mail.me.com', smtp_port: '587', smtp_secure: false, hint: 'Ein app-spezifisches Passwort von Apple verwenden, nicht das Apple-ID-Passwort.' },
+  gmx: { label: 'GMX', smtp_host: 'mail.gmx.net', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des GMX-Postfachs verwenden. In GMX muss unter Einstellungen → POP3/IMAP der Zugriff für externe Programme erlaubt sein.' },
+  webde: { label: 'WEB.DE', smtp_host: 'smtp.web.de', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des WEB.DE-Postfachs verwenden. In WEB.DE muss unter Einstellungen → POP3/IMAP der Zugriff für externe Programme erlaubt sein.' },
+  tonline: { label: 'T-Online', smtp_host: 'securesmtp.t-online.de', smtp_port: '587', smtp_secure: false, hint: 'Das E-Mail-Passwort aus dem Telekom-Kundencenter verwenden, nicht das Login-Passwort.' },
+  ionos: { label: 'IONOS', smtp_host: 'smtp.ionos.de', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des IONOS-Postfachs verwenden.' },
+  strato: { label: 'STRATO', smtp_host: 'smtp.strato.de', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des STRATO-Postfachs verwenden.' },
+  outlook: { label: 'Outlook / Microsoft', smtp_host: 'smtp-mail.outlook.com', smtp_port: '587', smtp_secure: false, hint: 'Bei aktivierter Zwei-Faktor-Anmeldung ein App-Passwort von Microsoft verwenden.' },
+  yahoo: { label: 'Yahoo', smtp_host: 'smtp.mail.yahoo.com', smtp_port: '587', smtp_secure: false, hint: 'Ein App-Passwort von Yahoo verwenden, nicht das normale Passwort.' },
+  posteo: { label: 'Posteo', smtp_host: 'posteo.de', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des Posteo-Postfachs verwenden.' },
+  mailbox: { label: 'mailbox.org', smtp_host: 'smtp.mailbox.org', smtp_port: '587', smtp_secure: false, hint: 'Das Passwort des mailbox.org-Postfachs verwenden.' },
 } as const;
 export type SmtpProvider = keyof typeof SMTP_PROVIDERS;
 
@@ -29,6 +38,28 @@ export function smtpProviderForSettings(settings: SmtpFormSettings): SmtpProvide
     return provider !== 'eigen' && preset.smtp_host === settings.smtp_host.trim()
       && preset.smtp_port === settings.smtp_port.trim() && preset.smtp_secure === settings.smtp_secure;
   }) ?? 'eigen';
+}
+
+/** Mail-Domains bekannter Anbieter; eigene Domains lassen sich nicht sicher zuordnen. */
+const SMTP_PROVIDER_DOMAINS: Record<string, Exclude<SmtpProvider, 'eigen' | 'hetzner'>> = {
+  'gmail.com': 'gmail', 'googlemail.com': 'gmail',
+  'icloud.com': 'icloud', 'me.com': 'icloud', 'mac.com': 'icloud',
+  'gmx.net': 'gmx', 'gmx.de': 'gmx', 'gmx.at': 'gmx', 'gmx.ch': 'gmx', 'gmx.com': 'gmx',
+  'web.de': 'webde',
+  't-online.de': 'tonline', 'magenta.de': 'tonline',
+  'ionos.de': 'ionos', '1und1.de': 'ionos', 'online.de': 'ionos',
+  'strato.de': 'strato',
+  'outlook.com': 'outlook', 'outlook.de': 'outlook', 'hotmail.com': 'outlook', 'hotmail.de': 'outlook', 'live.com': 'outlook', 'live.de': 'outlook',
+  'yahoo.com': 'yahoo', 'yahoo.de': 'yahoo', 'ymail.com': 'yahoo',
+  'posteo.de': 'posteo', 'posteo.net': 'posteo',
+  'mailbox.org': 'mailbox',
+};
+
+/** Erkennt den Mailanbieter an der Domain der Absenderadresse; leer, wenn keine sichere Zuordnung möglich ist. */
+export function detectSmtpProvider(email: string): SmtpProvider | null {
+  const value = email.trim().toLowerCase();
+  if (!isSingleEmailAddress(value)) return null;
+  return SMTP_PROVIDER_DOMAINS[value.slice(value.lastIndexOf('@') + 1)] ?? null;
 }
 
 export function smtpFormFromSettings(settings: Record<string, unknown> = {}): SmtpFormSettings {

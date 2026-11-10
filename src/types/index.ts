@@ -153,7 +153,7 @@ export type CreditNote = Invoice & { documentType: 'credit_note' };
 export type RecurringInvoiceFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual' | 'custom';
 export type RecurringInvoiceIntervalUnit = 'day' | 'week' | 'month' | 'year';
 export type RecurringInvoiceStatus = 'active' | 'paused' | 'ended';
-export type RecurringInvoiceRunStatus = 'success' | 'failed';
+export type RecurringInvoiceRunStatus = 'success' | 'failure';
 
 export interface RecurringInvoice extends Timestamps, GlobalDiscount {
   id: UUID;

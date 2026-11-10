@@ -39,6 +39,7 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 
@@ -99,7 +100,7 @@ function SortableInvoiceItem({
       <div className={`hidden lg:grid gap-3 items-end ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
         {/* Beschreibung - 3 columns */}
         <div className="col-span-3">
-          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+          <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
             Beschreibung *
           </label>
           <input
@@ -113,7 +114,7 @@ function SortableInvoiceItem({
         
         {/* Menge - 1 column */}
         <div className="col-span-1">
-          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+          <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
             Menge *
           </label>
           <LocalizedNumberInput
@@ -135,7 +136,7 @@ function SortableInvoiceItem({
         
         {/* Einzelpreis - 1.5 columns */}
         <div className="col-span-1">
-          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+          <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
             Preis *
           </label>
           <LocalizedNumberInput minimumFractionDigits={2}
@@ -157,7 +158,7 @@ function SortableInvoiceItem({
         
         {/* MwSt - 1 column */}
         <div className="col-span-1">
-          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+          <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
             MwSt.
           </label>
           <select
@@ -177,7 +178,7 @@ function SortableInvoiceItem({
         {/* Rabatt - 2 columns */}
         {discountsEnabled && (
           <div className="col-span-2">
-            <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+            <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
               Rabatt
             </label>
             <div className="flex gap-1">
@@ -190,7 +191,7 @@ function SortableInvoiceItem({
                     onUpdate(item.id, 'discountValue', undefined);
                   }
                 }}
-                className="form-input form-input-compact w-10 rounded-l px-1 text-xs"
+                className="form-input form-input-compact w-10 rounded-l px-1"
               >
                 <option value="">-</option>
                 <option value="percentage">%</option>
@@ -213,7 +214,7 @@ function SortableInvoiceItem({
         
         {/* Zwischensumme - 1.5 columns */}
         <div className="col-span-2">
-          <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">
+          <label className="mb-1 block text-sm font-medium text-gray-700 lg:sr-only">
             Summe
           </label>
           <div className="flex min-h-[38px] items-center rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-900">
@@ -349,7 +350,7 @@ function SortableInvoiceItem({
         <div className={`grid gap-3 ${discountsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {discountsEnabled && (
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Rabatt
               </label>
               <div className="flex gap-1">
@@ -362,7 +363,7 @@ function SortableInvoiceItem({
                       onUpdate(item.id, 'discountValue', undefined);
                     }
                   }}
-                  className="form-input form-input-compact w-12 rounded-l-lg px-1 text-xs"
+                  className="form-input form-input-compact w-12 rounded-l-lg px-1"
                 >
                   <option value="">-</option>
                   <option value="percentage">%</option>
@@ -377,7 +378,7 @@ function SortableInvoiceItem({
                   onValueChange={(value) => onUpdate(item.id, 'discountValue', value === '' ? undefined : value)}
                   disabled={!item.discountType}
                   placeholder="0"
-                  className="form-input form-input-compact min-w-0 flex-1 rounded-r-lg border-l-0 px-2 text-xs disabled:bg-gray-100"
+                  className="form-input form-input-compact min-w-0 flex-1 rounded-r-lg border-l-0 px-2 disabled:bg-gray-100"
                 />
               </div>
               {item.discountType && item.discountValue && (
@@ -396,7 +397,7 @@ function SortableInvoiceItem({
           )}
           
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Summe
             </label>
             <div className="text-xs font-medium text-gray-900 py-1.5 px-2 bg-gray-50 border border-gray-200 rounded-lg">
@@ -534,6 +535,8 @@ function getInvoiceDraftSnapshot(
 
 export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: InvoiceEditorProps) {
   const { confirm, notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { addInvoice, updateInvoice, refreshInvoices } = useInvoices();
   const {
@@ -1069,7 +1072,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
         footer={(
           <>
             <button type="button" onClick={() => void requestClose()} disabled={isSaving} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none">Abbrechen</button>
-            <button type="submit" disabled={isSaving || Boolean(validationError)} className="btn-primary inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"><Save className="mr-2 h-5 w-5" />{isSaving ? 'Wird gespeichert …' : invoice ? 'Änderungen speichern' : 'Rechnung erstellen'}</button>
+            <button type="submit" disabled={!canWrite || isSaving || Boolean(validationError)} className="btn-primary inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"><Save className="mr-2 h-5 w-5" />{isSaving ? 'Wird gespeichert …' : invoice ? 'Änderungen speichern' : 'Rechnung erstellen'}</button>
           </>
         )}
       >
@@ -1319,7 +1322,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
             </div>
           </div>
 
-          <div className={`mb-2 hidden items-center gap-3 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 lg:grid ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
+          <div className={`mb-2 hidden items-center gap-3 px-3 pb-1 table-head text-gray-500 lg:grid ${discountsEnabled ? 'lg:grid-cols-12' : 'lg:grid-cols-10'}`}>
             <div className="col-span-3">Beschreibung</div>
             <div>Menge</div>
             <div>Preis</div>
@@ -1505,7 +1508,7 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
                 </div>
               )}
               
-              <div className="flex justify-between text-lg font-bold border-t pt-2">
+              <div className="flex justify-between text-lg font-semibold tabular-nums border-t pt-2">
                 <span>Gesamtbetrag:</span>
                 <span>{formatMoney(total)}</span>
               </div>

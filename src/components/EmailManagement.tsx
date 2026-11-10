@@ -28,6 +28,7 @@ import { getTerminology } from '../utils/terminology';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { ThemeTabBar } from './ThemeTabBar';
 import { NotificationSettingsPanel } from './NotificationSettingsPanel';
+import { SkeletonBlock } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { useAuth } from '../context/AuthContext';
 import { useFeedback } from '../context/FeedbackContext';
@@ -37,6 +38,7 @@ import { SettingsCard, SettingsField, SettingsSaveBar, SettingsToggleRow } from 
 import {
   defaultTestEmailRecipient,
   isSingleEmailAddress,
+  detectSmtpProvider,
   SMTP_PROVIDERS,
   smtpProviderForSettings,
   smtpFormFromSettings,
@@ -97,6 +99,18 @@ interface EmailManagementProps {
   embedded?: boolean;
 }
 
+/** Die technische Referenz hilft nur bei der Fehlersuche und steht deshalb klein unter der Meldung. */
+function ResultText({ text }: { text: string }) {
+  const match = /^(.*?)\s*\(Referenz: ([^)]+)\)\s*$/s.exec(text);
+  if (!match) return <p>{text}</p>;
+  return (
+    <>
+      <p>{match[1]}</p>
+      <p className="mt-1 text-xs text-gray-500">Technische Referenz für den Support: {match[2]}</p>
+    </>
+  );
+}
+
 type EmailManagementTab = 'notifications' | 'activity' | 'settings';
 
 export function EmailManagement({ onClose, embedded = false }: EmailManagementProps) {
@@ -120,7 +134,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   
   // Email History State
   const [emails, setEmails] = useState<EmailHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
@@ -129,7 +143,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
 
   // Statistics State
   const [statistics, setStatistics] = useState<EmailStatistics | null>(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   // Zugangsdaten werden nur als neuer Entwurf im Arbeitsspeicher gehalten.
   const [smtpSettings, setSmtpSettings] = useState<SmtpFormSettings>(() => smtpFormFromSettings());
@@ -143,7 +157,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [smtpErrors, setSmtpErrors] = useState<SmtpFieldErrors>({});
-  const [connectionResult, setConnectionResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [connectionResult, setConnectionResult] = useState<{ type: 'success' | 'error'; text: string; suggestion?: { smtp_port: number; smtp_secure: boolean } } | null>(null);
   const [smtpSaveMessage, setSmtpSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testResult, setTestResult] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
   const [testEmailRecipient, setTestEmailRecipient] = useState('');
@@ -154,6 +168,9 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   const smtpBusy = isSavingSettings || isTestingConnection || isSendingTest;
   const smtpReady = savedSmtpSettings !== null && loadedWorkspaceId === workspaceId && !isLoadingSettings && !settingsLoadError;
   const smtpDirty = smtpReady && smtpSettingsDirty(savedSmtpSettings, smtpSettings);
+  const activeProvider = smtpProviderForSettings(smtpSettings);
+  const detectedProvider = detectSmtpProvider(smtpSettings.email_from);
+  const providerAutoFilled = detectedProvider !== null && detectedProvider === activeProvider;
   useUnsavedChangesGuard({
     id: SMTP_SETTINGS_GUARD_ID,
     isDirty: smtpDirty || smtpBusy,
@@ -282,10 +299,21 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
   };
 
   const changeSenderAddress = (email_from: string) => {
-    changeSmtpSettings({ email_from, ...(!smtpUserManuallyEdited ? { smtp_user: email_from } : {}) });
+    // Bekannte Anbieter füllen Server, Port und Verschlüsselung vor, solange diese leer oder noch eine Vorlage sind.
+    const detected = detectSmtpProvider(email_from);
+    const serverUntouched = !smtpSettings.smtp_host.trim() || smtpProviderForSettings(smtpSettings) !== 'eigen';
+    const preset = detected && serverUntouched ? SMTP_PROVIDERS[detected] : null;
+    if (detected && preset) setSmtpProvider(detected);
+    changeSmtpSettings({
+      email_from,
+      ...(!smtpUserManuallyEdited ? { smtp_user: email_from } : {}),
+      ...(preset ? { smtp_host: preset.smtp_host, smtp_port: preset.smtp_port, smtp_secure: preset.smtp_secure } : {}),
+    });
   };
 
   const validateSmtpForm = (requireConnection: boolean) => {
+    // Bei deaktiviertem Versand sind die Felder ausgeblendet; es gibt nichts Sichtbares zu korrigieren.
+    if (!smtpSettings.is_enabled && !requireConnection) { setSmtpErrors({}); return true; }
     const errors = validateSmtpSettings(smtpSettings, requireConnection);
     setSmtpErrors(errors);
     const firstError = Object.keys(errors)[0];
@@ -345,6 +373,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
       setConnectionResult({
         type: data.success ? 'success' : 'error',
         text: data.success && !isDemoMode ? 'Verbindung und Anmeldung erfolgreich geprüft. Es wurde keine E-Mail versendet.' : data.message,
+        suggestion: data.suggestion,
       });
     } catch (error) {
       if (requestedSettingsVersion === settingsLoadVersion.current && requestedWorkspace === currentWorkspace.current) {
@@ -515,10 +544,20 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                   </div>
                 </div>
 
-                {isLoadingStats ? (
-                  <div className="flex h-32 items-center justify-center">
-                    <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-                    <span className="ml-2 text-gray-600">Statistiken werden geladen …</span>
+                {isLoadingStats && !statistics ? (
+                  <div role="status" aria-live="polite" className="grid grid-cols-1 gap-6 md:grid-cols-4">
+                    <span className="sr-only">Statistiken werden geladen …</span>
+                    {Array.from({ length: 4 }, (_, index) => (
+                      <div key={index} aria-hidden="true" className="rounded-lg border border-gray-200 bg-gray-50 p-6">
+                        <div className="flex items-center">
+                          <SkeletonBlock className="mr-3 h-8 w-8 shrink-0 rounded-md" />
+                          <div className="space-y-2">
+                            <SkeletonBlock className="h-3.5 w-24" />
+                            <SkeletonBlock className="h-7 w-16" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : statistics ? (
                   <div className="space-y-6">
@@ -529,7 +568,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <Database className="mr-3 h-8 w-8 text-blue-500" />
                           <div>
                             <p className="text-sm text-blue-600">Gesamt</p>
-                            <p className="text-2xl font-bold text-blue-900">{statistics.total.toLocaleString('de-DE')}</p>
+                            <p className="text-2xl font-semibold tabular-nums text-blue-900">{statistics.total.toLocaleString('de-DE')}</p>
                           </div>
                         </div>
                       </div>
@@ -538,7 +577,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <CheckCircle className="mr-3 h-8 w-8 text-green-500" />
                           <div>
                             <p className="text-sm text-green-600">Gesendet</p>
-                            <p className="text-2xl font-bold text-green-900">{statistics.sent.toLocaleString('de-DE')}</p>
+                            <p className="text-2xl font-semibold tabular-nums text-green-900">{statistics.sent.toLocaleString('de-DE')}</p>
                           </div>
                         </div>
                       </div>
@@ -547,7 +586,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <XCircle className="mr-3 h-8 w-8 text-red-500" />
                           <div>
                             <p className="text-sm text-red-600">Fehlgeschlagen</p>
-                            <p className="text-2xl font-bold text-red-900">{statistics.failed.toLocaleString('de-DE')}</p>
+                            <p className="text-2xl font-semibold tabular-nums text-red-900">{statistics.failed.toLocaleString('de-DE')}</p>
                           </div>
                         </div>
                       </div>
@@ -556,7 +595,7 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           <Calendar className="mr-3 h-8 w-8 text-purple-500" />
                           <div>
                             <p className="text-sm text-purple-600">Letzte 30 Tage</p>
-                            <p className="text-2xl font-bold text-purple-900">{statistics.last30Days.toLocaleString('de-DE')}</p>
+                            <p className="text-2xl font-semibold tabular-nums text-purple-900">{statistics.last30Days.toLocaleString('de-DE')}</p>
                           </div>
                         </div>
                       </div>
@@ -762,21 +801,22 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           onChange={is_enabled => changeSmtpSettings({ is_enabled })}
                           disabled={smtpBusy || !canManageSmtp}
                         />
+                        {smtpSettings.is_enabled && (<>
                         <details>
                           <summary className="cursor-pointer text-sm text-gray-700">Servervorlage verwenden (optional)</summary>
                           <div className="mt-3">
                             <SettingsField id="smtp-provider" label="Servervorlage" info="Die Vorlage füllt nur SMTP-Server, Port und Verschlüsselung aus. Alle Serverdaten können anschließend angepasst werden. Absender und Zugangsdaten bleiben erhalten.">
                               <select id="smtp-provider" value={smtpProvider} onChange={e => changeSmtpProvider(e.target.value as SmtpProvider)} className="form-input form-input-compact w-full">
                                 <option value="eigen">Eigene Serverdaten</option>
-                                <option value="gmail">Gmail</option>
-                                <option value="icloud">iCloud</option>
-                                <option value="hetzner">Hetzner</option>
+                                {(Object.keys(SMTP_PROVIDERS) as SmtpProvider[]).filter(key => key !== 'eigen').map(key => (
+                                  <option key={key} value={key}>{SMTP_PROVIDERS[key].label}</option>
+                                ))}
                               </select>
                             </SettingsField>
                           </div>
                         </details>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <SettingsField id="smtp-email_from" label="Absenderadresse" required info="Bei jeder Kundenmail wird eine unsichtbare Kopie (BCC) an diese Adresse geschickt. Der Empfänger sieht diese Kopie nicht." error={smtpErrors.email_from}>
+                          <SettingsField id="smtp-email_from" label="Absenderadresse" required info="Bei jeder Kundenmail wird eine unsichtbare Kopie (BCC) an diese Adresse geschickt. Der Empfänger sieht diese Kopie nicht." hint={providerAutoFilled ? `${SMTP_PROVIDERS[activeProvider].label} erkannt: Server, Port und Verschlüsselung wurden eingetragen.` : undefined} error={smtpErrors.email_from}>
                             <input id="smtp-email_from" type="email" value={smtpSettings.email_from} onChange={e => changeSenderAddress(e.target.value)} autoComplete="email" placeholder="buero@example.de" aria-invalid={!!smtpErrors.email_from} aria-describedby={smtpErrors.email_from ? 'smtp-email_from-message' : undefined} className="form-input form-input-compact w-full" />
                           </SettingsField>
                           <SettingsField id="smtp-email_from_name" label="Absendername">
@@ -809,7 +849,9 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                             </SettingsField>
                           </div>
                         </div>
+                        </>)}
                       </fieldset>
+                      {smtpSettings.is_enabled && (<>
                       <div className="mt-4 border-t border-gray-200 pt-4">
                         <div className="flex flex-wrap items-center gap-3">
                           <button type="button" onClick={() => void testSmtpConnection()} disabled={smtpBusy || !canManageSmtp} className="btn-secondary inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
@@ -818,12 +860,22 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           </button>
                           <p className="text-xs text-gray-600">Prüft Server und Anmeldung mit den eingetragenen Werten.</p>
                         </div>
-                        {connectionResult && <p role={connectionResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${connectionResult.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>{connectionResult.text}</p>}
+                        {connectionResult && (
+                          <div role={connectionResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${connectionResult.type === 'error' ? 'text-red-600' : 'text-green-700'}`}>
+                            <ResultText text={connectionResult.text} />
+                            {connectionResult.suggestion && (
+                              <button type="button" onClick={() => changeSmtpSettings({ smtp_port: String(connectionResult.suggestion?.smtp_port), smtp_secure: !!connectionResult.suggestion?.smtp_secure })} className="btn-secondary mt-2 rounded-lg px-3 py-1.5 text-sm font-medium">
+                                Port 587 mit STARTTLS übernehmen
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <p className="mt-4 text-xs leading-5 text-gray-600">Bei jeder Kundenmail wird automatisch eine unsichtbare Kopie (BCC) an die gespeicherte Absenderadresse geschickt. Die Kunden sehen diese Kopie nicht.</p>
+                      </>)}
                     </section>
 
-                    <SettingsCard title="Testmail senden" icon={Send} info={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : undefined}>
+                    {smtpSettings.is_enabled && <SettingsCard title="Testmail senden" icon={Send} info={isDemoMode ? 'Im Demo-Modus wird der Versand simuliert. Es wird keine echte E-Mail versendet.' : undefined}>
                       <fieldset disabled={smtpBusy || !canManageSmtp} className="min-w-0 space-y-3 disabled:opacity-70">
                         <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-10">
                           <SettingsField id="smtp-test-recipient" label="Empfänger der Testmail" required error={testRecipientError} className="sm:col-span-7">
@@ -848,8 +900,8 @@ export function EmailManagement({ onClose, embedded = false }: EmailManagementPr
                           </div>
                         </details>
                       </fieldset>
-                      {testResult && <p role={testResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${testResult.type === 'error' ? 'text-red-600' : testResult.type === 'warning' ? 'text-yellow-700' : 'text-green-700'}`}>{testResult.text}</p>}
-                    </SettingsCard>
+                      {testResult && <div role={testResult.type === 'error' ? 'alert' : 'status'} className={`mt-3 text-sm ${testResult.type === 'error' ? 'text-red-600' : testResult.type === 'warning' ? 'text-yellow-700' : 'text-green-700'}`}><ResultText text={testResult.text} /></div>}
+                    </SettingsCard>}
                   </>
                 )}
               </div>

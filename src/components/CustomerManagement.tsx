@@ -17,6 +17,7 @@ import { ImportWizard } from './ImportWizard';
 import { DialogShell } from './DialogShell';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
 import { usePageSearch } from '../context/PageSearchContext';
 import { downloadCustomerCsv, downloadCustomerPdf } from '../utils/customerExport';
 import { SortableTableHeader } from './SortableTableHeader';
@@ -111,8 +112,11 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
   const handledInitialCustomerEdit = useRef(false);
 
   useEffect(() => {
-    void refreshCustomers(showArchived).catch(error => logger.error('Error loading customer archive:', error));
-  }, [refreshCustomers, showArchived]);
+    void refreshCustomers(showArchived).catch(error => {
+      logger.error('Error loading customer archive:', error);
+      notify({ variant: 'error', message: actionErrorMessage('Die Kundenliste konnte nicht geladen werden.', error) });
+    });
+  }, [notify, refreshCustomers, showArchived]);
 
   const handleSort = (key: string) => setSortState(previous => previous.key === key
     ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
@@ -430,8 +434,10 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
     try {
       await archiveCustomer(id);
       await refreshCustomers(showArchived);
+      notify({ variant: 'success', message: `${terminology.entity.singular} wurde archiviert.` });
     } catch (error) {
       logger.error('Error archiving customer:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`${terminology.entity.singular} konnte nicht archiviert werden.`, error) });
     }
   };
 
@@ -443,8 +449,10 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
     try {
       await restoreCustomer(id);
       await refreshCustomers(showArchived);
+      notify({ variant: 'success', message: `${terminology.entity.singular} wurde wiederhergestellt.` });
     } catch (error) {
       logger.error('Error restoring customer:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`${terminology.entity.singular} konnte nicht wiederhergestellt werden.`, error) });
     }
   };
 
@@ -967,7 +975,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
         <button
           onClick={() => handleOpenModal()}
           disabled={!canWrite}
-          className="btn-primary box-border inline-flex h-[40px] min-h-[40px] max-h-[40px] min-w-[40px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 sm:px-4 text-white transition-all duration-300 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:h-[38px] sm:min-h-[38px] sm:max-h-[38px]"
+          className="btn-primary box-border inline-flex h-[40px] min-h-[40px] max-h-[40px] min-w-[40px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 sm:px-4 text-white transition-colors duration-300 hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50 sm:h-[38px] sm:min-h-[38px] sm:max-h-[38px]"
           aria-label={terminology.entity.newLabel}
           title={canWrite ? terminology.entity.newLabel : 'Nur-Lesen-Zugriff: Anlegen nicht verfügbar'}
         >
@@ -1006,7 +1014,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
                 <SortableTableHeader label="E-Mail" sortKey="email" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
                 <SortableTableHeader label="Telefon" sortKey="phone" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />
                 {showAddressColumn && <SortableTableHeader label="Adresse" sortKey="address" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-4 py-3" />}
-                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-3 text-left table-head text-gray-500">
                   <span className="sr-only">Aktionen</span>
                 </th>
               </tr>
@@ -1077,7 +1085,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
       />
 
       {isModalOpen && (
-        <DialogShell
+        <DialogShell unsavedChangesGuard
           titleId="customer-dialog-title"
           icon={Users}
           title={editingCustomer ? terminology.entity.editLabel : terminology.entity.newLabel}
@@ -1524,7 +1532,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
 
       {/* Hourly Rate Edit Modal */}
       {isHourlyRateModalOpen && editingHourlyRate && (
-        <DialogShell
+        <DialogShell unsavedChangesGuard
           titleId="hourly-rate-dialog-title"
           icon={Clock}
           title="Stundensatz bearbeiten"
@@ -1546,7 +1554,7 @@ export function CustomerManagement({ initialFilter, initialCustomerId, onNavigat
 
       {/* Material Edit Modal */}
       {isMaterialModalOpen && editingMaterial && (
-        <DialogShell
+        <DialogShell unsavedChangesGuard
           titleId="material-dialog-title"
           icon={Package}
           title="Material bearbeiten"

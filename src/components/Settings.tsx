@@ -4,7 +4,6 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { defaultCompany } from '../context/CompanyProvider';
 import { PageHeader } from './PageHeader';
-import { InfoTooltip } from './InfoTooltip';
 import { isDemoMode, resetDemoData, seedDemoData } from '../services/demoApi';
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
@@ -35,6 +34,8 @@ import { CompanyArea } from './settings/CompanyArea';
 import { InvoicingArea } from './settings/InvoicingArea';
 import { WorkspaceArea } from './settings/WorkspaceArea';
 import { AppearanceArea } from './settings/AppearanceArea';
+import { ProfileManagement } from './ProfileManagement';
+import { WorkspaceManagement } from './WorkspaceManagement';
 import { SystemArea } from './settings/SystemArea';
 import { validateCompanyFormats, validateCompanyRequiredFields } from '../../backend/shared/companyValidation.js';
 
@@ -289,13 +290,8 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
         </aside>
 
         <section className="settings-layout-content" aria-labelledby="settings-area-title">
-          <header className="settings-area-header">
-            <div className="flex items-center gap-1">
-              <h2 id="settings-area-title" className="text-xl font-semibold text-gray-900">{areaDefinition.label}</h2>
-              {activeArea === 'taxes' && areaDefinition.description && <InfoTooltip text={areaDefinition.description} label="Hinweis zu Steuern und Abgaben" />}
-            </div>
-            {activeArea !== 'taxes' && areaDefinition.description && <p className="mt-1 text-sm text-gray-600">{areaDefinition.description}</p>}
-          </header>
+          {/* Der Bereichsname steht schon in der Navigation links; die Überschrift bleibt nur für Screenreader. */}
+          <h2 id="settings-area-title" className="sr-only">{areaDefinition.label}</h2>
 
           {readOnlyNotice}
           {usesCompanyForm ? (
@@ -323,6 +319,8 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
               {activeArea === 'system' && <SystemArea isDemoMode={isDemoMode} onNavigate={navigateTo} />}
               {activeArea === 'extensions' && <ExtensionsSettings />}
               {activeArea === 'taxes' && <TaxProfileSettings onNavigate={onNavigate} />}
+              {activeArea === 'account' && <ProfileManagement embedded />}
+              {activeArea === 'workspace' && <WorkspaceManagement embedded />}
               {activeArea !== 'taxes' && companySaveBar}
             </div>
           )}

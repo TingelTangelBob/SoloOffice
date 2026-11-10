@@ -3,9 +3,10 @@ import logger from '../utils/logger.js';
 import { findAllInvoices, findInvoiceById } from '../queries/invoiceQueries.js';
 import { createInvoice, updateInvoice, deleteInvoice } from '../services/invoiceService.js';
 import { pool, query } from '../database.js';
+import { statesOf } from '../shared/stateMachines.js';
 
 const router = express.Router();
-const INVOICE_STATUSES = new Set(['draft', 'sent', 'paid', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x']);
+const INVOICE_STATUSES = new Set(statesOf('invoice'));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Get all invoices

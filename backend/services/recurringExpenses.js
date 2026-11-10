@@ -78,7 +78,9 @@ export async function updateExpense(executor, id, input, today) {
     amountGross: Number(current.amount), intervalCount: Number(current.interval_value) * (current.interval_unit === 'year' ? 12 : 1),
     interval: current.interval_unit === 'month' && Number(current.interval_value) === 3 ? 'quarterly' : current.interval_unit === 'month' && Number(current.interval_value) === 6 ? 'half_yearly' : current.interval_unit === 'year' ? 'yearly' : current.interval_unit === 'month' && Number(current.interval_value) === 1 ? 'monthly' : 'custom',
     intervalUnit: current.interval_unit === 'week' ? 'weeks' : 'months',
-    linkedReceiptId: current.linked_receipt_id, notes: current.notes, priceChanges: current.price_changes, immutablePriceChanges: current.price_changes, pauses: current.pauses, ...input };
+    linkedReceiptId: current.linked_receipt_id, notes: current.notes, priceChanges: current.price_changes, immutablePriceChanges: current.price_changes, pauses: current.pauses, ...input,
+    // Leerer Status im Update heißt „nicht gesendet“ und darf den bestehenden Status nicht überschreiben.
+    ...(input.status == null || input.status === '' ? { status: current.status } : {}) };
   const value = validateExpense(merged, today);
   if (typeof value === 'string') return { error: value };
   if (value.scope !== current.scope || value.category !== current.category) {

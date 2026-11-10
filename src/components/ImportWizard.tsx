@@ -485,7 +485,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
       <div className="form-consistent-fields flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="import-wizard-title">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary-custom">
+            <div className="flex items-center gap-2 table-head text-primary-custom">
               <Upload className="h-4 w-4" /> Importassistent · Schritt {stepIndex} von {stepCount}
             </div>
             <h2 id="import-wizard-title" className="mt-1 truncate text-xl font-semibold text-gray-900">{definition.label} importieren</h2>
@@ -617,7 +617,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   {requiredMappingIssueCount > 0 && <span className="import-mapping-warning">{requiredMappingIssueCount} Pflichtzuordnung{requiredMappingIssueCount === 1 ? ' fehlt' : 'en fehlen'}</span>}
                   <span className="text-xs text-gray-500">* Pflichtfeld{definition.requiredGroups && definition.requiredGroups.length > 0 ? ' · † eines davon nötig' : ''}</span>
                 </div>
-                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-5 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 sm:grid sm:px-4">
+                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-5 px-3 pb-2 table-head text-gray-400 sm:grid sm:px-4">
                   <span>Zielfeld im Workspace</span>
                   <span>Spalte aus Ihrer Datei oder fester Wert</span>
                 </div>
@@ -647,7 +647,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
 
                 <div>
                   <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Nicht zugeordnete Dateispalten</h4>
+                    <h4 className="table-head text-gray-700">Nicht zugeordnete Dateispalten</h4>
                     <span className="text-xs text-gray-400">{unmappedSourceHeaders.length} nicht zugeordnet</span>
                   </div>
                   {unmappedSourceHeaders.length > 0 ? (
@@ -664,10 +664,10 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
 
               {previewFields.length > 0 && (
                 <div>
-                  <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-700">So werden die ersten Zeilen gelesen</h4>
+                  <h4 className="mb-2 table-head text-gray-700">So werden die ersten Zeilen gelesen</h4>
                   <div className="overflow-x-auto rounded-xl border border-gray-200">
                     <table className="min-w-full text-left text-sm">
-                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-3 py-2">Zeile</th>{previewFields.map(field => <th key={field.key} className="whitespace-nowrap px-3 py-2">{field.label}</th>)}</tr></thead>
+                      <thead className="bg-gray-50 table-head text-gray-500"><tr><th className="px-3 py-2">Zeile</th>{previewFields.map(field => <th key={field.key} className="whitespace-nowrap px-3 py-2">{field.label}</th>)}</tr></thead>
                       <tbody className="divide-y divide-gray-100">
                         {mappedRows.slice(0, 5).map(row => (
                           <tr key={String(row._rowNumber)}>
@@ -686,7 +686,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                   <div className="flex gap-2"><button type="button" onClick={() => { setSelectedRowIndexes(null); setPreview(null); }} className="text-sm font-medium text-primary-custom hover:underline">Alle auswählen</button><button type="button" onClick={() => { setSelectedRowIndexes([]); setPreview(null); }} className="text-sm font-medium text-primary-custom hover:underline">Alle abwählen</button></div>
                 </div>
                 <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-gray-200">
-                  <table className="min-w-full text-left text-sm"><thead className="sticky top-0 bg-gray-50 text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-3 py-2">Übernehmen</th><th className="px-3 py-2">Zeile</th>{parsedFile.headers.slice(0, 3).map(header => <th key={header} className="max-w-48 truncate px-3 py-2">{header}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">
+                  <table className="min-w-full text-left text-sm"><thead className="sticky top-0 bg-gray-50 table-head text-gray-500"><tr><th className="px-3 py-2">Übernehmen</th><th className="px-3 py-2">Zeile</th>{parsedFile.headers.slice(0, 3).map(header => <th key={header} className="max-w-48 truncate px-3 py-2">{header}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">
                     {parsedFile.rows.slice(0, 200).map((row, index) => {
                       const checked = selectedRowIndexes === null || selectedRowIndexes.includes(index);
                       return <tr key={index}><td className="px-3 py-2"><input type="checkbox" checked={checked} aria-label={`Zeile ${parsedFile.rowNumbers?.[index] ?? index + 2} übernehmen`} onChange={event => {
@@ -905,7 +905,7 @@ function FieldMappingCard({ field, definition, parsedFile, sourceHeader, constan
             <div className="import-mapping-source">
               <div className="flex items-center gap-2">
                 <PenLine className="h-4 w-4 shrink-0 text-primary-custom" />
-                <span className="import-mapping-source-title shrink-0 text-xs font-semibold uppercase tracking-wide">Fester Wert</span>
+                <span className="import-mapping-source-title shrink-0 table-head">Fester Wert</span>
                 <div className="min-w-0 flex-1">
                   <ConstantInput field={field} value={constant || ''} onChange={onConstant} locale={locale} dateFormat={dateFormat} />
                 </div>
@@ -989,7 +989,7 @@ function TotalsTable({ totals, resource, locale, numberFormat, currency }: { tot
       </div>
       <div className="max-h-64 overflow-auto">
         <table className="min-w-full text-right text-sm">
-          <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-500">
+          <thead className="sticky top-0 bg-white table-head text-gray-500">
             <tr>
               <th className="px-4 py-2 text-left">Monat</th>
               {showInvoiced && <th className="px-4 py-2">Rechnungen</th>}
@@ -1035,7 +1035,7 @@ function SummaryCard({ label, value, tone = 'gray' }: { label: string; value: nu
     amber: 'border-amber-200 bg-amber-50 text-amber-900',
     red: 'border-red-200 bg-red-50 text-red-900',
   };
-  return <div className={`rounded-xl border p-3 ${tones[tone]}`}><p className="text-xs uppercase tracking-wide opacity-70">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>;
+  return <div className={`rounded-xl border p-3 ${tones[tone]}`}><p className="table-head opacity-70">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>;
 }
 
 const previewColumns: Record<ImportRun['resource'], Array<{ key: string; label: string; kind?: 'money' | 'date' | 'boolean' | 'percent' }>> = {
@@ -1085,7 +1085,7 @@ export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[];
       </div>
       <div className="max-h-72 overflow-auto">
         <table className="min-w-[760px] w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-500"><tr><th className="px-3 py-2">Zeile</th>{previewColumns[resource].map(column => <th key={column.key} className="px-3 py-2">{column.label}</th>)}<th className="px-3 py-2">Status</th><th className="min-w-64 px-3 py-2">Hinweis</th></tr></thead>
+          <thead className="sticky top-0 bg-white table-head text-gray-500"><tr><th className="px-3 py-2">Zeile</th>{previewColumns[resource].map(column => <th key={column.key} className="px-3 py-2">{column.label}</th>)}<th className="px-3 py-2">Status</th><th className="min-w-64 px-3 py-2">Hinweis</th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.slice(0, visible).map(row => <tr key={`${row.rowNumber}-${row.status}`}><td className="px-3 py-2 align-top text-gray-500">{row.rowNumber}</td>{previewColumns[resource].map(column => {
               const value = row.values?.[column.key];

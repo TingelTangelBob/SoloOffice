@@ -1,3 +1,4 @@
+import { preloadPage } from '../utils/pageLoaders';
 import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Users, Settings, BarChart3, Building2, X, Briefcase, Calendar, Home, FileCheck, FileScan, Search, Copy, Calculator, ChevronDown, ChevronRight, CreditCard, ExternalLink, LifeBuoy, LogOut, MoreHorizontal, Package, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -92,7 +93,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   // Solange die Firmendaten laden, ist die Akzentfarbe noch unbekannt (ggf. aus
   // dem Snapshot eines anderen Workspace). Dann wird keine Hervorhebung gezeigt,
   // statt sie in einer falschen Farbe zu zeigen und umzufärben.
-  const { loading: dataLoading } = useLoading();
+  // Die Hülle steht, sobald die Firmendaten da sind; Listen laden dahinter weiter.
+  const { shellReady } = useLoading();
+  const dataLoading = !shellReady;
   const terminology = getTerminology(company.terminologyProfile);
   const receiptLabel = company.receiptLabel?.trim() || 'Belege';
   const { customers } = useCustomers();
@@ -181,7 +184,9 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   ]
     .filter(([value]) => !String(value || '').trim())
     .map(([, label]) => label);
-  const companySetupComplete = missingCompanyFields.length === 0;
+  // Solange die Firmendaten noch laden, sind die Felder leer. Der Hinweis
+  // darf erst nach dem Laden entscheiden, sonst blitzt er bei jedem Reload auf.
+  const companySetupComplete = dataLoading || missingCompanyFields.length === 0;
   const missingCompanyFieldsLabel = missingCompanyFields.join(', ');
   const companySetupHint = `Firmendaten vervollständigen: ${missingCompanyFieldsLabel}`;
 
@@ -347,7 +352,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const calendarNavItem = { id: 'calendar', label: 'Kalender', icon: Calendar };
   const reportingNavItem = { id: 'reporting', label: 'Auswertungen', icon: BarChart3 };
   const settingsNavItem = { id: 'settings', label: 'Einstellungen', icon: Settings };
-  const workspaceNavItem = { id: 'workspace', label: 'Workspace', icon: Building2 };
   const templatesNavItem = { id: 'templates', label: 'Vorlagen', icon: Copy };
   const positionsNavItem = { id: 'positions', label: 'Positionen', icon: Package };
   const bottomNavItems = [
@@ -355,13 +359,12 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
     positionsNavItem,
     templatesNavItem,
     settingsNavItem,
-    workspaceNavItem,
   ];
   const isNavItemActive = (itemId: string) => {
     if (itemId === 'customers') return currentPage === 'customers' || currentPage === 'customer';
-    // Die Datenübernahme wird aus den Einstellungen (System) geöffnet und hat
-    // keinen eigenen Menüpunkt; markiert bleibt dann „Einstellungen“.
-    if (itemId === 'settings') return currentPage === 'settings' || currentPage === 'data-import';
+    // Datenübernahme, Benutzerdaten und Workspace liegen in den Einstellungen
+    // und haben keinen eigenen Menüpunkt; markiert bleibt dann „Einstellungen“.
+    if (itemId === 'settings') return ['settings', 'data-import', 'profile', 'workspace'].includes(currentPage);
     return currentPage === itemId;
   };
 
@@ -618,11 +621,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     aria-label="Übersicht öffnen"
                   >
                     {company.icon ? (
-                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
+                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-colors duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
                     ) : (
                       <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
                     )}
-                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-semibold text-gray-900`}>SoloOffice</span>
                   </button>
                 ) : (
                   <div
@@ -632,16 +635,19 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     title={companySetupHint}
                   >
                     {company.icon ? (
-                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-all duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
+                      <img src={company.icon} alt="Company Icon" className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} rounded transition-colors duration-300 ease-out ${isSidebarCompact ? '' : 'mr-3'}`} />
                     ) : (
                       <Building2 className={`${isSidebarCompact ? 'h-6 w-6' : 'h-8 w-8'} text-primary-custom ${isSidebarCompact ? '' : 'mr-3'}`} />
                     )}
-                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-bold text-gray-900`}>SoloOffice</span>
+                    <span className={`${isSidebarCompact ? 'hidden' : ''} truncate text-xl font-semibold text-gray-900`}>SoloOffice</span>
                   </div>
                 )}
               </div>
 
-              <div className="theme-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+              {/* Welche Module sichtbar sind, steht erst nach dem Laden der Firmendaten
+                  fest. Bis dahin bleibt die Navigation unsichtbar, statt Einträge
+                  nachzuschieben, und blendet danach einmal ein. */}
+              <div className={`theme-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 ${dataLoading ? 'invisible' : 'content-reveal'}`}>
                 {navSections.map((section) => (
                   <div className="nav-section" key={section.id}>
                     {isSidebarCompact
@@ -662,7 +668,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       >
                         <button
                           type="button"
-                          onClick={() => handlePageChange(item.id)}
+                          onClick={() => handlePageChange(item.id)} onPointerEnter={() => preloadPage(item.id)} onFocus={() => preloadPage(item.id)}
                           aria-label={item.label}
                           aria-current={isParentActive ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
@@ -693,7 +699,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                             <li key={child.id}>
                               <button
                                 type="button"
-                                onClick={() => handlePageChange(child.id)}
+                                onClick={() => handlePageChange(child.id)} onPointerEnter={() => preloadPage(child.id)} onFocus={() => preloadPage(child.id)}
                                 aria-current={currentPage === child.id ? 'page' : undefined}
                                 className={`nav-subrow w-full rounded-md px-2.5 py-1 text-left text-[13px] transition-colors ${
                                   currentPage === child.id && !dataLoading ? 'nav-subrow-active' : 'nav-row-muted'
@@ -769,7 +775,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                       <li key={item.id}>
                         <button
                           type="button"
-                          onClick={() => handlePageChange(item.id)}
+                          onClick={() => handlePageChange(item.id)} onPointerEnter={() => preloadPage(item.id)} onFocus={() => preloadPage(item.id)}
                           aria-label={item.label}
                           aria-current={isActive ? 'page' : undefined}
                           title={isSidebarCompact ? item.label : undefined}
@@ -794,13 +800,13 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     menuClassName="sidebar-account-menu"
                     triggerClassName="sidebar-account-trigger"
                     icon={(
-                      <span className="sidebar-account-content">
+                      <span className={`sidebar-account-content ${isSidebarCompact ? 'justify-center' : ''}`}>
                         <span className="sidebar-account-avatar" aria-hidden="true">{accountInitials}</span>
                         <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-account-label min-w-0 flex-1 text-left`}>
                           <span className="block truncate text-sm font-semibold">{accountName}</span>
                           <span className="block truncate text-xs text-gray-500">{workspace?.name || 'Workspace'}</span>
                         </span>
-                        <MoreHorizontal className="sidebar-account-more h-5 w-5 shrink-0" aria-hidden="true" />
+                        <MoreHorizontal className={`${isSidebarCompact ? 'hidden' : ''} sidebar-account-more h-5 w-5 shrink-0`} aria-hidden="true" />
                       </span>
                     )}
                   >

@@ -1,6 +1,7 @@
-import { useEffect, useRef, type FormEventHandler, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type FormEventHandler, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { X } from 'lucide-react';
+import { FeedbackContext } from '../context/FeedbackContext';
 
 interface DialogShellProps {
   title: ReactNode;
@@ -17,6 +18,14 @@ interface DialogShellProps {
   /** Kleine Dialoge wachsen mit dem Inhalt und scrollen erst am Maximalmaß. */
   fitContent?: boolean;
   zIndexClassName?: string;
+  /**
+   * Fragt bei Klick auf den Hintergrund, bei Esc und beim Schließen-Knopf nach,
+   * sobald Eingaben vorliegen. Jede Änderung eines Feldes im Dialog zählt.
+   * Dialoge, die ihre Schließen-Rückfrage selbst führen, bleiben ohne diese Option.
+   */
+  unsavedChangesGuard?: boolean;
+  /** Ergänzt Änderungen, die kein Feld auslösen (etwa Auswahl per Schaltfläche). */
+  isDirty?: boolean;
 }
 
 const sizeClasses: Record<NonNullable<DialogShellProps['size']>, string> = {
@@ -50,12 +59,49 @@ export function DialogShell({
   size = 'lg',
   fitContent = false,
   zIndexClassName = 'z-50',
+  unsavedChangesGuard = false,
+  isDirty = false,
 }: DialogShellProps) {
   const dialogId = useRef(Symbol('dialog'));
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const feedback = useContext(FeedbackContext);
+  const [fieldsEdited, setFieldsEdited] = useState(false);
+  const hasChanges = unsavedChangesGuard && Boolean(feedback) && (fieldsEdited || isDirty);
+  const hasChangesRef = useRef(hasChanges);
+  hasChangesRef.current = hasChanges;
+  const feedbackRef = useRef(feedback);
+  feedbackRef.current = feedback;
+  const confirmPending = useRef(false);
+
+  // Ohne Eingaben schließt der Dialog sofort. Mit Eingaben fragt die bestehende
+  // Rückfrage nach; „Weiter bearbeiten“ lässt den Dialog offen.
+  const requestClose = async () => {
+    if (confirmPending.current) return;
+    const currentFeedback = feedbackRef.current;
+    if (!hasChangesRef.current || !currentFeedback) {
+      closeRef.current();
+      return;
+    }
+    confirmPending.current = true;
+    try {
+      const discard = await currentFeedback.confirm({
+        title: 'Ungespeicherte Änderungen',
+        message: 'Es gibt ungespeicherte Eingaben. Möchten Sie diese wirklich verwerfen?',
+        confirmText: 'Änderungen verwerfen',
+        cancelText: 'Weiter bearbeiten',
+        isDestructive: true,
+      });
+      if (discard) closeRef.current();
+    } finally {
+      confirmPending.current = false;
+    }
+  };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+
   useEffect(() => {
-    const entry = { id: dialogId.current, close: () => closeRef.current() };
+    const entry = { id: dialogId.current, close: () => { void requestCloseRef.current(); } };
     openDialogs.push(entry);
     if (!escapeListenerAttached) {
       document.addEventListener('keydown', handleDialogEscape);
@@ -132,7 +178,7 @@ export function DialogShell({
           {headerActions}
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => { void requestClose(); }}
             className="inline-flex h-10 w-10 min-h-0 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
             aria-label="Dialog schließen"
           >
@@ -157,8 +203,9 @@ export function DialogShell({
     <div
       className={`dialog-overlay fixed inset-0 ${zIndexClassName} flex items-center justify-center overflow-hidden bg-gray-950/55 p-3 backdrop-blur-[2px] sm:p-5`}
       onMouseDown={event => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) void requestClose();
       }}
+      onChangeCapture={unsavedChangesGuard ? () => setFieldsEdited(true) : undefined}
     >
       {onSubmit ? (
         <form

@@ -517,15 +517,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
 
         {scanResult && scannedFile && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
           <div className="grid gap-3 text-sm text-gray-700 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="min-w-0"><p className="text-xs font-medium uppercase tracking-wide text-gray-500">Datei</p><p className="mt-0.5 truncate font-medium" title={scanResult.fileName}>{scanResult.fileName}</p></div>
-            <div><p className="text-xs font-medium uppercase tracking-wide text-gray-500">Typ / Größe</p><p className="mt-0.5">{scanResult.format.toUpperCase()} · {(scannedFile.size / 1024).toLocaleString('de-DE', { maximumFractionDigits: 0 })} KB</p></div>
+            <div className="min-w-0"><p className="table-head text-gray-500">Datei</p><p className="mt-0.5 truncate font-medium" title={scanResult.fileName}>{scanResult.fileName}</p></div>
+            <div><p className="table-head text-gray-500">Typ / Größe</p><p className="mt-0.5">{scanResult.format.toUpperCase()} · {(scannedFile.size / 1024).toLocaleString('de-DE', { maximumFractionDigits: 0 })} KB</p></div>
             <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Blatt</p>
+              <p className="table-head text-gray-500">Blatt</p>
               {scanResult.sheets && scanResult.sheets.length > 1
                 ? <select aria-label="Tabellenblatt auswählen" value={scanResult.sheet} onChange={event => void scanFile(scannedFile, event.target.value)} className="form-input mt-0.5 w-full py-1.5 text-sm">{scanResult.sheets.map(name => <option key={name} value={name}>{name}</option>)}</select>
                 : <p className="mt-0.5">{scanResult.sheet || '–'}</p>}
             </div>
-            <div><p className="text-xs font-medium uppercase tracking-wide text-gray-500">Inhalt</p><p className="mt-0.5">{scanResult.headers.length} Spalten · {scanResult.rows.length.toLocaleString('de-DE')} Zeilen</p></div>
+            <div><p className="table-head text-gray-500">Inhalt</p><p className="mt-0.5">{scanResult.headers.length} Spalten · {scanResult.rows.length.toLocaleString('de-DE')} Zeilen</p></div>
           </div>
           {scanResult.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-medium">Hinweise zur Datei</p><ul className="mt-1 list-disc pl-5">{scanResult.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}
           <details className="text-xs text-gray-500">
@@ -586,7 +586,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                 <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-primary-custom">Schritt {activeStep.position} von {formSteps.length}</p>
+                      <p className="table-head text-primary-custom">Schritt {activeStep.position} von {formSteps.length}</p>
                       <h3 className="mt-1 text-base font-semibold text-gray-900">{activeStep.node.label}</h3>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${stepState(activeStep).className}`}>{stepState(activeStep).label}</span>

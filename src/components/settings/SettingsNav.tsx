@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { Building2, Calculator, Database, FileText, Palette, Puzzle, Search, SlidersHorizontal, X, type LucideIcon } from 'lucide-react';
+import { Building2, Calculator, Database, FileText, Palette, Puzzle, Search, SlidersHorizontal, UserRound, Users, X, type LucideIcon } from 'lucide-react';
 import {
   SETTINGS_AREA_DEFINITIONS,
   SETTINGS_GROUPS,
@@ -15,6 +15,8 @@ const AREA_ICONS: Record<SettingsArea, LucideIcon> = {
   taxes: Calculator,
   appearance: Palette,
   system: Database,
+  account: UserRound,
+  workspace: Users,
 };
 
 interface SettingsNavProps {

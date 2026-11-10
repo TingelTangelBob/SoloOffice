@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { Notice } from '../components/Notice';
 import type { NoticeVariant } from '../components/Notice';
@@ -30,6 +31,13 @@ const AUTO_DISMISS_MS: Record<NoticeVariant, number> = {
   error: 12000,
 };
 const MAX_VISIBLE_MESSAGES = 4;
+
+const VARIANT_ICONS = {
+  success: CheckCircle2,
+  info: Info,
+  warning: AlertTriangle,
+  error: AlertCircle,
+} as const;
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<FeedbackMessage[]>([]);
@@ -127,6 +135,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
             <div key={message.id} className="pointer-events-auto w-full max-w-md shadow-lg">
               <Notice
                 variant={message.variant}
+                icon={VARIANT_ICONS[message.variant]}
                 title={message.title}
                 onDismiss={() => dismiss(message.id)}
               >

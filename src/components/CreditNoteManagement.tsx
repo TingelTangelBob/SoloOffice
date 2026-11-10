@@ -7,7 +7,7 @@ import { apiService } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { PageHeader } from './PageHeader';
 import type { CreditNote, CreditNotePayload } from '../types';
-import { generateInvoicePDF, downloadBlob } from '../utils/pdfGenerator';
+import { generateInvoicePDF, downloadBlob } from '../utils/pdfLazy';
 import { blobToBase64 } from '../utils/blobUtils';
 import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
@@ -18,10 +18,12 @@ import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
+import { statusLabel } from '../utils/statusDisplay';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
 type FormDraft = { customerId: string; invoiceId: string; reason: string; issueDate: string; items: ItemDraft[] };
@@ -39,11 +41,12 @@ const CREDIT_NOTE_TABLE_LAYOUT = listTableLayout({
   maxActions: 5,
 });
 
-const creditNoteStatusLabel = (status: CreditNote['status']) =>
-  status === 'draft' ? 'Entwurf' : status === 'sent' ? 'Versendet' : status === 'paid' ? 'Altstatus prüfen' : status;
+const creditNoteStatusLabel = (status: CreditNote['status']) => statusLabel('creditNote', status);
 
 export function CreditNoteManagement({ initialAction }: { initialAction?: string } = {}) {
   const { confirm } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { invoices } = useInvoices();
   const { company } = useCompany();
@@ -153,7 +156,7 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
     finally { setBusy(null); }
   };
 
-  return <div className="page-root space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Gutschriften zu Rechnungen erstellen und versenden."><button type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Neue Gutschrift" title="Neue Gutschrift"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neue Gutschrift</span></button></PageHeader>
+  return <div className="page-root space-y-6"><DocumentPreview isOpen={Boolean(previewDocument)} onClose={() => setPreviewDocument(null)} documents={previewDocument ? [previewDocument] : []} initialIndex={0} /><PageHeader icon={FilePlus2} title="Gutschriften" subtitle="Gutschriften zu Rechnungen erstellen und versenden."><button disabled={!canWrite} type="button" onClick={openNew} className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-colors duration-300 hover:brightness-90 sm:min-w-0 sm:px-4" aria-label="Neue Gutschrift" title="Neue Gutschrift"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Neue Gutschrift</span></button></PageHeader>
     {notice && <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Hinweis ausblenden"><X className="h-4 w-4" /></button></div>}{error && <div className="flex justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Hinweis ausblenden"><XCircle className="h-4 w-4" /></button></div>}
     {loading ? <TableSkeleton rows={5} columns={6} label="Gutschriften werden geladen …" className="overflow-hidden rounded-lg border border-gray-200 bg-white" /> : notes.length === 0 ? <EmptyState variant="invoices" title="Noch keine Gutschriften vorhanden." action={{ label: 'Neue Gutschrift', onClick: openNew }} /> : (() => {
       const amount = (note: CreditNote) => `−${formatCurrency(total(note), locale, company?.numberFormat, company?.currency)}`;
@@ -210,14 +213,14 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
                         <div className="flex flex-nowrap items-center gap-1">
                           {note.status === 'draft' && (
                             <>
-                              <button type="button" onClick={() => openEdit(note)} className="action-icon-button action-icon-indigo" title="Bearbeiten" aria-label="Bearbeiten"><FilePlus2 className="h-4 w-4" /></button>
+                              <button disabled={!canWrite} type="button" onClick={() => openEdit(note)} className="action-icon-button action-icon-indigo" title="Bearbeiten" aria-label="Bearbeiten"><FilePlus2 className="h-4 w-4" /></button>
                               <button type="button" onClick={() => void markSent(note)} disabled={busy === note.id} className="action-icon-button action-icon-green" title="Als versendet markieren" aria-label="Als versendet markieren"><Check className="h-4 w-4" /></button>
                             </>
                           )}
                           <button type="button" onClick={() => void preview(note)} disabled={busy === `preview-${note.id}`} className="action-icon-button action-icon-blue" title="Vorschau anzeigen" aria-label="Vorschau anzeigen"><Eye className="h-4 w-4" /></button>
                           <button type="button" onClick={() => void download(note)} disabled={busy === `download-${note.id}`} className="action-icon-button action-icon-green" title="Herunterladen" aria-label="Herunterladen"><Download className="h-4 w-4" /></button>
                           {note.status === 'draft' && (
-                            <button type="button" onClick={() => void remove(note)} disabled={busy === note.id} className="action-icon-button action-icon-red" title="Löschen" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => void remove(note)} disabled={!canWrite || busy === note.id} className="action-icon-button action-icon-red" title="Löschen" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
                           )}
                         </div>
                       ) : (
@@ -255,7 +258,7 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
       );
     })()}
     {open && (
-      <DialogShell
+      <DialogShell unsavedChangesGuard
         titleId="credit-note-dialog-title"
         icon={FilePlus2}
         title={editingNote ? 'Gutschrift-Entwurf bearbeiten' : 'Gutschrift erstellen'}
@@ -266,7 +269,7 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
         footer={(
           <>
             <button type="button" onClick={() => { setOpen(false); setEditingNote(null); }} className="min-h-12 rounded-lg border border-gray-300 bg-white px-8 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-            <button type="submit" disabled={busy === 'save'} className="btn-primary min-h-12 rounded-lg px-8 py-2 text-base font-semibold text-white transition hover:brightness-90">{busy === 'save' ? 'Speichern …' : editingNote ? 'Entwurf speichern' : 'Speichern'}</button>
+            <button type="submit" disabled={!canWrite || busy === 'save'} className="btn-primary min-h-12 rounded-lg px-8 py-2 text-base font-semibold text-white transition hover:brightness-90">{busy === 'save' ? 'Speichern …' : editingNote ? 'Entwurf speichern' : 'Speichern'}</button>
           </>
         )}
       >
@@ -275,10 +278,10 @@ export function CreditNoteManagement({ initialAction }: { initialAction?: string
           <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="credit-note-data-title">
             <h3 id="credit-note-data-title" className="mb-4 text-xl font-semibold text-gray-900">Gutschriftdaten</h3>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="text-base font-medium text-gray-700">{terminology.entity.singular}<select required value={form.customerId} onChange={e => setForm({ ...form, customerId: e.target.value, invoiceId: '' })} className="form-input mt-1 w-full"><option value="">Bitte wählen</option>{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
-              <label className="text-base font-medium text-gray-700">Ursprungsrechnung <span className="font-normal text-gray-400">(optional)</span><select value={form.invoiceId} onChange={e => setForm({ ...form, invoiceId: e.target.value })} className="form-input mt-1 w-full"><option value="">Keine Zuordnung</option>{invoices.filter(invoice => invoice.documentType !== 'credit_note' && (!form.customerId || invoice.customerId === form.customerId)).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber}</option>)}</select></label>
-              <label className="text-base font-medium text-gray-700">Datum<input required type="date" value={form.issueDate} onChange={e => setForm({ ...form, issueDate: e.target.value })} className="form-input mt-1 w-full" /></label>
-              <label className="text-base font-medium text-gray-700">Grund<input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="form-input mt-1 w-full" placeholder="z. B. Preisnachlass" /></label>
+              <label className="text-sm font-medium text-gray-700">{terminology.entity.singular}<select required value={form.customerId} onChange={e => setForm({ ...form, customerId: e.target.value, invoiceId: '' })} className="form-input mt-1 w-full"><option value="">Bitte wählen</option>{customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
+              <label className="text-sm font-medium text-gray-700">Ursprungsrechnung <span className="font-normal text-gray-400">(optional)</span><select value={form.invoiceId} onChange={e => setForm({ ...form, invoiceId: e.target.value })} className="form-input mt-1 w-full"><option value="">Keine Zuordnung</option>{invoices.filter(invoice => invoice.documentType !== 'credit_note' && (!form.customerId || invoice.customerId === form.customerId)).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.invoiceNumber}</option>)}</select></label>
+              <label className="text-sm font-medium text-gray-700">Datum<input required type="date" value={form.issueDate} onChange={e => setForm({ ...form, issueDate: e.target.value })} className="form-input mt-1 w-full" /></label>
+              <label className="text-sm font-medium text-gray-700">Grund<input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="form-input mt-1 w-full" placeholder="z. B. Preisnachlass" /></label>
             </div>
           </section>
           <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6" aria-labelledby="credit-note-items-title">

@@ -27,7 +27,7 @@ export function SettingsCard({ sectionId, icon: Icon, title, description, info, 
       className="settings-card"
     >
       <header className="settings-card-header">
-        <div className="flex min-w-0 items-start gap-3">
+        <div className={`flex min-w-0 gap-3 ${description ? 'items-start' : 'items-center'}`}>
           {Icon && (
             <span className="settings-card-icon" aria-hidden="true">
               <Icon className="h-4 w-4" />

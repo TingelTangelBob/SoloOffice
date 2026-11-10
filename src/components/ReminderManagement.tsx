@@ -8,7 +8,7 @@ import { apiService } from '../services/api';
 import { ReminderEligibility, Invoice, Company } from '../types';
 import logger from '../utils/logger';
 import { formatCurrency, formatDate as formatDateValue, getCurrencySymbol } from '../utils/formatters';
-import { generateReminderPDF } from '../utils/pdfGenerator';
+import { generateReminderPDF } from '../utils/pdfLazy';
 import { ReminderSendModal } from './ReminderSendModal';
 import { blobToBase64 } from '../utils/blobUtils';
 import { DocumentPreview } from './DocumentPreview';
@@ -19,9 +19,12 @@ import { getTerminology } from '../utils/terminology';
 import { ThemeTabBar } from './ThemeTabBar';
 import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
+import { useAuth } from '../context/AuthContext';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
+import { statusBadgeClass, statusLabel } from '../utils/statusDisplay';
 
 export function ReminderManagement() {
   const { customers } = useCustomers();
@@ -42,6 +45,7 @@ export function ReminderManagement() {
   const [reminderHistory, setReminderHistory] = useState<Invoice[]>([]);
   const [hardshipCases, setHardshipCases] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const [reminderModal, setReminderModal] = useState<{
     isOpen: boolean;
@@ -89,6 +93,7 @@ export function ReminderManagement() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       if (activeTab === 'eligible') {
         const data = await apiService.getEligibleReminders();
@@ -103,17 +108,22 @@ export function ReminderManagement() {
         setHardshipCases(hardship);
       }
     } catch (error) {
+      // Ein Ladefehler darf nicht wie eine leere Liste aussehen.
       logger.error('Error loading reminder data:', error);
+      const message = actionErrorMessage('Die Mahnungen konnten nicht geladen werden.', error);
+      setLoadError(message);
+      notify({ variant: 'error', message });
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab]);
+  }, [activeTab, notify]);
 
   const handleSendReminder = async (invoiceId: string, stage: number) => {
     try {
       const invoice = invoices.find(inv => inv.id === invoiceId);
       if (!invoice) {
         logger.error('Invoice not found:', invoiceId);
+        notify({ variant: 'error', message: 'Die Rechnung für diese Mahnung wurde nicht gefunden. Bitte die Liste neu laden.' });
         return;
       }
 
@@ -126,6 +136,7 @@ export function ReminderManagement() {
       });
     } catch (error) {
       logger.error('Error opening reminder modal:', error);
+      notify({ variant: 'error', message: actionErrorMessage('Die Mahnung konnte nicht geöffnet werden.', error) });
     }
   };
 
@@ -149,6 +160,7 @@ export function ReminderManagement() {
       const customer = customers.find(c => c.id === invoice.customerId);
       if (!customer) {
         logger.error('Customer not found for invoice:', invoice.customerId);
+        notify({ variant: 'error', message: `Die Mahnung ${invoice.invoiceNumber} konnte nicht erstellt werden: Kunde nicht gefunden.` });
         return;
       }
 
@@ -176,6 +188,7 @@ export function ReminderManagement() {
       URL.revokeObjectURL(url);
     } catch (error) {
       logger.error('Error downloading reminder:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`Die Mahnung ${invoice.invoiceNumber} konnte nicht heruntergeladen werden.`, error) });
     }
   };
 
@@ -184,6 +197,7 @@ export function ReminderManagement() {
       const customer = customers.find(c => c.id === invoice.customerId);
       if (!customer) {
         logger.error('Customer not found for invoice:', invoice.customerId);
+        notify({ variant: 'error', message: `Die Vorschau der Mahnung ${invoice.invoiceNumber} ist nicht möglich: Kunde nicht gefunden.` });
         return;
       }
 
@@ -218,6 +232,7 @@ export function ReminderManagement() {
       });
     } catch (error) {
       logger.error('Error previewing reminder:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`Die Vorschau der Mahnung ${invoice.invoiceNumber} konnte nicht erstellt werden.`, error) });
     }
   };
 
@@ -237,17 +252,7 @@ export function ReminderManagement() {
   }, [loadData]);
 
   const getStatusBadge = (status: Invoice['status']) => {
-    const statusConfig: Record<Invoice['status'], { label: string; color: string }> = {
-      draft: { label: 'Entwurf', color: 'bg-gray-100 text-gray-800' },
-      sent: { label: 'Versendet', color: 'bg-blue-100 text-blue-800' },
-      paid: { label: 'Bezahlt', color: 'bg-green-100 text-green-800' },
-      overdue: { label: 'Überfällig', color: 'bg-red-100 text-red-800' },
-      reminded_1x: { label: '1x gemahnt', color: 'bg-orange-100 text-orange-800' },
-      reminded_2x: { label: '2x gemahnt', color: 'bg-orange-200 text-orange-900' },
-      reminded_3x: { label: '3x gemahnt', color: 'bg-red-200 text-red-900' }
-    };
-
-    const config = statusConfig[status] || statusConfig.draft;
+    const config = { label: statusLabel('invoice', status), color: statusBadgeClass('invoice', status) };
     return (
       <span className={`status-badge px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
         {config.label}
@@ -282,6 +287,7 @@ export function ReminderManagement() {
       
       if (bulkInvoices.length === 0) {
         logger.error('No valid invoices found for bulk reminder');
+        notify({ variant: 'error', message: 'Die ausgewählten Rechnungen wurden nicht gefunden. Bitte die Liste neu laden.' });
         return;
       }
 
@@ -289,9 +295,10 @@ export function ReminderManagement() {
       // but pass all invoices in bulkInvoices
       const firstInvoice = bulkInvoices[0];
       const firstReminder = eligibleReminders.find(r => r.invoiceId === firstInvoice.id);
-      
+
       if (!firstReminder) {
         logger.error('Reminder eligibility not found for first invoice');
+        notify({ variant: 'error', message: 'Die Mahnberechtigung der ausgewählten Rechnungen ist nicht bekannt. Bitte die Liste neu laden.' });
         return;
       }
 
@@ -304,6 +311,7 @@ export function ReminderManagement() {
       });
     } catch (error) {
       logger.error('Error opening bulk reminder modal:', error);
+      notify({ variant: 'error', message: actionErrorMessage('Die Sammelmahnung konnte nicht geöffnet werden.', error) });
     }
   };
 
@@ -388,6 +396,18 @@ export function ReminderManagement() {
               onChange={(key, value) => setSettingsForm(previous => ({ ...previous, [key]: value }))}
               onSave={() => { void saveReminderSettings(); }}
             />
+          ) : loadError ? (
+            <div className="px-4 py-10 text-center">
+              <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" aria-hidden="true" />
+              <p className="text-red-700">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => { void loadData(); }}
+                className="btn-primary mt-4 rounded-lg px-4 py-2 text-white"
+              >
+                Erneut laden
+              </button>
+            </div>
           ) : activeTab === 'eligible' ? (
             <EligibleRemindersTab
               reminders={eligibleReminders}
@@ -445,6 +465,8 @@ interface ReminderSettingsTabProps {
 }
 
 function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, isSaving, onChange, onSave }: ReminderSettingsTabProps) {
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   return (
     <div className="max-w-4xl space-y-6">
       <div className="flex items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
@@ -504,7 +526,7 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
       </section>
 
       <div className="flex justify-end">
-        <button type="button" onClick={onSave} disabled={isSaving} className="btn-primary inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={onSave} disabled={isSaving || !canWrite} className="btn-primary inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
           <Save className="h-4 w-4" />{isSaving ? 'Speichert …' : 'Mahnkonfiguration speichern'}
         </button>
       </div>
@@ -534,6 +556,8 @@ function EligibleRemindersTab({
   formatDate,
   company
 }: EligibleRemindersTabProps) {
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const terminology = getTerminology(company.terminologyProfile);
   const [sortState, setSortState] = useState<SortState>({ key: 'dueDate', direction: 'desc' });
   const handleSort = (key: string) => setSortState(previous => previous.key === key
@@ -572,6 +596,7 @@ function EligibleRemindersTab({
         <button
           type="button"
           onClick={onSendBulk}
+          disabled={!canWrite}
           className="action-icon-button bulk-action-icon-button action-icon-blue"
           title="Ausgewählte mahnen"
           aria-label="Ausgewählte mahnen"
@@ -586,7 +611,7 @@ function EligibleRemindersTab({
         <table className="w-full table-fixed divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="w-10 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="w-10 px-2 py-2 text-left table-head text-gray-500">
                 <span className="sr-only">Auswahl</span>
               </th>
               <SortableTableHeader label="Fällig" sortKey="dueDate" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-32 px-2 py-2" />
@@ -594,7 +619,7 @@ function EligibleRemindersTab({
               <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-2 py-2" />
               <SortableTableHeader label="Offen" sortKey="amount" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} align="right" className="w-24 px-2 py-2" />
               <SortableTableHeader label="Status" sortKey="nextStage" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-36 px-2 py-2" />
-              <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="sticky right-0 z-20 w-14 bg-gray-50 px-2 py-2 text-left table-head text-gray-500">
                 <span className="sr-only">Aktionen</span>
               </th>
             </tr>
@@ -640,7 +665,7 @@ function EligibleRemindersTab({
                   <button
                     type="button"
                     onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
-                    disabled={!reminder.isEligible}
+                    disabled={!canWrite || !reminder.isEligible}
                     title={reminder.isEligible ? `${reminder.nextStage}. Mahnung senden` : notEligibleHint(reminder)}
                     aria-label={`${reminder.nextStage}. Mahnung senden`}
                     className="action-icon-button action-icon-blue disabled:cursor-not-allowed disabled:opacity-40"
@@ -676,7 +701,7 @@ function EligibleRemindersTab({
               <button
                 type="button"
                 onClick={() => onSendReminder(reminder.invoiceId, reminder.nextStage)}
-                disabled={!reminder.isEligible}
+                disabled={!canWrite || !reminder.isEligible}
                 title={reminder.isEligible ? 'Mahnung senden' : notEligibleHint(reminder)}
                 aria-label="Mahnung senden"
                 className="action-icon-button action-icon-blue shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
@@ -920,7 +945,7 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
                 <p className="text-sm text-gray-600">{invoice.customerName}</p>
               </div>
               <div className="text-right">
-                <p className="text-xl font-bold text-red-600">{formatCurrency(totalWithFees, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                <p className="text-xl font-semibold tabular-nums text-red-600">{formatCurrency(totalWithFees, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                 <p className="text-xs text-gray-500 mt-1">Offener Betrag (inkl. Mahngebühren)</p>
                 {totalWithFees !== Number(invoice.outstandingAmount ?? invoice.total) && (
                   <p className="text-xs text-gray-400 mt-0.5">
@@ -1016,17 +1041,7 @@ function stageBadgeClassName(stage: number) {
 }
 
 function getStatusBadgeForReminder(status: Invoice['status']) {
-  const statusConfig: Record<Invoice['status'], { label: string; color: string }> = {
-    draft: { label: 'Entwurf', color: 'bg-gray-100 text-gray-800' },
-    sent: { label: 'Versendet', color: 'bg-blue-100 text-blue-800' },
-    paid: { label: 'Bezahlt', color: 'bg-green-100 text-green-800' },
-    overdue: { label: 'Überfällig', color: 'bg-red-100 text-red-800' },
-    reminded_1x: { label: '1x gemahnt', color: 'bg-orange-100 text-orange-800' },
-    reminded_2x: { label: '2x gemahnt', color: 'bg-orange-200 text-orange-900' },
-    reminded_3x: { label: '3x gemahnt', color: 'bg-red-200 text-red-900' }
-  };
-
-  const config = statusConfig[status] || statusConfig.draft;
+  const config = { label: statusLabel('invoice', status), color: statusBadgeClass('invoice', status) };
   return (
     <span className={`status-badge px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
       {config.label}

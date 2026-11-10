@@ -106,20 +106,41 @@ export function publicSmtpSettings(settings = {}) {
   };
 }
 
-export function smtpErrorMessage(error) {
+const hostHint = host => {
+  const value = String(host || '').toLowerCase();
+  if (/gmx\.|web\.de/.test(value)) return ' Bei GMX und WEB.DE muss in den Einstellungen unter POP3/IMAP der Zugriff für externe Programme erlaubt sein.';
+  if (/gmail|google/.test(value)) return ' Google verlangt ein App-Passwort, nicht das normale Passwort.';
+  if (/icloud|me\.com/.test(value)) return ' Apple verlangt ein app-spezifisches Passwort, nicht das Apple-ID-Passwort.';
+  if (/outlook|office365|hotmail/.test(value)) return ' Bei aktivierter Zwei-Faktor-Anmeldung wird ein App-Passwort von Microsoft benötigt.';
+  if (/yahoo/.test(value)) return ' Yahoo verlangt ein App-Passwort, nicht das normale Passwort.';
+  return ' Manche Anbieter benötigen ein App-Passwort.';
+};
+
+// settings (optional): Server, Port und Verschlüsselung der geprüften Einrichtung für konkretere Hinweise.
+export function smtpErrorMessage(error, settings = {}) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
+  const host = typeof settings?.smtp_host === 'string' ? settings.smtp_host.trim() : '';
+  const port = Number(settings?.smtp_port);
   if (code === 'EAUTH' || /invalid login|authentication|credentials|535/.test(message)) {
-    return 'Die Anmeldung wurde abgelehnt. Bitte Benutzername und Passwort prüfen; manche Anbieter benötigen ein App-Passwort.';
+    return `Die Anmeldung wurde abgelehnt. Bitte Benutzername und Passwort prüfen.${hostHint(host)}`;
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || message.includes('getaddrinfo')) {
-    return 'Der SMTP-Server wurde nicht gefunden. Bitte den Servernamen prüfen.';
+    return host
+      ? `Der SMTP-Server „${host}“ wurde nicht gefunden. Bitte die Schreibweise prüfen, etwa auf Tippfehler.`
+      : 'Der SMTP-Server wurde nicht gefunden. Bitte den Servernamen prüfen.';
   }
   if (code === 'ETIMEDOUT' || /timeout|timed out|greeting never received/.test(message)) {
-    return 'Der SMTP-Server antwortet nicht rechtzeitig. Bitte Server, Port und Verschlüsselung prüfen.';
+    if (port === 465 || port === 25) {
+      return `Der SMTP-Server antwortet auf Port ${port} nicht. Dieser Port wird in vielen Netzwerken blockiert. Bitte STARTTLS mit Port 587 versuchen.`;
+    }
+    if (port === 587 && settings?.smtp_secure === true) {
+      return 'Der SMTP-Server antwortet nicht. Port 587 verwendet STARTTLS: bitte die Verschlüsselung auf STARTTLS stellen.';
+    }
+    return `Der SMTP-Server${host ? ` „${host}“` : ''} antwortet nicht rechtzeitig. Bitte Servername und Port prüfen; üblich ist Port 587 mit STARTTLS.`;
   }
   if (code === 'ECONNREFUSED' || message.includes('econnrefused')) {
-    return 'Der SMTP-Server verweigert die Verbindung. Bitte Server und Port prüfen.';
+    return 'Der SMTP-Server verweigert die Verbindung. Bitte Server und Port prüfen; üblich ist Port 587 mit STARTTLS.';
   }
   if (/certificate|self.signed|cert_|unable to verify/.test(message) || /CERT|TLS/.test(code)) {
     return 'Die verschlüsselte Verbindung konnte nicht geprüft werden. Bitte Servername und Zertifikat beim Mailanbieter prüfen.';

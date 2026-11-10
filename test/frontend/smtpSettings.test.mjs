@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   defaultTestEmailRecipient,
+  detectSmtpProvider,
   isSingleEmailAddress,
   smtpFormFromSettings,
   SMTP_PROVIDERS,
@@ -79,4 +80,13 @@ test('Dashboard-Anbietervorlagen belegen SMTP vor und erkennen nur übereinstimm
     assert.deepEqual(validateSmtpSettings(settings, true), {});
   }
   assert.equal(smtpProviderForSettings(smtpFormFromSettings(storedSettings)), 'eigen');
+});
+
+test('Mailanbieter wird an der Absenderadresse erkannt, eigene Domains bleiben unbestimmt', () => {
+  assert.equal(detectSmtpProvider('sp92@gmx.net'), 'gmx');
+  assert.equal(detectSmtpProvider(' Name@WEB.de '), 'webde');
+  assert.equal(detectSmtpProvider('a@googlemail.com'), 'gmail');
+  assert.equal(detectSmtpProvider('a@firma-beispiel.de'), null);
+  assert.equal(detectSmtpProvider('keine-adresse'), null);
+  assert.equal(detectSmtpProvider('x@gmx.net.evil.invalid'), null);
 });

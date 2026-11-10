@@ -272,6 +272,30 @@ test('Beendete Vorlage erhält frühere ungezahlte Fälligkeiten vor dem exklusi
   assert.equal(isRecurringExpenseDue(template, '2026-11-01'), false);
 });
 
+test('Fixkosten: unbekannter Status wird abgelehnt, fehlender Status ergibt „aktiv“', () => {
+  const base = { name: 'Software', startDate: '2026-01-01', amountGross: 10, intervalCount: 1, intervalUnit: 'months', category: 'software' };
+  assert.equal(validateExpense({ ...base, status: 'bogus' }), 'Ungültiger Status der Fixkosten.');
+  assert.equal(validateExpense({ ...base }).status, 'active');
+  assert.equal(validateExpense({ ...base, status: 'paused' }).status, 'paused');
+});
+
+test('Fixkosten-Update: leerer Status überschreibt einen pausierten Eintrag nicht', async () => {
+  const row = { id: 'e1', name: 'Software', counterparty: null, category: 'software', scope: 'business', amount: 10, tax_rate: null,
+    interval_value: 1, interval_unit: 'month', start_date: '2026-01-01', end_date: null, next_due_date: '2026-11-01', cancelled_on: null,
+    cancellation_notice_days: 0, status: 'paused', auto_confirm: false, linked_receipt_id: null, notes: null, price_changes: [], pauses: [] };
+  const written = [];
+  const executor = async (sql, params = []) => {
+    if (sql.startsWith('SELECT * FROM recurring_expenses WHERE id=$1 FOR UPDATE')) return { rows: [row] };
+    if (sql.startsWith('UPDATE recurring_expenses')) { written.push(params[13]); return { rowCount: 1 }; }
+    if (sql.startsWith('SELECT * FROM recurring_expenses WHERE id=$1')) return { rows: [row] };
+    if (sql.startsWith('SELECT id,due_date')) return { rows: [] };
+    throw new Error(`Unerwartete SQL: ${sql}`);
+  };
+  const result = await updateExpense(executor, 'e1', { status: '', name: 'Software neu' }, '2026-10-01');
+  assert.equal(result.error, undefined);
+  assert.equal(written[0], 'paused');
+});
+
 test('Ausgangsbeleg wird nicht erneut verknüpft, wenn er zu einer früheren Zahlung derselben Vorlage gehört', async () => {
   const written = [];
   const client = { query: async (sql, params = []) => {

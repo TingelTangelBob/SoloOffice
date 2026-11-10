@@ -13,7 +13,7 @@ import { DownloadModal } from './DownloadModal';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
-import { generateInvoicePDF, downloadBlob, loadImportedInvoiceOriginal } from '../utils/pdfGenerator';
+import { generateInvoicePDF, downloadBlob, loadImportedInvoiceOriginal } from '../utils/pdfLazy';
 import { apiService } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { blobToBase64 } from '../utils/blobUtils';
@@ -31,16 +31,20 @@ import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
 import { csvFileName, downloadCsv } from '../utils/csvExport';
 import type { CsvColumn } from '../utils/csvExport';
 import { EmptyState } from './EmptyState';
 import { formatDateInputValue, isDateInInclusiveRange, toDateInputValue } from '../utils/invoicePeriod';
 import { useAuth } from '../context/AuthContext';
+import { markOverdueInvoices } from '../utils/overdueInvoices';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, DEFAULT_INVOICE_SORT, sortByTableState, type SortState } from '../utils/tableSort';
 import { trackTelemetry } from '../services/telemetry';
 import { ImportWizard } from './ImportWizard';
+import { statusBadgeClass, statusDotClass, statusLabel } from '../utils/statusDisplay';
+import { manualTargetsForSelection } from '../../backend/shared/stateMachines.js';
 
 interface InvoiceManagementProps {
   initialFilter?: string;
@@ -183,44 +187,16 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     }
   }, [initialFilter]);
 
-  // Check for overdue invoices automatically on every load
+  // Überfällig-Markierung über die gemeinsame Funktion mit Laufsperre (Prüfbericht H-2).
   useEffect(() => {
-    const checkOverdueInvoices = async () => {
-      if (invoiceRecords.length === 0 || !canWrite) return;
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
-      
-      const overdueUpdates = invoiceRecords
-        .filter(invoice => {
-          // Only check sent invoices that are not already overdue or paid
-          if (invoice.status !== 'sent') return false;
-          
-          const dueDate = new Date(invoice.dueDate);
-          dueDate.setHours(0, 0, 0, 0);
-          
-          return dueDate < today;
-        })
-        .map(invoice => invoice.id);
-      
-      // Update overdue invoices
-      for (const invoiceId of overdueUpdates) {
-        try {
-          await updateInvoice(invoiceId, { status: 'overdue' });
-        } catch (error) {
-          logger.error('Error updating invoice to overdue:', error);
-        }
-      }
-      
-      if (overdueUpdates.length > 0) {
-        logger.debug(`${formatCountLabel(overdueUpdates.length, 'Rechnung', 'Rechnungen')} wurden automatisch als überfällig markiert.`);
-      }
-    };
-
-    // Run overdue check whenever invoices are loaded or updated
-    if (invoiceRecords.length > 0) {
-      checkOverdueInvoices();
-    }
+    if (invoiceRecords.length === 0 || !canWrite) return;
+    void markOverdueInvoices(
+      invoiceRecords,
+      updateInvoice,
+      error => logger.error('Error updating invoice to overdue:', error),
+    ).then(count => {
+      if (count > 0) logger.debug(`${formatCountLabel(count, 'Rechnung', 'Rechnungen')} wurden automatisch als überfällig markiert.`);
+    });
   }, [invoiceRecords, updateInvoice, canWrite]);
 
   const handleSort = (key: string) => {
@@ -339,36 +315,22 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       });
       return;
     }
-    if (invoice.status !== 'draft') {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Rechnung löschen',
-        message: 'Diese Rechnung wurde bereits versendet bzw. gemahnt. Das Löschen versendeter oder gemahnter Rechnungen kann die GoBD-Konformität verletzen und ist rechtlich problematisch. Sind Sie sicher, dass Sie fortfahren möchten?',
-        onConfirm: async () => {
-          try {
-            await removeInvoice(invoice.id);
-          } catch (error) {
-            logger.error('Error deleting invoice:', error);
-          }
-        },
-        isDestructive: true,
-        isGoBDWarning: true
-      });
-    } else {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Rechnung löschen',
-        message: `Möchten Sie die Rechnung ${invoice.invoiceNumber} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
-        onConfirm: async () => {
-          try {
-            await removeInvoice(invoice.id);
-          } catch (error) {
-            logger.error('Error deleting invoice:', error);
-          }
-        },
-        isDestructive: true
-      });
-    }
+    // Nur Entwürfe sind löschbar (canDeleteInvoice), daher gibt es keinen GoBD-Zweig mehr (Prüfbericht M-2).
+    setConfirmModal({
+      isOpen: true,
+      title: 'Rechnung löschen',
+      message: `Möchten Sie die Rechnung ${invoice.invoiceNumber} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      onConfirm: async () => {
+        try {
+          await removeInvoice(invoice.id);
+          notify({ variant: 'success', message: `Rechnung ${invoice.invoiceNumber} wurde gelöscht.` });
+        } catch (error) {
+          logger.error('Error deleting invoice:', error);
+          notify({ variant: 'error', message: actionErrorMessage('Die Rechnung konnte nicht gelöscht werden.', error) });
+        }
+      },
+      isDestructive: true
+    });
   };
 
   const requestOriginalUpload = (invoice: Invoice) => {
@@ -552,7 +514,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       try {
         let successCount = 0;
         let errorCount = 0;
-        
+        let attachmentFailures = 0;
+        const statusWarnings: string[] = [];
+
         for (const invoice of downloadModal.bulkInvoices) {
           try {
             const customer = customers.find(c => c.id === invoice.customerId);
@@ -612,23 +576,32 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   downloadBlob(blob, attachmentFilename);
                 } catch (error) {
                   logger.error(`Error downloading attachment ${attachment.name} for invoice ${invoice.invoiceNumber}:`, error);
+                  attachmentFailures++;
                 }
               }
             }
             
-            // Mark as sent if requested
-            if (markAsSent && (invoice.status === 'draft' || invoice.status === 'paid' || invoice.status === 'sent' || invoice.status === 'overdue')) {
-              await updateInvoice(invoice.id, { status: 'sent' });
+            // Die Datei ist fertig; nur Entwürfe werden als versendet markiert.
+            // Ein Fehler beim Statuswechsel zählt nicht als Download-Fehler.
+            if (markAsSent && invoice.status === 'draft') {
+              try {
+                await updateInvoice(invoice.id, { status: 'sent' });
+              } catch (error) {
+                statusWarnings.push(`${invoice.invoiceNumber}: Status konnte nicht auf „versendet“ gesetzt werden.`);
+                logger.error(`Invoice ${invoice.invoiceNumber} was downloaded but its status could not be updated:`, error);
+              }
             }
-            
+
             successCount++;
           } catch (error) {
             logger.error(`Error downloading invoice ${invoice.invoiceNumber}:`, error);
             errorCount++;
           }
         }
-        
-        notify({ variant: errorCount > 0 ? 'warning' : 'success', message: `${formatCountLabel(successCount, 'Rechnung', 'Rechnungen')} erfolgreich heruntergeladen.${errorCount > 0 ? ` ${errorCount} mit Fehler.` : ''}` });
+
+        const statusInfo = statusWarnings.length > 0 ? ` Status nicht gesetzt bei: ${statusWarnings.join(' ')}` : '';
+        const attachmentInfo = attachmentFailures > 0 ? ` ${attachmentFailures} ${attachmentFailures === 1 ? 'Anhang' : 'Anhänge'} nicht heruntergeladen.` : '';
+        notify({ variant: errorCount > 0 || statusWarnings.length > 0 || attachmentFailures > 0 ? 'warning' : 'success', message: `${formatCountLabel(successCount, 'Rechnung', 'Rechnungen')} erfolgreich heruntergeladen.${errorCount > 0 ? ` ${errorCount} mit Fehler.` : ''}${attachmentInfo}${statusInfo}` });
         
         // Clear selection and close modal
         setSelectedInvoiceIds([]);
@@ -706,13 +679,22 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
             downloadBlob(blob, attachmentFilename);
           } catch (error) {
             logger.error(`Error downloading attachment ${attachment.name} for invoice ${invoice.invoiceNumber}:`, error);
+            notify({ variant: 'warning', message: actionErrorMessage(`Der Anhang „${attachment.name}“ konnte nicht heruntergeladen werden.`, error) });
           }
         }
-      }// Mark as sent if requested
-        if (markAsSent && (invoice.status === 'draft' || invoice.status === 'paid' || invoice.status === 'sent' || invoice.status === 'overdue')) {
+      }
+
+      // Nur Entwürfe werden beim Download als versendet markiert. Der Statuswechsel läuft
+      // getrennt vom Datei-Erzeugen, damit ein Fehler dort nicht als Datei-Fehler erscheint.
+      if (markAsSent && invoice.status === 'draft') {
+        try {
           await updateInvoice(invoice.id, { status: 'sent' });
+        } catch (error) {
+          logger.error('Rechnung konnte nach dem Download nicht als versendet markiert werden:', error);
+          notify({ variant: 'warning', message: `Datei ${invoice.invoiceNumber} erstellt, Status nicht gesetzt. Der Status konnte nicht auf „versendet“ gesetzt werden. Bitte den Status prüfen.` });
         }
-      
+      }
+
     } catch (error) {
       logger.error('Fehler beim Generieren der Datei:', error);
       notify({ variant: 'error', message: 'Fehler beim Erstellen der Datei. Bitte versuchen Sie es erneut.' });
@@ -862,7 +844,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         });
         
         const attachmentInfo = attachments && attachments.length > 0 
-          ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
+          ? ` mit ${attachments.length} zusätzlichen ${attachments.length > 1 ? 'Anhänge' : 'Anhang'}`
           : '';
         
         const failedCount = errorCount + missingRecipientCount;
@@ -980,20 +962,32 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
         }
       });
       
-      const attachmentInfo = attachments && attachments.length > 0 
-        ? ` mit ${attachments.length} zusätzlichen Anhang${attachments.length > 1 ? 'en' : ''}`
+      const attachmentInfo = attachments && attachments.length > 0
+        ? ` mit ${attachments.length} zusätzlichen ${attachments.length > 1 ? 'Anhänge' : 'Anhang'}`
         : '';
       
       const deliveryMessage = result.simulated
         ? result.message || 'Demo: Rechnungsversand simuliert. Es wurde keine E-Mail verschickt.'
         : result.warning || `Rechnung erfolgreich per E-Mail versendet! (${formatLabels.join(', ')})${attachmentInfo}`;
-      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
-      
-      // Automatically mark as sent if it was draft
+
+      // Automatically mark as sent if it was draft. Die E-Mail ist zu diesem Zeitpunkt bereits
+      // übergeben; ein Fehler beim Statuswechsel darf daher nicht als Versandfehler gemeldet werden.
+      let statusUpdateFailed = false;
       if (emailModal.invoice.status === 'draft') {
-        await updateInvoice(emailModal.invoice.id, { status: 'sent' });
+        try {
+          await updateInvoice(emailModal.invoice.id, { status: 'sent' });
+        } catch (error) {
+          statusUpdateFailed = true;
+          logger.error(`Invoice ${emailModal.invoice.invoiceNumber} was sent but its status could not be updated:`, error);
+        }
       }
-      
+
+      if (statusUpdateFailed) {
+        notify({ variant: 'warning', message: `Rechnung ${emailModal.invoice.invoiceNumber} gesendet, Status nicht gesetzt. Der Status konnte nicht auf „versendet“ gesetzt werden. Bitte vor einem erneuten Versand prüfen.` });
+      } else {
+        notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
+      }
+
       // Close email dialog
       setEmailModal({ isOpen: false, invoice: null, customer: null, isBulkMode: false, bulkInvoices: [] });
     } catch (error) {
@@ -1008,44 +1002,9 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
     setEmailModal({ isOpen: false, invoice: null, customer: null, isBulkMode: false, bulkInvoices: [] });
   };
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'paid': return 'Bezahlt';
-      case 'sent': return 'Versendet';
-      case 'draft': return 'Entwurf';
-      case 'overdue': return 'Überfällig';
-      case 'reminded_1x': return '1x gemahnt';
-      case 'reminded_2x': return '2x gemahnt';
-      case 'reminded_3x': return '3x gemahnt';
-      default: return status;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid': return 'bg-green-100 text-green-800';
-      case 'sent': return 'bg-primary-light-custom text-primary-custom';
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'overdue': return 'bg-red-100 text-red-800';
-      case 'reminded_1x': return 'bg-orange-100 text-orange-800';
-      case 'reminded_2x': return 'bg-orange-200 text-orange-900';
-      case 'reminded_3x': return 'bg-red-200 text-red-900';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusDotColor = (status: string) => {
-    switch (status) {
-      case 'paid': return 'bg-green-500';
-      case 'sent': return 'bg-primary-custom';
-      case 'draft': return 'bg-gray-400';
-      case 'overdue': return 'bg-red-500';
-      case 'reminded_1x':
-      case 'reminded_2x': return 'bg-orange-500';
-      case 'reminded_3x': return 'bg-red-500';
-      default: return 'bg-gray-400';
-    }
-  };
+  const getStatusLabel = (status: string) => statusLabel('invoice', status);
+  const getStatusColor = (status: string) => statusBadgeClass('invoice', status);
+  const getStatusDotColor = (status: string) => statusDotClass('invoice', status);
 
   const setInvoiceTimePreset = (preset: 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'thisYear' | 'lastYear' | 'last30days') => {
     const today = new Date();
@@ -1134,6 +1093,13 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
       setSelectedInvoiceIds([]);
     }
   };
+
+  // Die Statusauswahl bietet nur an, was das gemeinsame Register für
+  // mindestens eine der ausgewählten Rechnungen als direkten Wechsel erlaubt.
+  const bulkStatusTargets = manualTargetsForSelection(
+    'invoice',
+    invoiceRecords.filter(invoice => selectedInvoiceIds.includes(invoice.id)).map(invoice => invoice.status),
+  ) as Invoice['status'][];
 
   const applyBulkStatusChange = async (invoiceIds: string[], newStatus: Invoice['status']) => {
     setIsBulkOperation(true);
@@ -1323,7 +1289,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
           <button
             type="button"
             onClick={() => handleOpenEditor()}
-            className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+            className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-colors duration-300 hover:brightness-90 sm:min-w-0 sm:px-4"
             aria-label="Neue Rechnung erstellen"
             title="Neue Rechnung erstellen"
           >
@@ -1429,15 +1395,16 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                   e.target.value = '';
                 }
               }}
-              disabled={isBulkOperation}
-              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom"
+              disabled={isBulkOperation || bulkStatusTargets.length === 0}
+              title={bulkStatusTargets.length === 0 ? 'Für die ausgewählten Rechnungen ist kein direkter Statuswechsel möglich.' : undefined}
+              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50"
               defaultValue=""
               aria-label="Status ändern"
             >
               <option value="">Wählen...</option>
-              <option value="draft">Entwurf</option>
-              <option value="sent">Versendet</option>
-              <option value="overdue">Überfällig</option>
+              {bulkStatusTargets.map(status => (
+                <option key={status} value={status}>{getStatusLabel(status)}</option>
+              ))}
             </select>
           </div>
           <button
@@ -1487,7 +1454,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                 <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
                   style={{ width: showInlineActions ? INVOICE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
-                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}
+                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left table-head text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}
                 >
                   <span className="sr-only">Aktionen</span>
                 </th>
@@ -1647,7 +1614,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                         {invoice.origin === 'imported' && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal || isExporting === invoice.id} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>{invoice.hasOriginalDocument ? 'Original ersetzen' : 'Original hinterlegen'}</ActionMenuItem>}
                         {invoice.origin === 'imported' && invoice.hasOriginalDocument && <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => requestOriginalRemoval(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>Original entfernen</ActionMenuItem>}
                         <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
-                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
+                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" disabled={!canDeleteInvoice(invoice)} title={!canDeleteInvoice(invoice) ? 'Nur Entwürfe ohne Vorlage oder Angebotsquelle können gelöscht werden' : undefined} onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </ActionMenu>
                     )}
                   </td>
@@ -1725,7 +1692,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                       {invoice.origin === 'imported' && <ActionMenuItem icon={<FileUp className="h-4 w-4" />} tone="indigo" onClick={() => requestOriginalUpload(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal || isExporting === invoice.id} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>{invoice.hasOriginalDocument ? 'Original ersetzen' : 'Original hinterlegen'}</ActionMenuItem>}
                       {invoice.origin === 'imported' && invoice.hasOriginalDocument && <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => requestOriginalRemoval(invoice)} disabled={!canWrite || !invoice.canReplaceOriginal} title={!invoice.canReplaceOriginal ? originalLockedHint : undefined}>Original entfernen</ActionMenuItem>}
                       <ActionMenuItem icon={<History className="h-4 w-4" />} tone="gray" onClick={() => setHistoryInvoice(invoice)}>Änderungsverlauf</ActionMenuItem>
-                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
+                        <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" disabled={!canDeleteInvoice(invoice)} title={!canDeleteInvoice(invoice) ? 'Nur Entwürfe ohne Vorlage oder Angebotsquelle können gelöscht werden' : undefined} onClick={() => handleDelete(invoice)}>Löschen</ActionMenuItem>
                     </>
                   </div>
                   </ActionMenu>
@@ -1881,6 +1848,7 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
                 setShowCustomerForm(false);
               } catch (error) {
                 logger.error('Error creating customer:', error);
+                notify({ variant: 'error', message: actionErrorMessage('Der Kunde konnte nicht angelegt werden.', error) });
               }
             }} className="form-consistent-fields space-y-4">
               <div>
@@ -1971,14 +1939,14 @@ export function InvoiceManagement({ initialFilter, initialSearchTerm, initialInv
               <div className="form-action-bar pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-xl hover:bg-primary-custom/90 transition-all duration-300 hover:scale-105"
+                  className="flex-1 bg-primary-custom text-white py-2 px-4 rounded-xl hover:bg-primary-custom/90 transition-colors duration-300"
                 >
                   {terminology.entity.createLabel}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowCustomerForm(false)}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-xl hover:bg-gray-400 transition-all duration-300"
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-xl hover:bg-gray-400 transition-colors duration-300"
                 >
                   Abbrechen
                 </button>

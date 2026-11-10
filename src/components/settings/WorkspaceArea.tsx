@@ -30,7 +30,7 @@ function TerminologyPreview({ profile, receiptLabel, previewOverride }: { profil
         <span className="flex h-5 w-5 items-center justify-center rounded-md" style={{ backgroundColor: preview.accentSoft, color: preview.accent }}>
           <Building2 className="h-3 w-3" />
         </span>
-        <span className="truncate text-[9px] font-bold tracking-wide text-gray-800">SoloOffice</span>
+        <span className="truncate text-[11px] font-semibold tracking-wide text-gray-800">SoloOffice</span>
       </div>
       <div className="space-y-0.5 p-1.5">
         <div className="terminology-preview-search mb-1 flex items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5 py-1 text-[8px] text-gray-400">
@@ -253,7 +253,7 @@ export function WorkspaceArea({
                 >
                   {selected && (
                     <span
-                      className="terminology-profile-selected-label absolute -top-2 left-1/2 z-10 -translate-x-1/2 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+                      className="terminology-profile-selected-label absolute -top-2 left-1/2 z-10 -translate-x-1/2 rounded-full px-2 py-0.5 text-[11px] font-semibold"
                       style={{ backgroundColor: preview.accentSoft, color: preview.accent }}
                     >
                       Ausgewählt

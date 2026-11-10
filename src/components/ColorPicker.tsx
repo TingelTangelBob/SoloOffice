@@ -114,7 +114,7 @@ export function ColorPicker({ label, value, onChange, defaultColor, hint }: Colo
                 setHexDraft(swatch);
                 setHexError(false);
               }}
-              className={`inline-flex h-11 w-11 min-h-0 items-center justify-center rounded-full border-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-color)] ${selected ? 'border-gray-900 ring-2 ring-gray-900/20' : 'border-white shadow ring-1 ring-gray-200 hover:scale-105'}`}
+              className={`inline-flex h-11 w-11 min-h-0 items-center justify-center rounded-full border-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary-color)] ${selected ? 'border-gray-900 ring-2 ring-gray-900/20' : 'border-white shadow ring-1 ring-gray-200'}`}
               style={{ backgroundColor: swatch }}
               aria-label={`Farbe ${swatch} wählen`}
               aria-pressed={selected}

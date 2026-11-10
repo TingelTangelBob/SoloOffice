@@ -547,7 +547,7 @@ class ApiService {
       invoiceId: run.generatedInvoiceId,
       invoiceNumber: run.invoiceNumber,
       scheduledDate: new Date(run.scheduledDate),
-      status: run.status === 'failure' ? 'failed' : 'success',
+      status: run.status,
       errorMessage: run.error,
       createdAt: new Date(run.createdAt),
     }));
@@ -1011,7 +1011,7 @@ class ApiService {
   async testSmtpConnection(
     useDatabaseSettings = true,
     settings: object | null = null
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; suggestion?: { smtp_port: number; smtp_secure: boolean } }> {
     return this.request('/email-management/test-smtp', {
       method: 'POST',
       body: JSON.stringify({

@@ -19,6 +19,8 @@ import { compareTableValues, sortByTableState, type SortState } from '../utils/t
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { calculateCustomerInvoiceMetrics, upcomingCustomerJobs } from '../utils/customerDetailMetrics';
+import { statusLabel, statusTone } from '../utils/statusDisplay';
+import type { StateMachineName } from '../../backend/shared/stateMachines.js';
 
 interface CustomerDetailProps {
   customerId?: string;
@@ -55,30 +57,14 @@ function TypeIcon({ customer, className = 'h-5 w-5' }: { customer: Customer; cla
   return <Icon className={className} aria-hidden="true" />;
 }
 
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: 'Entwurf',
-    sent: 'Versendet',
-    paid: 'Bezahlt',
-    overdue: 'Überfällig',
-    accepted: 'Angenommen',
-    rejected: 'Abgelehnt',
-    expired: 'Abgelaufen',
-    billed: 'Abgerechnet',
-    'in-progress': 'In Bearbeitung',
-    completed: 'Abgeschlossen',
-    invoiced: 'Abgerechnet',
-  };
-  return labels[status] || status;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const tone = status === 'paid' || status === 'accepted' || status === 'completed' || status === 'invoiced'
+function StatusBadge({ machine, status }: { machine: StateMachineName; status: string }) {
+  const tone = statusTone(machine, status);
+  const className = tone === 'success' || tone === 'settled'
     ? 'bg-emerald-50 text-emerald-700'
-    : status === 'overdue' || status === 'rejected'
+    : tone === 'danger' || tone === 'dangerStrong'
       ? 'bg-rose-50 text-rose-700'
       : 'bg-gray-100 text-gray-600';
-  return <span className={`status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{statusLabel(status)}</span>;
+  return <span className={`status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>{statusLabel(machine, status)}</span>;
 }
 
 function EmptyRelation({ message }: { message: string }) {
@@ -247,14 +233,14 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
     const cellPadding = compact ? 'px-2 py-2.5' : 'px-3 py-3';
     const headerPadding = compact ? 'px-2 py-2' : 'px-3 py-2.5';
     const renderHeader = (label: string, sortKey: string, align: 'left' | 'right' = 'left') => compact
-      ? <th scope="col" className={`${headerPadding} text-xs font-medium uppercase tracking-wider text-gray-500 ${align === 'right' ? 'text-right' : 'text-left'}`}>{label}</th>
+      ? <th scope="col" className={`${headerPadding} table-head text-gray-500 ${align === 'right' ? 'text-right' : 'text-left'}`}>{label}</th>
       : <SortableTableHeader label={label} sortKey={sortKey} activeKey={documentSort.key} direction={documentSort.direction} onSort={handleDocumentSort} align={align} className={headerPadding} />;
 
     return (
       <div className="overflow-hidden rounded-lg border border-gray-200">
         <div className="overflow-x-auto">
           <table className={`w-full text-left text-sm ${compact ? '' : 'min-w-[760px]'}`}>
-            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <thead className="bg-gray-50 table-head text-gray-500">
               <tr>
                 {renderHeader('Nummer', 'number')}
                 {renderHeader('Datum', 'date')}
@@ -292,7 +278,7 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
                 {kind === 'jobs'
                   ? <td className={`whitespace-nowrap ${cellPadding} text-right tabular-nums text-gray-600`}>{formatNumber(('hoursWorked' in item ? item.hoursWorked : 0) || 0, company.locale, company.numberFormat, 2)} h</td>
                   : <td className={`whitespace-nowrap ${cellPadding} text-right font-medium tabular-nums text-gray-900`}>{total !== undefined ? money(total) : '–'}</td>}
-                <td className={`whitespace-nowrap ${cellPadding}`}><StatusBadge status={item.status} /></td>
+                <td className={`whitespace-nowrap ${cellPadding}`}><StatusBadge machine={kind === 'quotes' ? 'quote' : kind === 'jobs' ? 'job' : kind === 'credit-notes' ? 'creditNote' : 'invoice'} status={item.status} /></td>
               </tr>
             );
           })}
@@ -412,12 +398,12 @@ export function CustomerDetail({ customerId, initialTab, onNavigate }: CustomerD
                       {(customer.additionalEmails || []).map(email => <div key={email.id} className="flex min-w-0 items-center gap-3 text-gray-600"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className="truncate">{email.email}{email.label ? ` · ${email.label}` : ''}</span></div>)}
                     </div>
                     <div className="mt-5 border-t border-gray-100 pt-4">
-                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Adresse</p>
+                      <p className="table-head text-gray-500">Adresse</p>
                       <p className="mt-1 text-sm leading-6 text-gray-900">{[customer.address, customer.addressSupplement, [customer.postalCode, customer.city].filter(Boolean).join(' '), customer.country].filter(Boolean).map((value, index) => <span key={`${value}-${index}`} className="block">{value}</span>)}</p>
                     </div>
                     {(customer.taxId || customer.leitwegId) && <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {customer.taxId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
-                      {customer.leitwegId && <div><dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Leitweg-ID</dt><dd className="mt-1 break-all text-sm text-gray-900">{customer.leitwegId}</dd></div>}
+                      {customer.taxId && <div><dt className="table-head text-gray-500">USt-IdNr.</dt><dd className="mt-1 text-sm text-gray-900">{customer.taxId}</dd></div>}
+                      {customer.leitwegId && <div><dt className="table-head text-gray-500">Leitweg-ID</dt><dd className="mt-1 break-all text-sm text-gray-900">{customer.leitwegId}</dd></div>}
                     </dl>}
                   </section>
 

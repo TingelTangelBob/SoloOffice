@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
+import { createSubmitGuard } from '../utils/submitGuard';
 import { collapseRow } from '../utils/motion';
 import { useEnteringRows } from '../hooks/useEnteringRows';
 import logger from '../utils/logger';
@@ -41,6 +44,7 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
 
 // Sortable Item Component for Drag & Drop
 interface SortableQuoteItemProps {
@@ -293,7 +297,7 @@ function SortableQuoteItem({
 
         {/* Beschreibung - 3 columns */}
         <div className="min-w-0">
-          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
+          <label className="block text-sm font-medium text-gray-700 mb-1 lg:sr-only">
             Beschreibung *
           </label>
           {renderDescriptionField()}
@@ -301,7 +305,7 @@ function SortableQuoteItem({
         
         {/* Menge - 1 column */}
         <div className="min-w-0">
-          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
+          <label className="block text-sm font-medium text-gray-700 mb-1 lg:sr-only">
             Menge *
           </label>
           <LocalizedNumberInput
@@ -318,7 +322,7 @@ function SortableQuoteItem({
 
         {/* Einzelpreis - 1 column */}
         <div className="min-w-0">
-          <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
+          <label className="block text-sm font-medium text-gray-700 mb-1 lg:sr-only">
             Einzelpreis {currencySymbol}
           </label>
           <LocalizedNumberInput minimumFractionDigits={2}
@@ -336,7 +340,7 @@ function SortableQuoteItem({
         {/* MwSt - 1 column */}
         {!isSmallBusiness && (
           <div className="min-w-0">
-            <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
+            <label className="block text-sm font-medium text-gray-700 mb-1 lg:sr-only">
               MwSt %
             </label>
             <LocalizedNumberInput
@@ -355,7 +359,7 @@ function SortableQuoteItem({
         {/* Rabatt Type & Value - Combined */}
         {discountsEnabled && (
           <div className="min-w-0">
-            <label className="block text-xs font-medium text-gray-700 mb-1 lg:sr-only">
+            <label className="block text-sm font-medium text-gray-700 mb-1 lg:sr-only">
               Rabatt
             </label>
             <div className="relative min-w-0">
@@ -395,7 +399,7 @@ function SortableQuoteItem({
               {formatCurrency(itemTotalAfterDiscount, company.locale, company.numberFormat, company.currency)}
             </span>
             {discountAmount > 0 && (
-              <span className="shrink-0 whitespace-nowrap text-[10px] font-normal leading-4 text-gray-500 line-through">
+              <span className="shrink-0 whitespace-nowrap text-[11px] font-normal leading-4 text-gray-500 line-through">
                 {formatCurrency(itemTotalBeforeDiscount, company.locale, company.numberFormat, company.currency)}
               </span>
             )}
@@ -447,7 +451,7 @@ function SortableQuoteItem({
         {/* Form Fields */}
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Beschreibung *
             </label>
             {renderDescriptionField()}
@@ -455,7 +459,7 @@ function SortableQuoteItem({
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Menge *
               </label>
               <LocalizedNumberInput
@@ -471,7 +475,7 @@ function SortableQuoteItem({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Einzelpreis {currencySymbol}
               </label>
               <LocalizedNumberInput minimumFractionDigits={2}
@@ -489,7 +493,7 @@ function SortableQuoteItem({
 
           {!isSmallBusiness && (
             <div className="col-span-2 md:col-span-1">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 MwSt %
               </label>
               <LocalizedNumberInput
@@ -507,7 +511,7 @@ function SortableQuoteItem({
 
           {discountsEnabled && (
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Rabatt
               </label>
               <div className="relative min-w-0">
@@ -564,6 +568,8 @@ interface QuoteEditorProps {
 
 export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustomer, onNavigateToCustomers, onNavigateToSettings }: QuoteEditorProps) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { company } = useCompany();
   const { addQuote, updateQuote } = useQuotes();
@@ -591,6 +597,12 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
   const [showGlobalDiscountRow, setShowGlobalDiscountRow] = useState(false);
   const [attachments, setAttachments] = useState<QuoteAttachment[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  // Warnt beim Seitenwechsel und Neuladen (Prüfbericht M-16).
+  useUnsavedChangesGuard({
+    id: 'quote-editor',
+    isDirty,
+    message: 'Das Angebot enthält ungespeicherte Änderungen. Möchten Sie diese verwerfen?',
+  });
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const customerFieldRef = useRef<HTMLDivElement>(null);
@@ -917,6 +929,9 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
     setPreviewDocuments([]);
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitGuardRef = useRef(createSubmitGuard(setIsSubmitting));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -997,19 +1012,24 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
       attachments
     };
 
-    try {
-      if (quote) {
-        await updateQuote(quote.id, quoteData);
-        logger.info('Angebot aktualisiert', { quoteNumber });
-      } else {
-        await addQuote(quoteData);
-        logger.info('Angebot erstellt', { quoteNumber });
+    // Doppelklick darf kein zweites Angebot anlegen (Prüfbericht H-6).
+    await submitGuardRef.current.run(async () => {
+      try {
+        if (quote) {
+          await updateQuote(quote.id, quoteData);
+          logger.info('Angebot aktualisiert', { quoteNumber });
+        } else {
+          await addQuote(quoteData);
+          logger.info('Angebot erstellt', { quoteNumber });
+        }
+        // Gespeichert: der Seitenschutz darf beim Verlassen nicht mehr fragen.
+        flushSync(() => setIsDirty(false));
+        onClose();
+      } catch (error) {
+        logger.error('Fehler beim Speichern des Angebots', { error });
+        notify({ variant: 'error', message: error instanceof Error ? error.message : 'Fehler beim Speichern des Angebots' });
       }
-      onClose();
-    } catch (error) {
-      logger.error('Fehler beim Speichern des Angebots', { error });
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Fehler beim Speichern des Angebots' });
-    }
+    });
   };
 
   const totals = calculateTotals();
@@ -1124,7 +1144,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
           <>
             <button type="button" onClick={requestClose} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none">Abbrechen</button>
             <button type="button" onClick={handleQuotePreview} className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none"><Eye className="mr-2 h-5 w-5" />Vorschau</button>
-            <button type="submit" disabled={Boolean(totals.validationError)} className="btn-primary disabled:opacity-50 inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
+            <button type="submit" disabled={!canWrite || Boolean(totals.validationError) || isSubmitting} className="btn-primary disabled:opacity-50 inline-flex min-h-12 flex-1 items-center justify-center rounded-lg px-6 py-2 text-base font-semibold text-white transition hover:brightness-90 sm:flex-none"><Save className="mr-2 h-5 w-5" />{quote ? 'Änderungen speichern' : 'Angebot erstellen'}</button>
           </>
         )}
       >
@@ -1265,7 +1285,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                     <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
                       {hourlyRateTemplates.length > 0 && (
                         <div className="p-2 border-b border-gray-200">
-                          <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">
+                          <div className="px-3 py-2 table-head text-gray-500">
                             Stundensätze
                           </div>
                           {hourlyRateTemplates.map((template) => {
@@ -1294,7 +1314,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
 
                       {materialTemplates.length > 0 && (
                         <div className="p-2">
-                          <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">
+                          <div className="px-3 py-2 table-head text-gray-500">
                             Materialien
                           </div>
                           {materialTemplates.map((template) => {
@@ -1522,7 +1542,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
               </div>
             )}
 
-            <div className="theme-gradient-divider flex justify-between border-t-2 pt-3 text-lg font-bold">
+            <div className="theme-gradient-divider flex justify-between border-t-2 pt-3 text-lg font-semibold tabular-nums">
               <span className="theme-gradient-heading">Gesamtbetrag:</span>
               <span className="theme-gradient-total">{formatMoney(totals.total)}</span>
             </div>
@@ -1553,7 +1573,7 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={4}
-                className="min-h-[14rem] w-full resize-none rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-custom"
+                className="form-input min-h-[14rem] w-full resize-none"
                 placeholder="Optional: Zusätzliche Informationen für das Angebot..."
               />
             </div>
@@ -1600,6 +1620,8 @@ export function QuoteEditor({ quote, initialCustomerId, onClose, onCreateCustome
         onClose={() => setShowDiscardModal(false)}
         onConfirm={() => {
           setShowDiscardModal(false);
+          // Verworfen ist bestätigt: der Seitenschutz fragt kein zweites Mal.
+          flushSync(() => setIsDirty(false));
           onClose();
         }}
         title="Änderungen verwerfen?"

@@ -150,7 +150,10 @@ export function requireWorkspaceFromParam(param = 'id') {
  * operate business data, and only admins/owners can change company settings.
  */
 export function authorizeLegacyRequest(req, res, next) {
-  if (sensitivePrefixes.some(prefix => req.path.startsWith(prefix)) && !hasPermission(req.auth, 'workspace.settings')) {
+  // Express ordnet Pfade ohne Rücksicht auf Groß-/Kleinschreibung zu; die
+  // Präfixprüfung muss deshalb auf derselben Schreibweise arbeiten.
+  const path = req.path.toLowerCase();
+  if (sensitivePrefixes.some(prefix => path.startsWith(prefix)) && !hasPermission(req.auth, 'workspace.settings')) {
     return res.status(403).json({ error: 'Nur Administratoren dürfen diesen Bereich öffnen', code: 'FORBIDDEN' });
   }
 
@@ -158,7 +161,7 @@ export function authorizeLegacyRequest(req, res, next) {
     return res.status(403).json({ error: 'Dieser Benutzer darf keine Daten ändern', code: 'FORBIDDEN' });
   }
 
-  if (writeMethods.has(req.method) && settingsPrefixes.some(prefix => req.path.startsWith(prefix)) && !hasPermission(req.auth, 'workspace.settings')) {
+  if (writeMethods.has(req.method) && settingsPrefixes.some(prefix => path.startsWith(prefix)) && !hasPermission(req.auth, 'workspace.settings')) {
     return res.status(403).json({ error: 'Nur Administratoren dürfen Einstellungen ändern', code: 'FORBIDDEN' });
   }
 

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { useCustomers } from '../context/CustomerContext';
-import { downloadBlob, generateInvoicePDF, generateJobPDF, generateQuotePDF } from '../utils/pdfGenerator';
+import { downloadBlob, generateInvoicePDF, generateJobPDF, generateQuotePDF } from '../utils/pdfLazy';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { getTerminology } from '../utils/terminology';
 import logger from '../utils/logger';

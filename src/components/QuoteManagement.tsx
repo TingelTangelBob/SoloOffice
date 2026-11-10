@@ -9,7 +9,7 @@ import { ConfirmationModal } from './ConfirmationModal';
 import { EmailSendModal } from './EmailSendModal';
 import { apiService } from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { generateQuotePDF, downloadBlob } from '../utils/pdfGenerator';
+import { generateQuotePDF, downloadBlob } from '../utils/pdfLazy';
 import { DocumentPreview } from './DocumentPreview';
 import { createQuoteAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
@@ -24,12 +24,15 @@ import { ImportWizard } from './ImportWizard';
 import { useElementWidth } from '../hooks/useElementWidth';
 import { ACTION_MENU_COLUMN_WIDTH, listTableLayout } from '../utils/tableLayout';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
 import { useAuth } from '../context/AuthContext';
 import { getActiveEmailRecipients } from '../utils/bulkEmailRecipients';
 import { EmptyState } from './EmptyState';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
+import { statusBadgeClass, statusDotClass, statusLabel } from '../utils/statusDisplay';
+import { canTransition, manualTargetsForSelection } from '../../backend/shared/stateMachines.js';
 
 interface QuoteManagementProps {
   onNavigate?: (page: string, quoteId?: string) => void;
@@ -256,8 +259,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         try {
           await apiService.deleteQuote(quote.id);
           await loadQuotes();
+          notify({ variant: 'success', message: `Angebot ${quote.quoteNumber} wurde gelöscht.` });
         } catch (error) {
           logger.error('Error deleting quote:', error);
+          notify({ variant: 'error', message: actionErrorMessage('Das Angebot konnte nicht gelöscht werden.', error) });
         }
       },
       isDestructive: true,
@@ -290,8 +295,10 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     try {
       await apiService.updateQuote(id, { status: newStatus });
       await loadQuotes();
+      notify({ variant: 'success', message: 'Der Angebotsstatus wurde aktualisiert.' });
     } catch (error) {
       logger.error('Error updating quote status:', error);
+      notify({ variant: 'error', message: actionErrorMessage('Der Angebotsstatus konnte nicht geändert werden.', error) });
     }
   };
 
@@ -315,7 +322,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
           await apiService.convertQuoteToInvoice(quote.id);
           await loadQuotes();
           await refreshInvoices(); // Refresh invoices list
-          notify({ variant: 'success', message: 'Angebot wurde erfolgreich in eine Rechnung umgewandelt!' });
+          notify({ variant: 'success', message: 'Angebot wurde erfolgreich in eine Rechnung umgewandelt.' });
           if (onNavigate) {
             onNavigate('invoices');
           }
@@ -352,14 +359,27 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
 
     if (selectedQuoteIds.length === 0) return;
     
+    // Angebote, für die der Wechsel nicht möglich ist (abgerechnet) oder die
+    // den Status schon haben, bleiben unverändert und brechen den Lauf nicht ab.
+    const eligibleIds = selectedQuoteIds.filter(quoteId => {
+      const quote = quotes.find(item => item.id === quoteId);
+      return quote && quote.status !== newStatus && canTransition('quote', quote.status, newStatus, ['manual']);
+    });
+    const skippedCount = selectedQuoteIds.length - eligibleIds.length;
+
     setIsBulkOperation(true);
     try {
-      for (const quoteId of selectedQuoteIds) {
+      for (const quoteId of eligibleIds) {
         await apiService.updateQuote(quoteId, { status: newStatus });
       }
       await loadQuotes();
       setSelectedQuoteIds([]);
-      notify({ variant: 'success', message: `${formatCountLabel(selectedQuoteIds.length, 'Angebot', 'Angebote')} erfolgreich aktualisiert.` });
+      notify({
+        variant: skippedCount > 0 ? 'warning' : 'success',
+        message: skippedCount > 0
+          ? `${formatCountLabel(eligibleIds.length, 'Angebot', 'Angebote')} aktualisiert; ${formatCountLabel(skippedCount, 'Angebot', 'Angebote')} unverändert (abgerechnet oder bereits in diesem Status).`
+          : `${formatCountLabel(eligibleIds.length, 'Angebot', 'Angebote')} erfolgreich aktualisiert.`,
+      });
     } catch (error) {
       logger.error('Error updating quote statuses:', error);
       notify({ variant: 'error', message: 'Fehler beim Aktualisieren der Angebote.' });
@@ -412,41 +432,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
     }
   };
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'accepted': return 'Akzeptiert';
-      case 'billed': return 'Abgerechnet';
-      case 'sent': return 'Versendet';
-      case 'draft': return 'Entwurf';
-      case 'rejected': return 'Abgelehnt';
-      case 'expired': return 'Abgelaufen';
-      default: return status;
-    }
-  };
+  const getStatusLabel = (status: string) => statusLabel('quote', status);
+  const getStatusColor = (status: string) => statusBadgeClass('quote', status);
+  const getStatusDotColor = (status: string) => statusDotClass('quote', status);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'accepted': return 'bg-green-100 text-green-800';
-      case 'billed': return 'bg-blue-100 text-blue-800';
-      case 'sent': return 'bg-primary-light-custom text-primary-custom';
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'rejected': return 'bg-red-100 text-red-800';
-      case 'expired': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusDotColor = (status: string) => {
-    switch (status) {
-      case 'accepted': return 'bg-green-500';
-      case 'billed': return 'bg-blue-500';
-      case 'sent': return 'bg-primary-custom';
-      case 'draft': return 'bg-gray-400';
-      case 'rejected': return 'bg-red-500';
-      case 'expired': return 'bg-orange-500';
-      default: return 'bg-gray-400';
-    }
-  };
+  // Die Statusauswahl bietet nur an, was das gemeinsame Register für
+  // mindestens eines der ausgewählten Angebote als direkten Wechsel erlaubt.
+  const bulkStatusTargets = manualTargetsForSelection(
+    'quote',
+    quotes.filter(quote => selectedQuoteIds.includes(quote.id)).map(quote => quote.status),
+  ) as Quote['status'][];
 
   const handlePreview = (quote: Quote) => {
     // Create preview documents for the quote
@@ -514,7 +509,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       logger.info('Quote PDF downloaded', { quoteId: quote.id, quoteNumber: quote.quoteNumber });
     } catch (error) {
       logger.error('Error generating quote PDF:', error);
-      notify({ variant: 'error', message: 'Fehler beim Erstellen des PDFs. Bitte versuchen Sie es erneut.' });
+      notify({ variant: 'error', message: actionErrorMessage('Fehler beim Erstellen des PDFs. Bitte versuchen Sie es erneut.', error) });
     } finally {
       setIsExporting(null);
     }
@@ -654,7 +649,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         } else if (simulatedCount > 0) {
           notify({ variant: 'info', message: `${deliveryInfo}.` });
         } else {
-          notify({ variant: 'success', message: `Alle ${formatCountLabel(successCount, 'Angebot', 'Angebote')} erfolgreich per E-Mail versendet!` });
+          notify({ variant: 'success', message: `Alle ${formatCountLabel(successCount, 'Angebot', 'Angebote')} erfolgreich per E-Mail versendet.` });
         }
         
         setEmailModal({ isOpen: false, quote: null, customer: null, isBulkMode: false, bulkQuotes: [] });
@@ -732,21 +727,32 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         throw new Error(result.message || 'Der E-Mail-Versand wurde abgelehnt.');
       }
 
-      // Update quote status to 'sent' if it's currently 'draft'
+      // Update quote status to 'sent' if it's currently 'draft'. Die E-Mail ist bereits übergeben;
+      // ein Fehler beim Statuswechsel darf nicht als Versandfehler gemeldet werden.
+      let statusUpdateFailed = false;
       if (activeQuote.status === 'draft') {
-        await apiService.updateQuote(activeQuote.id, { status: 'sent' });
+        try {
+          await apiService.updateQuote(activeQuote.id, { status: 'sent' });
+        } catch (error) {
+          statusUpdateFailed = true;
+          logger.error(`Quote ${activeQuote.quoteNumber} was sent but its status could not be updated:`, error);
+        }
         await loadQuotes();
       }
 
       const totalAttachments = processedAttachments.length;
-      const attachmentInfo = totalAttachments > 0 
+      const attachmentInfo = totalAttachments > 0
         ? ` mit ${totalAttachments} Anhang${totalAttachments > 1 ? 'en' : ''}`
         : '';
 
-      const deliveryMessage = result.simulated
-        ? result.message || 'Demo: Angebotsversand simuliert. Es wurde keine E-Mail verschickt.'
-        : result.warning || `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}`;
-      notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
+      if (statusUpdateFailed) {
+        notify({ variant: 'warning', message: `Angebot ${activeQuote.quoteNumber} gesendet, Status nicht gesetzt. Der Status konnte nicht auf „versendet“ gesetzt werden. Bitte vor einem erneuten Versand prüfen.` });
+      } else {
+        const deliveryMessage = result.simulated
+          ? result.message || 'Demo: Angebotsversand simuliert. Es wurde keine E-Mail verschickt.'
+          : result.warning || `Angebot erfolgreich per E-Mail versendet!${attachmentInfo}`;
+        notify({ variant: result.simulated ? 'info' : result.warning ? 'warning' : 'success', message: deliveryMessage });
+      }
       setEmailModal({ isOpen: false, quote: null, customer: null });
     } catch (error) {
       logger.error('Error sending quote email:', error);
@@ -783,7 +789,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
         </button>
         <button
           onClick={() => handleOpenEditor()}
-          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-colors duration-300 hover:brightness-90 sm:min-w-0 sm:px-4"
           aria-label="Neues Angebot erstellen"
           title="Neues Angebot erstellen"
         >
@@ -854,17 +860,16 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   e.target.value = '';
                 }
               }}
-              disabled={isBulkOperation}
-              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom"
+              disabled={isBulkOperation || bulkStatusTargets.length === 0}
+              title={bulkStatusTargets.length === 0 ? 'Abgerechnete Angebote lassen sich nicht mehr ändern.' : undefined}
+              className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom disabled:cursor-not-allowed disabled:opacity-50"
               defaultValue=""
               aria-label="Status ändern"
             >
               <option value="">Wählen...</option>
-              <option value="draft">Entwurf</option>
-              <option value="sent">Versendet</option>
-              <option value="accepted">Akzeptiert</option>
-              <option value="rejected">Abgelehnt</option>
-              <option value="expired">Abgelaufen</option>
+              {bulkStatusTargets.map(status => (
+                <option key={status} value={status}>{getStatusLabel(status)}</option>
+              ))}
             </select>
           </div>
           <button
@@ -908,7 +913,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                 <SortableTableHeader label="Status" sortKey="status" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} labelHidden={!showStatusLabel} className={`py-3 ${showStatusLabel ? 'w-32 px-3' : 'w-8 px-2'}`} />
                 <th
                   style={{ width: showInlineActions ? QUOTE_TABLE_LAYOUT.actionsColumnWidth : ACTION_MENU_COLUMN_WIDTH }}
-                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${showInlineActions ? 'px-3' : 'px-2'}`}
+                  className={`sticky right-0 z-20 bg-gray-50 py-3 text-left table-head text-gray-500 ${showInlineActions ? 'px-3' : 'px-2'}`}
                 >
                   <span className="sr-only">Aktionen</span>
                 </th>

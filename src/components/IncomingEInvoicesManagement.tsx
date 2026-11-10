@@ -129,7 +129,7 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
       <input ref={fileInputRef} type="file" accept=".xml,application/xml,text/xml" className="hidden" onChange={handleUpload} disabled={uploading} />
       <div className="space-y-4 sm:space-y-6">
       {!embedded && <PageHeader icon={Inbox} title="E-Rechnungseingang" subtitle="E-Rechnungen lokal empfangen, prüfen, archivieren und zuordnen">
-        <button type="button" onClick={openUpload} className="btn-primary inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" title="E-Rechnung als XML übernehmen" disabled={uploading}>
+        <button type="button" onClick={openUpload} className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-0 sm:h-9 items-center justify-center gap-2 rounded-lg px-2 text-white transition-colors hover:brightness-90 xl:min-w-0 xl:px-4" title="E-Rechnung als XML übernehmen" disabled={uploading}>
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           <span className="hidden xl:inline">{uploading ? 'Wird geprüft …' : 'XML übernehmen'}</span>
         </button>
@@ -155,9 +155,9 @@ export const IncomingEInvoicesManagement = forwardRef(function IncomingEInvoices
       </section>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Eingegangen</p><p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">{invoices.length}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">Geprüft</p><p className="mt-1 text-xl font-bold text-emerald-700 sm:text-2xl">{validatedCount}</p></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs"><span className="sm:hidden">Kunde verknüpft</span><span className="hidden sm:inline">Mit Kunde verknüpft</span></p><p className="mt-1 text-xl font-bold text-blue-700 sm:text-2xl">{linkedCount}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head text-gray-500">Eingegangen</p><p className="mt-1 text-xl font-semibold tabular-nums text-gray-900 sm:text-2xl">{invoices.length}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head text-gray-500">Geprüft</p><p className="mt-1 text-xl font-semibold tabular-nums text-emerald-700 sm:text-2xl">{validatedCount}</p></div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"><p className="table-head text-gray-500"><span className="sm:hidden">Kunde verknüpft</span><span className="hidden sm:inline">Mit Kunde verknüpft</span></p><p className="mt-1 text-xl font-semibold tabular-nums text-blue-700 sm:text-2xl">{linkedCount}</p></div>
       </div>
 
       {/* Eingebettet umschließt die Tab-Fläche der Belegseite den Bereich bereits. */}

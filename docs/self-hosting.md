@@ -227,9 +227,10 @@ Workspace gebunden:
   auch die entpackte Datenbankdatei und die Datensatzanzahl sind begrenzt.
 - Backups müssen zusätzlich außerhalb des Hosts aufbewahrt werden.
 
-**Wichtige Betriebsgrenze:** Die Backup-Funktionen sind manuell. Das
-Repository richtet keinen Zeitplan, kein Offsite-Ziel, keine Verschlüsselung
-und keine Rotation ein. Die JSON-/ZIP-Dateien der Oberfläche liegen nur im
+**Wichtige Betriebsgrenze:** Die Backup-Funktionen sind ohne Einrichtung
+manuell. Einen nächtlichen Zeitplan mit Rotation richtet der optionale
+Timer unten ein (`deploy/backup/`). Das Repository richtet weiterhin kein
+Offsite-Ziel und keine Verschlüsselung am Ziel ein. Die JSON-/ZIP-Dateien der Oberfläche liegen nur im
 lokalen Docker-Volume `backups_data`; der vollständige Instanzdump liegt nach
 `manage-instances.sh backup` im lokalen Verzeichnis `./backups/`. Beide Orte
 sind keine Ausfallvorsorge. Ohne eigene Aufbewahrungsregel wächst
@@ -272,6 +273,41 @@ Das Ziel muss vorab angelegt, zugriffsbeschränkt und gegen den Ausfall des
 SoloOffice-Hosts geschützt sein. `rsync` verschlüsselt den Transport über SSH;
 die Verschlüsselung der Daten am Ziel muss der Betreiber zusätzlich
 sicherstellen. Der Cronjob löscht weder lokale noch entfernte alte Dateien.
+
+### Nächtliches Backup per systemd-Timer (optional)
+
+Das Instanz-Backup muss das Backend kurz anhalten und die Zeilensicherheit
+(RLS) für den Dump lösen. Das kann kein Container im Compose-Stack, ohne
+Zugriff auf den Docker-Socket zu erhalten. Deshalb läuft die Automatik auf dem
+Host und ruft `manage-instances.sh backup` auf:
+
+```bash
+sudo deploy/backup/install-backup-timer.sh <instanz> [HH:MM] [aufbewahrung_tage]
+# Beispiel: täglich 02:17 Uhr, 14 Tage aufbewahren (Standardwerte)
+sudo deploy/backup/install-backup-timer.sh produktiv
+```
+
+- Der Timer startet nachts (mit bis zu 5 Minuten Streuung) und holt einen
+  verpassten Lauf nach, wenn der Host aus war (`Persistent=true`).
+- Zwei Läufe gleichzeitig verhindert eine Sperrdatei (`.backup.lock`).
+- Nach einem erfolgreichen Backup werden Dateien dieser Instanz in `./backups/`
+  gelöscht, die älter als die Aufbewahrungsfrist sind. Schlägt Backup oder
+  Offsite-Kopie fehl, wird nichts gelöscht.
+- Eine Offsite-Kopie per `rsync` wird aktiv, wenn in
+  `/etc/solooffice-backup-<instanz>.env` die Zeile
+  `BACKUP_OFFSITE_TARGET=backup@backup.example:/srv/backups/solooffice-produktiv/`
+  steht (Datei auf `600` setzen). Ziel, SSH-Schlüssel und Verschlüsselung am
+  Ziel bleiben Sache des Betreibers.
+- Während des Dumps ist das Backend wenige Sekunden nicht erreichbar; der
+  Zeitpunkt sollte außerhalb der Arbeitszeit liegen.
+- Prüfen: `systemctl list-timers 'solooffice-backup-*'`; sofort ausführen:
+  `systemctl start solooffice-backup-<instanz>.service`, Protokoll mit
+  `journalctl -u solooffice-backup-<instanz>.service`.
+- Entfernen: `systemctl disable --now solooffice-backup-<instanz>.timer` und
+  die Dateien `/etc/systemd/system/solooffice-backup-<instanz>.*` löschen.
+
+Der Timer ersetzt keine regelmäßige Wiederherstellungsprobe in einer
+getrennten Testinstanz.
 
 ## Wiederherstellung nach einem Host- oder Volume-Ausfall
 

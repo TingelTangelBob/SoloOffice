@@ -139,8 +139,11 @@ test('Demo-Auftragseinheiten werden einmalig und ohne Netzwerk zur Rechnung', as
   });
 
   await t.test('Gespeicherter Rechnungsbezug verhindert Doppelabrechnung auch nach erneutem Abschließen', async () => {
-    await api.demoRequest('/jobs/job-1', put({ status: 'completed' }));
-    await api.demoRequest('/jobs/job-2', put({ status: 'completed' }));
+    // Abgerechnete Aufträge lassen sich nicht per PUT zurücksetzen (Regel aus backend/shared/jobChangeRules.js).
+    // Der Zustand wird deshalb direkt gesetzt: die Aufträge sind wieder abgeschlossen, der Rechnungsbezug bleibt bestehen.
+    const reopened = readState();
+    for (const job of reopened.jobs.filter(job => ['job-1', 'job-2'].includes(job.id))) job.status = 'completed';
+    writeState(reopened);
     const before = readState();
     await assert.rejects(createInvoice(), /bereits abgerechnet/);
     assert.deepEqual(readState(), before);

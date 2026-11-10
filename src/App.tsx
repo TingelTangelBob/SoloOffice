@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, useState, useEffect } from 'react';
+import { lazy, startTransition, Suspense, useCallback, useRef, useState, useEffect } from 'react';
 import { AppProvider } from './context/AppContext';
 import { useLoading } from './context/LoadingContext';
 import { Layout } from './components/Layout';
@@ -8,38 +8,47 @@ import { useAuth } from './context/AuthContext';
 import { AuthProvider } from './context/AuthProvider';
 import { MotionProvider } from './context/MotionProvider';
 import { FeedbackProvider } from './context/FeedbackProvider';
+import { useFeedback } from './context/FeedbackContext';
 import { AuthPage } from './components/AuthPage';
 import { trackTelemetry } from './services/telemetry';
 import { navigatePage, readPageState, type PageState } from './utils/hashRouter';
 import { confirmNavigation, guardScopeForNavigation, isNavigationBlocked } from './utils/navigationGuard';
-import { normalizeSettingsArea } from './utils/settingsNavigation';
 
-const Dashboard = lazy(() => import('./components/Dashboard').then(({ Dashboard: page }) => ({ default: page })));
-const CustomerManagement = lazy(() => import('./components/CustomerManagement').then(({ CustomerManagement: page }) => ({ default: page })));
-const CustomerDetail = lazy(() => import('./components/CustomerDetail').then(({ CustomerDetail: page }) => ({ default: page })));
-const InvoiceManagement = lazy(() => import('./components/InvoiceManagement').then(({ InvoiceManagement: page }) => ({ default: page })));
-const QuoteManagement = lazy(() => import('./components/QuoteManagement').then(({ QuoteManagement: page }) => ({ default: page })));
-const QuoteEditor = lazy(() => import('./components/QuoteEditor').then(({ QuoteEditor: page }) => ({ default: page })));
-const Settings = lazy(() => import('./components/Settings').then(({ Settings: page }) => ({ default: page })));
-const DataImportCenter = lazy(() => import('./components/DataImportCenter').then(({ DataImportCenter: page }) => ({ default: page })));
-const SetupWizard = lazy(() => import('./components/SetupWizard').then(({ SetupWizard: page }) => ({ default: page })));
-const TemplatesManagement = lazy(() => import('./components/TemplatesManagement').then(({ TemplatesManagement: page }) => ({ default: page })));
-const PositionTemplatesManagement = lazy(() => import('./components/PositionTemplatesManagement').then(({ PositionTemplatesManagement: page }) => ({ default: page })));
-const JobManagement = lazy(() => import('./components/JobManagement').then(({ JobManagement: page }) => ({ default: page })));
-const Calendar = lazy(() => import('./components/Calendar').then(({ Calendar: page }) => ({ default: page })));
-const ReportingManagement = lazy(() => import('./components/ReportingManagement').then(({ ReportingManagement: page }) => ({ default: page })));
-const ReminderManagement = lazy(() => import('./components/ReminderManagement').then(({ ReminderManagement: page }) => ({ default: page })));
-const RecurringInvoiceManagement = lazy(() => import('./components/RecurringInvoiceManagement').then(({ RecurringInvoiceManagement: page }) => ({ default: page })));
-const CreditNoteManagement = lazy(() => import('./components/CreditNoteManagement').then(({ CreditNoteManagement: page }) => ({ default: page })));
-const TaxOverview = lazy(() => import('./components/TaxOverview').then(({ TaxOverview: page }) => ({ default: page })));
-const EuerManagement = lazy(() => import('./components/EuerManagement').then(({ EuerManagement: page }) => ({ default: page })));
-const VatOverview = lazy(() => import('./components/VatOverview').then(({ VatOverview: page }) => ({ default: page })));
-const RecurringExpensesManagement = lazy(() => import('./components/RecurringExpensesManagement').then(({ RecurringExpensesManagement: page }) => ({ default: page })));
-const FixedAssetManagement = lazy(() => import('./components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })));
-const DocumentsManagement = lazy(() => import('./components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })));
-const ProfileManagement = lazy(() => import('./components/ProfileManagement').then(({ ProfileManagement: page }) => ({ default: page })));
-const WorkspaceManagement = lazy(() => import('./components/WorkspaceManagement').then(({ WorkspaceManagement: page }) => ({ default: page })));
-const SupportManagement = lazy(() => import('./components/SupportManagement').then(({ SupportManagement: page }) => ({ default: page })));
+/**
+ * Außerhalb der Einstellungen gilt jeder registrierte Schutz, etwa der des
+ * Angebots- und Auftragsformulars. Innerhalb der Einstellungen entscheidet
+ * `guardScopeForNavigation`.
+ */
+function navigationGuardScope(from: { page: string; filter?: string }, to: { page: string; filter?: string }) {
+  return guardScopeForNavigation(from, to) ?? (from.page !== 'settings' ? 'all' : null);
+}
+import { normalizeSettingsArea } from './utils/settingsNavigation';
+import { pageLoaders, preloadAllPages } from './utils/pageLoaders';
+
+const Dashboard = lazy(pageLoaders.Dashboard);
+const CustomerManagement = lazy(pageLoaders.CustomerManagement);
+const CustomerDetail = lazy(pageLoaders.CustomerDetail);
+const InvoiceManagement = lazy(pageLoaders.InvoiceManagement);
+const QuoteManagement = lazy(pageLoaders.QuoteManagement);
+const QuoteEditor = lazy(pageLoaders.QuoteEditor);
+const Settings = lazy(pageLoaders.Settings);
+const DataImportCenter = lazy(pageLoaders.DataImportCenter);
+const SetupWizard = lazy(pageLoaders.SetupWizard);
+const TemplatesManagement = lazy(pageLoaders.TemplatesManagement);
+const PositionTemplatesManagement = lazy(pageLoaders.PositionTemplatesManagement);
+const JobManagement = lazy(pageLoaders.JobManagement);
+const Calendar = lazy(pageLoaders.Calendar);
+const ReportingManagement = lazy(pageLoaders.ReportingManagement);
+const ReminderManagement = lazy(pageLoaders.ReminderManagement);
+const RecurringInvoiceManagement = lazy(pageLoaders.RecurringInvoiceManagement);
+const CreditNoteManagement = lazy(pageLoaders.CreditNoteManagement);
+const TaxOverview = lazy(pageLoaders.TaxOverview);
+const EuerManagement = lazy(pageLoaders.EuerManagement);
+const VatOverview = lazy(pageLoaders.VatOverview);
+const RecurringExpensesManagement = lazy(pageLoaders.RecurringExpensesManagement);
+const FixedAssetManagement = lazy(pageLoaders.FixedAssetManagement);
+const DocumentsManagement = lazy(pageLoaders.DocumentsManagement);
+const SupportManagement = lazy(pageLoaders.SupportManagement);
 
 interface AppContentProps {
   currentPageState: PageState;
@@ -47,8 +56,10 @@ interface AppContentProps {
 }
 
 function PageLoading({ fullScreen = false }: { fullScreen?: boolean }) {
+  // Kurze Ladezeiten sollen keinen Spinner aufblitzen lassen: Er erscheint erst
+  // nach einer Verzögerung (`page-loading-delayed`).
   return (
-    <div className={`flex items-center justify-center ${fullScreen ? 'h-screen' : 'h-64'}`}>
+    <div className={`page-loading-delayed flex items-center justify-center ${fullScreen ? 'h-screen' : 'h-64'}`}>
       <div className="text-center">
         {/* Inline statt Klasse: der Spinner läuft auch vor #app-shell, wo die Akzent-Regeln noch nicht greifen. */}
         <div
@@ -77,11 +88,24 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
   const { loading, error } = useLoading();
   const { company } = useCompany();
   const { quotes } = useQuotes();
+  const { notify } = useFeedback();
   const moduleDisabled = !loading && isModuleDisabled(currentPageState.page, company);
+  // Lesezeichen auf ein gelöschtes oder umgewandeltes Angebot (Prüfbericht H-8):
+  // nach dem Laden kein leeres Formular, sondern Hinweis und Angebotsliste.
+  const quoteEditorMissing = !loading
+    && currentPageState.page === 'quote-editor'
+    && Boolean(currentPageState.quoteId)
+    && !quotes.some(quote => quote.id === currentPageState.quoteId);
 
   useEffect(() => {
     if (moduleDisabled) onPageChange('settings');
   }, [moduleDisabled, onPageChange]);
+
+  useEffect(() => {
+    if (!quoteEditorMissing) return;
+    notify({ variant: 'warning', message: 'Das Angebot wurde nicht gefunden. Es wurde gelöscht oder umgewandelt.' });
+    onPageChange('quotes');
+  }, [quoteEditorMissing, notify, onPageChange]);
 
   const renderPage = () => {
     // Show loading state while data is being fetched
@@ -150,6 +174,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         const quoteToEdit = currentPageState.quoteId
           ? quotes.find(q => q.id === currentPageState.quoteId) || null
           : null;
+        // Unbekannte ID: kein leeres Formular, die Weiterleitung oben übernimmt.
+        if (quoteEditorMissing) return null;
         return <QuoteEditor
           quote={quoteToEdit}
           initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined}
@@ -170,10 +196,11 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <ReminderManagement />;
       case 'settings':
         return <Settings initialTab={normalizeSettingsArea(currentPageState.filter)} section={currentPageState.searchTerm} onNavigate={onPageChange} />;
+      // Alte Verweise auf die eigenständigen Seiten öffnen die Einstellungen am passenden Bereich.
       case 'profile':
-        return <ProfileManagement />;
+        return <Settings initialTab="account" onNavigate={onPageChange} />;
       case 'workspace':
-        return <WorkspaceManagement />;
+        return <Settings initialTab="workspace" onNavigate={onPageChange} />;
       case 'support':
         return <SupportManagement initialTicketId={currentPageState.filter} onNavigate={onPageChange} />;
       case 'templates':
@@ -190,7 +217,9 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
   return (
     <Layout currentPage={currentPageState.page} onPageChange={onPageChange}>
       <Suspense fallback={<PageLoading />}>
-        {renderPage()}
+        {/* Neuer Schlüssel pro Seite: Der Inhalt blendet beim Wechsel ruhig ein
+            (siehe `.route-enter`), Dialoge und Filter derselben Seite nicht. */}
+        <div key={currentPageState.page} className="route-enter">{renderPage()}</div>
       </Suspense>
     </Layout>
   );
@@ -206,6 +235,11 @@ function AuthenticatedShell({ currentPageState, onPageChange }: AppContentProps)
     sessionStorage.setItem(heartbeatKey, '1');
     trackTelemetry('heartbeat');
   }, [isAuthenticated, loading, workspace]);
+
+  // Erst wenn die Anmeldung steht und die erste Ansicht läuft, holt der
+  // Browser im Leerlauf die übrigen Seitenpakete.
+  const ready = !loading && isAuthenticated && !!workspace;
+  useEffect(() => (ready ? preloadAllPages() : undefined), [ready]);
 
   if (loading) return <PageLoading fullScreen />;
   if (!isAuthenticated || !workspace) return <AuthPage />;
@@ -227,9 +261,11 @@ function App() {
     const navigate = () => {
       const nextState = navigatePage(window.history, window.location.href, page, filter, searchTerm, invoiceId, jobSeriesId);
       lastHref.current = window.location.href;
-      setCurrentPageState(nextState);
+      // Als Übergang: Die alte Ansicht bleibt stehen, bis die neue samt Paket
+      // bereit ist, statt dazwischen einen Ladezustand zu zeigen.
+      startTransition(() => setCurrentPageState(nextState));
     };
-    const scope = guardScopeForNavigation(readPageState(new URL(window.location.href)), { page, filter });
+    const scope = navigationGuardScope(readPageState(new URL(window.location.href)), { page, filter });
     if (!scope || !isNavigationBlocked(scope)) {
       navigate();
       return;
@@ -251,7 +287,7 @@ function App() {
         window.history.replaceState(window.history.state, '', url);
       }
       lastHref.current = window.location.href;
-      setCurrentPageState(previous => (
+      startTransition(() => setCurrentPageState(previous => (
         previous.page === nextState.page
         && previous.filter === nextState.filter
         && previous.searchTerm === nextState.searchTerm
@@ -259,7 +295,7 @@ function App() {
         && previous.jobSeriesId === nextState.jobSeriesId
           ? previous
           : nextState
-      ));
+      )));
     };
 
     // Zurück/Vor oder geänderte Adresse: Bei ungespeicherten Änderungen bleibt
@@ -267,7 +303,7 @@ function App() {
     const syncFromLocation = () => {
       const target = new URL(window.location.href);
       const previous = new URL(lastHref.current);
-      const scope = guardScopeForNavigation(readPageState(previous), readPageState(target));
+      const scope = navigationGuardScope(readPageState(previous), readPageState(target));
       if (!scope || !isNavigationBlocked(scope)) {
         applyLocation();
         return;

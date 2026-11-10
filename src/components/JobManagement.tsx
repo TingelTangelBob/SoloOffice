@@ -41,7 +41,7 @@ import { ConfirmationModal } from './ConfirmationModal';
 import { DocumentPreview } from './DocumentPreview';
 import { createInvoiceAttachmentPreviewDocuments, createJobAttachmentPreviewDocuments } from '../utils/previewDocuments';
 import type { PreviewDocument } from '../utils/previewDocuments';
-import { generateJobPDF, downloadBlob } from '../utils/pdfGenerator';
+import { generateJobPDF, downloadBlob } from '../utils/pdfLazy';
 import { calculateTotalHours } from '../utils/jobUtils';
 import { formatDate, formatNumber } from '../utils/formatters';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
@@ -54,8 +54,11 @@ import { getTerminology } from '../utils/terminology';
 import { ImportWizard } from './ImportWizard';
 import { generateUUID } from '../utils/uuid';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
+import { useAuth } from '../context/AuthContext';
 import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, DEFAULT_JOB_SORT, sortByTableState, type SortState } from '../utils/tableSort';
+import { statusBadgeClass, statusDotClass, statusLabel } from '../utils/statusDisplay';
 
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
@@ -96,6 +99,8 @@ const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
 
 export function JobManagement({ onNavigate, initialFilter, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers, addCustomer, refreshCustomers } = useCustomers();
   const { invoices } = useInvoices();
   const { jobEntries, addJobEntry, updateJobEntry, updateJobStatuses, deleteJobEntry, deleteJobEntries, refreshJobEntries } = useJobs();
@@ -442,28 +447,12 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       await runStatusChange([jobId], newStatus);
     } catch (error) {
       logger.error('Error updating job status:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`Der Status des ${terminology.work.singular} konnte nicht geändert werden.`, error) });
     }
   };
 
-  const getStatusColor = (status: JobEntry['status']) => {
-    switch (status) {
-      case 'draft': return 'text-gray-600 bg-gray-100';
-      case 'in-progress': return 'text-yellow-600 bg-yellow-100';
-      case 'completed': return 'text-green-600 bg-green-100';
-      case 'invoiced': return 'text-blue-600 bg-blue-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const getStatusText = (status: JobEntry['status']) => {
-    switch (status) {
-      case 'draft': return 'Entwurf';
-      case 'in-progress': return 'In Bearbeitung';
-      case 'completed': return 'Abgeschlossen';
-      case 'invoiced': return 'Abgerechnet';
-      default: return status;
-    }
-  };
+  const getStatusColor = (status: JobEntry['status']) => statusBadgeClass('job', status);
+  const getStatusText = (status: JobEntry['status']) => statusLabel('job', status);
 
   /**
    * Unterschrift vor Ort. Datenmodell, Backend-Endpunkt und PDF-Ausgabe waren
@@ -506,6 +495,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       setShowForm(true);
     } catch (error) {
       logger.error('Error duplicating job:', error);
+      notify({ variant: 'error', message: actionErrorMessage(`Der ${terminology.work.singular} konnte nicht dupliziert werden.`, error) });
     }
   };
 
@@ -515,15 +505,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
     return note.length > 90 ? `${note.slice(0, 87)}...` : note;
   };
 
-  const getStatusDotColor = (status: JobEntry['status']) => {
-    switch (status) {
-      case 'draft': return 'bg-gray-400';
-      case 'in-progress': return 'bg-yellow-500';
-      case 'completed': return 'bg-green-500';
-      case 'invoiced': return 'bg-blue-500';
-      default: return 'bg-gray-400';
-    }
-  };
+  const getStatusDotColor = (status: JobEntry['status']) => statusDotClass('job', status);
 
   const runStatusChange = async (
     jobIds: string[],
@@ -886,9 +868,10 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
           </button>
           <button
             onClick={() => setShowForm(true)}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-custom px-3 text-sm text-white transition-all duration-300 hover:scale-105 hover:bg-primary-custom/90 sm:min-w-0 sm:px-4 sm:text-base"
+            disabled={!canWrite}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-custom px-3 text-sm text-white transition-colors duration-300 hover:bg-primary-custom/90 sm:min-w-0 sm:px-4 sm:text-base"
             aria-label={terminology.work.newLabel}
-            title={terminology.work.newLabel}
+            title={canWrite ? terminology.work.newLabel : 'Nur-Lesen-Zugriff: Anlegen nicht verfügbar'}
           >
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">{terminology.work.newLabel}</span>
@@ -908,52 +891,52 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       <div className="hidden min-w-0 grid-cols-5 gap-3 lg:grid lg:gap-4">
         <button 
           onClick={() => setStatusFilter('not-invoiced')}
-          className="order-1 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:bg-gray-50 hover:shadow-md lg:p-4"
+          className="order-1 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 hover:bg-gray-50 hover:shadow-md lg:p-4"
         >
           <div className="w-full min-w-0">
             <p className="flex min-h-10 items-center justify-center break-words text-xs font-medium leading-tight text-gray-600 lg:text-sm">Nicht abgerechnet</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <Timer className="h-6 w-6 shrink-0 text-blue-600 lg:h-8 lg:w-8" />
-              <p className="text-lg font-bold text-gray-900 lg:text-2xl">{stats.notInvoicedJobs}</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 lg:text-2xl">{stats.notInvoicedJobs}</p>
             </div>
           </div>
         </button>
 
         <button 
           onClick={() => setStatusFilter('all')}
-          className="order-4 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:bg-gray-50 hover:shadow-md lg:p-4"
+          className="order-4 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 hover:bg-gray-50 hover:shadow-md lg:p-4"
         >
           <div className="w-full min-w-0">
             <p className="flex min-h-10 items-center justify-center break-words text-xs font-medium leading-tight text-gray-600 lg:text-sm">Gesamt</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <Briefcase className="h-6 w-6 shrink-0 text-gray-600 lg:h-8 lg:w-8" />
-              <p className="text-lg font-bold text-gray-900 lg:text-2xl">{stats.totalJobs}</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 lg:text-2xl">{stats.totalJobs}</p>
             </div>
           </div>
         </button>
 
         <button 
           onClick={() => setStatusFilter('in-progress')}
-          className="order-2 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:bg-gray-50 hover:shadow-md lg:p-4"
+          className="order-2 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 hover:bg-gray-50 hover:shadow-md lg:p-4"
         >
           <div className="w-full min-w-0">
             <p className="flex min-h-10 items-center justify-center break-words text-xs font-medium leading-tight text-gray-600 lg:text-sm">In Bearbeitung</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <Timer className="h-6 w-6 shrink-0 text-yellow-600 lg:h-8 lg:w-8" />
-              <p className="text-lg font-bold text-gray-900 lg:text-2xl">{stats.inProgressJobs}</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 lg:text-2xl">{stats.inProgressJobs}</p>
             </div>
           </div>
         </button>
 
         <button 
           onClick={() => setStatusFilter('completed')}
-          className="order-3 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-all duration-300 hover:scale-105 hover:bg-gray-50 hover:shadow-md lg:p-4"
+          className="order-3 flex min-w-0 flex-col items-center rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 hover:bg-gray-50 hover:shadow-md lg:p-4"
         >
           <div className="w-full min-w-0">
             <p className="flex min-h-10 items-center justify-center break-words text-xs font-medium leading-tight text-gray-600 lg:text-sm">Abgeschlossen</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <CheckCircle className="h-6 w-6 shrink-0 text-green-600 lg:h-8 lg:w-8" />
-              <p className="text-lg font-bold text-gray-900 lg:text-2xl">{stats.completedJobs}</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 lg:text-2xl">{stats.completedJobs}</p>
             </div>
           </div>
         </button>
@@ -963,7 +946,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             <p className="flex min-h-10 items-center justify-center break-words text-xs font-medium leading-tight text-gray-600 lg:text-sm">Stunden</p>
             <div className="mt-2 flex items-center justify-center gap-2">
               <Clock className="h-6 w-6 shrink-0 text-purple-600 lg:h-8 lg:w-8" />
-              <p className="text-lg font-bold text-gray-900 lg:text-2xl">{formatNumber(stats.totalHours, locale, company?.numberFormat, 1)}</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 lg:text-2xl">{formatNumber(stats.totalHours, locale, company?.numberFormat, 1)}</p>
             </div>
           </div>
         </div>
@@ -973,52 +956,52 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
       <div className={`grid min-w-0 gap-2 sm:gap-3 lg:hidden ${showAllStats ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-5'}`}>
         <button
           onClick={() => setStatusFilter('not-invoiced')}
-          className="order-1 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
+          className="order-1 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
-            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Nicht abgerechnet</p>
+            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[11px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Nicht abgerechnet</p>
             <div className="mt-2 flex items-center justify-center gap-1">
               <Timer className="h-4 w-4 shrink-0 text-blue-600 sm:h-5 sm:w-5" />
-              <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{stats.notInvoicedJobs}</p>
+              <p className="text-base font-semibold tabular-nums leading-tight text-gray-900 sm:text-lg">{stats.notInvoicedJobs}</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('all')}
-          className="order-4 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
+          className="order-4 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
-            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Gesamt</p>
+            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[11px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Gesamt</p>
             <div className="mt-2 flex items-center justify-center gap-1">
               <Briefcase className="h-4 w-4 shrink-0 text-gray-600 sm:h-5 sm:w-5" />
-              <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{stats.totalJobs}</p>
+              <p className="text-base font-semibold tabular-nums leading-tight text-gray-900 sm:text-lg">{stats.totalJobs}</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('in-progress')}
-          className="order-2 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
+          className="order-2 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
-            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">In Bearbeitung</p>
+            <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[11px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">In Bearbeitung</p>
             <div className="mt-2 flex items-center justify-center gap-1">
               <Timer className="h-4 w-4 shrink-0 text-yellow-600 sm:h-5 sm:w-5" />
-              <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{stats.inProgressJobs}</p>
+              <p className="text-base font-semibold tabular-nums leading-tight text-gray-900 sm:text-lg">{stats.inProgressJobs}</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('completed')}
-          className="order-3 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-all hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
+          className="order-3 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:bg-gray-50 hover:shadow-md sm:min-h-[84px] sm:p-2.5"
         >
           <div className="flex min-w-0 flex-col items-center">
-            <p className="flex min-h-7 max-w-full items-center justify-center break-words hyphens-auto px-0.5 text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:px-0 sm:text-[11px]">Abgeschlossen</p>
+            <p className="flex min-h-7 max-w-full items-center justify-center break-words hyphens-auto px-0.5 text-center text-[11px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:px-0 sm:text-[11px]">Abgeschlossen</p>
             <div className="mt-2 flex items-center justify-center gap-1">
               <CheckCircle className="h-4 w-4 shrink-0 text-green-600 sm:h-5 sm:w-5" />
-              <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{stats.completedJobs}</p>
+              <p className="text-base font-semibold tabular-nums leading-tight text-gray-900 sm:text-lg">{stats.completedJobs}</p>
             </div>
           </div>
         </button>
@@ -1026,10 +1009,10 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
         {showAllStats && (
             <div className="order-5 flex min-h-[76px] min-w-0 flex-col items-center justify-center rounded-xl border border-gray-100 bg-white p-1.5 text-center shadow-sm sm:min-h-[84px] sm:p-2.5">
             <div className="flex min-w-0 flex-col items-center">
-              <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[9px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Stunden</p>
+              <p className="flex min-h-7 max-w-full items-center justify-center break-words text-center text-[11px] font-medium leading-tight text-gray-600 sm:min-h-8 sm:text-[11px]">Stunden</p>
               <div className="mt-2 flex items-center justify-center gap-1">
                 <Clock className="h-4 w-4 shrink-0 text-purple-600 sm:h-5 sm:w-5" />
-                <p className="text-base font-bold leading-tight text-gray-900 sm:text-lg">{formatNumber(stats.totalHours, locale, company?.numberFormat, 1)}</p>
+                <p className="text-base font-semibold tabular-nums leading-tight text-gray-900 sm:text-lg">{formatNumber(stats.totalHours, locale, company?.numberFormat, 1)}</p>
               </div>
             </div>
           </div>
@@ -1039,7 +1022,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
           type="button"
           onClick={() => setShowAllStats((isExpanded) => !isExpanded)}
           aria-label={showAllStats ? 'Statistik-Karten zuklappen' : 'Weitere Statistik-Karten anzeigen'}
-          className="order-6 col-span-2 flex min-h-[44px] min-w-0 flex-row items-center justify-center gap-1 rounded-xl sm:col-span-1 sm:min-h-[76px] sm:flex-col border border-gray-100 bg-white px-1.5 text-[10px] font-semibold leading-tight text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
+          className="order-6 col-span-2 flex min-h-[44px] min-w-0 flex-row items-center justify-center gap-1 rounded-xl sm:col-span-1 sm:min-h-[76px] sm:flex-col border border-gray-100 bg-white px-1.5 text-[11px] font-semibold leading-tight text-gray-500 shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:bg-gray-50 hover:text-gray-700 hover:shadow-md sm:min-h-[84px] sm:px-2.5 sm:text-xs"
         >
           {/* Ohne Symbol und Beschriftung wirkt die Karte wie eine leere Fläche. */}
           {showAllStats
@@ -1058,7 +1041,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             <FilterSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-custom focus:border-transparent lg:text-base xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2"
+              className="form-input"
             >
               <option value="all">Alle Status</option>
               <option value="not-invoiced">Alle außer abgerechnet</option>
@@ -1072,7 +1055,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             <FilterSelect
               value={customerFilter}
               onChange={(e) => setCustomerFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-custom focus:border-transparent lg:text-base xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2"
+              className="form-input"
             >
               <option value="all">Alle {terminology.entity.plural}</option>
               {customers.map(customer => (
@@ -1086,7 +1069,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
             <FilterSelect
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-custom focus:border-transparent lg:text-base xl:px-2 xl:py-1.5 2xl:px-3 2xl:py-2"
+              className="form-input"
             >
               <option value="all">Alle Zeiträume</option>
               <option value="today">Heute</option>
@@ -1138,7 +1121,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                     }
                   }}
                   disabled={isBulkOperation}
-                  className="h-6 rounded border border-blue-300 bg-white px-2 text-xs focus:ring-2 focus:ring-primary-custom"
+                  className="form-input form-input-compact w-auto"
                   defaultValue=""
                   aria-label="Status ändern"
                 >
@@ -1152,7 +1135,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
               <button
                 type="button"
                 onClick={handleBulkInvoiceGeneration}
-                disabled={isBulkOperation}
+                disabled={isBulkOperation || !canWrite}
                 className="action-icon-button bulk-action-icon-button action-icon-green disabled:cursor-not-allowed disabled:opacity-50"
                 title="Rechnung erstellen"
                 aria-label="Rechnung erstellen"
@@ -1172,7 +1155,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
               <button
                 type="button"
                 onClick={handleBulkDelete}
-                disabled={isBulkOperation}
+                disabled={isBulkOperation || !canWrite}
                 className="action-icon-button bulk-action-icon-button action-icon-red disabled:cursor-not-allowed disabled:opacity-50"
                 title="Löschen"
                 aria-label="Löschen"
@@ -1261,7 +1244,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                             <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>{terminology.work.confirmationLabel} exportieren</ActionMenuItem>
                             <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>{terminology.work.confirmationLabel} anzeigen</ActionMenuItem>
                             {((recurrenceGroup && isGroupHeader && recurrenceGroup.jobs.some((item) => item.status === 'completed')) || (!recurrenceGroup && job.status === 'completed')) && (
-                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
+                              <ActionMenuItem disabled={!canWrite} icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
                                 {recurrenceGroup && isGroupHeader ? 'Rechnung für gesamten Kurs erstellen' : 'Rechnung erstellen'}
                               </ActionMenuItem>
                             )}
@@ -1269,12 +1252,12 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="green" onClick={() => handlePreviewInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung anzeigen</ActionMenuItem>
                             )}
                             {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
-                              <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
+                              <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
-                            <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
-                            <ActionMenuItem icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
-                            <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
-                            <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                           </ActionMenu>
                         </div>
                         
@@ -1341,7 +1324,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                     <SortableTableHeader label={terminology.work.singular} sortKey="title" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
                     <SortableTableHeader label={terminology.entity.singular} sortKey="customer" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} className="w-40 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
                     <SortableTableHeader label="Std." sortKey="hours" activeKey={sortState.key} direction={sortState.direction} onSort={handleSort} align="right" className="w-20 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3" />
-                    <th style={{ width: (showInlineActions ? actionColumnWidth(7) : ACTION_MENU_COLUMN_WIDTH) + JOB_STATUS_INDICATOR_WIDTH }} className="sticky right-0 z-20 bg-gray-50 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th style={{ width: (showInlineActions ? actionColumnWidth(7) : ACTION_MENU_COLUMN_WIDTH) + JOB_STATUS_INDICATOR_WIDTH }} className="sticky right-0 z-20 bg-gray-50 px-3 py-3 xl:px-2 xl:py-2 2xl:px-3 2xl:py-3 table-head text-right text-gray-500">
                       <span className="sr-only">Aktionen</span>
                     </th>
                   </tr>
@@ -1483,7 +1466,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               <ActionMenuItem icon={<Download className="h-4 w-4" />} tone="blue" onClick={() => handleExportJobPDF(job)}>{terminology.work.confirmationLabel} exportieren</ActionMenuItem>
                             <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(job)}>{terminology.work.confirmationLabel} anzeigen</ActionMenuItem>
                             {((recurrenceGroup && isGroupHeader && recurrenceGroup.jobs.some((item) => item.status === 'completed')) || (!recurrenceGroup && job.status === 'completed')) && (
-                              <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
+                              <ActionMenuItem disabled={!canWrite} icon={<FileText className="h-4 w-4" />} tone="orange" onClick={() => handleCreateInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>
                                 {recurrenceGroup && isGroupHeader ? 'Rechnung für gesamten Kurs erstellen' : 'Rechnung erstellen'}
                               </ActionMenuItem>
                             )}
@@ -1491,12 +1474,12 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               <ActionMenuItem icon={<FileText className="h-4 w-4" />} tone="green" onClick={() => handlePreviewInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung anzeigen</ActionMenuItem>
                             )}
                             {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
-                              <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
+                              <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
-                            <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
-                              <ActionMenuItem icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
-                            <ActionMenuItem icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
-                              <ActionMenuItem icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
+                              <ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
+                            <ActionMenuItem disabled={!canWrite} icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
+                              <ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
                             </ActionMenu>
                           </div>
                           )}
@@ -1667,6 +1650,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                 await refreshCustomers();
               } catch (error) {
                 logger.error('Error creating customer:', error);
+                notify({ variant: 'error', message: actionErrorMessage(`${terminology.entity.singular} konnte nicht angelegt werden.`, error) });
               }
             }} className="form-consistent-fields space-y-4">
               <div>

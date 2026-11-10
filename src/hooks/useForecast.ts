@@ -60,6 +60,8 @@ export function useForecast(year: number, enabled = true) {
     };
   }, [refresh]);
 
-  return { forecast: forecastState.key === requestKey ? forecastState.value : null, loading,
+  // Wechselt enabled/Workspace, zeigt der Schlüssel bis zum Effektlauf noch auf die alte Abfrage: bis dahin gilt sie als ladend.
+  const pending = Boolean(enabled && workspaceId && canRead) && forecastState.key !== requestKey;
+  return { forecast: forecastState.key === requestKey ? forecastState.value : null, loading: loading || pending,
     error: errorState.key === requestKey ? errorState.value : null, refresh };
 }

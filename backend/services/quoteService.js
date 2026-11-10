@@ -7,6 +7,7 @@ import { calculateDocumentMoney } from '../utils/documentMoney.js';
 import { invoiceError } from '../utils/invoicePolicy.js';
 import { invoiceDateParts } from '../utils/invoiceNumberPattern.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
+import { checkManualTransition, isKnownState } from '../shared/stateMachines.js';
 
 export async function createQuote(data) {
   const {
@@ -22,6 +23,7 @@ export async function createQuote(data) {
   const money = calculateDocumentMoney({ ...data, items }, { documentType: 'quote' });
   if (!invoiceDateParts(issueDate) || !invoiceDateParts(validUntil)) throw invoiceError('Ungültiges Angebotsdatum.');
   if (!Array.isArray(attachments)) throw invoiceError('Anhänge müssen als Liste übergeben werden.');
+  if (!isKnownState('quote', status)) throw invoiceError('Ungültiger Angebotsstatus.');
 
   const client = await pool.connect();
 
@@ -121,6 +123,14 @@ export async function updateQuote(id, data) {
       const error = new Error('Ein bereits abgerechnetes Angebot kann nicht mehr geändert werden.');
       error.statusCode = 409;
       throw error;
+    }
+
+    // Statuswechsel laufen über das gemeinsame Register: unbekannte Werte und
+    // ein von Hand gesetztes „abgerechnet“ (entsteht nur durch die Umwandlung
+    // in eine Rechnung) werden mit einer verständlichen Meldung abgelehnt.
+    if (data.status !== undefined && data.status !== null) {
+      const problem = checkManualTransition('quote', current.status, data.status);
+      if (problem) throw invoiceError(problem.message, problem.code === 'unknown_state' ? 400 : 409);
     }
 
     const financialChange = ['items', 'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount'].some(key => data[key] !== undefined);

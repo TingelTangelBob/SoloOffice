@@ -5,9 +5,11 @@ import logger from '../utils/logger.js';
 import { findAllJobs, findJobById } from '../queries/jobQueries.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 import { expandRecurrence, normalizeRecurrence, sameRecurrenceRule } from '../utils/jobRecurrenceRule.js';
+import { statesOf } from '../shared/stateMachines.js';
+import { jobBulkDeleteProblem, jobDeleteProblem, jobEditProblem } from '../shared/jobChangeRules.js';
 
 const router = express.Router();
-const JOB_STATUSES = new Set(['draft', 'in-progress', 'completed', 'invoiced']);
+const JOB_STATUSES = new Set(statesOf('job'));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Helper function to safely parse materials
@@ -251,6 +253,10 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     const targetStatus = status || 'draft';
+    if (!JOB_STATUSES.has(targetStatus)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ungültiger Status.' });
+    }
     const effectiveTimeZone = timeZone || 'Europe/Berlin';
 
     if (!isValidTimeZone(effectiveTimeZone)) {
@@ -426,13 +432,12 @@ router.put('/:id', async (req, res) => {
       )
       : { rows: [] };
     
-    // Prevent editing if job is already invoiced
-    if (currentJob.status === 'invoiced') {
+    // Prevent editing if job is already invoiced (shared rule, see backend/shared/jobChangeRules.js)
+    const editProblem = jobEditProblem(currentJob.status);
+    if (editProblem) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ 
-        error: 'Cannot edit invoiced job', 
-        message: 'Jobs that have been invoiced cannot be modified to maintain invoice integrity.' 
-      });
+      const { status: httpStatus, ...body } = editProblem;
+      return res.status(httpStatus).json(body);
     }
     
     const {
@@ -471,6 +476,10 @@ router.put('/:id', async (req, res) => {
     }
 
     const targetStatus = status || currentJob.status;
+    if (!JOB_STATUSES.has(targetStatus)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ungültiger Status.' });
+    }
     const effectiveCustomerId = customerId !== undefined ? customerId || null : currentJob.customer_id;
     const effectiveTitle = title !== undefined ? title : currentJob.title;
     const effectiveDescription = description !== undefined ? description : currentJob.description;
@@ -869,13 +878,12 @@ router.delete('/:id', async (req, res) => {
     const currentJob = currentJobResult.rows[0];
     const recurrenceId = currentJob.recurrence_id;
     
-    // Prevent deleting if job is already invoiced
-    if (currentJob.status === 'invoiced') {
+    // Prevent deleting if job is already invoiced (shared rule, see backend/shared/jobChangeRules.js)
+    const deleteProblem = jobDeleteProblem(currentJob.status);
+    if (deleteProblem) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ 
-        error: 'Cannot delete invoiced job', 
-        message: 'Jobs that have been invoiced cannot be deleted to maintain invoice integrity.' 
-      });
+      const { status: httpStatus, ...body } = deleteProblem;
+      return res.status(httpStatus).json(body);
     }
     
     // Delete attachments first (due to foreign key constraint)
@@ -1027,16 +1035,11 @@ router.delete('/', async (req, res) => {
       });
     }
 
-    const invoicedJobIds = currentJobs
-      .filter((job) => job.status === 'invoiced')
-      .map((job) => job.id);
-    if (invoicedJobIds.length > 0) {
+    const bulkProblem = jobBulkDeleteProblem(currentJobs);
+    if (bulkProblem) {
       await client.query('ROLLBACK');
-      return res.status(403).json({
-        error: 'Abgerechnete Aufträge können nicht gelöscht werden.',
-        message: 'Einige ausgewählte Aufträge wurden bereits abgerechnet und bleiben unverändert.',
-        invoicedJobIds,
-      });
+      const { status: httpStatus, ...body } = bulkProblem;
+      return res.status(httpStatus).json(body);
     }
 
     // invoice_job_sources uses RESTRICT intentionally. Check it explicitly so

@@ -12,6 +12,8 @@ import { normalizeDashboardPreferences } from '../utils/dashboardPreferences';
 import { demoDefaultTaxProfile, demoExtensionId, demoExtensionList, demoSeedTaxProfile, demoTaxesEnabled } from './demoFinance';
 import { addDays, canAccessDemoFinance, demoExpenseDueDates, demoLevyFromRun, demoRunRecord, validateDemoExpense, validateDemoLevy, validateDemoTaxProfile, validateDemoVatPayment } from '../../backend/shared/financeDemo.js';
 import { isRecurringExpenseDue, occurrenceOnOrAfter } from '../../backend/shared/recurrence.js';
+import { checkManualTransition } from '../../backend/shared/stateMachines.js';
+import { jobBulkDeleteProblem, jobDeleteProblem, jobEditProblem } from '../../backend/shared/jobChangeRules.js';
 import type { ForecastResult, LevyPayment, RecurringExpense, RecurringExpenseRun, TaxProfile, WorkspaceExtension } from '../types/finance';
 import { buildForecast } from '../../backend/shared/forecast/index.js';
 import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../backend/shared/vat/periods.js';
@@ -2309,7 +2311,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if ((input.scope === 'private_levy' && input.category === 'ust') || input.category === 'ust') throw new Error('Umsatzsteuer wird als betriebliche Zahlung verwaltet und kann nicht als private Abgabe oder Fixkosten-Vorlage angelegt werden.');
       const immutablePriceChanges = (current?.priceChanges || []).filter(change => change.validFrom <= todayLocal())
         .map(change => ({ validFrom: change.validFrom, amount: change.amountGross, taxRate: current?.taxRate ?? null }));
-      const checked = validateDemoExpense({ ...(current || {}), ...input }, todayLocal(), immutablePriceChanges);
+      const keepStatus = current && (input.status == null || input.status === '') ? { status: current.status } : {};
+      const checked = validateDemoExpense({ ...(current || {}), ...input, ...keepStatus }, todayLocal(), immutablePriceChanges);
       if (typeof checked === 'string') throw new Error(checked);
       const interval: RecurringExpense['interval'] = checked.interval === 'monthly' || checked.interval === 'quarterly'
         || checked.interval === 'half_yearly' || checked.interval === 'yearly'
@@ -3981,8 +3984,14 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (key === 'quotes' && (items[index]?.convertedToInvoiceId || items[index]?.status === 'billed')) {
         throw new Error('Ein bereits abgerechnetes Angebot kann nicht mehr geändert werden.');
       }
+      if (key === 'quotes' && index >= 0 && data.status !== undefined && data.status !== null) {
+        const problem = checkManualTransition('quote', String(items[index].status ?? 'draft'), data.status);
+        if (problem) throw new Error(problem.message);
+      }
       if (key === 'jobs' && index >= 0) {
         const current = items[index];
+        const editProblem = jobEditProblem(String(current.status ?? ''));
+        if (editProblem) throw new DemoApiError(editProblem.error, editProblem.status, 'JOB_INVOICED');
         const targetStatus = String(data.status ?? current.status ?? 'draft');
         const effectiveCustomerId = data.customerId !== undefined ? data.customerId : current.customerId;
         const effectiveTitle = data.title !== undefined ? data.title : current.title;
@@ -4123,6 +4132,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       return (key === 'invoices' ? withDemoPaymentState(state, updated) : updated) as unknown as T;
     }
     if (method === 'DELETE') {
+      if (key === 'jobs' && index >= 0) {
+        const deleteProblem = jobDeleteProblem(String(items[index].status ?? ''));
+        if (deleteProblem) throw new DemoApiError(deleteProblem.error, deleteProblem.status, 'JOB_INVOICED');
+      }
       if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
       if (key === 'invoices' && (
         items[index]?.status !== 'draft'
@@ -4149,6 +4162,8 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   }
   if (resource === 'jobs' && method === 'DELETE') {
     const ids = Array.isArray(data.ids) ? data.ids as string[] : [];
+    const bulkProblem = jobBulkDeleteProblem(state.jobs.filter(job => ids.includes(job.id)).map(job => ({ id: job.id, status: String(job.status ?? '') })));
+    if (bulkProblem) throw new DemoApiError(bulkProblem.error, bulkProblem.status, 'JOB_INVOICED');
     const deletedIds = state.jobs.filter(job => ids.includes(job.id)).map(job => job.id);
     state.jobs = state.jobs.filter(job => !ids.includes(job.id));
     saveState(state);

@@ -6,7 +6,7 @@
  * ändern, damit alte Lesezeichen und Verweise aus anderen Seiten weiter
  * funktionieren. Bezeichnung, Gruppe und Reihenfolge sind frei.
  */
-export const SETTINGS_AREAS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes'] as const;
+export const SETTINGS_AREAS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes', 'account', 'workspace'] as const;
 export type SettingsArea = typeof SETTINGS_AREAS[number];
 
 /** Ohne gültigen Bereich öffnen die Einstellungen die Firmendaten. */
@@ -22,7 +22,6 @@ export interface SettingsSectionDefinition {
 export interface SettingsAreaDefinition {
   id: SettingsArea;
   label: string;
-  description?: string;
   sections: SettingsSectionDefinition[];
 }
 
@@ -36,7 +35,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   general: {
     id: 'general',
     label: 'Firmendaten',
-    description: 'Name, Anschrift, steuerliche Angaben und Kontakt – so erscheinen Sie auf Ihren Dokumenten.',
     sections: [
       { id: 'stammdaten', title: 'Stammdaten', keywords: ['firma', 'firmenname', 'name', 'adresse', 'anschrift', 'straße', 'postleitzahl', 'plz', 'stadt', 'ort', 'land'] },
       { id: 'steuerangaben', title: 'Steuerliche Angaben', keywords: ['ust-idnr', 'umsatzsteuer-id', 'steuernummer', 'betriebsart', 'rechtsform', 'kleinunternehmer', '§ 19', 'ustg', 'gmbh', 'einzelunternehmen'] },
@@ -47,7 +45,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   invoices: {
     id: 'invoices',
     label: 'Rechnungen & Zahlung',
-    description: 'Bankverbindung, Zahlungsbedingungen und Nummernkreise für Rechnungen und Gutschriften.',
     sections: [
       { id: 'bankverbindung', title: 'Bankverbindung', keywords: ['iban', 'bic', 'bank', 'bankname', 'kontoinhaber', 'konto', 'zahlungsinformationen'] },
       { id: 'zahlungsbedingungen', title: 'Zahlungsbedingungen', keywords: ['zahlungsziel', 'fällig', 'sofortzahlung', 'klausel', 'zahlungsarten', 'paypal', 'überweisung', 'verzugszinsen'] },
@@ -58,7 +55,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   app: {
     id: 'app',
     label: 'Module & Begriffe',
-    description: 'Welche Bereiche SoloOffice zeigt und welche Begriffe es für Ihre Arbeit verwendet.',
     sections: [
       { id: 'einrichtung', title: 'Ersteinrichtung', keywords: ['allgemein', 'einrichtung', 'assistent', 'demo', 'testdaten'] },
       { id: 'module', title: 'Module', keywords: ['allgemein', 'aufträge', 'kurse', 'reporting', 'auswertungen', 'angebote', 'rabatt', 'funktionen'] },
@@ -69,7 +65,6 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   extensions: {
     id: 'extensions',
     label: 'Erweiterungen',
-    description: 'Zusätzliche Bereiche für dieses Unternehmen aktivieren.',
     sections: [
       { id: 'verfuegbar', title: 'Verfügbare Erweiterungen', keywords: ['erweiterung', 'aktivieren', 'steuern', 'abgaben', 'module'] },
     ],
@@ -84,11 +79,26 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
   appearance: {
     id: 'appearance',
     label: 'Darstellung & Sprache',
-    description: 'Sprache, Formate, Farben und das Erscheinungsbild der App-Oberfläche.',
     sections: [
       { id: 'sprache', title: 'Sprache & Formate', keywords: ['sprache', 'zahlenformat', 'währung', 'euro', 'datum', 'datumsformat', 'zeitformat', 'zeitzone', 'locale'] },
       { id: 'erscheinungsbild', title: 'Erscheinungsbild', keywords: ['dunkel', 'hell', 'dark mode', 'dunkelmodus', 'theme', 'animationen', 'bewegung'] },
       { id: 'farbschema', title: 'Farbschema', keywords: ['farbe', 'farben', 'primärfarbe', 'sekundärfarbe', 'akzent'] },
+    ],
+  },
+  workspace: {
+    id: 'workspace',
+    label: 'Workspace',
+    sections: [
+      { id: 'workspace', title: 'Workspace & Mitglieder', keywords: ['workspace', 'mitglieder', 'team', 'rollen', 'zugriff', 'einladung', 'einladen', 'zurücksetzen'] },
+    ],
+  },
+  account: {
+    id: 'account',
+    label: 'Benutzerdaten',
+    sections: [
+      { id: 'profil', title: 'Persönliche Daten', keywords: ['name', 'vorname', 'nachname', 'profil', 'konto', 'benutzer'] },
+      { id: 'passwort', title: 'Passwort & Sitzungen', keywords: ['passwort', 'sitzung', 'abmelden', 'anmeldung', 'sicherheit'] },
+      { id: 'konto-loeschen', title: 'Konto löschen', keywords: ['konto', 'löschen', 'account'] },
     ],
   },
   system: {
@@ -103,10 +113,10 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
 };
 
 export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
-  { id: 'company', label: 'Unternehmen', areas: ['general', 'invoices'] },
+  { id: 'company', label: 'Unternehmen', areas: ['general', 'invoices', 'workspace'] },
   { id: 'work', label: 'Arbeitsweise', areas: ['app', 'extensions', 'taxes'] },
   { id: 'interface', label: 'Oberfläche', areas: ['appearance'] },
-  { id: 'system', label: 'System', areas: ['system'] },
+  { id: 'system', label: 'System', areas: ['account', 'system'] },
 ];
 
 export function isSettingsArea(value: unknown): value is SettingsArea {

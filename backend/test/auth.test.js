@@ -67,6 +67,14 @@ test('Firmeneinstellungen und Startnummern ändern nur mit dem Recht „Einstell
   assert.equal(runLegacyPolicy('DELETE', '/yearly-invoice-start-numbers/2026', member).status, 403);
 });
 
+test('Gemischte Schreibweise des Pfads umgeht die Rechteprüfung nicht (K-1)', () => {
+  const member = { role: 'member', permissions: {} };
+  assert.equal(runLegacyPolicy('PUT', '/COMPANY', member).status, 403);
+  assert.equal(runLegacyPolicy('PUT', '/Company', member).status, 403);
+  assert.equal(runLegacyPolicy('GET', '/BACKUP', member).status, 403);
+  assert.equal(runLegacyPolicy('GET', '/Email-Management', member).status, 403);
+});
+
 test('E-Mail-Verwaltung bleibt ohne das Recht „Einstellungen verwalten“ auch lesend gesperrt', () => {
   const member = { role: 'member', permissions: {} };
   const settingsEditor = { role: 'member', permissions: { 'workspace.settings': true } };

@@ -39,9 +39,9 @@ class BrowserHistoryHarness {
 }
 
 test('alle bisherigen Reiter-IDs bleiben gültige Bereiche und erscheinen genau einmal in der Navigation', () => {
-  assert.deepEqual([...SETTINGS_AREAS].sort(), [...LEGACY_TABS].sort());
+  for (const area of LEGACY_TABS) assert.ok(SETTINGS_AREAS.includes(area), `${area} fehlt in SETTINGS_AREAS`);
   const navAreas = SETTINGS_GROUPS.flatMap(group => group.areas);
-  assert.deepEqual([...navAreas].sort(), [...LEGACY_TABS].sort());
+  assert.deepEqual([...navAreas].sort(), [...SETTINGS_AREAS].sort());
   assert.equal(new Set(navAreas).size, navAreas.length);
   assert.deepEqual(orderedSettingsAreas(), navAreas);
   for (const area of LEGACY_TABS) {

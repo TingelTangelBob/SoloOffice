@@ -201,7 +201,7 @@ export function SetupWizard({ onNavigate }: SetupWizardProps) {
     <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
       <header className="mb-6">
         <p className="text-sm font-semibold text-primary-custom">Ersteinrichtung</p>
-        <h1 className="mt-1 text-2xl font-bold text-gray-900">SoloOffice auf Ihren Betrieb abstimmen</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-gray-900">SoloOffice auf Ihren Betrieb abstimmen</h1>
         <p className="mt-2 max-w-2xl text-sm text-gray-600">Ihre Angaben werden in den Firmendaten gespeichert und bleiben dort auch später bearbeitbar.</p>
       </header>
 

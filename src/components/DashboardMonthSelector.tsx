@@ -33,6 +33,6 @@ export function DashboardMonthSelector({ monthKeys, selectedMonth, comparisonMon
     </div>
     <input id="dashboard-month-slider" className="dashboard-month-range mt-2" type="range" min={0} max={monthKeys.length - 1} step={1} value={selectedIndex}
       aria-valuetext={`${monthLabel(selectedMonth)}${ongoing ? ', bisher' : ''}`} aria-label="Monat auswählen" onChange={event => onMonthChange(monthKeys[Number(event.target.value)])} />
-    <div className="flex justify-between px-2 text-[10px] text-gray-500" aria-hidden="true">{monthKeys.map(month => <span key={month} className="flex min-w-0 flex-col items-center gap-1"><span className="h-1.5 w-px bg-gray-300" /><span className={month === selectedMonth ? 'font-semibold text-gray-900' : ''}>{new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(`${month}-01T00:00:00`)).replace('.', '').slice(0, 3)}</span></span>)}</div>
+    <div className="flex justify-between px-2 text-[11px] text-gray-500" aria-hidden="true">{monthKeys.map(month => <span key={month} className="flex min-w-0 flex-col items-center gap-1"><span className="h-1.5 w-px bg-gray-300" /><span className={month === selectedMonth ? 'font-semibold text-gray-900' : ''}>{new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(`${month}-01T00:00:00`)).replace('.', '').slice(0, 3)}</span></span>)}</div>
   </section>;
 }

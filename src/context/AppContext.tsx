@@ -26,7 +26,7 @@ interface DataLoaderProps {
 }
 
 function DataLoader({ children }: DataLoaderProps) {
-  const { setLoading } = useLoading();
+  const { setLoading, setShellReady } = useLoading();
   const customerContext = useCustomers();
   const invoiceContext = useInvoices();
   const quoteContext = useQuotes();
@@ -40,21 +40,24 @@ function DataLoader({ children }: DataLoaderProps) {
         setLoading(true);
         setError(null);
 
-        // Load all data in parallel
-        const [customersData, invoicesData, quotesData, jobEntriesData, companyData, materialTemplatesData, hourlyRatesData] = await Promise.all([
+        // Alle Abfragen starten gleichzeitig. Die Firmendaten kommen als erste
+        // zur Anzeige: Sie bestimmen Navigation, Module und Farben, sodass die
+        // Hülle erscheint, während Kunden, Rechnungen und Aufträge noch laden.
+        const companyRequest = apiService.getCompany();
+        const dataRequest = Promise.all([
           apiService.getCustomers(),
           apiService.getInvoices(),
           apiService.getQuotes(),
           apiService.getJobEntries(),
-          apiService.getCompany(),
           apiService.getMaterialTemplates(),
           apiService.getHourlyRates(),
         ]);
+        // Schlägt eine der übrigen Abfragen fehl, während auf die Firma gewartet
+        // wird, darf das keine unbehandelte Ablehnung erzeugen; der Fehler wird
+        // unten über `await dataRequest` gemeldet.
+        dataRequest.catch(() => {});
 
-        customerContext.setCustomers(customersData);
-        invoiceContext.setInvoices(invoicesData);
-        quoteContext.setQuotes(quotesData);
-        jobContext.setJobEntries(jobEntriesData);
+        const companyData = await companyRequest;
         const storedDocumentTemplates = companyData.documentTemplates || [];
         const storedDocumentTypes = new Set(storedDocumentTemplates.map(template => template.documentType));
         const normalisedStoredTemplates = storedDocumentTemplates.map(template => {
@@ -95,12 +98,20 @@ function DataLoader({ children }: DataLoaderProps) {
           documentTemplates,
           documentTextTemplates,
         });
+        setShellReady(true);
+
+        const [customersData, invoicesData, quotesData, jobEntriesData, materialTemplatesData, hourlyRatesData] = await dataRequest;
+        customerContext.setCustomers(customersData);
+        invoiceContext.setInvoices(invoicesData);
+        quoteContext.setQuotes(quotesData);
+        jobContext.setJobEntries(jobEntriesData);
         companyContext.setMaterialTemplates(materialTemplatesData);
         companyContext.setHourlyRates(hourlyRatesData);
       } catch (error) {
         logger.error('Error loading data:', { error: error instanceof Error ? error.message : String(error) });
         setError(error instanceof Error ? error.message : 'Die Daten konnten nicht geladen werden.');
       } finally {
+        setShellReady(true);
         setLoading(false);
       }
     };
@@ -121,10 +132,11 @@ function DataLoader({ children }: DataLoaderProps) {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [shellReady, setShellReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <LoadingContext.Provider value={{ loading, error, setLoading, setError }}>
+    <LoadingContext.Provider value={{ loading, shellReady, error, setLoading, setShellReady, setError }}>
       <CustomerProvider>
         <InvoiceProvider>
           <QuoteProvider>

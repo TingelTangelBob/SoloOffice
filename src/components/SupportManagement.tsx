@@ -3,6 +3,7 @@ import { ArrowLeft, Building2, ChevronRight, LifeBuoy, Loader2, Plus, Send, User
 import { PageHeader } from './PageHeader';
 import { Notice } from './Notice';
 import { EmptyState } from './EmptyState';
+import { SkeletonBlock, TableSkeleton } from './TableSkeleton';
 import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
 import { useFeedback } from '../context/FeedbackContext';
@@ -74,7 +75,13 @@ export function SupportManagement({ initialTicketId, onNavigate }: SupportManage
     return (
       <div className="page-root space-y-6">
         <PageHeader icon={LifeBuoy} title="Support" />
-        <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Support wird geladen …</div>
+        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div aria-hidden="true" className="border-b border-gray-200 px-5 py-4">
+            <SkeletonBlock className="h-4 w-28" />
+            <SkeletonBlock className="mt-2 h-3 w-80 max-w-full" />
+          </div>
+          <TableSkeleton rows={4} columns={3} label="Support wird geladen …" />
+        </section>
       </div>
     );
   }
@@ -128,7 +135,7 @@ function TicketListView({ locale, navigate }: { locale: Formatting; navigate: (f
           <p className="text-sm text-gray-500">Wir antworten in der Regel innerhalb eines Werktags – per E-Mail und hier im Verlauf.</p>
         </div>
         {tickets === null ? (
-          <div className="flex items-center gap-2 px-5 py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Anfragen werden geladen …</div>
+          <TableSkeleton rows={4} columns={3} label="Anfragen werden geladen …" />
         ) : tickets.length === 0 ? (
           <div className="pb-6"><EmptyState variant="metric" title="Noch keine Anfragen" description="Fragen zur Bedienung, Fehler, Abrechnung oder Wünsche – wir helfen gern." /><div className="flex justify-center"><button type="button" onClick={() => navigate('neu')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"><Plus className="h-4 w-4" aria-hidden="true" />Erste Anfrage stellen</button></div></div>
         ) : (

@@ -59,7 +59,7 @@ export function DemoNotice() {
       {stale && (
         <div
           role="status"
-          className="fixed inset-x-0 bottom-8 z-50 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 shadow-lg sm:bottom-10"
+          className="notice notice-warning fixed inset-x-3 bottom-8 z-50 mx-auto max-w-2xl items-center py-2.5 shadow-lg sm:bottom-10"
         >
           <span className="min-w-0">
             Diese Testdaten sind älter als zwei Wochen – Termine und
@@ -70,7 +70,7 @@ export function DemoNotice() {
               type="button"
               onClick={handleReset}
               disabled={resetting}
-              className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              className="rounded-md border border-current px-3 py-1.5 font-medium hover:bg-black/5 disabled:opacity-60"
             >
               Auffrischen
             </button>
@@ -78,7 +78,7 @@ export function DemoNotice() {
               type="button"
               onClick={() => setStale(false)}
               aria-label="Hinweis schließen"
-              className="rounded-md p-1.5 text-amber-800 hover:bg-amber-100"
+              className="notice-dismiss"
             >
               <X className="h-4 w-4" />
             </button>

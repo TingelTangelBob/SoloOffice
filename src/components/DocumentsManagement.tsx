@@ -230,7 +230,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
             <button
               type="button"
               onClick={openReceiptUpload}
-              className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
+              className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-0 sm:h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-white transition-colors hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60 xl:min-w-0 xl:px-4"
               disabled={uploadingReceipt}
               aria-label={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
               title={uploadingReceipt ? `${receiptLabel} werden verarbeitet` : 'Beleg hochladen'}
@@ -258,7 +258,7 @@ export function DocumentsManagement({ initialTab, onNavigate }: DocumentsManagem
           </button>
         )}
         {activeTab === 'incoming' && (
-          <button type="button" onClick={openIncomingUpload} className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-2 text-white transition-all hover:brightness-90 xl:min-w-0 xl:px-4" aria-label="E-Rechnung als XML übernehmen" title="E-Rechnung als XML übernehmen">
+          <button type="button" onClick={openIncomingUpload} className="btn-primary inline-flex min-h-11 min-w-11 sm:min-h-0 sm:h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-white transition-colors hover:brightness-90 xl:min-w-0 xl:px-4" aria-label="E-Rechnung als XML übernehmen" title="E-Rechnung als XML übernehmen">
             <Upload className="h-4 w-4" />
             <span className="hidden xl:inline">XML übernehmen</span>
           </button>

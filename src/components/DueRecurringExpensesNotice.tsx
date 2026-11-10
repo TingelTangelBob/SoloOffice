@@ -6,10 +6,14 @@ import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
 
-interface Props { onBooked: () => void }
+interface Props {
+  onBooked: () => void;
+  /** Meldet, dass der Ladevorgang abgeschlossen ist, damit die Seite erst danach aufbaut. */
+  onSettled?: () => void;
+}
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function DueRecurringExpensesNotice({ onBooked }: Props) {
+export function DueRecurringExpensesNotice({ onBooked, onSettled }: Props) {
   const { workspace, can } = useAuth();
   const { company } = useCompany();
   const workspaceId = workspace?.id ?? null;
@@ -24,13 +28,15 @@ export function DueRecurringExpensesNotice({ onBooked }: Props) {
   const generatedWorkspaces = useRef(new Set<string>());
   const activeWorkspace = useRef(workspaceId);
   const onBookedRef = useRef(onBooked);
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
   activeWorkspace.current = workspaceId;
   onBookedRef.current = onBooked;
   const locale = company?.locale || 'de-DE';
 
   const load = useCallback(async () => {
     const current = ++version.current;
-    if (!workspaceId) { setDueRuns([]); setNames(new Map()); return; }
+    if (!workspaceId) { setDueRuns([]); setNames(new Map()); onSettledRef.current?.(); return; }
     try {
       const [runs, expenses] = await Promise.all([financeApi.getRuns(undefined, true), financeApi.getExpenses()]);
       if (version.current !== current || activeWorkspace.current !== workspaceId) return;
@@ -39,11 +45,12 @@ export function DueRecurringExpensesNotice({ onBooked }: Props) {
       setDueRuns(runs.filter(run => run.status === 'planned' && run.dueDate <= today() && (run.scope === 'business' || (!run.scope && businessIds.has(run.expenseId)))));
       setError('');
     } catch (e) { if (version.current === current && activeWorkspace.current === workspaceId) setError(e instanceof Error ? e.message : 'Fällige Fixkosten konnten nicht geladen werden.'); }
+    finally { if (version.current === current) onSettledRef.current?.(); }
   }, [workspaceId]);
 
   useLayoutEffect(() => {
     setDueRuns([]); setNames(new Map()); setPaidDates({}); setError(''); setGenerationError(''); setBusy('');
-    if (!workspaceId) return;
+    if (!workspaceId) { onSettledRef.current?.(); return; }
     let cancelled = false;
     const ensureRuns = async () => {
       if (canWrite && !generatedWorkspaces.current.has(workspaceId)) {

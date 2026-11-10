@@ -14,6 +14,7 @@ import {
   Table2
 } from 'lucide-react';
 import { PageHeader } from './PageHeader';
+import { SkeletonBlock, TableSkeleton } from './TableSkeleton';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +32,7 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { getTerminology } from '../utils/terminology';
 import { csvFileName, downloadCsv } from '../utils/csvExport';
 import type { CsvColumn } from '../utils/csvExport';
+import { statusLabel, statusTone } from '../utils/statusDisplay';
 
 const EMPTY_EUER_ENTRIES: EuerEntry[] = [];
 
@@ -239,24 +241,18 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid': return 'text-green-600 bg-green-50';
-      case 'overdue': return 'text-red-600 bg-red-50';
-      case 'sent': return 'text-blue-600 bg-blue-50';
-      case 'draft': return 'text-gray-600 bg-gray-50';
+    switch (statusTone('invoice', status)) {
+      case 'success': return 'text-green-600 bg-green-50';
+      case 'danger':
+      case 'dangerStrong': return 'text-red-600 bg-red-50';
+      case 'warning':
+      case 'warningStrong': return 'text-orange-600 bg-orange-50';
+      case 'primary': return 'text-blue-600 bg-blue-50';
       default: return 'text-gray-600 bg-gray-50';
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'paid': return 'Bezahlt';
-      case 'overdue': return 'Überfällig';
-      case 'sent': return 'Gesendet';
-      case 'draft': return 'Entwurf';
-      default: return status;
-    }
-  };
+  const getStatusText = (status: string) => statusLabel('invoice', status);
 
   const monthNames = [
     'Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
@@ -322,7 +318,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Rechnungen {selectedYear}</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-semibold tabular-nums text-gray-900">
                   {statistics.yearOverview?.totalInvoices || 0}
                 </p>
               </div>
@@ -336,7 +332,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Rechnungsvolumen</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-semibold tabular-nums text-gray-900">
                   {formatAmount(statistics.yearOverview?.totalAmount || 0)}
                 </p>
                 <p className="text-xs text-gray-500">Ausgestellte Rechnungen, offene Beträge eingeschlossen</p>
@@ -351,7 +347,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Zahlungseingänge</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-2xl font-semibold tabular-nums text-green-600">
                   {formatAmount((statistics.yearOverview?.paidAmount || 0) + (statistics.yearOverview?.otherIncome || 0))}
                 </p>
                 <p className="text-xs text-gray-500">Rechnungen: {formatAmount(statistics.yearOverview?.paidAmount || 0)}</p>
@@ -367,7 +363,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-500">Überfällig</p>
-                <p className="text-2xl font-bold text-red-600">
+                <p className="text-2xl font-semibold tabular-nums text-red-600">
                   {formatAmount(statistics.yearOverview?.overdueAmount || 0)}
                 </p>
               </div>
@@ -391,7 +387,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportJournalCsv}
                 disabled={journalLoading || !journalData?.invoices.length}
-                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />
@@ -400,7 +396,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
               <button
                 onClick={handleGeneratePDF}
                 disabled={generatingPDF || journalLoading || !journalData}
-                className="btn-primary inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm text-white transition-colors hover:brightness-90 disabled:opacity-50"
+                className="btn-primary inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm text-white transition-colors hover:brightness-90 disabled:opacity-50"
               >
                 {generatingPDF ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -509,7 +505,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <button
                   onClick={handleFilterChange}
                   disabled={journalLoading}
-                  className="btn-secondary text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                  className="btn-secondary h-9 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
                 >
                   {journalLoading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
@@ -520,7 +516,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 </button>
                 <button
                   onClick={clearFilters}
-                  className="text-gray-500 hover:text-gray-700 px-2 py-2 text-sm"
+                  className="h-9 rounded-lg text-gray-500 hover:text-gray-700 px-2 py-2 text-sm"
                 >
                   Filter zurücksetzen
                 </button>
@@ -533,17 +529,17 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <h3 className="text-sm font-medium text-blue-900 mb-2">Zusammenfassung</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-700">{journalData.summary.totalInvoices}</div>
+                    <div className="text-2xl font-semibold tabular-nums text-blue-700">{journalData.summary.totalInvoices}</div>
                     <div className="text-blue-600">Rechnungen</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-700">
+                    <div className="text-2xl font-semibold tabular-nums text-blue-700">
                       {formatAmount(journalData.summary.subtotalSum)}
                     </div>
                     <div className="text-blue-600">Nettosumme</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-700">
+                    <div className="text-2xl font-semibold tabular-nums text-blue-700">
                       {formatAmount(journalData.summary.totalAmount)}
                     </div>
                     <div className="text-blue-600">Bruttosumme</div>
@@ -559,9 +555,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
 
             {/* Journal Table */}
             {journalLoading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-              </div>
+              <TableSkeleton rows={6} columns={4} label="Rechnungsjournal wird geladen …" />
             ) : journalData?.invoices.length ? (
               <>
               {/* Datum steht unter der Rechnungsnummer: Die Karte ist oft schmal,
@@ -650,7 +644,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                   onChange={(e) => {
                     setSelectedYear(parseInt(e.target.value));
                   }}
-                  className="form-input form-input-compact text-sm"
+                  className="form-input form-input-compact h-9 rounded-lg text-sm"
                 >
                   {/* Zehn Jahre, damit auch übernommene Altdaten auswertbar sind. */}
                   {Array.from({ length: 10 }, (_, i) => {
@@ -666,7 +660,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportStatisticsCsv}
                 disabled={statisticsLoading || !statistics?.monthlyRevenue.length}
-                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />
@@ -675,7 +669,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 <button
                   onClick={loadStatistics}
                   disabled={statisticsLoading}
-                  className="text-primary-custom hover:text-primary-custom/80"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-primary-custom hover:text-primary-custom/80"
                   aria-label="Statistik neu laden"
                   title="Statistik neu laden"
                 >
@@ -685,8 +679,14 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
             </div>
 
             {statisticsLoading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+              <div role="status" aria-live="polite" className="space-y-2">
+                <span className="sr-only">Statistik wird geladen …</span>
+                {Array.from({ length: 12 }, (_, index) => (
+                  <div key={index} aria-hidden="true" className="flex items-center space-x-2">
+                    <SkeletonBlock className="h-3 w-8" />
+                    <SkeletonBlock className="h-4 flex-1 rounded-full" />
+                  </div>
+                ))}
               </div>
             ) : statistics?.monthlyRevenue ? (
               <div>
@@ -708,7 +708,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                         </div>
                         <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
                           <div
-                            className="chart-bar-grow h-4 rounded-full bg-[var(--primary-color)] transition-all duration-500"
+                            className="chart-bar-grow h-4 rounded-full bg-[var(--primary-color)] transition-colors duration-500"
                             style={{ ['--chart-index' as string]: i, width: `${percentage}%` }}
                           ></div>
                           {monthData && (
@@ -741,7 +741,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 type="button"
                 onClick={handleExportCustomersCsv}
                 disabled={!statistics?.topCustomers.length}
-                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Als CSV herunterladen (Semikolon getrennt, für Excel und Steuerberatung)"
               >
                 <Table2 className="h-4 w-4" />
@@ -754,7 +754,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
                 {statistics.topCustomers.slice(0, 5).map((customer: CustomerStats, index) => (
                   <div key={customer.customerId} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="flex items-center justify-center w-6 h-6 bg-primary-custom text-white rounded-full text-xs font-bold">
+                      <div className="flex items-center justify-center w-6 h-6 bg-primary-custom text-white rounded-full text-xs font-semibold tabular-nums">
                         {index + 1}
                       </div>
                       <div>
@@ -795,7 +795,7 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
           <button type="button" onClick={() => onNavigate?.('euer')} className="action-button flex items-center gap-2">EÜR öffnen <TrendingUp className="h-4 w-4" /></button>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Einnahmen</p><p className="mt-1 font-semibold text-emerald-900">{formatAmount(euerSummary.income)}</p></div><div className="rounded-lg bg-rose-50 p-3"><p className="text-xs text-rose-700">Ausgaben</p><p className="mt-1 font-semibold text-rose-900">{formatAmount(euerSummary.expenses)}</p></div><div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">Überschuss</p><p className="mt-1 font-semibold text-blue-900">{formatAmount(euerSummary.profit)}</p></div></div>
-        <div className="mt-5 hidden overflow-x-auto tablet:block"><table className="w-full min-w-[680px]"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Monat</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Überschuss</th></tr></thead><tbody className="divide-y divide-gray-200 bg-white">{euerMonthly.map(item => <tr key={item.month} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{monthNames[item.month]}</td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className="px-4 py-3 text-right font-medium text-gray-900">{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
+        <div className="mt-5 hidden overflow-x-auto tablet:block"><table className="w-full min-w-[680px]"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left table-head text-gray-500">Monat</th><th className="px-4 py-3 text-right table-head text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right table-head text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right table-head text-gray-500">Überschuss</th></tr></thead><tbody className="divide-y divide-gray-200 bg-white">{euerMonthly.map(item => <tr key={item.month} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{monthNames[item.month]}</td><td className="px-4 py-3 text-right text-emerald-700">{formatAmount(item.income)}</td><td className="px-4 py-3 text-right text-rose-700">{formatAmount(item.expenses)}</td><td className="px-4 py-3 text-right font-medium text-gray-900">{formatAmount(item.profit)}</td></tr>)}</tbody></table></div>
         <div className="divide-y divide-gray-100 tablet:hidden">{euerMonthly.map(item => <article key={item.month} className="py-4 first:pt-0 last:pb-0"><div className="flex items-center justify-between gap-3"><span className="font-medium text-gray-900">{monthNames[item.month]}</span><span className="font-semibold text-gray-900">{formatAmount(item.profit)}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Einnahmen</p><p className="mt-1 text-emerald-700">{formatAmount(item.income)}</p></div><div><p className="text-xs text-gray-500">Ausgaben</p><p className="mt-1 text-rose-700">{formatAmount(item.expenses)}</p></div></div></article>)}</div>
         <p className="mt-4 text-xs text-gray-500">Die EÜR-Auswertung ist eine vorbereitende Arbeitsunterlage. Zahlungseingangsdaten und Teilzahlungen sollten geprüft werden.</p>
       </section>

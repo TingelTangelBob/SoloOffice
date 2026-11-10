@@ -10,7 +10,7 @@ export function DynamicColors() {
   // Solange die Firmendaten laden, ist `company` nur der Standard (blau). Dann
   // dürfen weder Farben auf die App-Hülle noch der Vorab-Snapshot geschrieben
   // werden – sonst blitzt die Grundfarbe beim Neuladen kurz auf.
-  const { loading } = useLoading();
+  const { shellReady: loaded } = useLoading();
 
   // Default colors if not set
   const terminologyProfile = terminologyProfiles.find(profile => profile.id === company.terminologyProfile) || terminologyProfiles[0];
@@ -140,7 +140,7 @@ export function DynamicColors() {
   // Mit useEffect käme ein Frame mit der Farbe aus dem Snapshot davor.
   useLayoutEffect(() => {
     const appShell = document.getElementById('app-shell');
-    if (!appShell || loading) return undefined;
+    if (!appShell || !loaded) return undefined;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
@@ -196,7 +196,7 @@ export function DynamicColors() {
     return () => {
       mediaQuery.removeEventListener('change', applyTheme);
     };
-  }, [loading, company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, primaryOnDarkSurface, primaryOnLightSurface, secondaryColor, secondaryLight, secondaryTextColor]);
+  }, [loaded, company.themeMode, primaryColor, primaryLight, primaryMedium, primaryTextColor, primaryOnDarkSurface, primaryOnLightSurface, secondaryColor, secondaryLight, secondaryTextColor]);
 
   return (
     <style>
@@ -290,6 +290,25 @@ export function DynamicColors() {
         }
         #app-shell .bg-primary-medium-custom {
           background-color: var(--primary-medium) !important;
+        }
+        /* Deckkraftstufen der Akzentfarbe. Tailwind kennt "primary-custom" nicht
+           als Farbe und erzeugt diese Klassen deshalb nicht; bisher gab es nur
+           die Dunkelmodus-Werte weiter unten, im Hellmodus blieb die Fläche
+           (z. B. der heutige Tag im Kalender) ungetönt. */
+        #app-shell .bg-primary-custom\\/5 {
+          background-color: color-mix(in srgb, var(--primary-color) 5%, transparent) !important;
+        }
+        #app-shell .bg-primary-custom\\/10 {
+          background-color: color-mix(in srgb, var(--primary-color) 10%, transparent) !important;
+        }
+        #app-shell .bg-primary-custom\\/15 {
+          background-color: color-mix(in srgb, var(--primary-color) 15%, transparent) !important;
+        }
+        #app-shell .bg-primary-custom\\/20 {
+          background-color: color-mix(in srgb, var(--primary-color) 20%, transparent) !important;
+        }
+        #app-shell .border-primary-custom\\/15 {
+          border-color: color-mix(in srgb, var(--primary-color) 15%, transparent) !important;
         }
         #app-shell .bg-secondary-custom {
           background-color: var(--secondary-color) !important;
@@ -483,7 +502,7 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .calendar-toolbar-button,
         #app-shell[data-theme="dark"] .calendar-period-label {
           background-color: #141416 !important;
-          border-color: #475569 !important;
+          border-color: #3f3f46 !important;
           color: #a1a1aa !important;
         }
         #app-shell[data-theme="dark"] .calendar-toolbar-button:hover,
@@ -501,7 +520,7 @@ export function DynamicColors() {
         }
         #app-shell[data-theme="dark"] .calendar-view-switcher {
           background-color: #0a0a0b !important;
-          border-color: #475569 !important;
+          border-color: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .calendar-view-option:not(.bg-primary-custom) {
           color: #a1a1aa !important;
@@ -519,7 +538,9 @@ export function DynamicColors() {
         #app-shell[data-theme="dark"] .bg-gray-300 {
           background-color: #2f2f34 !important;
         }
-        #app-shell[data-theme="dark"] .bg-gray-50\\/60 {
+        /* Alle Deckkraft-Varianten von bg-gray-50 (z. B. /60, /70): die exakte
+           Klassenregel oben erfasst sie nicht, sonst bleibt die Fläche hell. */
+        #app-shell[data-theme="dark"] [class*="bg-gray-50/"] {
           background-color: #141416 !important;
         }
         #app-shell[data-theme="dark"] .bg-primary-light-custom {
@@ -658,25 +679,30 @@ export function DynamicColors() {
           background-color: #232326 !important;
           border-color: #3f3f46 !important;
         }
-        #app-shell[data-theme="dark"] .notice-info {
-          background-color: #172554 !important;
-          border-color: #2563eb !important;
+        /* Kurzmeldungen und der Demo-Hinweis stehen außerhalb von #app-shell;
+           die Dunkelwerte müssen deshalb über das Dokument greifen. */
+        :is(html[data-theme="dark"], html:has(#app-shell[data-theme="dark"])) .notice-info {
+          background-color: #101a33 !important;
+          border-color: #27407a !important;
           color: #dbeafe !important;
         }
-        #app-shell[data-theme="dark"] .notice-success {
-          background-color: #052e16 !important;
-          border-color: #16a34a !important;
+        :is(html[data-theme="dark"], html:has(#app-shell[data-theme="dark"])) .notice-success {
+          background-color: #0c1f15 !important;
+          border-color: #1f5a37 !important;
           color: #bbf7d0 !important;
         }
-        #app-shell[data-theme="dark"] .notice-warning {
-          background-color: #451a03 !important;
-          border-color: #d97706 !important;
+        :is(html[data-theme="dark"], html:has(#app-shell[data-theme="dark"])) .notice-warning {
+          background-color: #251a0b !important;
+          border-color: #6b4410 !important;
           color: #fde68a !important;
         }
-        #app-shell[data-theme="dark"] .notice-error {
-          background-color: #450a0a !important;
-          border-color: #dc2626 !important;
+        :is(html[data-theme="dark"], html:has(#app-shell[data-theme="dark"])) .notice-error {
+          background-color: #2a1213 !important;
+          border-color: #7a2326 !important;
           color: #fecaca !important;
+        }
+        :is(html[data-theme="dark"], html:has(#app-shell[data-theme="dark"])) .notice-dismiss:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
         }
         #app-shell[data-theme="dark"] .guidance-panel {
           background-color: #141416 !important;
@@ -1042,13 +1068,12 @@ export function DynamicColors() {
           color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .sidebar-account-trigger {
-          background-color: #141416 !important;
-          border-color: #2f2f34 !important;
+          background-color: transparent !important;
+          border-color: transparent !important;
           color: #fafafa !important;
         }
         #app-shell[data-theme="dark"] .sidebar-account-trigger:hover {
           background-color: #232326 !important;
-          border-color: #3f3f46 !important;
         }
         #app-shell[data-theme="dark"] .sidebar-setup-notice {
           background-color: #21170f !important;

@@ -25,3 +25,17 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   
   return btoa(binaryString);
 }
+
+/**
+ * Download a blob as a file
+ */
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

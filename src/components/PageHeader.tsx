@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useLayoutEffect, useState } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -26,6 +26,13 @@ interface PageHeaderProps {
   actionsTakeOverRow?: boolean;
 }
 
+function findTopbarTargets(): { title: HTMLElement; actions: HTMLElement } | null {
+  if (typeof document === 'undefined') return null;
+  const title = document.getElementById('topbar-page-title');
+  const actions = document.getElementById('topbar-page-actions');
+  return title && actions ? { title, actions } : null;
+}
+
 /**
  * Registriert den Titel und die Aktionen der aktuellen Ansicht in der
  * zentralen Kopfleiste. Der unsichtbare Platzhalter hält den vertikalen
@@ -36,13 +43,14 @@ export function PageHeader({ title, shortTitle, children, actionsTakeOverRow = f
   // `actionsTakeOverRow` bleibt als API-Kompatibilität erhalten. Die Topbar
   // steuert die verfügbare Breite jetzt zentral für alle Ansichten.
   void actionsTakeOverRow;
-  const [targets, setTargets] = useState<{ title: HTMLElement; actions: HTMLElement } | null>(null);
+  // Steht die Topbar schon im DOM, sofort dorthin rendern. Sonst vor dem
+  // ersten Zeichnen umhängen, damit Titel und Aktionen nicht kurz in der
+  // Seite aufblitzen.
+  const [targets, setTargets] = useState<{ title: HTMLElement; actions: HTMLElement } | null>(findTopbarTargets);
 
-  useEffect(() => {
-    const titleTarget = document.getElementById('topbar-page-title');
-    const actionsTarget = document.getElementById('topbar-page-actions');
-    if (titleTarget && actionsTarget) setTargets({ title: titleTarget, actions: actionsTarget });
-  }, []);
+  useLayoutEffect(() => {
+    if (!targets) setTargets(findTopbarTargets());
+  }, [targets]);
 
   if (!targets) {
     return (
@@ -63,8 +71,10 @@ export function PageHeader({ title, shortTitle, children, actionsTakeOverRow = f
     <>
       {createPortal(
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* In der Kopfleiste teilen sich Titel, Suche und Aktionen die Breite.
+              Den langen Titel gibt es erst, wenn neben der Suche Platz dafür ist. */}
           <h1 className="topbar-page-title min-w-0 truncate text-base font-semibold tracking-tight text-gray-900 lg:text-lg" title={title}>
-            {shortTitle ? <><span className="sm:hidden">{shortTitle}</span><span className="hidden sm:inline">{title}</span></> : title}
+            {shortTitle ? <><span className="xl:hidden">{shortTitle}</span><span className="hidden xl:inline">{title}</span></> : title}
           </h1>
         </div>,
         targets.title,

@@ -1,4 +1,5 @@
 import React, { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { statusDotClass, statusLabel } from '../utils/statusDisplay';
 import logger from '../utils/logger';
 import { Banknote, Briefcase, CalendarDays, ChevronRight, FileCheck, FilePlus2, FileText, GraduationCap, Import, MoreHorizontal, Send, SlidersHorizontal, Upload, Users, Wallet } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
@@ -11,7 +12,7 @@ import { formatCurrency, formatDate, formatNumber, formatTime } from '../utils/f
 import { compareTableValues } from '../utils/tableSort';
 import { blobToBase64 } from '../utils/blobUtils';
 import { EmailSendModal } from './EmailSendModal';
-import { generateInvoicePDF } from '../utils/pdfGenerator';
+import { generateInvoicePDF } from '../utils/pdfLazy';
 import { processAttachments } from '../utils/fileUtils';
 import { apiService } from '../services/api';
 import type { EuerEntry, Invoice, JobEntry, NumberFormat, Receipt, TimeFormat } from '../types';
@@ -78,6 +79,7 @@ import { FloatingInfoTooltip } from './InfoTooltip';
 
 import { getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { markOverdueInvoices } from '../utils/overdueInvoices';
 import { SkeletonBlock } from './TableSkeleton';
 import { useExtensions } from '../hooks/useExtensions';
 import { useForecast } from '../hooks/useForecast';
@@ -168,21 +170,11 @@ function getJobTimeRange(
 }
 
 function getJobStatusDotColor(status: JobEntry['status']): string {
-  switch (status) {
-    case 'in-progress': return 'bg-yellow-500';
-    case 'completed': return 'bg-green-500';
-    case 'invoiced': return 'bg-blue-500';
-    default: return 'bg-gray-400';
-  }
+  return statusDotClass('job', status);
 }
 
 function getJobStatusLabel(status: JobEntry['status']): string {
-  switch (status) {
-    case 'in-progress': return 'In Bearbeitung';
-    case 'completed': return 'Abgeschlossen';
-    case 'invoiced': return 'Abgerechnet';
-    default: return 'Entwurf';
-  }
+  return statusLabel('job', status);
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
@@ -191,8 +183,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { invoices, updateInvoice } = useInvoices();
   const { jobEntries } = useJobs();
   const { company } = useCompany();
-  const { user, can } = useAuth();
+  const { can } = useAuth();
   const hasSettingsPermission = can('workspace.settings');
+  const canWrite = can('data.write');
   const { isEnabled: isExtensionEnabled } = useExtensions();
   const taxesEnabled = hasSettingsPermission && isExtensionEnabled('taxes');
   // Die USt-Kachel ist betrieblich: Erweiterung genügt, Einstellungsrecht nicht nötig.
@@ -205,6 +198,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const preferenceSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveVersion = useRef(0);
   const [euerEntries, setEuerEntries] = useState<EuerEntry[]>([]);
+  const [euerEntriesLoaded, setEuerEntriesLoaded] = useState(false);
+  // Leerzustände (Umsätze, Top-Kunden, Summen) erst nach abgeschlossenem Laden zeigen.
+  const dashboardDataReady = preferencesLoaded && euerEntriesLoaded;
   const { quotes } = useQuotes();
   /** Entwurf des Bearbeiten-Modus; `null` = normale Ansicht. */
   const [editDraft, setEditDraft] = useState<DashboardPreferences | null>(null);
@@ -277,6 +273,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }).catch(error => {
       logger.warn('EÜR-Einträge für die Dashboard-Auswertung konnten nicht geladen werden.', error);
       if (active) setEuerEntries([]);
+    }).finally(() => {
+      if (active) setEuerEntriesLoaded(true);
     });
     return () => { active = false; };
   }, []);
@@ -479,47 +477,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setEmailModal({ isOpen: false, invoice: null, customer: null });
   };
 
-  // Check for overdue invoices automatically on every load
+  // Überfällig-Markierung nur mit Schreibrecht und ohne parallelen Lauf (Prüfbericht H-2).
   useEffect(() => {
-    const checkOverdueInvoices = async () => {
-      if (loading || invoices.length === 0) return;
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
-      
-      const overdueUpdates = invoices
-        .filter(invoice => {
-          // Only check sent invoices that are not already overdue or paid
-          if (invoice.status !== 'sent') return false;
-          
-          const dueDate = new Date(invoice.dueDate);
-          dueDate.setHours(0, 0, 0, 0);
-          
-          return dueDate < today;
-        })
-        .map(invoice => invoice.id);
-      
-      // Update overdue invoices
-      for (const invoiceId of overdueUpdates) {
-        try {
-          await updateInvoice(invoiceId, { status: 'overdue' });
-        } catch (error) {
-          logger.error('Error updating invoice to overdue:', error);
-        }
-      }
-      
-      if (overdueUpdates.length > 0) {
-        logger.info(`${overdueUpdates.length} invoices automatically marked as overdue`, { count: overdueUpdates.length });
-      }
-    };
+    if (loading || invoices.length === 0 || !canWrite) return;
+    void markOverdueInvoices(invoices, updateInvoice, error => logger.error('Error updating invoice to overdue:', error));
+  }, [loading, invoices, updateInvoice, canWrite]);
 
-    // Run overdue check whenever data is loaded
-    if (!loading && invoices.length > 0) {
-      checkOverdueInvoices();
-    }
-  }, [loading, invoices, updateInvoice]);
-
-  if (loading) {
+  // Bis die Kachel-Einstellungen geladen sind, bleibt das Skelett stehen: Sonst
+  // würde das Raster mit Standardwerten erscheinen und danach umsortiert.
+  if (loading || !preferencesLoaded) {
     return (
       <div className="page-root space-y-3" role="status" aria-live="polite">
         <span className="sr-only">Übersicht wird geladen …</span>
@@ -646,27 +612,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     })
     .slice(0, 5);
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'paid': return 'Bezahlt';
-      case 'sent': return 'Versendet';
-      case 'draft': return 'Entwurf';
-      case 'overdue': return 'Überfällig';
-      default: return status;
-    }
-  };
+  const getStatusLabel = (status: string) => statusLabel('invoice', status);
+  const getStatusDotColor = (status: string) => statusDotClass('invoice', status);
 
-  const getStatusDotColor = (status: string) => {
-    switch (status) {
-      case 'paid': return 'bg-green-500';
-      case 'sent': return 'bg-blue-500';
-      case 'draft': return 'bg-gray-400';
-      case 'overdue': return 'bg-red-500';
-      default: return 'bg-gray-400';
-    }
-  };
-
-  const greetingName = user?.firstName?.trim() || user?.displayName?.trim() || company.name?.trim();
   const editing = editDraft !== null;
   const layout = editDraft ?? preferences;
   const periodYear: number | 'all' = allYears ? 'all' : selectedPeriodYear;
@@ -921,7 +869,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <MetricCardHeader>
               <div className="flex min-w-0 flex-col">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <MetricValue className="max-w-full">{money(revenueWindowTotal)}</MetricValue>
+                  <MetricValue className="max-w-full">{dashboardDataReady ? money(revenueWindowTotal) : '–'}</MetricValue>
                   {!preferences.monthView && !allYears && preferences.comparePrevious && <MetricCardDescription className="mt-0 whitespace-nowrap">Vorjahr: {money(previousWindowTotal)}</MetricCardDescription>}
                 </div>
                 <MetricCardDescription>Gesamtumsatz {periodLabel} · {includeUnpaidInvoices ? 'bezahlt und offen' : 'nur bezahlt'}</MetricCardDescription>
@@ -951,14 +899,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   formatValue={money}
                   ariaLabel={`Umsatzverlauf ${periodLabel}, insgesamt ${money(revenueWindowTotal)}`}
                 />
-              ) : (
+              ) : dashboardDataReady ? (
                 <DashboardEmptyState
                   variant="chart"
                   title={`Noch keine Umsätze ${allYears ? 'erfasst' : `in ${dashboardYear}`}`}
                   description={includeUnpaidInvoices ? 'Festgeschriebene Rechnungen erscheinen hier im Verlauf.' : 'Bezahlte Rechnungen erscheinen hier nach Zahlungsdatum.'}
                   action={{ label: 'Rechnung schreiben', onClick: () => onNavigate('invoices', 'new') }}
                 />
-              )}
+              ) : null}
               {includeUnpaidInvoices && financialPreferencesSelected && <p role="note" className="px-3 pb-3 text-xs leading-5 text-amber-800">Die Umsatzreihe enthält offene Rechnungen nach Rechnungsdatum. Daher wird sie nicht mit der Zahlungs-/Forecastreihe vermischt.</p>}
             </MetricCardContent>
             {company.reportingEnabled && (
@@ -991,10 +939,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     />
                   ))}
                 </ShareBarList>
-              ) : (
+              ) : dashboardDataReady ? (
                 <DashboardEmptyState variant="customers" title="Noch keine Umsätze"
                   description={`Sobald Rechnungen bezahlt sind, stehen hier die umsatzstärksten ${terminology.entity.plural}.`} />
-              )}
+              ) : null}
             </MetricCardContent>
             <MetricCardFooterAction onClick={() => onNavigate('customers')}>
               Alle {terminology.entity.plural}
@@ -1463,7 +1411,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <button key={job.id} type="button" onClick={() => onNavigate('jobs', undefined, job.jobNumber || job.title)}
                     className={listButtonClass} aria-label={`${job.title} am ${formatDate(date, locale, company?.dateFormat)} öffnen`}>
                     <span className="flex w-11 shrink-0 flex-col items-center rounded-lg bg-primary-custom/10 py-1 text-primary-custom">
-                      <span className="text-[10px] font-medium uppercase leading-none">{date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}</span>
+                      <span className="text-[11px] font-medium leading-none">{date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}</span>
                       <span className="mt-0.5 text-sm font-semibold leading-none tabular-nums">{date.getDate()}</span>
                     </span>
                     <span className="min-w-0 flex-1">
@@ -1638,7 +1586,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   return (
     <div className="dashboard-metrics page-root space-y-6 pb-24 tablet:pb-0" aria-busy={!preferencesLoaded}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-3">
-        <h1 className="min-w-0 max-w-full truncate text-lg font-semibold text-gray-900 sm:text-2xl">Willkommen<span className="hidden min-[400px]:inline"> zurück</span>{greetingName ? `, ${greetingName}` : ''}</h1>
+        <h1 className="min-w-0 max-w-full truncate text-lg font-semibold text-gray-900 sm:text-2xl">Übersicht</h1>
         {!editing && <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <label className="sr-only" htmlFor="dashboard-year">Jahr auswählen</label>
           <select id="dashboard-year" value={allYears ? 'all' : dashboardYear} onChange={event => {
@@ -1695,7 +1643,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 return <ActionMenuItem key={series.id} trailing={<SwitchTrack checked={active} />} role="menuitemcheckbox" aria-checked={active}
                   disabled={Boolean(reason)} title={reason ?? undefined}
                   onClick={event => { event.preventDefault(); if (!reason) savePreferences(series.toggle(preferences)); }}>
-                  <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[10px] text-gray-600">privat</span>}<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} /></span>
+                  <span className="flex min-w-0 items-center gap-1">{series.menuLabel}{series.private && <span className="rounded bg-gray-100 px-1 text-[11px] text-gray-600">privat</span>}<FloatingInfoTooltip label={`Hinweise zu ${series.menuLabel}`} text={reason ?? `${TAX_TEXTS.badge}. ${TAX_TEXTS.tooltip(dashboardYear)}`} /></span>
                 </ActionMenuItem>;
               })}
             </>}

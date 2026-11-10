@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import logger from '../utils/logger';
+import { actionErrorMessage } from '../utils/actionError';
 import { X, FileText, Calendar, Users, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import { Invoice, JobEntry, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
 import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
-import { generateJobPDF } from '../utils/pdfGenerator';
+import { generateJobPDF } from '../utils/pdfLazy';
 import { generateUUID } from '../utils/uuid';
 import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue, formatNumber } from '../utils/formatters';
 import { calculateTotalHours } from '../utils/jobUtils';
@@ -463,7 +464,8 @@ export function JobInvoiceGenerator({
         });
       } catch (error) {
         logger.error('Error generating job PDF for attachment:', error);
-        // Continue without this attachment if generation fails
+        // Die Rechnung entsteht ohne diesen Anhang; der Nutzer wird darüber informiert.
+        notify({ variant: 'warning', message: actionErrorMessage(`Der Auftragsnachweis „${job.title}“ konnte nicht als Anhang erzeugt werden. Die Rechnung wurde ohne diesen Anhang erstellt.`, error) });
       }
     }
 
@@ -619,7 +621,7 @@ export function JobInvoiceGenerator({
                 className="flex w-full items-center justify-between gap-4 rounded-xl px-4 py-3 text-left transition-colors hover:bg-gray-50"
               >
                 <span className="min-w-0">
-                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Aktive Auswahl</span>
+                  <span className="mb-1 block table-head text-gray-500">Aktive Auswahl</span>
                   <span className="block truncate text-sm font-medium text-gray-900">{selectedGenerationType.label}</span>
                   <span className="mt-0.5 block text-xs text-gray-500">{selectedGenerationType.description}</span>
                 </span>

@@ -185,7 +185,7 @@ export function EuerAllowanceDialog({
     finally { setRemoving(false); }
   };
 
-  return <DialogShell titleId="euer-allowance-dialog-title" icon={Calculator} title="Pauschale erfassen" description={`Steuerjahr ${year}`} onClose={onClose} onSubmit={submit} size="lg" fitContent footer={<>
+  return <DialogShell unsavedChangesGuard titleId="euer-allowance-dialog-title" icon={Calculator} title="Pauschale erfassen" description={`Steuerjahr ${year}`} onClose={onClose} onSubmit={submit} size="lg" fitContent footer={<>
     <button type="button" onClick={onClose} disabled={saving || removing} className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Abbrechen</button>
     {canWrite && <button type="submit" disabled={disabled || (mode === 'home_office' && (duplicates || !validDays || !validParameters))} className="btn-primary min-h-11 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Speichern …' : mode === 'home_office' && existingEntry ? 'Pauschale aktualisieren' : 'Pauschale speichern'}</button>}
   </>}>

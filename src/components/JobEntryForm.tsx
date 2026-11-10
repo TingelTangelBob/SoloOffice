@@ -1,6 +1,9 @@
 import { sameRecurrenceRule } from '../../backend/utils/jobRecurrenceRule.js';
 import { createSubmitGuard } from '../utils/submitGuard';
+import { actionErrorMessage } from '../utils/actionError';
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
 import { collapseRow } from '../utils/motion';
 import { useEnteringRows } from '../hooks/useEnteringRows';
 import logger from '../utils/logger';
@@ -25,6 +28,7 @@ import { getIsoWeekday, getJobRecurrenceDates, getRecurrenceWeekdayLabel, RECURR
 import { DialogShell } from './DialogShell';
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '../utils/timeZones';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
 
 interface JobEntryFormProps {
   job?: JobEntry | null;
@@ -107,6 +111,8 @@ function SelectWithChevron({ className = '', containerClassName = 'w-full', chil
 
 export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, onSubmit, onCancel, onCreateCustomer, onSubmitVacation, onNavigateToCustomers, onNavigateToSettings }: JobEntryFormProps) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { addCustomer, refreshCustomers } = useCustomers();
   const { company, hourlyRates } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
@@ -119,7 +125,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     company.currency
   );
 
-  const sectionSelectClass = 'form-input form-input-compact text-xs sm:px-3 sm:text-sm';
+  const sectionSelectClass = 'form-input form-input-compact sm:px-3 sm:text-sm';
   const sectionIconButtonClass = 'theme-control-button box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 transition-colors hover:border-primary-custom hover:bg-primary-custom/10 hover:text-primary-custom';
   const sectionActionButtonClass = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 box-border inline-flex h-[38px] min-h-[38px] max-h-[38px] w-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-0 text-xs transition-colors sm:w-auto sm:px-3 sm:text-sm';
 
@@ -202,6 +208,12 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
   const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([getIsoWeekday(new Date())]);
   const [recurrenceStartDate, setRecurrenceStartDate] = useState(formatLocalDateInput());
   const [isDirty, setIsDirty] = useState(false);
+  // Warnt beim Seitenwechsel und Neuladen (Prüfbericht M-16).
+  useUnsavedChangesGuard({
+    id: 'job-entry-form',
+    isDirty,
+    message: 'Der Auftrag enthält ungespeicherte Änderungen. Möchten Sie diese verwerfen?',
+  });
   const [formError, setFormError] = useState('');
   
   // Document Preview state
@@ -505,6 +517,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
         }
       } catch (error) {
         logger.error('Error loading material template:', error);
+        notify({ variant: 'error', message: actionErrorMessage('Die Materialvorlage konnte nicht geladen werden. Bitte die Angaben manuell eintragen.', error) });
         // Fallback on error
         newMaterial = {
           id: Date.now().toString(),
@@ -672,6 +685,8 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
     if (!pendingRateNavigation) return;
     const navigate = getRateNavigationCallback(pendingRateNavigation);
     setPendingRateNavigation(null);
+    // Verworfen ist bestätigt: der Seitenschutz fragt kein zweites Mal.
+    flushSync(() => setIsDirty(false));
     navigate?.();
   };
 
@@ -688,6 +703,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
         const saved = await onSubmit(getSubmitData(formData.status));
         if (saved === false) return;
         setPendingRateNavigation(null);
+        flushSync(() => setIsDirty(false));
         navigate();
       } catch (error) {
         logger.error('Fehler beim Speichern vor dem Verlassen des Formulars:', error);
@@ -821,7 +837,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       </button>
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || !canWrite}
         aria-busy={isSubmitting}
         className="disabled:cursor-wait disabled:opacity-60 btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
       >
@@ -842,7 +858,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       {!job && (
         <button
           type="button"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           aria-busy={isSubmitting}
           onClick={handleSubmitAsDraft}
           className="disabled:cursor-wait disabled:opacity-60 flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
@@ -853,7 +869,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
       )}
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || !canWrite}
         aria-busy={isSubmitting}
         className="disabled:cursor-wait disabled:opacity-60 btn-primary flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
       >
@@ -965,7 +981,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     aria-describedby={formError ? 'job-entry-form-error' : undefined}
                     value={formData.title}
                     onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact min-w-0 sm:px-3 sm:text-sm"
                     placeholder="z. B. Deutsch-Kurs B2"
                   />
                 </div>
@@ -991,7 +1007,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     type="text"
                     value={formData.externalJobNumber}
                     onChange={(e) => setFormData(prev => ({ ...prev, externalJobNumber: e.target.value }))}
-                    className="form-input form-input-compact min-w-0 text-xs sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact min-w-0 sm:px-3 sm:text-sm"
                   />
                 </div>
 
@@ -1003,7 +1019,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       setIsDirty(true);
                       setFormData(prev => ({ ...prev, status: e.target.value as JobEntry['status'] }));
                     }}
-                    className="form-input form-input-compact text-xs sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact sm:px-3 sm:text-sm"
                   >
                     <option value="draft">Entwurf</option>
                     <option value="in-progress">In Bearbeitung</option>
@@ -1094,7 +1110,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       setIsDirty(true);
                       setFormData(previous => ({ ...previous, timeZone: event.target.value }));
                     }}
-                    className="form-input form-input-compact text-xs sm:px-3 sm:text-sm"
+                    className="form-input form-input-compact sm:px-3 sm:text-sm"
                     aria-label="Zeitzone des Kurses"
                   >
                     {TIME_ZONE_OPTIONS.map((option) => (
@@ -1372,7 +1388,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
             {formData.timeEntries && formData.timeEntries.length > 0 ? (
               <div ref={timeEntryListRef} className="space-y-2">
-                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
+                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 table-head text-gray-500 md:grid">
                   <div className="col-span-2">Beschreibung</div>
                   <div>Stunden</div>
                   <div>Stundensatz</div>
@@ -1405,21 +1421,21 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     {/* Mobile Layout - Simplified for space */}
                     <div className="md:hidden space-y-2">
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Beschreibung
                         </label>
                         <input
                           type="text"
                           value={timeEntry.description}
                           onChange={(e) => updateTimeEntry(index, 'description', e.target.value)}
-                          className="form-input form-input-compact text-xs"
+                          className="form-input form-input-compact"
                           placeholder="z.B. Anfahrt, Montage..."
                         />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                             Stunden *
                           </label>
                           <LocalizedNumberInput
@@ -1435,18 +1451,18 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                               }
                             }}
                             required
-                            className="form-input form-input-compact px-1 text-xs"
+                            className="form-input form-input-compact px-1"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                             Gesamt ({currencySymbol})
                           </label>
                           <input
                             type="text"
                             value={formatMoney(Number(timeEntry.total) || 0)}
                             readOnly
-                            className="form-input form-input-compact px-1 text-xs bg-gray-100"
+                            className="form-input form-input-compact px-1 bg-gray-100"
                           />
                         </div>
                       </div>
@@ -1456,7 +1472,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     <div className="hidden md:block">
                       <div className="grid grid-cols-7 items-end gap-3">
                         <div className="col-span-2">
-                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
+                          <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">
                             Beschreibung
                           </label>
                           <input
@@ -1469,7 +1485,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
+                          <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">
                             Stunden *
                           </label>
                           <LocalizedNumberInput
@@ -1490,7 +1506,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
+                          <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">
                             Stundensatz ({currencySymbol})
                           </label>
                           <input
@@ -1502,7 +1518,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
                         
                         <div>
-                          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700 md:sr-only">
+                          <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700 md:sr-only">
                             <span>MwSt. %</span>
                             {company?.isSmallBusiness && <TaxDisabledHint />}
                           </label>
@@ -1521,7 +1537,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
+                          <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">
                             Gesamt ({currencySymbol})
                           </label>
                           <input
@@ -1552,17 +1568,17 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
                       <div className="min-w-0">
                         <span className="block font-medium">Pro Einheit</span>
-                        <span className="mt-1 block font-bold">
+                        <span className="mt-1 block font-semibold tabular-nums">
                           {formatNumber(timeHoursPerUnit, company.locale, company.numberFormat, 2)} h
                         </span>
-                        <span className="block font-bold">{formatMoney(timeCostPerUnit)}</span>
+                        <span className="block font-semibold tabular-nums">{formatMoney(timeCostPerUnit)}</span>
                       </div>
                       <div className="min-w-0 border-l border-blue-200 pl-2">
                         <span className="block font-medium">Gesamt für Zeitraum</span>
-                        <span className="mt-1 block font-bold">
+                        <span className="mt-1 block font-semibold tabular-nums">
                           {formatNumber(timeHoursPerUnit * recurrenceUnitCount, company.locale, company.numberFormat, 2)} h
                         </span>
-                        <span className="block font-bold">{formatMoney(timeCostPerUnit * recurrenceUnitCount)}</span>
+                        <span className="block font-semibold tabular-nums">{formatMoney(timeCostPerUnit * recurrenceUnitCount)}</span>
                         <span className="mt-0.5 block text-[11px] leading-4 text-blue-800">
                           {recurrenceUnitCount} {recurrenceUnitCount === 1 ? 'Einheit' : 'Einheiten'}
                         </span>
@@ -1572,13 +1588,13 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     <>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">Gesamtstunden:</span>
-                        <span className="font-bold">
+                        <span className="font-semibold tabular-nums">
                           {formatNumber(timeHoursPerUnit, company.locale, company.numberFormat, 2)} h
                         </span>
                       </div>
                       <div className="mt-1 flex items-center justify-between text-sm">
                         <span className="font-medium">Gesamtkosten:</span>
-                        <span className="font-bold">{formatMoney(timeCostPerUnit)}</span>
+                        <span className="font-semibold tabular-nums">{formatMoney(timeCostPerUnit)}</span>
                       </div>
                     </>
                   )}
@@ -1659,7 +1675,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
 
             {formData.materials && formData.materials.length > 0 ? (
               <div ref={materialListRef} className="space-y-2" onKeyDown={handleMaterialKeyDown}>
-                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
+                <div className="hidden grid-cols-7 items-center gap-3 px-2 pb-1 table-head text-gray-500 md:grid">
                   <div className="col-span-2">Beschreibung</div>
                   <div>Menge</div>
                   <div>Preis</div>
@@ -1677,7 +1693,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     {/* Simplified layout for both mobile and desktop */}
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-7 md:gap-3">
                       <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">
+                        <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">
                           Beschreibung
                         </label>
                         <input
@@ -1690,7 +1706,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Menge</label>
+                        <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">Menge</label>
                         <LocalizedNumberInput
                           step="0.01"
                           min="0"
@@ -1708,7 +1724,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Preis {currencySymbol}</label>
+                        <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">Preis {currencySymbol}</label>
                         <LocalizedNumberInput minimumFractionDigits={2}
                           step="0.01"
                           min="0"
@@ -1726,7 +1742,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700 md:sr-only">
+                        <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700 md:sr-only">
                           <span>MwSt. %</span>
                           {company?.isSmallBusiness && <TaxDisabledHint />}
                         </label>
@@ -1745,7 +1761,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-700 md:sr-only">Gesamt {currencySymbol}</label>
+                        <label className="mb-1 block text-sm font-medium text-gray-700 md:sr-only">Gesamt {currencySymbol}</label>
                         <input
                           type="text"
                           value={formatMoney(Number(material.total) || 0)}
@@ -1771,7 +1787,7 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 md:p-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-blue-900">Gesamtkosten Materialien:</span>
-                    <span className="font-bold text-blue-900">
+                    <span className="font-semibold tabular-nums text-blue-900">
                       {formatMoney(formData.materials.reduce((sum, material) => sum + (Number(material.total) || 0), 0))}
                     </span>
                   </div>

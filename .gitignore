@@ -4,6 +4,8 @@
 # Variablen eine Betriebsart braucht.
 !.env.*.example
 .DS_Store
+# Editor-Auslagerungsdateien (Vim) nicht versionieren.
+*.swp
 *.backup
 node_modules
 dist

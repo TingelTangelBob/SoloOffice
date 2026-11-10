@@ -1,6 +1,7 @@
 import { invoiceDateParts } from './invoiceNumberPattern.js';
+import { statesOf } from '../shared/stateMachines.js';
 
-const statuses = new Set(['draft', 'sent', 'paid', 'overdue', 'reminded_1x', 'reminded_2x', 'reminded_3x']);
+const statuses = new Set(statesOf('invoice'));
 export const INVOICE_CONTENT_FIELDS = [
   'customerId', 'customerName', 'issueDate', 'dueDate', 'serviceDate', 'items', 'attachments', 'notes',
   'globalDiscountType', 'globalDiscountValue', 'globalDiscountAmount',

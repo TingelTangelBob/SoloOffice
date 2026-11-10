@@ -29,9 +29,11 @@ import { LocalizedNumberInput } from './LocalizedNumberInput';
 import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
+import { useAuth } from '../context/AuthContext';
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
+import { statusLabel } from '../utils/statusDisplay';
 
 type ItemDraft = {
   description: string;
@@ -78,12 +80,6 @@ const emptyForm = (): FormDraft => {
   };
 };
 
-const statusLabels: Record<string, string> = {
-  active: 'Aktiv',
-  paused: 'Pausiert',
-  ended: 'Beendet',
-};
-
 const frequencyLabels: Record<string, string> = {
   monthly: 'Monatlich',
   quarterly: 'Vierteljährlich',
@@ -98,18 +94,15 @@ const intervalUnitLabels: Record<RecurringInvoiceIntervalUnit, string> = {
   year: 'Jahre',
 };
 
-const runStatusLabels: Record<string, string> = {
-  success: 'Erfolgreich',
-  failed: 'Fehlgeschlagen',
-};
-
 const fieldLabelClassName = 'block min-w-0 text-sm font-medium text-gray-700';
-const controlClassName = 'form-input form-input-compact mt-1.5 w-full text-sm text-gray-900 shadow-sm transition disabled:cursor-not-allowed disabled:bg-gray-100';
+const controlClassName = 'form-input form-input-compact mt-1.5 w-full text-gray-900 transition disabled:cursor-not-allowed disabled:bg-gray-100';
 const amountControlClassName = `${controlClassName} text-right tabular-nums`;
-const textAreaClassName = 'form-input form-input-compact mt-1.5 w-full min-h-10 resize-y text-sm text-gray-900 shadow-sm transition';
+const textAreaClassName = 'form-input form-input-compact mt-1.5 w-full min-h-10 resize-y text-gray-900 transition';
 
 export function RecurringInvoiceManagement() {
   const { confirm } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
@@ -357,7 +350,7 @@ export function RecurringInvoiceManagement() {
         <button
           type="button"
           onClick={openNew}
-          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-all duration-300 hover:scale-105 hover:brightness-90 sm:min-w-0 sm:px-4"
+          className="btn-primary inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-white transition-colors duration-300 hover:brightness-90 sm:min-w-0 sm:px-4"
           aria-label="Wiederkehrende Rechnung anlegen"
           title="Wiederkehrende Rechnung anlegen"
         >
@@ -398,7 +391,7 @@ export function RecurringInvoiceManagement() {
                   <p className="mt-1 truncate text-sm text-gray-600">{customerName(entry.customerId)}</p>
                 </div>
                 <span className={`status-badge shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${entry.status === 'active' ? 'bg-green-100 text-green-700' : entry.status === 'paused' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-                  {statusLabels[entry.status] || entry.status}
+                  {statusLabel('recurringInvoice', entry.status)}
                 </span>
               </div>
 
@@ -429,7 +422,7 @@ export function RecurringInvoiceManagement() {
                     <FilePlus2 className="h-4 w-4" />Jetzt erzeugen
                   </button>
                 )}
-                <button type="button" onClick={() => openEdit(entry)} className="action-button" aria-label={`${entry.name} bearbeiten`} title="Bearbeiten">
+                <button disabled={!canWrite} type="button" onClick={() => openEdit(entry)} className="action-button" aria-label={`${entry.name} bearbeiten`} title="Bearbeiten">
                   <Edit className="h-4 w-4" />
                   <span className="hidden sm:inline">Bearbeiten</span>
                 </button>
@@ -470,7 +463,7 @@ export function RecurringInvoiceManagement() {
                     <div key={run.id} className="space-y-1 border-b border-gray-200 py-2 last:border-0">
                       <div className="flex justify-between">
                         <span>{formatDate(run.scheduledDate, locale, company?.dateFormat)}</span>
-                        <span className={run.status === 'success' ? 'text-green-700' : 'text-red-700'}>{runStatusLabels[run.status] || run.status}</span>
+                        <span className={run.status === 'success' ? 'text-green-700' : 'text-red-700'}>{statusLabel('recurringInvoiceRun', run.status)}</span>
                       </div>
                       {run.invoiceNumber && <span className="text-gray-600">{run.invoiceNumber}</span>}
                       {run.errorMessage && <p className="text-red-700">{run.errorMessage}</p>}
@@ -484,7 +477,7 @@ export function RecurringInvoiceManagement() {
       )}
 
       {dialog.open && (
-        <DialogShell
+        <DialogShell unsavedChangesGuard
           titleId="recurring-invoice-dialog-title"
           icon={CalendarClock}
           title={dialog.entry ? 'Wiederkehrende Rechnung bearbeiten' : 'Wiederkehrende Rechnung anlegen'}
@@ -496,7 +489,7 @@ export function RecurringInvoiceManagement() {
           footer={(
             <>
               <button type="button" onClick={() => setDialog({ open: false })} className="inline-flex min-h-12 items-center justify-center rounded-lg border border-gray-300 bg-white px-8 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50">Abbrechen</button>
-              <button type="submit" disabled={busy === 'save'} className="btn-primary inline-flex min-h-12 items-center justify-center rounded-lg px-8 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60">{busy === 'save' ? 'Speichern …' : 'Speichern'}</button>
+              <button type="submit" disabled={!canWrite || busy === 'save'} className="btn-primary inline-flex min-h-12 items-center justify-center rounded-lg px-8 py-2 text-base font-semibold text-white transition hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-60">{busy === 'save' ? 'Speichern …' : 'Speichern'}</button>
             </>
           )}
         >

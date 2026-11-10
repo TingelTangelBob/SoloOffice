@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 import type { CreditNote, EuerEntry } from '../types';
 import { PageHeader } from './PageHeader';
+import { TableSkeleton } from './TableSkeleton';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { dismissNotice, isNoticeDismissed } from '../utils/dismissedNoticeStorage';
 import { useExtensions } from '../hooks/useExtensions';
@@ -99,6 +100,14 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
     };
   }, [invoices, sourceDataKey, year, workspaceId]);
 
+  const sourceReady = sourceData.key === sourceDataKey;
+  // Die Übersicht baut beim ersten Laden einmal vollständig auf: Bis Steuereinstellungen, Schätzung und Quelldaten da sind, steht ein Skelett, danach blendet alles zusammen ein. Spätere Jahreswechsel laden in der fertigen Übersicht nach.
+  const [initialReady, setInitialReady] = useState(false);
+  const firstLoadSettled = !extensionsLoading && !forecastLoading && sourceReady;
+  useEffect(() => {
+    if (firstLoadSettled) setInitialReady(true);
+  }, [firstLoadSettled]);
+
   const paidInvoiceSummary = useMemo(() => {
     const euerEntries = sourceData.key === sourceDataKey ? sourceData.euerEntries : [];
     const activePayments = euerEntries.filter(entry => entry.status !== 'voided'
@@ -142,10 +151,10 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
   ) : (
     <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Voraussichtlicher Gewinn</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.profitAnnual)}</p><p className="mt-1 text-xs text-gray-500">Bisher {formatAmount(forecast.profitYtd)} · Bereich {formatAmount(forecast.profitBand.low)} bis {formatAmount(forecast.profitBand.high)}</p></article>
-        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Steuern und Sozialbeiträge</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.annualBurden)}</p><p className="mt-1 text-xs text-gray-500">Steuern {formatAmount(forecast.taxes.total)} · Sozialbeiträge {formatAmount(forecast.social.total)}</p></article>
-        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Noch aufzubringen für Steuern und Sozialbeiträge</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.remainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{formatAmount(forecast.annualBurden)} Jahresbedarf − {formatAmount(forecast.paidLevies)} erfasste Zahlungen. Umsatzsteuer separat.</p></article>
-        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Umsatzsteuer-Richtwert</p><p className="mt-2 text-xl font-bold text-gray-900">{formatAmount(forecast.vatRemainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{forecast.vatStatus === 'small_business' ? 'Kleinunternehmerregelung im Profil; hier ist keine Umsatzsteuer angesetzt.' : forecast.vatStatus === 'education_exempt' ? 'Bildungsbefreiung im Profil; mögliche Mischfälle bitte prüfen.' : forecast.vatBasis === 'calculated' ? 'Aus erfassten Belegen berechnet.' : forecast.vatBasis === 'estimate' ? `${forecast.vatIncompleteEntries} Buchungen ohne vollständige USt-Angaben.` : 'Grobe Schätzung; Vorsteuer und Sonderfälle können abweichen.'}</p></article>
+        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Voraussichtlicher Gewinn</p><p className="mt-2 text-2xl font-semibold tabular-nums text-gray-900">{formatAmount(forecast.profitAnnual)}</p><p className="mt-1 text-xs text-gray-500">Bisher {formatAmount(forecast.profitYtd)} · Bereich {formatAmount(forecast.profitBand.low)} bis {formatAmount(forecast.profitBand.high)}</p></article>
+        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Steuern und Sozialbeiträge</p><p className="mt-2 text-2xl font-semibold tabular-nums text-gray-900">{formatAmount(forecast.annualBurden)}</p><p className="mt-1 text-xs text-gray-500">Steuern {formatAmount(forecast.taxes.total)} · Sozialbeiträge {formatAmount(forecast.social.total)}</p></article>
+        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Noch aufzubringen für Steuern und Sozialbeiträge</p><p className="mt-2 text-2xl font-semibold tabular-nums text-gray-900">{formatAmount(forecast.remainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{formatAmount(forecast.annualBurden)} Jahresbedarf − {formatAmount(forecast.paidLevies)} erfasste Zahlungen. Umsatzsteuer separat.</p></article>
+        <article className="rounded-xl border border-gray-200 p-4"><p className="text-sm text-gray-500">Umsatzsteuer-Richtwert</p><p className="mt-2 text-2xl font-semibold tabular-nums text-gray-900">{formatAmount(forecast.vatRemainingReserve)}</p><p className="mt-1 text-xs text-gray-500">{forecast.vatStatus === 'small_business' ? 'Kleinunternehmerregelung im Profil; hier ist keine Umsatzsteuer angesetzt.' : forecast.vatStatus === 'education_exempt' ? 'Bildungsbefreiung im Profil; mögliche Mischfälle bitte prüfen.' : forecast.vatBasis === 'calculated' ? 'Aus erfassten Belegen berechnet.' : forecast.vatBasis === 'estimate' ? `${forecast.vatIncompleteEntries} Buchungen ohne vollständige USt-Angaben.` : 'Grobe Schätzung; Vorsteuer und Sonderfälle können abweichen.'}</p></article>
       </div>
       {forecast.parameterYear !== year && <p role="note" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">{TAX_TEXTS.missingYearNotice(year, forecast.parameterYear, forecast.paramsAsOf)}</p>}
       {forecast.warnings.length > 0 && <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><summary className="cursor-pointer font-medium">Hinweise zur Steuerschätzung ({forecast.warnings.length})</summary><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">{forecast.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul></details>}
@@ -155,6 +164,9 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
 
   return <div className="page-root space-y-6">
     <PageHeader icon={Calculator} title="Steuern" subtitle="Steuerübersicht und Einnahmenüberschussrechnung" />
+
+    {!initialReady && <TableSkeleton rows={4} columns={3} label="Steuerübersicht wird geladen …" />}
+    <div className={initialReady ? 'content-reveal space-y-6' : 'hidden'}>
 
     {!noticeDismissed && <section className="relative rounded-xl border border-blue-100 bg-blue-50 p-5 pr-14">
       <button type="button" onClick={() => { dismissNotice('tax-euer-preparation'); setNoticeDismissed(true); }} className="absolute right-4 top-4 rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100" aria-label="Hinweis ausblenden"><X className="h-5 w-5" /></button>
@@ -169,11 +181,11 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div><div className="flex items-start justify-between gap-3"><h2 className="text-lg font-semibold text-gray-900">EÜR-Daten {year}</h2><span className="shrink-0 whitespace-nowrap rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">Arbeitsstand</span></div><p className="mt-1 text-sm text-gray-500">Ein kompakter Überblick über automatisch übernommene Zahlungen.</p></div>
       <div className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
-        <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-primary-custom" /><span className="text-sm text-gray-500">Rechnungen mit Zahlungseingang</span></div><p className="mt-3 text-2xl font-bold text-gray-900">{paidInvoiceSummary.count}</p><button type="button" onClick={() => onNavigate('invoices')} className="action-button mt-4">Rechnungen prüfen <ArrowRight className="h-4 w-4" /></button></article>
-        <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /><span className="text-sm text-gray-500">Automatische Einnahmen</span></div><p className={`mt-3 text-2xl font-bold ${paidInvoiceSummary.income < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatAmount(paidInvoiceSummary.income)}</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">EÜR-Vorschau öffnen <ArrowRight className="h-4 w-4" /></button></article>
+        <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-primary-custom" /><span className="text-sm text-gray-500">Rechnungen mit Zahlungseingang</span></div><p className="mt-3 text-2xl font-semibold tabular-nums text-gray-900">{paidInvoiceSummary.count}</p><button type="button" onClick={() => onNavigate('invoices')} className="action-button mt-4">Rechnungen prüfen <ArrowRight className="h-4 w-4" /></button></article>
+        <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><FileSpreadsheet className="h-5 w-5 text-emerald-600" /><span className="text-sm text-gray-500">Automatische Einnahmen</span></div><p className={`mt-3 text-2xl font-semibold tabular-nums ${paidInvoiceSummary.income < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatAmount(paidInvoiceSummary.income)}</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">EÜR-Vorschau öffnen <ArrowRight className="h-4 w-4" /></button></article>
         <article className="rounded-xl border border-gray-200 p-4 lg:p-5"><div className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-amber-600" /><span className="text-sm text-gray-500">Nächster Schritt</span></div><p className="mt-3 font-semibold text-gray-900">Ausgaben erfassen</p><button type="button" onClick={() => onNavigate('euer')} className="action-button mt-4">Ausgaben erfassen <ArrowRight className="h-4 w-4" /></button></article>
       </div>
-      {paidInvoiceSummary.missingPaymentCount > 0 && <div role="note" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      {sourceReady && paidInvoiceSummary.missingPaymentCount > 0 && <div role="note" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
         <p>Bei {paidInvoiceSummary.missingPaymentCount} als bezahlt {paidInvoiceSummary.missingPaymentCount === 1 ? 'markierter Rechnung fehlen' : 'markierten Rechnungen fehlen'} vollständige Zahlungseinträge. Tragen Sie den fehlenden Betrag mit dem tatsächlichen Zahlungsdatum nach. Bereits erfasste Teilzahlungen sind enthalten. Die Umsatzsteuer richtet sich nach dem hinterlegten Verfahren.</p>
         <button type="button" onClick={() => onNavigate('euer')} className="action-button shrink-0">Zahlungseingang nachtragen <ArrowRight className="h-4 w-4" /></button>
       </div>}
@@ -188,5 +200,6 @@ export function TaxOverview({ onNavigate }: TaxOverviewProps) {
       </div>
       <p className="mt-4 text-xs text-gray-500">Stand: {formatDate(new Date(), locale, company?.dateFormat)}</p>
     </section>
+    </div>
   </div>;
 }

@@ -101,3 +101,13 @@ test('SMTP-Fehler erklären das Problem ohne die rohe Antwort oder Zugangsdaten'
     assert.doesNotMatch(friendly, /fixture-secret|smtp\.internal/);
   }
 });
+
+test('SMTP-Fehler nennen mit Einrichtungskontext konkrete nächste Schritte', () => {
+  const timeout = { code: 'ETIMEDOUT', message: 'connection timeout' };
+  assert.match(smtpErrorMessage(timeout, { smtp_host: 'mail.gmx.net', smtp_port: 465, smtp_secure: true }), /Port 465.*587/);
+  assert.match(smtpErrorMessage(timeout, { smtp_host: 'mail.gmx.net', smtp_port: 587, smtp_secure: true }), /STARTTLS/);
+  assert.match(smtpErrorMessage(timeout, { smtp_host: 'smtp.example.invalid', smtp_port: 2525 }), /smtp\.example\.invalid/);
+  assert.match(smtpErrorMessage({ code: 'EAUTH', message: '535' }, { smtp_host: 'mail.gmx.net' }), /POP3\/IMAP/);
+  assert.match(smtpErrorMessage({ code: 'EAUTH', message: '535' }, { smtp_host: 'smtp.gmail.com' }), /App-Passwort/);
+  assert.match(smtpErrorMessage({ code: 'ENOTFOUND', message: 'getaddrinfo' }, { smtp_host: 'smtp.exmaple.de' }), /smtp\.exmaple\.de/);
+});

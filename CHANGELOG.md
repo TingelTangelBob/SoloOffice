@@ -4,6 +4,32 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+## v0.9.12b – Berechtigungen, Schutz vor Datenverlust und klare Fehlermeldungen (10. November 2026)
+
+- Sicherheit: Die Rechteprüfung für Firmeneinstellungen, Sicherungen und die
+  E-Mail-Verwaltung lässt sich nicht mehr durch gemischte Groß- und
+  Kleinschreibung im Pfad umgehen.
+- Konten ohne Schreibrecht sehen Anlege-, Bearbeiten-, Lösch- und
+  Versandaktionen für Aufträge, Angebote, Rechnungen, Mahnungen, Gutschriften,
+  wiederkehrende Rechnungen und Anlagen nur noch gesperrt.
+- Überfällige Rechnungen werden nur von Konten mit Schreibrecht automatisch
+  markiert. Parallele Läufe schreiben dieselben Rechnungen nicht mehr doppelt.
+- Angebote lassen sich nicht mehr doppelt speichern.
+- Dialoge und Editoren fragen vor dem Verwerfen ungespeicherter Eingaben nach,
+  auch beim Wechsel des Menüpunkts.
+- Ein Lesezeichen auf ein gelöschtes oder umgewandeltes Angebot öffnet kein
+  leeres Formular mehr, sondern führt zur Angebotsliste.
+- Abgerechnete Aufträge lassen sich in der Demo wie auf dem Server nicht mehr
+  bearbeiten oder löschen.
+- Fehlgeschlagene Aktionen melden den Fehler mit der Servermeldung, statt still
+  zu scheitern. Ein Ladefehler bei Mahnungen erscheint als Fehler und nicht als
+  leere Liste.
+- Versand einer Rechnung per E-Mail: Scheitert nur das Setzen des Status
+  „versendet“, wird die Mail nicht erneut verschickt; die Meldung nennt das
+  Problem. Der Dateidownload markiert nur noch Entwürfe als versendet.
+- Fixkosten: Ein unbekannter Status wird abgelehnt. Ohne Angabe gilt „aktiv“;
+  ein Update ohne Status überschreibt einen pausierten oder beendeten Eintrag nicht.
+
 - Fixkostenvorlagen mit bestätigter oder übersprungener Historie werden beim
   Entfernen archiviert. Künftige Läufe werden entfernt; offene bereits fällige
   Läufe müssen zuerst gebucht oder übersprungen werden.

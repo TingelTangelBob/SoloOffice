@@ -35,11 +35,13 @@ export function validateExpense(input, today = new Date().toISOString().slice(0,
     if (endDate && endDate < startDate) return 'Das Enddatum darf nicht vor dem Startdatum liegen.';
     if (nextDueDate < startDate) return 'Die nächste Fälligkeit darf nicht vor dem Startdatum liegen.';
     if (input.linkedReceiptId && !uuid.test(String(input.linkedReceiptId))) return 'Ungültiger Belegbezug.';
+    const rawStatus = input.status == null || input.status === '' ? 'active' : input.status;
+    if (!['active','paused','ended'].includes(rawStatus)) return 'Ungültiger Status der Fixkosten.';
     const changes = normalizePriceChanges(input.priceChanges ?? [], { amount, taxRate }, today, input.immutablePriceChanges ?? []);
     const pauses = normalizePauses(input.pauses ?? []);
     return { name, counterparty: String(input.counterparty || '').trim() || null, category, scope, amount, taxRate,
       intervalValue, intervalUnit, interval: input.interval || null, intervalCount: intervalValue, startDate, endDate, nextDueDate, cancellationNoticeDays, cancelledOn,
-      status: ['active','paused','ended'].includes(input.status) ? input.status : 'active',
+      status: rawStatus,
       autoConfirm: input.automaticBooking === true || input.autoConfirm === true, linkedReceiptId: input.linkedReceiptId || null,
       notes: String(input.notes || '').trim() || null, priceChanges: changes, pauses };
   } catch (error) { return error.message || 'Ungültige Fixkostenangaben.'; }

@@ -1,5 +1,8 @@
 import express from 'express';
 import logger from '../utils/logger.js';
+import { withNumericFields } from '../utils/numericFields.js';
+
+const toNumericTemplate = row => withNumericFields(row, ['unitPrice', 'taxRate']);
 
 const router = express.Router();
 
@@ -21,7 +24,7 @@ router.get('/', async (req, res) => {
       FROM material_templates 
       ORDER BY is_default DESC, name ASC
     `);
-    res.json(result.rows);
+    res.json(result.rows.map(toNumericTemplate));
   } catch (error) {
     logger.error('Error fetching material templates:', error);
     res.status(500).json({ error: 'Fehler beim Laden der Material-Vorlagen' });
@@ -59,7 +62,7 @@ router.post('/', async (req, res) => {
         updated_at as "updatedAt"
     `, [name, description || '', unitPrice, unit || 'Stück', taxRate ?? 19, isDefault || false]);
     
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(toNumericTemplate(result.rows[0]));
   } catch (error) {
     logger.error('Error creating material template:', error);
     res.status(500).json({ error: 'Fehler beim Erstellen der Material-Vorlage' });
@@ -103,7 +106,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Material-Vorlage nicht gefunden' });
     }
     
-    res.json(result.rows[0]);
+    res.json(toNumericTemplate(result.rows[0]));
   } catch (error) {
     logger.error('Error updating material template:', error);
     res.status(500).json({ error: 'Fehler beim Aktualisieren der Material-Vorlage' });

@@ -4,7 +4,7 @@ import { Invoice, Customer } from '../types';
 import { useCustomers } from '../context/CustomerContext';
 import { useCompany } from '../context/CompanyContext';
 import { formatCurrency } from '../utils/formatters';
-import { generateInvoicePDF, generateReminderPDF } from '../utils/pdfGenerator';
+import { generateInvoicePDF, generateReminderPDF } from '../utils/pdfLazy';
 import { blobToBase64 } from '../utils/blobUtils';
 import { apiService } from '../services/api';
 import { isDemoMode } from '../services/demoApi';
@@ -13,7 +13,10 @@ import { DocumentPreview } from './DocumentPreview';
 import type { PreviewDocument } from '../utils/previewDocuments';
 import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { useFeedback } from '../context/FeedbackContext';
+import { actionErrorMessage } from '../utils/actionError';
+import { useAuth } from '../context/AuthContext';
 import { getReminderTextForStage } from '../utils/documentTextTemplates';
+import { statusLabel } from '../utils/statusDisplay';
 
 interface ReminderSendModalProps {
   isOpen: boolean;
@@ -37,6 +40,8 @@ export function ReminderSendModal({
   bulkInvoices = []
 }: ReminderSendModalProps) {
   const { notify } = useFeedback();
+  const { can } = useAuth();
+  const canWrite = can('data.write');
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   const { customers } = useCustomers();
@@ -305,6 +310,7 @@ export function ReminderSendModal({
               }
             } catch (error) {
               logger.error('Error generating original invoice attachments:', error);
+              warnings.push(actionErrorMessage(`${inv.invoiceNumber}: Das Original konnte nicht beigefügt werden.`, error));
             }
           }
 
@@ -335,6 +341,7 @@ export function ReminderSendModal({
           logger.info('Reminder email sent successfully', { invoiceId: inv.id, stage, emailCount: customerEmails.length });
         } catch (error) {
           logger.error(`Error sending reminder email for invoice ${inv.id}:`, error);
+          warnings.push(actionErrorMessage(`${inv.invoiceNumber}: Versand fehlgeschlagen.`, error));
         }
       }
 
@@ -468,7 +475,7 @@ export function ReminderSendModal({
                   {cumulativeFee > 0 && (
                     <div className="col-span-2 pt-2 border-t border-gray-200">
                       <p className="text-sm text-gray-600">Gesamtbetrag inkl. Mahngebühren</p>
-                      <p className="text-lg font-bold text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                      <p className="text-lg font-semibold tabular-nums text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                     </div>
                   )}
                 </div>
@@ -588,6 +595,7 @@ export function ReminderSendModal({
                                 />
                                 <button
                                   onClick={() => handleAddManualEmail(customerId)}
+                                  disabled={!canWrite}
                                   className="px-2 py-1 bg-primary-custom text-white rounded hover:bg-primary-dark transition-colors text-xs"
                                 >
                                   +
@@ -664,6 +672,7 @@ export function ReminderSendModal({
                           />
                           <button
                             onClick={() => handleAddManualEmail(invoice.customerId)}
+                            disabled={!canWrite}
                             className="px-3 py-1 bg-primary-custom text-white rounded hover:bg-primary-dark transition-colors text-sm"
                           >
                             +
@@ -752,7 +761,7 @@ export function ReminderSendModal({
                   }
                 }}
                 type="button"
-                disabled={isLoading}
+                disabled={isLoading || !canWrite}
                 className="btn-primary inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-white transition hover:brightness-90 disabled:opacity-50"
               >
                 <Mail className="h-5 w-5" />
@@ -775,14 +784,5 @@ export function ReminderSendModal({
 }
 
 function getStatusLabel(status: Invoice['status']): string {
-  const labels: Record<Invoice['status'], string> = {
-    draft: 'Entwurf',
-    sent: 'Versendet',
-    paid: 'Bezahlt',
-    overdue: 'Überfällig',
-    reminded_1x: '1x gemahnt',
-    reminded_2x: '2x gemahnt',
-    reminded_3x: '3x gemahnt'
-  };
-  return labels[status] || status;
+  return statusLabel('invoice', status);
 }

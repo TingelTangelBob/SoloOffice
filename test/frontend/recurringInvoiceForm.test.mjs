@@ -32,8 +32,10 @@ function fixture(entry, company = {}) {
     '../context/CustomerContext': { useCustomers: () => ({ customers: [{ id: 'customer-1', name: 'Testkunde' }] }) },
     '../context/CompanyContext': { useCompany: () => ({ company }) },
     '../context/FeedbackContext': { useFeedback: () => ({ confirm: async () => true }) },
+    '../context/AuthContext': { useAuth: () => ({ can: () => true }) },
     '../utils/terminology': { getTerminology: () => ({ entity: { singular: 'Kunde' } }) },
     '../utils/formatters': formatters,
+    '../utils/statusDisplay': { statusLabel: (_machine, status) => status },
     '../services/api': { apiService: {
       getRecurringInvoices: async () => [entry],
       updateRecurringInvoice: async (id, payload) => {

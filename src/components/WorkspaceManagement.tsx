@@ -6,6 +6,8 @@ import { PageHeader } from './PageHeader';
 import { formatCountLabel } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { DialogShell } from './DialogShell';
+import { SkeletonBlock } from './TableSkeleton';
+import { settingsSectionElementId } from '../utils/settingsNavigation';
 import { useFeedback } from '../context/FeedbackContext';
 
 const roleLabels: Record<WorkspaceRole, string> = {
@@ -28,7 +30,12 @@ const RESET_SCOPE_OPTIONS: Array<{ key: keyof WorkspaceResetOptions; title: stri
   },
 ];
 
-export function WorkspaceManagement() {
+interface WorkspaceManagementProps {
+  /** In den Einstellungen liefert der Bereich die Überschrift bereits selbst. */
+  embedded?: boolean;
+}
+
+export function WorkspaceManagement({ embedded = false }: WorkspaceManagementProps) {
   const {
     workspace,
     workspaces,
@@ -52,6 +59,7 @@ export function WorkspaceManagement() {
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, 'owner'>>('member');
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
   const [latestInviteLink, setLatestInviteLink] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -75,6 +83,7 @@ export function WorkspaceManagement() {
     if (!canManageWorkspace) {
       setMembers([]);
       setInvitations([]);
+      setMembersLoading(false);
       return;
     }
 
@@ -84,7 +93,8 @@ export function WorkspaceManagement() {
         setInvitations(invitationData);
         setError('');
       })
-      .catch(() => setError('Workspace-Mitglieder konnten nicht geladen werden.'));
+      .catch(() => setError('Workspace-Mitglieder konnten nicht geladen werden.'))
+      .finally(() => setMembersLoading(false));
   }, [canManageWorkspace, getWorkspaceInvitations, getWorkspaceMembers, workspace?.id]);
 
   useEffect(() => {
@@ -178,12 +188,14 @@ export function WorkspaceManagement() {
   };
 
   return (
-    <div className="page-root space-y-6">
-      <PageHeader
-        icon={Users}
-        title="Workspace"
-        subtitle="Verwalte den aktiven Workspace, Mitglieder und Zugriffsrollen."
-      />
+    <div id={settingsSectionElementId('workspace')} className={embedded ? 'space-y-6' : 'page-root space-y-6'}>
+      {!embedded && (
+        <PageHeader
+          icon={Users}
+          title="Workspace"
+          subtitle="Verwalte den aktiven Workspace, Mitglieder und Zugriffsrollen."
+        />
+      )}
 
       {message && <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"><Check className="h-4 w-4" />{message}</div>}
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
@@ -199,7 +211,7 @@ export function WorkspaceManagement() {
           </div>
           <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-sm text-gray-700 sm:max-w-xs">
             <span className="sr-only">Workspace auswählen</span>
-            <select value={workspace?.id || ''} onChange={event => run(() => switchWorkspace(event.target.value), 'Workspace gewechselt.')} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <select value={workspace?.id || ''} onChange={event => run(() => switchWorkspace(event.target.value), 'Workspace gewechselt.')} className="form-input">
               {workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
@@ -209,7 +221,7 @@ export function WorkspaceManagement() {
           <form onSubmit={handleRenameWorkspace} className="form-consistent-fields rounded-lg border border-gray-100 bg-gray-50 p-4">
             <label className="block text-sm font-medium text-gray-700">
               Workspace-Name
-              <input required maxLength={255} value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} disabled={!canManageWorkspace} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100" />
+              <input required maxLength={255} value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} disabled={!canManageWorkspace} className="form-input mt-2 w-full disabled:cursor-not-allowed disabled:bg-gray-100" />
             </label>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-gray-500">Der Name ist für alle Mitglieder sichtbar.</p>
@@ -220,7 +232,7 @@ export function WorkspaceManagement() {
           <form onSubmit={handleCreateWorkspace} className="form-consistent-fields rounded-lg border border-gray-100 bg-gray-50 p-4">
             <label className="block text-sm font-medium text-gray-700">
               Neuer Workspace
-              <input required maxLength={255} value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="z. B. Nebenprojekt" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
+              <input required maxLength={255} value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="z. B. Nebenprojekt" className="form-input mt-2 w-full" />
             </label>
             <div className="mt-3 flex items-center justify-between gap-2">
               <p className="text-xs text-gray-500">Sie werden danach automatisch gewechselt.</p>
@@ -236,7 +248,7 @@ export function WorkspaceManagement() {
             <h2 className="mb-1 font-semibold text-gray-900">Mitglieder</h2>
             <p className="mb-4 text-sm text-gray-500">Rollen steuern, welche Bereiche bearbeitet werden dürfen.</p>
             <div className="space-y-2">
-              {members.length === 0 && <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-sm text-gray-500">Noch keine Mitglieder geladen.</p>}
+              {members.length === 0 && !membersLoading && <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-sm text-gray-500">Noch keine Mitglieder geladen.</p>}
               {members.map(member => <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-gray-900">{[member.firstName, member.lastName].filter(Boolean).join(' ') || member.email}</p>
@@ -249,7 +261,7 @@ export function WorkspaceManagement() {
                       if (!await confirm({ title: 'Rolle ändern?', message: `Die Rolle von ${member.email} wird auf „${roleLabels[nextRole]}“ gesetzt.`, confirmText: 'Rolle ändern' })) return;
                       const updated = await updateWorkspaceMember(member.id, nextRole);
                       setMembers(previous => previous.map(item => item.id === updated.id ? { ...item, role: updated.role } : item));
-                    }, 'Rolle aktualisiert.')} className="rounded border border-gray-300 px-2 py-1 text-xs">
+                    }, 'Rolle aktualisiert.')} className="form-input">
                       {workspace?.role === 'owner' && <option value="admin">Administrator</option>}<option value="member">Mitarbeiter</option><option value="viewer">Nur lesen</option>
                     </select>
                     <button type="button" onClick={() => run(async () => {
@@ -267,17 +279,17 @@ export function WorkspaceManagement() {
             <h2 className="mb-1 font-semibold text-gray-900">Einladen und offene Einladungen</h2>
             <p className="mb-4 text-sm text-gray-500">Einladungen gelten sieben Tage und können sicher weitergegeben werden.</p>
             <form onSubmit={handleInvite} className="form-consistent-fields space-y-2">
-              <input type="email" required value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="E-Mail-Adresse" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              <input type="email" required value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="E-Mail-Adresse" className="form-input w-full" />
               <div className="flex flex-wrap gap-2">
-                <select value={inviteRole} onChange={event => setInviteRole(event.target.value as Exclude<WorkspaceRole, 'owner'>)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="member">Mitarbeiter</option>{workspace?.role === 'owner' && <option value="admin">Administrator</option>}<option value="viewer">Nur lesen</option></select>
+                <select value={inviteRole} onChange={event => setInviteRole(event.target.value as Exclude<WorkspaceRole, 'owner'>)} className="form-input"><option value="member">Mitarbeiter</option>{workspace?.role === 'owner' && <option value="admin">Administrator</option>}<option value="viewer">Nur lesen</option></select>
                 <button className="rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white">Einladung erstellen</button>
               </div>
             </form>
             {latestInviteLink && <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-800"><p className="font-medium">Einladungslink einmalig kopieren und sicher übermitteln:</p><div className="mt-2 flex items-center gap-2"><code className="min-w-0 flex-1 break-all">{latestInviteLink}</code><button type="button" onClick={copyInvite} title="Kopieren" className="rounded p-1 hover:bg-blue-100"><Copy className="h-4 w-4" /></button></div></div>}
             <div className="mt-4 border-t border-gray-100 pt-3">
-              <p className="mb-2 text-sm font-medium text-gray-800">{formatCountLabel(invitations.filter(invitation => !invitation.acceptedAt && new Date(invitation.expiresAt) > new Date()).length, 'Offene Einladung', 'Offene Einladungen')}</p>
+              <p className="mb-2 text-sm font-medium text-gray-800">{membersLoading ? <SkeletonBlock className="h-4 w-44" /> : formatCountLabel(invitations.filter(invitation => !invitation.acceptedAt && new Date(invitation.expiresAt) > new Date()).length, 'Offene Einladung', 'Offene Einladungen')}</p>
               {invitations.filter(invitation => !invitation.acceptedAt && new Date(invitation.expiresAt) > new Date()).length === 0
-                ? <p className="text-sm text-gray-500">Keine offenen Einladungen.</p>
+                ? (membersLoading ? null : <p className="text-sm text-gray-500">Keine offenen Einladungen.</p>)
                 : <ul className="space-y-2">{invitations.filter(invitation => !invitation.acceptedAt && new Date(invitation.expiresAt) > new Date()).map(invitation => <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 px-3 py-2 text-sm"><span className="min-w-0 break-all">{invitation.email} · {roleLabels[invitation.role]}</span><span className="flex items-center gap-3 text-xs text-gray-500">Läuft ab {new Date(invitation.expiresAt).toLocaleDateString('de-DE')}<button type="button" onClick={() => run(async () => {
                   if (!await confirm({ title: 'Einladung widerrufen?', message: `Die Einladung an ${invitation.email} wird ungültig.`, confirmText: 'Einladung widerrufen', isDestructive: true })) return;
                   await revokeWorkspaceInvitation(invitation.id);
@@ -336,7 +348,7 @@ export function WorkspaceManagement() {
               </div>
             </fieldset>
           )}
-          <div className="form-consistent-fields mt-5 space-y-3"><label className="block text-sm font-medium text-gray-700">Aktuelles Passwort<input type="password" autoFocus autoComplete="current-password" required value={dangerPassword} onChange={event => setDangerPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label><label className="block text-sm font-medium text-gray-700">Workspace-Name<input autoComplete="off" required value={dangerName} onChange={event => setDangerName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label></div>
+          <div className="form-consistent-fields mt-5 space-y-3"><label className="block text-sm font-medium text-gray-700">Aktuelles Passwort<input type="password" autoFocus autoComplete="current-password" required value={dangerPassword} onChange={event => setDangerPassword(event.target.value)} className="form-input mt-1 w-full" /></label><label className="block text-sm font-medium text-gray-700">Workspace-Name<input autoComplete="off" required value={dangerName} onChange={event => setDangerName(event.target.value)} className="form-input mt-1 w-full" /></label></div>
       </DialogShell>}
       <ConfirmationModal isOpen={Boolean(dangerAction && dangerStep === 2)} onClose={() => setDangerAction(null)} onConfirm={() => void finishDangerAction()} title={dangerAction === 'reset' ? 'Zurücksetzen endgültig bestätigen' : 'Löschen endgültig bestätigen'} message={dangerAction === 'reset' ? `In „${workspace?.name}“ werden zurückgesetzt: ${resetScopeSummary}. Mitglieder und Workspace-Identität bleiben erhalten.` : `„${workspace?.name}“ und seine Daten werden dauerhaft gelöscht. Bei weiteren Mitgliedern oder ohne Ersatz-Workspace wird die Aktion abgewiesen.`} confirmText="Jetzt endgültig bestätigen" cancelText="Zurück" isDestructive />
     </div>

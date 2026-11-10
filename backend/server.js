@@ -59,6 +59,9 @@ import {
 dotenv.config();
 
 const app = express();
+// Routen sind kleingeschrieben; mit Groß-/Kleinschreibung getrennten Pfaden
+// greift keine Rechteprüfung an einem Präfix vorbei (Prüfbericht K-1).
+app.set('case sensitive routing', true);
 const PORT = process.env.PORT || 3001;
 const trustProxy = process.env.TRUST_PROXY === 'false'
   ? false
