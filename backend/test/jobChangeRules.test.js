@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -50,9 +50,12 @@ test('Rückgaben sind Kopien; Aufrufer können die Vorlage nicht verändern', ()
   assert.equal(jobEditProblem('invoiced').status, 403);
 });
 
-test('Server und Demo nutzen die gemeinsame Regel, keine eigene Kopie', () => {
+// Die Demo liegt im Frontend. Das Backend-Image enthält kein src/, dort wird
+// dieser Quelltext-Vergleich übersprungen; die Frontend-Suite prüft die Demo.
+const demoSource = path.resolve(sharedDir, '../../src/services/demoApi.ts');
+test('Server und Demo nutzen die gemeinsame Regel, keine eigene Kopie', { skip: !existsSync(demoSource) && 'src/ fehlt im Backend-Image' }, () => {
   const jobsRoute = readFileSync(path.resolve(sharedDir, '../routes/jobs.js'), 'utf8');
-  const demo = readFileSync(path.resolve(sharedDir, '../../src/services/demoApi.ts'), 'utf8');
+  const demo = readFileSync(demoSource, 'utf8');
   for (const source of [jobsRoute, demo]) {
     assert.match(source, /jobChangeRules\.js'/);
     assert.match(source, /jobEditProblem\(/);
