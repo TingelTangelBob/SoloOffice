@@ -630,15 +630,15 @@ export function ReportingManagement({ onNavigate }: ReportingManagementProps) {
         <div className="space-y-6">
           {/* Year Selector & Monthly Revenue Chart */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div className="flex min-w-0 items-center">
                 <BarChart3 className="h-5 w-5 text-primary-custom mr-2" />
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Zahlungseingänge pro Monat</h2>
                   <p className="mt-1 text-xs text-gray-500">Erfasste Zahlungen nach EÜR-Jahr; die Monate folgen dem tatsächlichen Zahlungsdatum.</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <select
                   value={selectedYear}
                   onChange={(e) => {

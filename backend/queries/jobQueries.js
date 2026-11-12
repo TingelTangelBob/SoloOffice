@@ -69,6 +69,8 @@ const formatJobData = (row, customerName = null) => ({
   attachments: row.attachments || [],
   signature: row.signature || null,
   recurrence: parseRecurrence(row),
+  sourceQuoteId: row.source_quote_id || undefined,
+  sourceQuoteNumber: row.source_quote_number || undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -76,6 +78,7 @@ const formatJobData = (row, customerName = null) => ({
 export async function findAllJobs() {
   const result = await pool.query(`
       SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
+             (SELECT sq.quote_number FROM quotes sq WHERE sq.id = j.source_quote_id) as source_quote_number,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -116,6 +119,7 @@ export async function findAllJobs() {
 export async function findJobById(id) {
   const result = await pool.query(`
       SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
+             (SELECT sq.quote_number FROM quotes sq WHERE sq.id = j.source_quote_id) as source_quote_number,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,

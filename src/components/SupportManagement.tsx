@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Building2, ChevronRight, LifeBuoy, Loader2, Plus, Send, UserRound } from 'lucide-react';
+import { ArrowLeft, BookOpen, Building2, ChevronRight, LifeBuoy, Loader2, Plus, Send, UserRound } from 'lucide-react';
 import { PageHeader } from './PageHeader';
 import { Notice } from './Notice';
 import { EmptyState } from './EmptyState';
@@ -15,6 +15,16 @@ interface SupportManagementProps {
   /** Ticket-Kennung aus dem URL-Hash (`#support/<id>`) oder `neu`. */
   initialTicketId?: string;
   onNavigate?: (page: string, filter?: string) => void;
+}
+
+/** Verweis auf die Hilfe, oben auf jeder Support-Ansicht. */
+function HelpLink({ onNavigate }: { onNavigate?: (page: string, filter?: string) => void }) {
+  if (!onNavigate) return null;
+  return (
+    <p className="text-sm">
+      <button type="button" onClick={() => onNavigate('help')} className="inline-flex items-center gap-1.5 font-medium text-primary-custom hover:underline"><BookOpen className="h-4 w-4" aria-hidden="true" />Zur Hilfe</button>
+    </p>
+  );
 }
 
 const CATEGORY_LABELS: Record<SupportTicketCategory, string> = {
@@ -90,6 +100,7 @@ export function SupportManagement({ initialTicketId, onNavigate }: SupportManage
     return (
       <div className="page-root space-y-6">
         <PageHeader icon={LifeBuoy} title="Support" />
+        <HelpLink onNavigate={onNavigate} />
         <Notice variant="info" title="Support-Anfragen sind für diese Installation nicht eingerichtet">
           Der Ticket-Support steht in der gehosteten Version von SoloOffice zur Verfügung. Für selbst betriebene Installationen finden Sie Dokumentation und Kontaktmöglichkeiten unter{' '}
           <a href="https://solooffice.de" target="_blank" rel="noreferrer" className="font-medium text-primary-custom hover:underline">solooffice.de</a>.
@@ -101,10 +112,10 @@ export function SupportManagement({ initialTicketId, onNavigate }: SupportManage
 
   if (initialTicketId === 'neu') return <NewTicketView locale={locale} navigate={navigate} />;
   if (initialTicketId) return <TicketDetailView ticketId={initialTicketId} locale={locale} navigate={navigate} />;
-  return <TicketListView locale={locale} navigate={navigate} />;
+  return <TicketListView locale={locale} navigate={navigate} onNavigate={onNavigate} />;
 }
 
-function TicketListView({ locale, navigate }: { locale: Formatting; navigate: (filter?: string) => void }) {
+function TicketListView({ locale, navigate, onNavigate }: { locale: Formatting; navigate: (filter?: string) => void; onNavigate?: (page: string, filter?: string) => void }) {
   const [tickets, setTickets] = useState<SupportTicket[] | null>(null);
   const [error, setError] = useState('');
 
@@ -126,6 +137,7 @@ function TicketListView({ locale, navigate }: { locale: Formatting; navigate: (f
         </button>
       </PageHeader>
 
+      <HelpLink onNavigate={onNavigate} />
       {isDemoMode && <Notice variant="info">Im Demo-Modus bleiben Anfragen im Browser und erreichen keinen Betreiber. In der gehosteten Version erscheinen sie sofort in der Adminkonsole; Antworten kommen per E-Mail und hier im Verlauf.</Notice>}
       {error && <Notice variant="error">{error}</Notice>}
 

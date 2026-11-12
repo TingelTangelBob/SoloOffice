@@ -4,7 +4,7 @@ import { hasPermission } from '../middleware/auth.js';
 import { assertDateOnly } from '../shared/recurrence.js';
 
 const router = express.Router();
-const categories = new Set(['other_income','materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','allowance','other_expense']);
+const categories = new Set(['operating_income','other_income','materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','allowance','other_expense']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const mapForecast = row => ({ id: row.id, entryType: row.entry_type, date: assertDateOnly(row.forecast_date), description: row.description,
   category: row.category || null, amount: Number(row.amount), createdAt: row.created_at, updatedAt: row.updated_at });

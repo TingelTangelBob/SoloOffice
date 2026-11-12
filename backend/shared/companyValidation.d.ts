@@ -1,4 +1,4 @@
-export type CompanyFormatField = 'email' | 'postalCode' | 'taxId' | 'bankAccount' | 'paymentInformation.bankAccount';
+export type CompanyFormatField = 'email' | 'postalCode' | 'taxId' | 'bankAccount' | 'paymentInformation.bankAccount' | 'bic' | 'paymentInformation.bic' | 'taxIdentificationNumber' | 'invoiceStartNumber';
 export type CompanyFormatErrors = Partial<Record<CompanyFormatField, string>>;
 export type CompanyRequiredField = 'name' | 'address' | 'postalCode' | 'city' | 'country' | 'phone' | 'email' | 'taxBusinessType' | 'legalForm';
 export type CompanyRequiredErrors = Partial<Record<CompanyRequiredField, string>>;
@@ -14,12 +14,19 @@ interface CompanyFormatInput {
   country?: unknown;
   taxId?: unknown;
   bankAccount?: unknown;
-  paymentInformation?: { bankAccount?: unknown } | null;
+  bic?: unknown;
+  taxIdentificationNumber?: unknown;
+  invoiceStartNumber?: unknown;
+  paymentInformation?: { bankAccount?: unknown; bic?: unknown } | null;
 }
 export function emailFormatError(value: unknown): string | null;
 export function isGermanCountry(country: unknown): boolean;
 export function postalCodeFormatError(value: unknown, country?: unknown): string | null;
 export function vatIdFormatError(value: unknown): string | null;
 export function ibanFormatError(value: unknown): string | null;
+export function normalizeIdentifier<T>(value: T): T;
+export function bicFormatError(value: unknown): string | null;
+export function taxNumberFormatError(value: unknown): string | null;
+export function invoiceStartNumberError(value: unknown): string | null;
 export function validateCompanyFormats(data: CompanyFormatInput, context?: Pick<CompanyFormatInput, 'country' | 'postalCode'>): CompanyFormatErrors;
 export function validateCompanyRequiredFields(data: CompanyFormatInput): CompanyRequiredErrors;

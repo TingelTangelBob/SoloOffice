@@ -25,13 +25,16 @@ import { SortableTableHeader } from './SortableTableHeader';
 import { compareTableValues, sortByTableState, type SortState } from '../utils/tableSort';
 import { TableSkeleton } from './TableSkeleton';
 import { statusBadgeClass, statusLabel } from '../utils/statusDisplay';
+import { DEFAULT_BASE_INTEREST_RATE } from '../../backend/shared/reminderClaim.js';
+import { reminderClaimFor } from '../utils/reminderClaimView';
+import { describeInterest } from '../../backend/shared/reminderClaim.js';
 
-export function ReminderManagement() {
+export function ReminderManagement({ initialTab }: { initialTab?: 'eligible' | 'history' | 'hardship' | 'settings' } = {}) {
   const { customers } = useCustomers();
   const { invoices, refreshInvoices } = useInvoices();
   const { company, updateCompany } = useCompany();
   const { notify } = useFeedback();
-  const [activeTab, setActiveTab] = useState<'eligible' | 'history' | 'hardship' | 'settings'>('eligible');
+  const [activeTab, setActiveTab] = useState<'eligible' | 'history' | 'hardship' | 'settings'>(initialTab ?? 'eligible');
   const [settingsForm, setSettingsForm] = useState({
     remindersEnabled: company.remindersEnabled || false,
     reminderDaysAfterDue: company.reminderDaysAfterDue ?? 7,
@@ -39,6 +42,8 @@ export function ReminderManagement() {
     reminderFeeStage1: company.reminderFeeStage1 ?? 0,
     reminderFeeStage2: company.reminderFeeStage2 ?? 0,
     reminderFeeStage3: company.reminderFeeStage3 ?? 0,
+    reminderInterestEnabled: company.reminderInterestEnabled === true,
+    reminderBaseInterestRate: company.reminderBaseInterestRate ?? DEFAULT_BASE_INTEREST_RATE,
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [eligibleReminders, setEligibleReminders] = useState<ReminderEligibility[]>([]);
@@ -76,6 +81,8 @@ export function ReminderManagement() {
       reminderFeeStage1: company.reminderFeeStage1 ?? 0,
       reminderFeeStage2: company.reminderFeeStage2 ?? 0,
       reminderFeeStage3: company.reminderFeeStage3 ?? 0,
+      reminderInterestEnabled: company.reminderInterestEnabled === true,
+      reminderBaseInterestRate: company.reminderBaseInterestRate ?? DEFAULT_BASE_INTEREST_RATE,
     });
   }, [company]);
 
@@ -348,7 +355,7 @@ export function ReminderManagement() {
         <PageHeader
           icon={Bell}
           title="Mahnungen"
-          subtitle="Verwalten Sie Ihre Zahlungserinnerungen und Mahnungen"
+          subtitle="Verwalten Sie Ihre Mahnungen"
         />
       </div>
 
@@ -450,6 +457,8 @@ interface ReminderSettingsForm {
   reminderFeeStage1: number;
   reminderFeeStage2: number;
   reminderFeeStage3: number;
+  reminderInterestEnabled: boolean;
+  reminderBaseInterestRate: number;
 }
 
 type ReminderSettingKey = keyof ReminderSettingsForm;
@@ -471,7 +480,7 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
     <div className="max-w-4xl space-y-6">
       <div className="flex items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Zahlungserinnerungen</h2>
+          <h2 className="text-base font-semibold text-gray-900">Mahnwesen</h2>
           <p className="mt-1 text-sm text-gray-500">Fristen und Gebühren des Mahnwesens zentral festlegen.</p>
         </div>
         {/* Gemeinsamer Schalter: Der frühere Eigenbau war im Dunkelmodus
@@ -480,7 +489,7 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
           type="button"
           role="switch"
           aria-checked={settings.remindersEnabled}
-          aria-label="Zahlungserinnerungen aktivieren"
+          aria-label="Mahnwesen aktivieren"
           onClick={() => onChange('remindersEnabled', !settings.remindersEnabled)}
           className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom focus-visible:ring-offset-2"
         >
@@ -502,13 +511,13 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
         </div>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <section id="settings-reminder-fees" className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <h3 className="text-sm font-semibold text-gray-900">Mahngebühren</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           {([1, 2, 3] as const).map(stage => {
             const key = `reminderFeeStage${stage}` as ReminderSettingKey;
             return (
-              <label key={stage} className="block text-sm font-medium text-gray-700">{stage}. Mahnstufe ({currencySymbol})
+              <label key={stage} className="block text-sm font-medium text-gray-700">{stage}. Mahnung ({currencySymbol})
                 <LocalizedNumberInput
                   min="0"
                   step="0.01"
@@ -518,11 +527,50 @@ function ReminderSettingsTab({ settings, currencySymbol, locale, numberFormat, i
                   onValueChange={value => onChange(key, value === '' ? 0 : value)}
                   className="form-input form-input-compact mt-1 text-right tabular-nums"
                 />
+                {stage === 1 && <span className="mt-1 block text-sm font-normal text-gray-600">Viele verzichten bei der ersten Mahnung auf eine Gebühr.</span>}
               </label>
             );
           })}
         </div>
-        <p className="mt-2 text-sm text-gray-600">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen.</p>
+        <p className="mt-2 text-sm text-gray-600">Geben Sie 0 ein, wenn keine Mahngebühren erhoben werden sollen. Üblich sind 0,00 € für die 1. Mahnung, 2,50 € für die 2. und 5,00 € für die 3. Mahnung. Die Gebühren der erreichten Stufen werden zusammengerechnet.</p>
+        <p className="mt-2 text-sm text-gray-600">Mahngebühren sind erst ab Verzug zulässig und sollen die tatsächlichen Kosten abbilden. Bei Verbrauchern erkennen Gerichte meist nur wenige Euro je Mahnung an. Auf Mahngebühren und Verzugszinsen wird keine Umsatzsteuer berechnet, da sie Schadensersatz sind.</p>
+      </section>
+
+      <section id="settings-reminder-interest" className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Verzugszinsen</h3>
+            <p className="mt-1 text-sm text-gray-600">Verzugszinsen berechnen und in Mahnungen ausweisen (standardmäßig aus).</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.reminderInterestEnabled}
+            aria-label="Verzugszinsen berechnen"
+            onClick={() => onChange('reminderInterestEnabled', !settings.reminderInterestEnabled)}
+            className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom focus-visible:ring-offset-2"
+          >
+            <SwitchTrack checked={settings.reminderInterestEnabled} showLabel={false} />
+          </button>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm font-medium text-gray-700">Basiszinssatz in %
+            <LocalizedNumberInput
+              step="0.01"
+              value={settings.reminderBaseInterestRate}
+              locale={locale}
+              numberFormat={numberFormat}
+              onValueChange={value => onChange('reminderBaseInterestRate', value === '' ? 0 : value)}
+              className="form-input form-input-compact mt-1 text-right tabular-nums"
+            />
+            <span className="mt-1 block text-sm font-normal text-gray-600">Die Bundesbank legt den Basiszinssatz zum 1. Januar und 1. Juli neu fest. Bitte pflegen Sie den aktuellen Wert selbst.</span>
+          </label>
+          <div className="text-sm text-gray-700">
+            <p className="font-medium">Aufschlag nach § 288 BGB (automatisch)</p>
+            <p className="mt-1 text-gray-600">5 Prozentpunkte bei Verbrauchern (Kundenart Person), 9 Prozentpunkte bei Unternehmern (Kundenart Organisation). Zinsen = offener Betrag x Jahreszins x Verzugstage / 365; der Verzug beginnt am Tag nach der Fälligkeit.</p>
+          </div>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">Hinweis: Gegenüber Unternehmern können Sie zusätzlich eine Verzugspauschale von 40 € verlangen (§ 288 Abs. 5 BGB). Sie wird nicht automatisch berechnet; nehmen Sie sie bei Bedarf in den Mahntext auf.</p>
       </section>
 
       <div className="flex justify-end">
@@ -559,6 +607,19 @@ function EligibleRemindersTab({
   const { can } = useAuth();
   const canWrite = can('data.write');
   const terminology = getTerminology(company.terminologyProfile);
+  const { customers } = useCustomers();
+  const money = (value: number) => formatCurrency(value, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
+  // Dieselbe Funktion wie Mahndialog, PDF und E-Mail; Stufe = nächste Mahnstufe.
+  const claimOf = (reminder: ReminderEligibility) => reminderClaimFor(
+    company,
+    { total: reminder.total, paidAmount: reminder.paidAmount, outstandingAmount: reminder.outstandingAmount, dueDate: reminder.dueDate },
+    customers.find(entry => entry.id === reminder.customerId),
+    reminder.nextStage,
+  );
+  const claimTitle = (reminder: ReminderEligibility) => {
+    const claim = claimOf(reminder);
+    return `Offen ${money(claim.outstanding)} + Mahngebühren ${money(claim.fee)}${claim.interestEnabled ? ` + Verzugszinsen ${money(claim.interest)} (${describeInterest(claim)})` : ''} = ${money(claim.total)}`;
+  };
   const [sortState, setSortState] = useState<SortState>({ key: 'dueDate', direction: 'desc' });
   const handleSort = (key: string) => setSortState(previous => previous.key === key
     ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
@@ -650,6 +711,7 @@ function EligibleRemindersTab({
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap text-right text-sm font-medium tabular-nums text-gray-900">
                   {formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
+                  <span className="block text-xs font-normal text-gray-600" title={claimTitle(reminder)}>Forderung {money(claimOf(reminder).total)}</span>
                 </td>
                 <td className="px-2 py-2">
                   {getStatusBadgeForReminder(reminder.currentStatus)}
@@ -713,6 +775,7 @@ function EligibleRemindersTab({
               <div><span className="block text-xs text-gray-500">Fällig</span>{formatDate(reminder.dueDate)}</div>
               <div><span className="block text-xs text-gray-500">Verzug</span>{overdueLabel(reminder.daysSinceDue)}</div>
               <div><span className="block text-xs text-gray-500">Offen</span>{formatCurrency(reminder.outstandingAmount ?? reminder.total, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</div>
+              <div><span className="block text-xs text-gray-500">Gesamtforderung (nächste Stufe)</span><span title={claimTitle(reminder)}>{money(claimOf(reminder).total)}</span></div>
               <div><span className="block text-xs text-gray-500">Status</span>{getStatusBadgeForReminder(reminder.currentStatus)}</div>
               <div className="col-span-2"><span className="block text-xs text-gray-500">Nächste Mahnung</span>
                 <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
@@ -874,27 +937,12 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
   const { company } = useCompany();
   const terminology = getTerminology(company?.terminologyProfile);
   
-  // Calculate total amount including all reminder fees
-  const calculateTotalWithReminderFees = (invoice: Invoice): number => {
-    let totalAmount = Number(invoice.outstandingAmount ?? invoice.total);
-    
-    // Get the maximum reminder stage reached
-    const maxStage = invoice.maxReminderStage || 0;
-    
-    // Add cumulative reminder fees
-    if (maxStage >= 1 && company.reminderFeeStage1) {
-      totalAmount += company.reminderFeeStage1;
-    }
-    if (maxStage >= 2 && company.reminderFeeStage2) {
-      totalAmount += company.reminderFeeStage2;
-    }
-    if (maxStage >= 3 && company.reminderFeeStage3) {
-      totalAmount += company.reminderFeeStage3;
-    }
-    
-    return totalAmount;
-  };
-  
+  const { customers } = useCustomers();
+  const money = (value: number) => formatCurrency(value, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
+  const claimOf = (invoice: Invoice) => reminderClaimFor(
+    company, invoice, customers.find(entry => entry.id === invoice.customerId), invoice.maxReminderStage || 0,
+  );
+
   if (invoices.length === 0) {
     return (
       <div className="text-center py-12">
@@ -931,7 +979,7 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
         const daysSinceLastReminder = invoice.lastReminderDate 
           ? Math.floor((new Date().getTime() - new Date(invoice.lastReminderDate).getTime()) / (1000 * 3600 * 24))
           : null;
-        const totalWithFees = calculateTotalWithReminderFees(invoice);
+        const claim = claimOf(invoice);
         
         return (
           <div key={invoice.id} className="bg-white border-2 border-red-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
@@ -945,16 +993,14 @@ function HardshipCasesTab({ invoices, formatDate, getStatusBadge, onDownloadRemi
                 <p className="text-sm text-gray-600">{invoice.customerName}</p>
               </div>
               <div className="text-right">
-                <p className="text-xl font-semibold tabular-nums text-red-600">{formatCurrency(totalWithFees, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
-                <p className="text-xs text-gray-500 mt-1">Offener Betrag (inkl. Mahngebühren)</p>
-                {totalWithFees !== Number(invoice.outstandingAmount ?? invoice.total) && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Offen: {formatCurrency(Number(invoice.outstandingAmount ?? invoice.total), company?.locale || 'de-DE', company?.numberFormat, company?.currency)} + Gebühren: {formatCurrency(totalWithFees - Number(invoice.outstandingAmount ?? invoice.total), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}
-                  </p>
-                )}
+                <p className="text-xl font-semibold tabular-nums text-red-600">{money(claim.total)}</p>
+                <p className="text-xs text-gray-500 mt-1">Gesamtforderung</p>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Offen: {money(claim.outstanding)} + Mahngebühren: {money(claim.fee)}
+                  {claim.interestEnabled && <> + Verzugszinsen: {money(claim.interest)} ({describeInterest(claim)})</>}
+                </p>
               </div>
             </div>
-
             {/* Timeline */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg mb-3">
               <div>

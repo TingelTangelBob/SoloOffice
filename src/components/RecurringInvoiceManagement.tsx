@@ -34,6 +34,7 @@ import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { ActionMenu, ActionMenuItem } from './ActionMenu';
 import { statusLabel } from '../utils/statusDisplay';
+import { toDateInputValue } from '../utils/invoicePeriod';
 
 type ItemDraft = {
   description: string;
@@ -64,7 +65,7 @@ const emptyItem = (): ItemDraft => ({
 });
 
 const emptyForm = (): FormDraft => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toDateInputValue(new Date());
   return {
     name: '',
     customerId: '',

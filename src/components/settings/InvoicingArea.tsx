@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CalendarClock, CreditCard, FileCheck2, Hash, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, BellRing, CalendarClock, CreditCard, FileCheck2, Hash, Plus, Trash2 } from 'lucide-react';
 import logger from '../../utils/logger';
 import { apiService } from '../../services/api';
 import type { YearlyInvoiceStartNumber } from '../../types';
@@ -8,7 +8,7 @@ import { parsePaymentMethods } from '../../utils/paymentInformation';
 import { SettingsCard, SettingsField, type SettingsSaveMessage } from './SettingsUi';
 import { choiceCardClass, DEFAULT_CREDIT_NOTE_NUMBER_PATTERN, DEFAULT_INVOICE_NUMBER_PATTERN } from './settingsStyles';
 import type { CompanySettingsAreaProps } from './settingsAreaProps';
-import { ibanFormatError } from '../../../backend/shared/companyValidation.js';
+import { bicFormatError, ibanFormatError } from '../../../backend/shared/companyValidation.js';
 
 function YearlyStartNumbers() {
   const [entries, setEntries] = useState<YearlyInvoiceStartNumber[]>([]);
@@ -113,7 +113,8 @@ function PaymentMethodsInput({ methods, onChange }: { methods: string[]; onChang
 }
 
 /** Bereich „Rechnungen & Zahlung“ (`#settings/invoices`). */
-export function InvoicingArea({ formData, setFormData, terminology, onNavigate }: CompanySettingsAreaProps & { onNavigate?: (page: string) => void }) {
+export function InvoicingArea({ formData, setFormData, terminology, onNavigate }: CompanySettingsAreaProps & { onNavigate?: (page: string, filter?: string) => void }) {
+  const money = (value?: number) => new Intl.NumberFormat(formData.locale || 'de-DE', { style: 'currency', currency: formData.currency || 'EUR' }).format(value ?? 0);
   const invoiceNumberPattern = formData.invoiceNumberPattern || DEFAULT_INVOICE_NUMBER_PATTERN;
   const creditNoteNumberPattern = formData.creditNoteNumberPattern || DEFAULT_CREDIT_NOTE_NUMBER_PATTERN;
   const invoiceNumberPatternError = validateInvoiceNumberPattern(invoiceNumberPattern);
@@ -121,6 +122,7 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
   const linkedHolder = formData.paymentInformationMode === 'company';
   const bankAccount = formData.paymentInformation?.bankAccount ?? formData.bankAccount ?? '';
   const bankAccountError = ibanFormatError(bankAccount);
+  const bicError = bicFormatError(formData.paymentInformation?.bic || formData.bic || '');
   const setPayment = (patch: Partial<NonNullable<typeof formData.paymentInformation>>) => setFormData(previous => ({
     ...previous,
     paymentInformation: { ...previous.paymentInformation, ...patch },
@@ -176,8 +178,8 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
           <SettingsField id="payment-iban" label="IBAN" error={bankAccountError || undefined}>
             <input id="payment-iban" type="text" name="iban" autoComplete="off" aria-invalid={Boolean(bankAccountError)} aria-describedby={bankAccountError ? 'payment-iban-message' : undefined} value={bankAccount} onChange={event => setPayment({ bankAccount: event.target.value })} placeholder="DE89 3704 0044 0532 0130 00" className="form-input" />
           </SettingsField>
-          <SettingsField id="payment-bic" label="BIC">
-            <input id="payment-bic" type="text" name="bic" autoComplete="off" value={formData.paymentInformation?.bic || formData.bic || ''} onChange={event => setPayment({ bic: event.target.value })} placeholder="COBADEFFXXX" className="form-input" />
+          <SettingsField id="payment-bic" label="BIC" error={bicError || undefined}>
+            <input id="payment-bic" type="text" name="bic" autoComplete="off" aria-invalid={Boolean(bicError)} aria-describedby={bicError ? 'payment-bic-message' : undefined} value={formData.paymentInformation?.bic || formData.bic || ''} onChange={event => setPayment({ bic: event.target.value })} placeholder="COBADEFFXXX" className="form-input" />
           </SettingsField>
           <SettingsField id="payment-bank-name" label="Bankname" className="md:col-span-2">
             <input id="payment-bank-name" type="text" name="bank-name" autoComplete="off" value={formData.paymentInformation?.bankName || ''} onChange={event => setPayment({ bankName: event.target.value })} placeholder="z.B. Commerzbank AG" className="form-input" />
@@ -229,6 +231,23 @@ export function InvoicingArea({ formData, setFormData, terminology, onNavigate }
             />
           </SettingsField>
         </div>
+      </SettingsCard>
+
+      <SettingsCard
+        sectionId="mahnwesen"
+        icon={BellRing}
+        title="Mahnwesen: Mahngebühren & Verzugszinsen"
+        info="Fristen, Mahngebühren je Stufe und Verzugszinsen bearbeiten Sie an einer Stelle: auf der Seite Mahnungen im Reiter Einstellungen."
+        actions={onNavigate && (
+          <button type="button" onClick={() => onNavigate('reminders', 'settings')} className="btn-secondary inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
+            Mahn-Einstellungen öffnen
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
+      >
+        <p className="text-sm text-gray-600">
+          Mahnungen: {formData.remindersEnabled ? 'aktiv' : 'aus'}. Mahngebühren: 1. Mahnung {money(formData.reminderFeeStage1)}, 2. Mahnung {money(formData.reminderFeeStage2)}, 3. Mahnung {money(formData.reminderFeeStage3)}. Verzugszinsen: {formData.reminderInterestEnabled ? `an (Basiszinssatz ${new Intl.NumberFormat(formData.locale || 'de-DE').format(formData.reminderBaseInterestRate ?? 0)} %)` : 'aus'}.
+        </p>
       </SettingsCard>
 
       <SettingsCard

@@ -458,3 +458,9 @@ test('Die Beschreibung der Komplettvorlage nennt je Spalte die Zielkategorie', (
   assert.ok(columns.some(column => column.header === 'Rechnungsnummer' && column.resourceLabel === 'Rechnungen (Altbestand)'));
   assert.ok(columns.some(column => column.header === 'Kursname' && column.resourceLabel === 'Rechnungen (Altbestand)'));
 });
+
+test('Firmennamen mit Summenwort am Anfang sind keine Summenzeilen', async () => {
+  const csv = 'Name;E-Mail\nTotal Energies GmbH;a@x.de\nGesamt Service AG;b@x.de\nSumme;\nGesamt 2025;\n';
+  const result = await parseImportFile(new File([csv], 'kunden.csv', { type: 'text/csv' }));
+  assert.deepEqual(result.rows.map(row => row[0] ?? Object.values(row)[0]), ['Total Energies GmbH', 'Gesamt Service AG']);
+});

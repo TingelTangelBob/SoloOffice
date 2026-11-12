@@ -21,6 +21,13 @@ export function normaliseKey(value) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+// Schlüssel für Beleg-Nummern (Rechnung, Angebot): nur Leerraum und Groß-/
+// Kleinschreibung zählen nicht, Sonderzeichen bleiben erhalten. „R-1“ und
+// „R/1“ sind verschiedene Nummern, „r-1 “ und „R-1“ dieselbe.
+export function normaliseDocumentNumber(value) {
+  return text(value).replace(/\s+/g, ' ').toLocaleLowerCase('de-DE');
+}
+
 /** Liefert den ersten befüllten Wert unter einem der Namen (exakt, dann normalisiert). */
 export function pick(row, names) {
   if (!row || typeof row !== 'object') return undefined;

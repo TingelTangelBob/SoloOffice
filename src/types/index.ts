@@ -254,6 +254,9 @@ export interface Quote extends Timestamps, GlobalDiscount {
   notes?: string;
   attachments?: QuoteAttachment[];
   convertedToInvoiceId?: UUID;
+  /** Auftrag, der aus diesem Angebot entstanden ist (höchstens einer). */
+  convertedToJobId?: UUID;
+  convertedToJobNumber?: string;
 }
 
 // ============================================================================
@@ -353,6 +356,9 @@ export interface JobEntry extends Timestamps {
   alternateLocation?: string;
   timeZone?: string;
   recurrence?: JobRecurrence | null;
+  /** Herkunft: Angebot, aus dem der Auftrag umgewandelt wurde. */
+  sourceQuoteId?: UUID;
+  sourceQuoteNumber?: string;
 }
 
 export type CalendarEventType = 'vacation';
@@ -414,6 +420,10 @@ export interface ReminderSettings {
   reminderFeeStage1?: number;
   reminderFeeStage2?: number;
   reminderFeeStage3?: number;
+  /** Verzugszinsen nach § 288 BGB auf Mahnungen berechnen (Standard: aus). */
+  reminderInterestEnabled?: boolean;
+  /** Basiszinssatz der Bundesbank in Prozent, vom Nutzer zu pflegen. */
+  reminderBaseInterestRate?: number;
   reminderTextStage1?: string;
   reminderTextStage2?: string;
   reminderTextStage3?: string;
@@ -966,6 +976,8 @@ export interface ReportingStatistics {
 export type EuerEntryType = 'income' | 'expense';
 
 export type EuerEntryCategory =
+  /** Zahlungen auf eigene Rechnungen („Betriebseinnahmen (Rechnungen)“). */
+  | 'operating_income'
   | 'other_income'
   | 'materials'
   | 'office'

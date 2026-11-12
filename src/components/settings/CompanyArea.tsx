@@ -99,8 +99,8 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
           <SettingsField id="company-tax-id" label="USt-IdNr." error={formatErrors.taxId}>
             <input id="company-tax-id" type="text" name="tax-id" autoComplete="off" aria-invalid={Boolean(formatErrors.taxId)} aria-describedby={formatErrors.taxId ? 'company-tax-id-message' : undefined} value={formData.taxId} onChange={event => set('taxId', event.target.value)} className="form-input" placeholder="z.B. DE123456789" />
           </SettingsField>
-          <SettingsField id="company-tax-number" label="Steuernummer">
-            <input id="company-tax-number" type="text" name="tax-identification-number" autoComplete="off" value={formData.taxIdentificationNumber || ''} onChange={event => set('taxIdentificationNumber', event.target.value)} className="form-input" placeholder="z.B. 123/456/78910" />
+          <SettingsField id="company-tax-number" label="Steuernummer" error={formatErrors.taxIdentificationNumber}>
+            <input id="company-tax-number" type="text" name="tax-identification-number" autoComplete="off" aria-invalid={Boolean(formatErrors.taxIdentificationNumber)} aria-describedby={formatErrors.taxIdentificationNumber ? 'company-tax-number-message' : undefined} value={formData.taxIdentificationNumber || ''} onChange={event => set('taxIdentificationNumber', event.target.value)} className="form-input" placeholder="z.B. 123/456/78910" />
           </SettingsField>
           <SettingsField id="company-business-type" label="Betriebsart" required error={error('taxBusinessType')}>
             <select id="company-business-type" required aria-invalid={Boolean(error('taxBusinessType'))} aria-describedby={error('taxBusinessType') ? 'company-business-type-message' : undefined} value={formData.taxBusinessType || ''} onChange={event => set('taxBusinessType', event.target.value ? event.target.value as TaxBusinessType : undefined)} className="form-input text-gray-800">
@@ -146,7 +146,7 @@ export function CompanyArea({ formData, setFormData, terminology }: CompanySetti
             <input id="company-phone" type="tel" required name="tel" autoComplete="section-company tel" aria-invalid={Boolean(error('phone'))} aria-describedby={error('phone') ? 'company-phone-message' : undefined} value={formData.phone} onChange={event => set('phone', event.target.value)} className="form-input" />
           </SettingsField>
           <SettingsField id="company-website" label="Website">
-            <input id="company-website" type="url" name="url" autoComplete="section-company url" value={formData.website || ''} onChange={event => set('website', event.target.value)} className="form-input" />
+            <input id="company-website" type="text" inputMode="url" name="url" autoComplete="section-company url" value={formData.website || ''} onChange={event => set('website', event.target.value)} className="form-input" />
           </SettingsField>
         </div>
       </SettingsCard>

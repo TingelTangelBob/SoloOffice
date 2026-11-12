@@ -17,6 +17,8 @@ import { actionErrorMessage } from '../utils/actionError';
 import { useAuth } from '../context/AuthContext';
 import { getReminderTextForStage } from '../utils/documentTextTemplates';
 import { statusLabel } from '../utils/statusDisplay';
+import { reminderClaimFor } from '../utils/reminderClaimView';
+import { describeInterest } from '../../backend/shared/reminderClaim.js';
 
 interface ReminderSendModalProps {
   isOpen: boolean;
@@ -66,25 +68,17 @@ export function ReminderSendModal({
   const reminderText = getReminderTextForStage(company, stage);
   const reminderTextOverride = customText.trim() && customText.trim() !== reminderText.trim() ? customText : '';
   
-  // Calculate cumulative fees (sum of all stages up to current)
-  const cumulativeFee = (() => {
-    let totalFees = 0;
-    const feeStage1 = company.reminderFeeStage1 || 0;
-    const feeStage2 = company.reminderFeeStage2 || 0;
-    const feeStage3 = company.reminderFeeStage3 || 0;
-    
-    if (stage >= 1) totalFees += feeStage1;
-    if (stage >= 2) totalFees += feeStage2;
-    if (stage >= 3) totalFees += feeStage3;
-    
-    return totalFees;
-  })();
+  // Eine Quelle für Gebühren, Zinsen und Summe: dieselbe Funktion wie PDF, E-Mail und Mahnliste.
+  const claim = reminderClaimFor(company, invoice, customer, stage);
+  const cumulativeFee = claim.fee;
 
   const outstandingAmountOf = (item: Invoice) => Math.max(0, Number(item.outstandingAmount ?? (
     item.status === 'paid' ? 0 : item.total - Number(item.paidAmount || 0)
   )));
   const outstandingAmount = outstandingAmountOf(invoice);
-  const totalWithFee = outstandingAmount + cumulativeFee;
+  const money = (value: number) => formatCurrency(value, company?.locale || 'de-DE', company?.numberFormat, company?.currency);
+  const claimOf = (item: Invoice) => reminderClaimFor(company, item, customers.find(entry => entry.id === item.customerId), stage);
+  const bulkClaims = bulkInvoices.map(claimOf);
   const nextStatus = `reminded_${stage}x` as Invoice['status'];
 
   useEffect(() => {
@@ -252,6 +246,8 @@ export function ReminderSendModal({
             continue;
           }
 
+          const invClaim = reminderClaimFor(company, inv, invCustomer, stage);
+
           // Generate reminder PDF
           const reminderPdfBlob = await generateReminderPDF(
             inv,
@@ -321,9 +317,10 @@ export function ReminderSendModal({
             customerEmails,
             reminderPdfBase64,
             inv,
-            cumulativeFee,
+            invClaim.fee,
             customText || reminderText,
-            additionalAttachments
+            additionalAttachments,
+            invClaim
           );
           if (!emailResult.success) throw new Error(emailResult.message || 'Die Mahnung konnte nicht versendet werden.');
           if (emailResult.warning) warnings.push(`${inv.invoiceNumber}: ${emailResult.warning}`);
@@ -438,8 +435,22 @@ export function ReminderSendModal({
                       <p className="font-medium">{bulkInvoices.length}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Gesamtbetrag (exkl. Gebühren)</p>
-                      <p className="font-medium">{formatCurrency(bulkInvoices.reduce((sum, inv) => sum + outstandingAmountOf(inv), 0), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                      <p className="text-sm text-gray-600">Offene Rechnungsbeträge</p>
+                      <p className="font-medium tabular-nums">{money(bulkInvoices.reduce((sum, inv) => sum + outstandingAmountOf(inv), 0))}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Mahngebühren{stage > 1 ? ' (gesamt)' : ''}</p>
+                      <p className="font-medium tabular-nums">{money(bulkClaims.reduce((sum, entry) => sum + entry.fee, 0))}{bulkClaims.every(entry => entry.fee === 0) ? ' (keine erhoben)' : ''}</p>
+                    </div>
+                    {company.reminderInterestEnabled && (
+                      <div>
+                        <p className="text-sm text-gray-600">Verzugszinsen</p>
+                        <p className="font-medium tabular-nums">{money(bulkClaims.reduce((sum, entry) => sum + entry.interest, 0))}</p>
+                      </div>
+                    )}
+                    <div className="col-span-2 pt-2 border-t border-gray-200">
+                      <p className="text-sm text-gray-600">Gesamtforderung</p>
+                      <p className="text-lg font-semibold tabular-nums text-primary-custom">{money(bulkClaims.reduce((sum, entry) => sum + entry.total, 0))}</p>
                     </div>
                   </div>
                   <div className="max-h-32 overflow-y-auto border-t border-gray-200 pt-2 mt-2">
@@ -447,7 +458,7 @@ export function ReminderSendModal({
                     {bulkInvoices.map(inv => (
                       <div key={inv.id} className="text-xs text-gray-700 flex justify-between py-1">
                         <span>{inv.invoiceNumber}</span>
-                        <span className="text-gray-500">{formatCurrency(outstandingAmountOf(inv), company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</span>
+                        <span className="text-gray-500">{money(claimOf(inv).total)}</span>
                       </div>
                     ))}
                   </div>
@@ -466,18 +477,20 @@ export function ReminderSendModal({
                     <p className="text-sm text-gray-600">Offener Rechnungsbetrag</p>
                     <p className="font-medium">{formatCurrency(outstandingAmount, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
                   </div>
-                  {cumulativeFee > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-600">Mahngebühren{stage > 1 ? ' (gesamt)' : ''}</p>
+                    <p className="font-medium tabular-nums">{money(claim.fee)}{claim.fee === 0 ? ' (keine erhoben)' : ''}</p>
+                  </div>
+                  {claim.interestEnabled && (
                     <div>
-                      <p className="text-sm text-gray-600">Mahngebühren (gesamt)</p>
-                      <p className="font-medium text-red-600">{formatCurrency(cumulativeFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
+                      <p className="text-sm text-gray-600">Verzugszinsen ({describeInterest(claim)})</p>
+                      <p className="font-medium tabular-nums">{money(claim.interest)}</p>
                     </div>
                   )}
-                  {cumulativeFee > 0 && (
-                    <div className="col-span-2 pt-2 border-t border-gray-200">
-                      <p className="text-sm text-gray-600">Gesamtbetrag inkl. Mahngebühren</p>
-                      <p className="text-lg font-semibold tabular-nums text-primary-custom">{formatCurrency(totalWithFee, company?.locale || 'de-DE', company?.numberFormat, company?.currency)}</p>
-                    </div>
-                  )}
+                  <div className="col-span-2 pt-2 border-t border-gray-200">
+                    <p className="text-sm text-gray-600">Gesamtforderung</p>
+                    <p className="text-lg font-semibold tabular-nums text-primary-custom">{money(claim.total)}</p>
+                  </div>
                 </div>
               )}
             </div>

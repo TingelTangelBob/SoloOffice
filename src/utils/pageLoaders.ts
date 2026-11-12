@@ -28,6 +28,7 @@ export const pageLoaders = {
   RecurringExpensesManagement: () => import('../components/RecurringExpensesManagement').then(({ RecurringExpensesManagement: page }) => ({ default: page })),
   FixedAssetManagement: () => import('../components/FixedAssetManagement').then(({ FixedAssetManagement: page }) => ({ default: page })),
   DocumentsManagement: () => import('../components/DocumentsManagement').then(({ DocumentsManagement: page }) => ({ default: page })),
+  HelpCenter: () => import('../components/HelpCenter').then(({ HelpCenter: page }) => ({ default: page })),
   SupportManagement: () => import('../components/SupportManagement').then(({ SupportManagement: page }) => ({ default: page })),
 };
 
@@ -58,6 +59,7 @@ const pageToLoader: Record<string, keyof typeof pageLoaders> = {
   profile: 'Settings',
   workspace: 'Settings',
   support: 'SupportManagement',
+  help: 'HelpCenter',
   templates: 'TemplatesManagement',
   positions: 'PositionTemplatesManagement',
   'data-import': 'DataImportCenter',

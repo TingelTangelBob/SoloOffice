@@ -241,7 +241,7 @@ export async function createInvoice(data, transactionHook) {
     let sourceJobs = [];
     if (sourceJobIds.length > 0) {
       const sourceJobResult = await client.query(`
-        SELECT id, customer_id, status, job_number, external_job_number, title, date, recurrence_index
+        SELECT id, customer_id, status, job_number, external_job_number, title, date, recurrence_index, source_quote_id
         FROM job_entries
         WHERE id = ANY($1::uuid[])
         FOR UPDATE
@@ -350,6 +350,16 @@ export async function createInvoice(data, transactionHook) {
         `UPDATE job_entries SET status = 'invoiced', updated_at = NOW() WHERE id = ANY($1::uuid[])`,
         [sourceJobIds]
       );
+      // Stammt ein Auftrag aus einem Angebot, gilt das Angebot damit als abgerechnet
+      // (gleiche Verknüpfung wie bei der direkten Umwandlung in eine Rechnung).
+      const sourceQuoteIds = sourceJobs.map(job => job.source_quote_id).filter(Boolean);
+      if (sourceQuoteIds.length > 0) {
+        await client.query(`
+          UPDATE quotes
+          SET status = 'billed', converted_to_invoice_id = $1
+          WHERE id = ANY($2::uuid[]) AND status = 'accepted' AND converted_to_invoice_id IS NULL
+        `, [invoiceId, sourceQuoteIds]);
+      }
     }
 
     // Positionen sind vollständig vorhanden, bevor der Entwurf ausgestellt wird.

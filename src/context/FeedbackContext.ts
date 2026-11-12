@@ -43,8 +43,10 @@ export interface BackgroundTaskUpdate {
 export interface FeedbackContextValue {
   /** Öffnet eine gestaltete Rückfrage und liefert die Entscheidung. */
   confirm: (options: ConfirmOptions) => Promise<boolean>;
-  /** Zeigt eine kurze Rückmeldung am oberen Rand an. */
-  notify: (options: NotifyOptions) => void;
+  /** Zeigt eine kurze Rückmeldung am oberen Rand an und liefert deren Kennung. */
+  notify: (options: NotifyOptions) => string;
+  /** Blendet eine Rückmeldung vorzeitig aus, etwa wenn sie durch die nächste Aktion überholt ist. */
+  dismissNotice: (id: string) => void;
   /** Legt einen langlebigen Fortschrittseintrag für die Glocke an. */
   backgroundTasks: BackgroundTask[];
   startBackgroundTask: (options: BackgroundTaskOptions) => string;

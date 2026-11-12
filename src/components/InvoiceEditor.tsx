@@ -40,6 +40,7 @@ import { getTerminology } from '../utils/terminology';
 import { DialogShell } from './DialogShell';
 import { useFeedback } from '../context/FeedbackContext';
 import { useAuth } from '../context/AuthContext';
+import { toDateInputValue } from '../utils/invoicePeriod';
 import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { calculateDocumentMoney } from '../../backend/utils/documentMoney.js';
 
@@ -624,9 +625,9 @@ export function InvoiceEditor({ invoice, initialCustomerId, onClose, onCreateCus
   const [formData, setFormData] = useState<InvoiceDraftFormData>({
     invoiceNumber: '',
     customerId: initialCustomerId || '',
-    issueDate: new Date().toISOString().split('T')[0],
-    dueDate: calculateDueDate(new Date().toISOString().split('T')[0]),
-    serviceDate: new Date().toISOString().split('T')[0],
+    issueDate: toDateInputValue(new Date()),
+    dueDate: calculateDueDate(toDateInputValue(new Date())),
+    serviceDate: toDateInputValue(new Date()),
     status: 'draft' as Invoice['status'],
     notes: '',
     globalDiscountType: undefined as 'percentage' | 'fixed' | undefined,

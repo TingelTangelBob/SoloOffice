@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Download, FileUp, History, Link2, Loader2, PenLine, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
+import { useFeedback } from '../context/FeedbackContext';
+import { useDirtyCloseGuard } from '../hooks/useDirtyCloseGuard';
 import { apiService } from '../services/api';
 import type { DateFormat, ImportDuplicateMode, ImportResource, ImportResponse, ImportRowResult, ImportRun, ImportTotals, ImportedInvoiceCoursesResponse, NumberFormat } from '../types';
 import {
@@ -134,6 +136,7 @@ function fileSlug(value: string): string {
 
 export function ImportWizard({ resource, isOpen, onClose, onImported, initialConstants, title, initialFile, initialSheet, initialSelectedRowNumbers, takeoverSessionId, nextCategory }: ImportWizardProps) {
   const { company } = useCompany();
+  const { confirm } = useFeedback();
   const baseDefinition = getImportDefinition(resource);
   const terminology = getTerminology(company.terminologyProfile);
   const definition = useMemo(
@@ -259,11 +262,45 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
     reset();
     onClose();
   };
-  closeRef.current = close;
+  // Abbruch mit geladener Datei fragt nach; nach der Übernahme schließt „Schließen“ direkt.
+  const requestClose = useDirtyCloseGuard({
+    isDirty: isOpen && Boolean(parsedFile) && step !== 'result' && step !== 'courses',
+    isDisabled: isBusy,
+    onClose: close,
+    confirm,
+    title: 'Import abbrechen?',
+    message: 'Datei und Zuordnung gehen verloren.',
+  });
+  closeRef.current = requestClose;
+
+  // Fokus: beim Öffnen in den Dialog, dort gefangen, beim Schließen zurück auf den Auslöser.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const trigger = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    headingRef.current?.focus();
+    const trapTab = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current;
+      if (event.key !== 'Tab' || !dialog || !(event.target instanceof Node) || !dialog.contains(event.target)) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'))
+        .filter(item => !item.hasAttribute('disabled') && item.getClientRects().length > 0);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (event.target === first || event.target === headingRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && event.target === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', trapTab);
+    return () => {
+      document.removeEventListener('keydown', trapTab);
+      if (trigger && trigger.isConnected) trigger.focus();
+    };
+  }, [isOpen]);
 
   const applyPreviousRun = (parsed: ParsedImportFile, runs: ImportRun[]) => {
     const messages: string[] = [];
-    const sameFile = parsed.hash ? runs.find(run => run.fileHash === parsed.hash && run.status !== 'reverted') : undefined;
+    const sameFile = parsed.hash ? runs.find(run => run.resource === resource && run.fileHash === parsed.hash && run.status !== 'reverted') : undefined;
     if (sameFile) {
       messages.push(`Diese Datei wurde am ${new Date(sameFile.createdAt).toLocaleDateString('de-DE')} bereits importiert. Bereits übernommene Zeilen werden als Duplikat erkannt.`);
     }
@@ -475,23 +512,27 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
   const mappedFieldCount = definition.fields.filter(field => isSatisfied(field.key)).length;
   const ambiguousFieldCount = definition.fields.filter(field => !isSatisfied(field.key) && mappingAnalysis?.fields[field.key]?.confidence === 'ambiguous').length;
   const requiredMappingIssueCount = missingRequiredFields.length + missingRequiredGroups.length;
+  const missingRequiredText = [
+    ...missingRequiredFields.map(field => field.label),
+    ...missingRequiredGroups.map(group => group.label),
+  ].join(', ');
   const mappedSourceHeaders = new Set(Object.values(mapping).filter(Boolean));
   const unmappedSourceHeaders = parsedFile ? parsedFile.headers.filter(header => !mappedSourceHeaders.has(header)) : [];
   const previewFields = definition.fields.filter(field => isSatisfied(field.key)).slice(0, 8);
   const entityPlural = terminology.entity.plural;
 
   return createPortal((
-    <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && !isBusy && close()}>
-      <div className="form-consistent-fields flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="import-wizard-title">
+    <div className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={event => event.target === event.currentTarget && !isBusy && requestClose()}>
+      <div ref={dialogRef} className="form-consistent-fields flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="import-wizard-title">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <div className="flex items-center gap-2 table-head text-primary-custom">
               <Upload className="h-4 w-4" /> Importassistent · Schritt {stepIndex} von {stepCount}
             </div>
-            <h2 id="import-wizard-title" className="mt-1 truncate text-xl font-semibold text-gray-900">{definition.label} importieren</h2>
+            <h2 id="import-wizard-title" ref={headingRef} tabIndex={-1} className="mt-1 truncate outline-none text-xl font-semibold text-gray-900">{definition.label} importieren</h2>
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">{definition.description}</p>
           </div>
-          <button type="button" onClick={close} disabled={isBusy} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50" aria-label="Importassistent schließen">
+          <button type="button" onClick={() => void requestClose()} disabled={isBusy} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50" aria-label="Importassistent schließen">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -713,7 +754,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <SummaryCard label="Zeilen" value={preview.summary.total} />
                 <SummaryCard label={preview.summary.updated > 0 ? 'Bereit / Aktual.' : 'Bereit'} value={preview.summary.valid + preview.summary.updated} tone="green" />
                 <SummaryCard label="Duplikate" value={preview.summary.duplicates} tone="gray" />
-                <SummaryCard label="Warnungen" value={preview.summary.warnings} tone="amber" />
+                <SummaryCard label="Davon mit Hinweis" value={countRowStatuses(preview.rows).warning} tone="amber" />
                 <SummaryCard label="Fehler" value={preview.summary.errors} tone="red" />
               </div>
               {preview.courseSummary && (
@@ -762,7 +803,7 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
                 <SummaryCard label="Gespeichert" value={result.summary.imported} tone="green" />
                 <SummaryCard label="Duplikate" value={result.summary.duplicates} tone="gray" />
                 <SummaryCard label="Fehler" value={result.summary.errors} tone="red" />
-                <SummaryCard label="Übersprungen" value={result.summary.skipped} tone="amber" />
+                <SummaryCard label="Nicht übernommen" value={result.summary.skipped} tone="amber" />
               </div>
               {result.courseSummary && <p className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">Kurse: {result.courseSummary.created} angelegt, {result.courseSummary.assigned} bestehenden Kursen zugeordnet.</p>}
             </div>
@@ -813,12 +854,17 @@ export function ImportWizard({ resource, isOpen, onClose, onImported, initialCon
           ) : (
             /* Im ersten Schritt gibt es nur den Abbruch: rechts wie in allen
                Dialogen; ab dem zweiten Schritt führt der Knopf links zurück. */
-            <button type="button" disabled={isBusy} onClick={step === 'file' ? close : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 ${step === 'file' ? 'ml-auto' : ''}`}>
+            <button type="button" disabled={isBusy} onClick={step === 'file' ? () => void requestClose() : () => { setPreview(null); setError(null); setStep(step === 'mapping' ? 'file' : 'mapping'); }} className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 ${step === 'file' ? 'ml-auto' : ''}`}>
               {step !== 'file' && <ArrowLeft className="h-4 w-4" />}
               {step === 'file' ? 'Abbrechen' : step === 'preview' ? 'Zuordnung ändern' : 'Zurück'}
             </button>
           )}
-          {step === 'mapping' && <button type="button" onClick={runPreview} disabled={isBusy || mappedRows.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Vorschau prüfen</button>}
+          {step === 'mapping' && (
+            <div className="flex min-w-0 items-center gap-3">
+              {missingRequiredText && <span className="min-w-0 text-right text-sm text-amber-800" role="status">Bitte noch zuordnen: {missingRequiredText}</span>}
+              <button type="button" onClick={runPreview} title={missingRequiredText ? `Bitte noch zuordnen: ${missingRequiredText}` : undefined} disabled={isBusy || mappedRows.length === 0 || requiredMappingIssueCount > 0} className="inline-flex items-center gap-2 rounded-lg bg-primary-custom px-4 py-2 text-sm font-medium text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50">{isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Vorschau prüfen</button>
+            </div>
+          )}
           {step === 'preview' && (
             <div className="flex items-center gap-2">
               <button type="button" onClick={runPreview} disabled={isBusy} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />Neu prüfen</button>
@@ -1051,11 +1097,16 @@ const previewColumns: Record<ImportRun['resource'], Array<{ key: string; label: 
   invoices: [{ key: 'number', label: 'Rechnung' }, { key: 'date', label: 'Datum', kind: 'date' }, { key: 'customer', label: 'Kunde' }, { key: 'amount', label: 'Betrag', kind: 'money' }, { key: 'itemCount', label: 'Positionen' }],
 };
 
-export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[]; resource: ImportRun['resource'] }) {
-  const counts = useMemo(() => rows.reduce<Record<string, number>>((result, row) => {
+/** Einzige Quelle für Zeilenzahlen je Status: Zusammenfassung und Filterchips der Vorschau rechnen damit. */
+function countRowStatuses(rows: ImportRowResult[]): Record<string, number> {
+  return rows.reduce<Record<string, number>>((result, row) => {
     result[row.status] = (result[row.status] || 0) + 1;
     return result;
-  }, {}), [rows]);
+  }, { warning: 0 });
+}
+
+export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[]; resource: ImportRun['resource'] }) {
+  const counts = useMemo(() => countRowStatuses(rows), [rows]);
   const problemCount = (counts.error || 0) + (counts.warning || 0) + (counts.duplicate || 0);
   const [filter, setFilter] = useState<RowFilter>(problemCount > 0 ? 'problems' : 'all');
   const [visible, setVisible] = useState(ROW_PAGE_SIZE);
@@ -1066,9 +1117,9 @@ export function ImportResultTable({ rows, resource }: { rows: ImportRowResult[];
     return row.status === filter;
   });
   const filters: Array<{ id: RowFilter; label: string; count: number }> = [
-    { id: 'problems', label: 'Mit Hinweis', count: problemCount },
+    { id: 'problems', label: 'Zu prüfen', count: problemCount },
     { id: 'error', label: 'Fehler', count: counts.error || 0 },
-    { id: 'warning', label: 'Warnungen', count: counts.warning || 0 },
+    { id: 'warning', label: 'Mit Hinweis', count: counts.warning || 0 },
     { id: 'duplicate', label: 'Duplikate', count: counts.duplicate || 0 },
     { id: 'ready', label: counts.imported ? 'Importiert' : 'Bereit', count: (counts.valid || 0) + (counts.update || 0) + (counts.imported || 0) },
     { id: 'all', label: 'Alle', count: rows.length },

@@ -177,7 +177,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
     const formatErrors = validateCompanyFormats(formData);
     if (Object.keys(formatErrors).length) {
       setFeedback({ type: 'error', text: Object.values(formatErrors).join(' ') });
-      const bankError = !formatErrors.email && !formatErrors.postalCode && !formatErrors.taxId;
+      const bankError = !formatErrors.email && !formatErrors.postalCode && !formatErrors.taxId && !formatErrors.taxIdentificationNumber;
       const focusArea = bankError ? 'invoices' : 'general';
       setValidationFocusArea(focusArea);
       selectArea(focusArea);
@@ -258,7 +258,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
     </p>
   ) : null;
   const dirtyLabel = dirtyAreas.map(area => SETTINGS_AREA_DEFINITIONS[area].label).join(', ');
-  const navigateTo = onNavigate ? (page: string) => onNavigate(page) : undefined;
+  const navigateTo = onNavigate ? (page: string, filter?: string) => onNavigate(page, filter) : undefined;
 
   const companySaveBar = (
     <SettingsSaveBar

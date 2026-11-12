@@ -54,6 +54,8 @@ export function mapCompanyRow(row) {
     reminderFeeStage1: row.reminder_fee_stage_1 !== null ? parseFloat(row.reminder_fee_stage_1) : 0,
     reminderFeeStage2: row.reminder_fee_stage_2 !== null ? parseFloat(row.reminder_fee_stage_2) : 0,
     reminderFeeStage3: row.reminder_fee_stage_3 !== null ? parseFloat(row.reminder_fee_stage_3) : 0,
+    reminderInterestEnabled: row.reminder_interest_enabled ?? false,
+    reminderBaseInterestRate: row.reminder_base_interest_rate !== null && row.reminder_base_interest_rate !== undefined ? parseFloat(row.reminder_base_interest_rate) : 1.27,
     reminderTextStage1: row.reminder_text_stage_1,
     reminderTextStage2: row.reminder_text_stage_2,
     reminderTextStage3: row.reminder_text_stage_3,

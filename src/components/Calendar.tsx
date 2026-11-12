@@ -33,6 +33,7 @@ import { actionErrorMessage } from '../utils/actionError';
 import { PageHeader } from './PageHeader';
 import { getTerminology } from '../utils/terminology';
 import { calculateTotalHours } from '../utils/jobUtils';
+import { jobDayToDate } from '../utils/invoicePeriod';
 import { formatDate, formatNumber, formatTime } from '../utils/formatters';
 import { apiService } from '../services/api';
 import { downloadCalendarIcs } from '../utils/icsExport';
@@ -48,7 +49,7 @@ interface CalendarProps {
 }
 
 const isPastCalendarJob = (job: JobEntry, today = new Date()) => {
-  const jobDate = new Date(job.date);
+  const jobDate = jobDayToDate(job.date);
   jobDate.setHours(0, 0, 0, 0);
   const todayStart = new Date(today);
   todayStart.setHours(0, 0, 0, 0);
@@ -680,7 +681,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     const groupedJobs = new Map<string, JobEntry[]>();
 
     filteredJobEntries.forEach((job) => {
-      const dateKey = toDateKey(new Date(job.date));
+      const dateKey = toDateKey(jobDayToDate(job.date));
       const jobsForDate = groupedJobs.get(dateKey) || [];
       jobsForDate.push(job);
       groupedJobs.set(dateKey, jobsForDate);
@@ -917,7 +918,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     
     if (!draggedJob) return;
 
-    const jobDate = new Date(draggedJob.date);
+    const jobDate = jobDayToDate(draggedJob.date);
     const isSameDate = jobDate.toDateString() === targetDate.toDateString();
     
     if (isSameDate && targetJobId) {
@@ -961,7 +962,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
     if (!draggedJob) return;
 
     // Don't allow dropping on the same date
-    const jobDate = new Date(draggedJob.date);
+    const jobDate = jobDayToDate(draggedJob.date);
     if (jobDate.toDateString() === targetDate.toDateString()) {
       setDraggedJob(null);
       setTimeGridDragPreview(null);
@@ -1059,7 +1060,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
       dragPointerOffsetMinutes,
     );
     const endMinutes = startMinutes + duration;
-    const jobDate = new Date(draggedJob.date);
+    const jobDate = jobDayToDate(draggedJob.date);
     const dateChanged = jobDate.toDateString() !== targetDate.toDateString();
 
     try {
@@ -1562,7 +1563,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               <React.Fragment key={job.id}>
                                 {/* Drop zone before the job */}
                                 {jobIndex === 0 && draggedJob && 
-                                 new Date(draggedJob.date).toDateString() === date.toDateString() && 
+                                 jobDayToDate(draggedJob.date).toDateString() === date.toDateString() &&
                                  draggedJob.id !== job.id && (
                                   <div
                                     onDragOver={(e) => {
@@ -1610,7 +1611,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                                       : `text-xs rounded border p-1 ${getStatusColor(job.status)}`}
                                     ${job.status === 'invoiced' ? 'opacity-75' : (!compactEntries && density !== 'indicator') ? 'hover:shadow-sm' : ''}
                                     ${draggedJob && draggedJob.id !== job.id && 
-                                      new Date(draggedJob.date).toDateString() === date.toDateString() ? 
+                                      jobDayToDate(draggedJob.date).toDateString() === date.toDateString() ?
                                       'border-primary-custom border-dashed' : ''}
                                   `}
                                   title={`${getCalendarJobTitle(job, customer?.name || job.customerName)} - ${customer?.name || job.customerName} - ${formatNumber(totalHours, company.locale, company.numberFormat, 1)}h - Doppelklick zum Bearbeiten - Ziehen zum Umordnen`}
@@ -1925,7 +1926,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                         <React.Fragment key={job.id}>
                           {/* Drop zone before the job */}
                           {jobIndex === 0 && draggedJob && 
-                           new Date(draggedJob.date).toDateString() === date.toDateString() && 
+                           jobDayToDate(draggedJob.date).toDateString() === date.toDateString() &&
                            draggedJob.id !== job.id && (
                             <div
                               onDragOver={(e) => {
@@ -1960,7 +1961,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                               ${getStatusColor(job.status)}
                               ${job.status === 'invoiced' ? 'opacity-75' : 'hover:shadow-sm'}
                               ${draggedJob && draggedJob.id !== job.id && 
-                                new Date(draggedJob.date).toDateString() === date.toDateString() ? 
+                                jobDayToDate(draggedJob.date).toDateString() === date.toDateString() ?
                                 'border-primary-custom border-dashed' : ''}
                               transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150
                             `}
@@ -2190,7 +2191,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                 </span>}
                 <span className="calendar-job-preview-date">
                   <CalendarDays className="h-6 w-6" />
-                  {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
+                  {formatDate(jobDayToDate(previewingJob.date), locale, company?.dateFormat)}
                 </span>
               </div>
             </header>
@@ -2227,7 +2228,7 @@ export function Calendar({ onNavigate }: CalendarProps = {}) {
                     <div className="min-w-0">
                       <p className="calendar-job-preview-detail-label">Datum</p>
                       <p className="calendar-job-preview-detail-value">
-                        {formatDate(new Date(previewingJob.date), locale, company?.dateFormat)}
+                        {formatDate(jobDayToDate(previewingJob.date), locale, company?.dateFormat)}
                       </p>
                     </div>
                   </div>

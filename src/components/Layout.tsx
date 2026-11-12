@@ -20,11 +20,10 @@ import { EmptyState } from './EmptyState';
 import { isDemoMode } from '../services/demoApi';
 import { PageSearchContext } from '../context/PageSearchContext';
 import type { PageSearchContextValue, PageSearchRegistration } from '../context/PageSearchContext';
-import { useSupportAvailability } from '../hooks/useSupportAvailability';
 import { useFeedback } from '../context/FeedbackContext';
 import { useLoading } from '../context/LoadingContext';
 import { apiService } from '../services/api';
-import type { TakeoverStatus } from '../types';
+import type { TakeoverStatus, WorkspaceSetup } from '../types';
 import { useExtensions } from '../hooks/useExtensions';
 import { searchCustomers } from '../utils/customerSearch';
 
@@ -104,8 +103,6 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { jobEntries } = useJobs();
   const { user, workspace, logout } = useAuth();
   const { backgroundTasks, dismissBackgroundTask } = useFeedback();
-  // Ticket-Support nur im gehosteten Betrieb; Self-Hoster sehen den Punkt nicht.
-  const supportAvailable = useSupportAvailability();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback((restoreFocus = false) => {
     setIsMobileMenuOpen(false);
@@ -118,6 +115,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [setupRequired, setSetupRequired] = useState(false);
   const [setupStep, setSetupStep] = useState(1);
+  const [setupStarted, setSetupStarted] = useState(true);
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -169,6 +167,53 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   useEffect(() => {
     closeMobileMenu();
   }, [closeMobileMenu, currentPage]);
+
+  // Auf dem Handy ist der geschlossene Drawer nur verschoben, nicht entfernt:
+  // `inert` nimmt ihn aus der Tab-Reihenfolge. Auf dem Desktop (lg) bleibt die
+  // Seitenleiste dauerhaft sichtbar und bedienbar.
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() => typeof window === 'undefined' || window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsDesktopLayout(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  const sidebarHidden = !isMobileMenuOpen && !isDesktopLayout;
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    if (sidebarHidden) sidebar.setAttribute('inert', '');
+    else sidebar.removeAttribute('inert');
+  }, [sidebarHidden]);
+
+  // Offener Drawer: Fokus hinein, Tab bleibt darin (Escape schließt oben bereits).
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      sidebar.querySelector<HTMLElement>('[aria-label="Menü schließen"]')?.focus();
+    });
+    const trapTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = Array.from(sidebar.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'))
+        .filter(item => !item.hasAttribute('disabled') && item.getAttribute('tabindex') !== '-1' && item.getClientRects().length > 0);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!sidebar.contains(active)) { event.preventDefault(); first.focus(); }
+      else if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', trapTab);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', trapTab);
+    };
+  }, [isMobileMenuOpen]);
   const taxAreaWasActive = useRef(taxAreaActive);
   // Die mobile Drawer-Navigation bleibt immer beschriftet. Die kompakte
   // Icon-Leiste ist eine Desktop-Variante und darf nicht in den Drawer
@@ -188,15 +233,25 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   // darf erst nach dem Laden entscheiden, sonst blitzt er bei jedem Reload auf.
   const companySetupComplete = dataLoading || missingCompanyFields.length === 0;
   const missingCompanyFieldsLabel = missingCompanyFields.join(', ');
+  const setupLabel = setupStarted ? 'Ersteinrichtung fortsetzen' : 'Ersteinrichtung starten';
   const companySetupHint = `Firmendaten vervollständigen: ${missingCompanyFieldsLabel}`;
 
   useEffect(() => {
     let active = true;
-    apiService.getWorkspaceSetup().then(setup => {
-      if (active) setSetupRequired(setup.setupRequired && !setup.completedAt);
-      if (active) setSetupStep(setup.currentStep);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    const applySetup = (setup: WorkspaceSetup) => {
+      setSetupRequired(setup.setupRequired && !setup.completedAt);
+      setSetupStep(setup.currentStep);
+      // Ohne gespeicherten Schritt (Schritt 1, nie geändert) heißt der Hinweis „starten“.
+      setSetupStarted(setup.currentStep > 1 || new Date(setup.updatedAt).getTime() - new Date(setup.createdAt).getTime() > 2000);
+    };
+    apiService.getWorkspaceSetup().then(setup => { if (active) applySetup(setup); }).catch(() => undefined);
+    // Der Assistent meldet jeden gespeicherten Stand, damit der Hinweis sofort stimmt.
+    const onSetupChanged = (event: Event) => {
+      const setup = (event as CustomEvent<WorkspaceSetup>).detail;
+      if (setup) applySetup(setup);
+    };
+    window.addEventListener('solooffice:workspace-setup-changed', onSetupChanged);
+    return () => { active = false; window.removeEventListener('solooffice:workspace-setup-changed', onSetupChanged); };
   }, [workspace?.id]);
 
   useEffect(() => {
@@ -590,6 +645,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
           )}
 
           <nav
+            id="app-sidebar"
+            ref={sidebarRef}
             style={sidebarStyle}
             className={`
             sidebar-shell
@@ -724,11 +781,11 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                   type="button"
                   onClick={() => handlePageChange('setup')}
                   className={`sidebar-setup-notice ${isSidebarCompact ? 'justify-center' : ''}`}
-                  aria-label="Ersteinrichtung fortsetzen"
-                  title={isSidebarCompact ? 'Ersteinrichtung fortsetzen' : undefined}
+                  aria-label={setupLabel}
+                  title={isSidebarCompact ? setupLabel : undefined}
                 >
                   <span className={`${isSidebarCompact ? 'hidden' : ''} sidebar-setup-copy`}>
-                    <strong>Ersteinrichtung fortsetzen</strong>
+                    <strong>{setupLabel}</strong>
                     <span>Schritt {setupStep} von 5</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -820,9 +877,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     <div className="pt-1">
                       <ActionMenuItem icon={<UserRound className="h-4 w-4" />} onClick={() => handlePageChange('profile')}>Benutzerdaten</ActionMenuItem>
                       <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => openLandingPage('/preise')}>Tarif</ActionMenuItem>
-                      {supportAvailable && (
-                        <ActionMenuItem icon={<LifeBuoy className="h-4 w-4" />} onClick={() => handlePageChange('support')}>Hilfe &amp; Support</ActionMenuItem>
-                      )}
+                      <ActionMenuItem icon={<LifeBuoy className="h-4 w-4" />} onClick={() => handlePageChange('help')}>Hilfe &amp; Support</ActionMenuItem>
                     </div>
                     <div className="sidebar-account-menu-section">
                       <ActionMenuItem icon={<ExternalLink className="h-4 w-4" />} onClick={() => openLandingPage('/datenschutz')}>Datenschutzerklärung</ActionMenuItem>
@@ -865,6 +920,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
               onDismissBackgroundTask={dismissBackgroundTask}
               onNavigate={handlePageChange}
               onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+              mobileMenuOpen={isMobileMenuOpen}
             />
             <main
               className={`min-w-0 flex-1 p-3 sm:p-4 lg:p-6 ${

@@ -7,6 +7,7 @@ import { decryptSecret } from '../utils/secretBox.js';
 import { runWithRequestContext } from '../utils/requestContext.js';
 import { customerEmailCopy, customerEmailDeliveryResult } from '../utils/customerEmailCopy.js';
 import { smtpTransportOptions } from '../utils/smtpSettings.js';
+import { describeInterest, normalizeReminderClaim } from '../shared/reminderClaim.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1115,7 +1116,7 @@ ${companySettings.name}
 /**
  * Send payment reminder email
  */
-export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData, stage, fee, customText = null, companySettings = { primary_color: '#2563eb', secondary_color: '#64748b' }, additionalAttachments = []) => {
+export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData, stage, fee, customText = null, companySettings = { primary_color: '#2563eb', secondary_color: '#64748b' }, additionalAttachments = [], claimInput = null) => {
   try {
     logger.info('Sending reminder email', { 
       customerEmails, 
@@ -1135,16 +1136,22 @@ export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData
     const senderInfo = await getSenderInfo();
 
     // Generate stage-specific subject and body
-    const stageText = stage === 1 ? '1. Zahlungserinnerung' : stage === 2 ? '2. Zahlungserinnerung' : '3. Zahlungserinnerung';
+    const stageText = stage === 1 ? '1. Mahnung' : stage === 2 ? '2. Mahnung' : '3. Mahnung';
     const subject = `${stageText} - Rechnung ${invoiceData.invoiceNumber}`;
 
     // Calculate total with fee
-    const originalTotal = invoiceData.total;
-    const totalWithFee = originalTotal + (fee || 0);
+    // Aufstellung kommt aus der gemeinsamen Funktion (reminderClaim); ohne Aufstellung gilt der alte Weg.
+    const claim = normalizeReminderClaim(claimInput) || normalizeReminderClaim({
+      outstanding: Number(invoiceData.outstandingAmount ?? invoiceData.total) || 0, fee: Number(fee) || 0, interestEnabled: false, interest: 0,
+    });
+    const originalTotal = claim.outstanding;
+    const totalWithFee = claim.total;
+    const interestDisplay = formatCompanyAmount(claim.interest, companySettings);
+    const interestLabel = `Verzugszinsen (${describeInterest(claim)})`;
     const issueDateDisplay = formatCompanyDate(invoiceData.issueDate, companySettings);
     const dueDateDisplay = formatCompanyDate(invoiceData.dueDate, companySettings);
     const originalTotalDisplay = formatCompanyAmount(originalTotal, companySettings);
-    const feeDisplay = formatCompanyAmount(fee || 0, companySettings);
+    const feeDisplay = formatCompanyAmount(claim.fee, companySettings);
     const totalWithFeeDisplay = formatCompanyAmount(totalWithFee, companySettings);
 
     // Create HTML email body
@@ -1278,20 +1285,24 @@ export const sendReminderEmail = async (customerEmails, reminderPDF, invoiceData
           <td>${dueDateDisplay}</td>
         </tr>
         <tr>
-          <td>Ursprünglicher Betrag:</td>
+          <td>Offener Rechnungsbetrag:</td>
           <td>${originalTotalDisplay}</td>
         </tr>
-        ${fee > 0 ? `
         <tr>
-          <td>Mahngebühr:</td>
-          <td style="color: #dc2626;">${feeDisplay}</td>
+          <td>Mahngebühren:</td>
+          <td>${feeDisplay}${claim.fee === 0 ? ' (keine erhoben)' : ''}</td>
+        </tr>
+        ${claim.interestEnabled ? `
+        <tr>
+          <td>${interestLabel}:</td>
+          <td>${interestDisplay}</td>
         </tr>
         ` : ''}
       </table>
     </div>
     
     <div class="total-amount">
-      <div class="label">Zu zahlender Gesamtbetrag:</div>
+      <div class="label">Gesamtforderung:</div>
       <div class="amount">${totalWithFeeDisplay}</div>
     </div>
     
@@ -1322,10 +1333,10 @@ ${customText ? customText + '\n\n' : ''}
 Rechnungsnummer: ${invoiceData.invoiceNumber}
 Rechnungsdatum: ${issueDateDisplay}
 Fälligkeitsdatum: ${dueDateDisplay}
-Ursprünglicher Betrag: ${originalTotalDisplay}
-${fee > 0 ? `Mahngebühr: ${feeDisplay}\n` : ''}
-
-Zu zahlender Gesamtbetrag: ${totalWithFeeDisplay}
+Offener Rechnungsbetrag: ${originalTotalDisplay}
+Mahngebühren: ${feeDisplay}${claim.fee === 0 ? ' (keine erhoben)' : ''}
+${claim.interestEnabled ? `${interestLabel}: ${interestDisplay}\n` : ''}
+Gesamtforderung: ${totalWithFeeDisplay}
 
 Bitte überweisen Sie den Betrag unter Angabe der Rechnungsnummer ${invoiceData.invoiceNumber} auf unser Konto.
 
@@ -1427,7 +1438,7 @@ ${senderInfo.name}
         senderEmail: senderInfo.email,
         senderName: senderInfo.name,
         recipientEmail: customerEmails.join(', '),
-        subject: `${stage === 1 ? '1.' : stage === 2 ? '2.' : '3.'} Zahlungserinnerung - Rechnung ${invoiceData.invoiceNumber}`,
+        subject: `${stage === 1 ? '1.' : stage === 2 ? '2.' : '3.'} Mahnung - Rechnung ${invoiceData.invoiceNumber}`,
         invoiceId: invoiceData.id,
         invoiceNumber: invoiceData.invoiceNumber,
         customerId: invoiceData.customerId,

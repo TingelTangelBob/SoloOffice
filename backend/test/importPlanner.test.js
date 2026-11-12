@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCustomerDirectory, planImport, reportRows, summariseImport } from '../utils/importPlanner.js';
+import { createCustomerDirectory, planImport, reportRows, summariseImport, toPastTense } from '../utils/importPlanner.js';
 
 const context = (overrides = {}) => ({
   entityLabel: 'Schüler',
@@ -116,7 +116,8 @@ test('Kunden-Aktualisierung ändert nur zugeordnete Felder', () => {
   assert.equal(plan.entries[0].status, 'update');
   assert.deepEqual(plan.entries[0].data, { phone: '0221 123' });
   assert.match(plan.entries[0].message, /Telefon/);
-  assert.equal(plan.entries[1].status, 'duplicate', 'doppelte Zeile in der Datei');
+  assert.equal(plan.entries.length, 1, 'identische Wiederholung wird zur ersten Zeile zusammengefasst');
+  assert.deepEqual(plan.entries[0].rowNumbers, [2, 3]);
 
   const unchanged = planImport('customers', [{ _rowNumber: 2, customerNumber: '1001', name: 'Anna Müller', email: 'anna@example.org' }], context({ customers }), { duplicateMode: 'update' });
   assert.equal(unchanged.entries[0].status, 'duplicate');
@@ -172,16 +173,16 @@ test('Übernommene Rechnungen: Sammelposition, Zahlung, Teilzahlung und Prüfung
   assert.match(partial.message, /Teilzahlung 20,00 €/);
   assert.equal(paidWithoutDate.status, 'warning');
   assert.equal(paidWithoutDate.data.status, 'paid');
-  assert.equal(paidWithoutDate.data.payment, null);
-  assert.match(paidWithoutDate.message, /Zahlungsdatum fehlt; Zahlungseingang nachtragen/);
+  assert.deepEqual(paidWithoutDate.data.payment, { entryDate: '2024-03-03', amount: 30, taxRate: 0 });
+  assert.match(paidWithoutDate.message, /als Zahlungseingang gilt das Rechnungsdatum 03\.03\.2024/);
   assert.equal(duplicate.status, 'duplicate');
   assert.equal(mismatch.status, 'error');
   assert.equal(plan.totals.invoiced, 180);
-  assert.equal(plan.totals.invoicePayments, 120);
+  assert.equal(plan.totals.invoicePayments, 150);
   assert.equal(plan.totals.openAmount, 30);
 });
 
-test('Übernommene Bezahlt-Angaben ohne Zahlungsdatum erzeugen keine Zahlung', () => {
+test('Übernommene Bezahlt-Angaben ohne Zahlungsdatum zählen mit dem Rechnungsdatum als Zahlung (D-2)', () => {
   const customers = [{ id: 'c1', name: 'Anna Müller' }];
   for (const paymentFields of [{ status: 'bezahlt' }, { paidAmount: '0,01' }]) {
     const plan = planImport('invoices', [{
@@ -192,11 +193,11 @@ test('Übernommene Bezahlt-Angaben ohne Zahlungsdatum erzeugen keine Zahlung', (
     assert.equal(imported.status, 'warning');
     assert.equal(imported.data.status, 'paid');
     assert.equal(imported.data.total, 0.01);
-    assert.equal(imported.data.payment, null);
-    assert.match(imported.message, /Zahlungsdatum fehlt; Zahlungseingang nachtragen/);
-    assert.equal(plan.totals.invoicePayments, 0);
+    assert.deepEqual(imported.data.payment, { entryDate: '2025-12-31', amount: 0.01, taxRate: 0 });
+    assert.match(imported.message, /Zahlungsdatum fehlt – als Zahlungseingang gilt das Rechnungsdatum 31\.12\.2025\. Bitte prüfen, für die EÜR zählt der tatsächliche Zahlungstag/);
+    assert.equal(plan.totals.invoicePayments, 0.01);
     assert.equal(plan.totals.openAmount, 0);
-    assert.deepEqual(plan.totals.byMonth.map(bucket => [bucket.month, bucket.invoicePayments]), [['2025-12', 0]]);
+    assert.deepEqual(plan.totals.byMonth.map(bucket => [bucket.month, bucket.invoicePayments]), [['2025-12', 0.01]]);
   }
 });
 
@@ -363,4 +364,157 @@ test('erneuter Import derselben Altrechnung plant keine Kursanlage', () => {
   assert.equal(plan.entries[0].status, 'duplicate');
   assert.equal(plan.entries[0].data, null);
   assert.deepEqual(plan.courseSummary, { created: 0, assigned: 0 });
+});
+
+// ---------------------------------------------------------------------------
+// Regressionen aus der Importprüfung (FIX-2)
+// ---------------------------------------------------------------------------
+
+test('D-1: Rechnungsnummern mit verschiedenen Sonderzeichen bleiben getrennte Rechnungen', () => {
+  const customers = [{ id: 'c1', name: 'Anna Muster' }, { id: 'c2', name: 'Bernd Beispiel' }];
+  const plan = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-1', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '119,00', taxRate: 19 },
+    { _rowNumber: 3, invoiceNumber: 'R/1', issueDate: '2026-03-05', customerName: 'Bernd Beispiel', total: '50,00', taxRate: 0 },
+  ], context({ customers }), {});
+  assert.equal(plan.entries.length, 2, 'R-1 und R/1 sind zwei Rechnungen');
+  assert.deepEqual(plan.entries.map(item => item.rowNumbers), [[2], [3]]);
+  assert.ok(plan.entries.every(item => item.status === 'valid'));
+  assert.equal(plan.entries[0].data.total, 119);
+  assert.equal(plan.entries[1].data.total, 50);
+
+  const caseInsensitive = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: ' R-1', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+  ], context({ customers, invoices: [{ id: 'x', invoiceNumber: 'r-1', total: 10, status: 'sent' }] }), {});
+  assert.equal(caseInsensitive.entries[0].status, 'duplicate', 'Groß-/Kleinschreibung und Leerraum zählen nicht');
+
+  const existing = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-1', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+    { _rowNumber: 3, invoiceNumber: 'R/1', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+  ], context({ customers, invoices: [{ id: 'x', invoiceNumber: 'R/1', total: 10, status: 'sent' }] }), {});
+  assert.deepEqual(existing.entries.map(item => item.status), ['valid', 'duplicate'], 'bestehende R/1 sperrt R-1 nicht');
+});
+
+test('D-1: Gleiche Rechnungsnummer mit unterschiedlichen Kunden oder Daten ist ein Fehler', () => {
+  const customers = [{ id: 'c1', name: 'Anna Muster' }, { id: 'c2', name: 'Bernd Beispiel' }];
+  const differentCustomers = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-1', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '119,00', taxRate: 19 },
+    { _rowNumber: 5, invoiceNumber: 'R-1', issueDate: '2026-03-01', customerName: 'Bernd Beispiel', total: '50,00', taxRate: 0 },
+  ], context({ customers }), {});
+  assert.equal(differentCustomers.entries.length, 2, 'ein Fehlereintrag je Dateizeile');
+  assert.deepEqual(differentCustomers.entries.map(item => item.rowNumbers), [[2], [5]]);
+  assert.equal(differentCustomers.entries[0].status, 'error');
+  assert.match(differentCustomers.entries[0].message, /Rechnung R-1 steht in den Zeilen 2 und 5 mit unterschiedlichen Kunden/);
+
+  const differentDates = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-2', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+    { _rowNumber: 3, invoiceNumber: 'R-2', issueDate: '2026-04-01', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+  ], context({ customers }), {});
+  assert.equal(differentDates.entries[0].status, 'error');
+  assert.match(differentDates.entries[0].message, /Rechnung R-2 steht in den Zeilen 2 und 3 mit unterschiedlichen Daten/);
+
+  const sameInvoice = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-3', issueDate: '2026-03-01', customerName: 'Anna Muster', itemDescription: 'A', itemQuantity: 1, itemUnitPrice: 10, taxRate: 0 },
+    { _rowNumber: 3, invoiceNumber: 'R-3', issueDate: '2026-03-01', customerName: 'Anna Muster', itemDescription: 'B', itemQuantity: 1, itemUnitPrice: 20, taxRate: 0 },
+  ], context({ customers }), {});
+  assert.equal(sameInvoice.entries.length, 1);
+  assert.notEqual(sameInvoice.entries[0].status, 'error', sameInvoice.entries[0].message);
+  assert.equal(sameInvoice.entries[0].data.total, 30, 'mehrere Positionszeilen derselben Rechnung bleiben erlaubt');
+});
+
+test('Doppelte Rechnungsnummer: jede Fehlerzeile zeigt die Daten ihrer eigenen Dateizeile ohne Positionszahl', () => {
+  const plan = planImport('invoices', [
+    { _rowNumber: 2, invoiceNumber: 'R-5', issueDate: '2026-03-01', customerName: 'Anna Muster', total: '119,00', taxRate: 19 },
+    { _rowNumber: 3, invoiceNumber: 'R-5', issueDate: '2026-04-15', customerName: 'Bernd Beispiel', total: '50,00', taxRate: 0 },
+  ], context({ customers: [{ id: 'c1', name: 'Anna Muster' }, { id: 'c2', name: 'Bernd Beispiel' }] }), {});
+  const rows = reportRows(plan);
+  assert.deepEqual(rows.map(row => [row.rowNumber, row.status]), [[2, 'error'], [3, 'error']]);
+  assert.equal(rows[0].values.customer, 'Anna Muster');
+  assert.equal(rows[1].values.customer, 'Bernd Beispiel');
+  assert.equal(rows[1].values.date, '2026-04-15');
+  assert.equal(rows[0].values.itemCount, undefined);
+  assert.equal(rows[1].values.itemCount, undefined);
+  assert.equal(summariseImport(plan, 2).errors, 2);
+});
+
+test('D-1: Angebotsnummern und Zahlungszuordnung nutzen die Belegnummer ohne Sonderzeichenverlust', () => {
+  const customers = [{ id: 'c1', name: 'Anna Muster' }];
+  const quotes = planImport('quotes', [
+    { _rowNumber: 2, quoteNumber: 'A-1', customerName: 'Anna Muster', total: '10', taxRate: 0 },
+    { _rowNumber: 3, quoteNumber: 'A/1', customerName: 'Anna Muster', total: '20', taxRate: 0 },
+  ], context({ customers, quotes: [{ id: 'q', quoteNumber: 'A.1' }] }), {});
+  assert.equal(quotes.entries.length, 2);
+  assert.ok(quotes.entries.every(item => item.status !== 'duplicate' && item.status !== 'error'), quotes.entries.map(item => item.message).join(' | '));
+
+  const payments = planImport('invoicePayments', [
+    { _rowNumber: 2, invoiceNumber: 'R/1', date: '2026-03-10', amount: '10' },
+  ], context({ customers, invoices: [{ id: 'i-dash', invoiceNumber: 'R-1', total: 10, status: 'sent', customerId: 'c1' }, { id: 'i-slash', invoiceNumber: 'R/1', total: 10, status: 'sent', customerId: 'c1' }] }), {});
+  assert.equal(payments.entries[0].status, 'valid');
+  assert.equal(payments.entries[0].data.invoiceId, 'i-slash');
+});
+
+test('B-2: Nummer oder E-Mail eines anderen Namens ist ein sichtbarer Konflikt und überschreibt nichts', () => {
+  const customers = [{ id: 'c1', customerNumber: '1001', name: 'Hanseatische Beratung', email: 'kontakt@hanse.example' }];
+  for (const duplicateMode of ['skip', 'update']) {
+    const plan = planImport('customers', [
+      { _rowNumber: 2, customerNumber: '1001', name: 'Eva Schmidt', city: 'Hamburg' },
+      { _rowNumber: 3, name: 'Eva Schmidt', email: 'kontakt@hanse.example' },
+    ], context({ customers, entityLabel: 'Kunde' }), { duplicateMode });
+    assert.deepEqual(plan.entries.map(item => item.status), ['duplicate', 'duplicate'], duplicateMode);
+    assert.match(plan.entries[0].message, /Kundennummer 1001 gehört bereits zu „Hanseatische Beratung“ – in der Datei steht „Eva Schmidt“/);
+    assert.match(plan.entries[1].message, /E-Mail-Adresse kontakt@hanse\.example gehört bereits zu „Hanseatische Beratung“/);
+    assert.equal(plan.entries[0].conflict.kind, 'existing');
+    assert.equal(plan.entries.filter(item => item.status === 'update').length, 0);
+  }
+  const rows = reportRows(planImport('customers', [{ _rowNumber: 2, customerNumber: '1001', name: 'Eva Schmidt', city: 'Hamburg' }], context({ customers }), {}));
+  assert.equal(rows[0].values.name, 'Eva Schmidt', 'Vorschau zeigt den Namen aus der Datei auch bei Duplikaten');
+  assert.equal(rows[0].values.city, 'Hamburg');
+
+  const compatible = planImport('customers', [{ _rowNumber: 2, customerNumber: '1001', name: 'Beratung, Hanseatische', phone: '040 1' }], context({ customers }), { duplicateMode: 'update' });
+  assert.equal(compatible.entries[0].status, 'update', 'abweichende Schreibweise desselben Namens ist kein Konflikt');
+  assert.equal(compatible.entries[0].previewValues.name, 'Beratung, Hanseatische');
+});
+
+test('B-7: Wiederholter Kunde in mehreren Rechnungszeilen ist unauffällig, Widersprüche sind Konflikte', () => {
+  const plan = planImport('customers', [
+    { _rowNumber: 2, customerNumber: '7001', name: 'Anna Müller', email: 'anna@example.org' },
+    { _rowNumber: 3, customerNumber: '7002', name: 'Bernd Beispiel', email: 'bernd@example.org' },
+    { _rowNumber: 4, customerNumber: '7001', name: 'Anna Müller', email: 'anna@example.org' },
+    { _rowNumber: 5, customerNumber: '7002', name: 'Carola Neu', email: 'bernd@example.org' },
+  ], context({ entityLabel: 'Kunde' }), {});
+  assert.deepEqual(plan.entries.map(item => [item.rowNumbers, item.status]), [[[2, 4], 'valid'], [[3], 'valid'], [[5], 'duplicate']]);
+  assert.match(plan.entries[0].message, /Zeile 4 ist eine identische Wiederholung von Zeile 2/);
+  assert.match(plan.entries[2].message, /Kundennummer 7002 steht in den Zeilen 3 und 5 mit unterschiedlichen Namen/);
+  const summary = summariseImport(plan, 4);
+  assert.equal(summary.duplicates, 1, 'nur der Widerspruch zählt als Duplikat');
+  assert.equal(summary.records, 2);
+  assert.equal(summary.valid, 3);
+  assert.equal(summary.skipped, 1);
+});
+
+test('B-16: Adress- und E-Mail-Warnungen nur bei vorhandenen Spalten', () => {
+  const noColumns = planImport('customers', [{ _rowNumber: 2, name: 'Anna' }, { _rowNumber: 3, name: 'Bernd' }], context(), {});
+  assert.deepEqual(noColumns.entries.map(item => item.status), ['valid', 'valid']);
+
+  const emailOnly = planImport('customers', [{ _rowNumber: 2, name: 'Anna', email: 'a@example.org' }, { _rowNumber: 3, name: 'Bernd', email: '' }], context(), {});
+  assert.deepEqual(emailOnly.entries.map(item => item.status), ['valid', 'warning'], 'keine Adresswarnung ohne Adressspalte');
+  assert.match(emailOnly.entries[1].message, /E-Mail fehlt/);
+  assert.doesNotMatch(emailOnly.entries[1].message, /Adresse/);
+
+  const withCity = planImport('customers', [{ _rowNumber: 2, name: 'Anna', city: 'Köln' }], context(), {});
+  assert.equal(withCity.entries[0].status, 'warning');
+  assert.match(withCity.entries[0].message, /Adresse ist nicht vollständig/);
+  assert.doesNotMatch(withCity.entries[0].message, /E-Mail fehlt/);
+});
+
+test('das Protokoll eines abgeschlossenen Imports steht in der Vergangenheit, die Vorschau im Präsens', () => {
+  const plan = planImport('customers', [{ _rowNumber: 2, name: 'Wird Werden', email: 'ww@example.de', street: 'A 1', zip: '10115', city: 'Berlin' }], context(), {});
+  const preview = reportRows(plan)[0];
+  const done = reportRows(plan, true)[0];
+  assert.equal(done.status, 'imported');
+  assert.equal(preview.status, plan.entries[0].status);
+  assert.doesNotMatch(done.message, /\bwird\b/);
+  assert.match(toPastTense('Titel wird als „Wird gut“ übernommen; Status wird auf Entwurf gesetzt'), /^Titel wurde als „Wird gut“ übernommen; Status wurde auf Entwurf gesetzt$/);
+  const invoices = planImport('invoices', [{ _rowNumber: 2, invoiceNumber: 'R-9', issueDate: '2025-03-01', customerName: 'Neu GmbH', total: 50, taxRate: 0 }], context(), { createMissingCustomers: true });
+  assert.match(reportRows(invoices)[0].message, /wird übernommen/);
+  assert.match(reportRows(invoices, true)[0].message, /wurde übernommen/);
 });

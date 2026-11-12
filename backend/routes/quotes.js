@@ -2,7 +2,7 @@ import express from 'express';
 import { query } from '../database.js';
 import logger from '../utils/logger.js';
 import { findAllQuotes, findQuoteById } from '../queries/quoteQueries.js';
-import { createQuote, updateQuote, deleteQuote, convertQuoteToInvoice } from '../services/quoteService.js';
+import { createQuote, updateQuote, deleteQuote, convertQuoteToInvoice, convertQuoteToJob } from '../services/quoteService.js';
 
 const router = express.Router();
 
@@ -200,6 +200,22 @@ router.post('/:id/send-email', async (req, res) => {
       message: 'Failed to send quote email',
       error: error.message
     });
+  }
+});
+
+router.post('/:id/convert-to-job', async (req, res) => {
+  try {
+    const result = await convertQuoteToJob(req.params.id);
+    if (result.error) return res.status(result.status).json({ error: result.error, code: result.code });
+    res.status(201).json(result);
+  } catch (error) {
+    logger.error('Failed to convert quote to job', {
+      error: error.message,
+      stack: error.stack,
+      quoteId: req.params.id,
+      endpoint: '/quotes/:id/convert-to-job'
+    });
+    res.status(500).json({ error: 'Das Angebot konnte nicht in einen Auftrag umgewandelt werden.' });
   }
 });
 

@@ -21,6 +21,8 @@ interface TopBarProps {
   onDismissBackgroundTask: (id: string) => void;
   onNavigate: (page: string) => void;
   onOpenMobileMenu: () => void;
+  /** Zustand des Drawers auf dem Handy, für `aria-expanded`. */
+  mobileMenuOpen?: boolean;
 }
 
 const NOTICE_DOT: Record<TopBarNotice['tone'], string> = {
@@ -104,6 +106,7 @@ export function TopBar({
   onDismissBackgroundTask,
   onNavigate,
   onOpenMobileMenu,
+  mobileMenuOpen = false,
 }: TopBarProps) {
   const noticeCount = notices.length + backgroundTasks.length;
   const latestBackgroundTask = backgroundTasks[backgroundTasks.length - 1] || null;
@@ -152,21 +155,19 @@ export function TopBar({
     if (completionPulseTimer.current !== null) window.clearTimeout(completionPulseTimer.current);
   }, []);
 
-  /* Titel und Seitenaktionen teilen sich den Platz neben der Suche zu
-     gleichen Teilen – ab `xl` außer die Aktionen brauchen mehr: Dann ist die
-     rechte Spalte mindestens so breit wie ihr Inhalt, damit „Importieren ·
-     Export · Neuer Kunde“ auf 1440 px nicht angeschnitten wird. Die Suche
-     bleibt mittig, solange der Platz reicht, und rückt sonst nach links statt
-     dass Aktionen im versteckten Scrollbereich verschwinden. Unterhalb von
-     `xl` bleibt die Gleichverteilung: Dort würde die Inhaltsbreite den Titel
-     auf null drücken oder die Leiste sprengen. */
+  /* Die rechte Spalte hat keine Mindestbreite aus ihrem Inhalt (`minmax(0,1fr)`):
+     Sonst wüchse sie mit den beschrifteten Seitenaktionen über den Bildschirm.
+     Reicht der Platz nicht, blenden `useCollapsingPageActions` die
+     Beschriftungen aus; die Hauptaktion behält ihren Text am längsten. */
   return (
-    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,1fr)_auto_minmax(0,max-content)] sm:grid-cols-[minmax(4.5rem,max-content)_auto_minmax(max-content,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
+    <header className={`topbar-shell sticky top-0 z-30 grid h-14 shrink-0 grid-cols-[minmax(4.5rem,1fr)_auto_minmax(0,max-content)] sm:grid-cols-[minmax(4.5rem,max-content)_auto_minmax(0,1fr)] items-center gap-2 border-b border-gray-200 bg-white px-3 lg:gap-4 lg:px-6 ${searchOpen ? 'topbar-search-mode' : ''}`}>
       <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={onOpenMobileMenu}
           aria-label="Menü öffnen"
+          aria-expanded={mobileMenuOpen}
+          aria-controls="app-sidebar"
           className="topbar-icon-button -ml-1 shrink-0 lg:hidden"
         >
           <Menu className="h-5 w-5" />

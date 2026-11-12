@@ -127,3 +127,11 @@ test('die Suche findet Abschnitte über Titel, Stichworte und Umlaute', () => {
   assert.deepEqual(searchSettings('iban dunkelmodus'), []);
   assert.ok(searchSettings('a', 3).length <= 3);
 });
+
+test('Einstellungssuche findet Mahngebühr und Verzugszinsen im Mahnwesen', () => {
+  for (const query of ['Mahngebühr', 'Mahngebuehr', 'Verzugszinsen', 'Basiszinssatz']) {
+    const results = searchSettings(query);
+    assert.equal(results[0]?.area, 'invoices', query);
+    assert.equal(results[0]?.sectionId, 'mahnwesen', query);
+  }
+});

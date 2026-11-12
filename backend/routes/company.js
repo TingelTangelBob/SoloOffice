@@ -354,6 +354,14 @@ router.put('/', requireCompanyWriteContext, async (req, res) => {
       updates.push(`reminder_days_between = $${paramIndex++}`);
       values.push(req.body.reminderDaysBetween);
     }
+    for (const field of ['reminderFeeStage1', 'reminderFeeStage2', 'reminderFeeStage3']) {
+      if (req.body[field] !== undefined) {
+        const fee = Number(req.body[field]);
+        if (!Number.isFinite(fee) || fee < 0 || fee > 1000) {
+          return res.status(400).json({ error: 'Mahngebühren müssen zwischen 0 und 1.000 liegen.' });
+        }
+      }
+    }
     if (req.body.reminderFeeStage1 !== undefined) {
       updates.push(`reminder_fee_stage_1 = $${paramIndex++}`);
       values.push(req.body.reminderFeeStage1);
@@ -365,6 +373,21 @@ router.put('/', requireCompanyWriteContext, async (req, res) => {
     if (req.body.reminderFeeStage3 !== undefined) {
       updates.push(`reminder_fee_stage_3 = $${paramIndex++}`);
       values.push(req.body.reminderFeeStage3);
+    }
+    if (req.body.reminderInterestEnabled !== undefined) {
+      if (typeof req.body.reminderInterestEnabled !== 'boolean') {
+        return res.status(400).json({ error: 'Verzugszinsen müssen als An oder Aus übergeben werden.' });
+      }
+      updates.push(`reminder_interest_enabled = $${paramIndex++}`);
+      values.push(req.body.reminderInterestEnabled);
+    }
+    if (req.body.reminderBaseInterestRate !== undefined) {
+      const rate = Number(req.body.reminderBaseInterestRate);
+      if (!Number.isFinite(rate) || rate < -5 || rate > 20) {
+        return res.status(400).json({ error: 'Der Basiszinssatz muss zwischen -5 und 20 Prozent liegen.' });
+      }
+      updates.push(`reminder_base_interest_rate = $${paramIndex++}`);
+      values.push(rate);
     }
     if (req.body.reminderTextStage1 !== undefined) {
       updates.push(`reminder_text_stage_1 = $${paramIndex++}`);

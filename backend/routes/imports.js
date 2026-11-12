@@ -579,7 +579,7 @@ async function applyMoneyEntries(client, entries, customerIdFor, tracker, source
     if (data.kind === 'payment') {
       await insertEuerEntry(client, {
         entryType: 'income', entryDate: data.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
-        category: 'other_income', amount: data.amount, taxRate: data.taxRate, notes: importNote(data, entry, source),
+        category: 'operating_income', amount: data.amount, taxRate: data.taxRate, notes: importNote(data, entry, source),
         sourceType: 'invoice_payment', sourceId: data.invoiceId, externalReference: data.externalReference,
       }, tracker);
       invoiceIds.add(data.invoiceId);
@@ -650,7 +650,7 @@ async function applyInvoices(client, entries, customerIdFor, tracker, source) {
     if (data.payment) {
       await insertEuerEntry(client, {
         entryType: 'income', entryDate: data.payment.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
-        category: 'other_income', amount: data.payment.amount, taxRate: data.payment.taxRate,
+        category: 'operating_income', amount: data.payment.amount, taxRate: data.payment.taxRate,
         notes: importNote({}, entry, source), sourceType: 'invoice_payment', sourceId: invoiceId,
       }, tracker);
     }

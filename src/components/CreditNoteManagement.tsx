@@ -24,11 +24,12 @@ import { compareTableValues, sortByTableState, type SortState } from '../utils/t
 import { TableSkeleton } from './TableSkeleton';
 import { EmptyState } from './EmptyState';
 import { statusLabel } from '../utils/statusDisplay';
+import { toDateInputValue } from '../utils/invoicePeriod';
 
 type ItemDraft = { description: string; quantity: string; unitPrice: string; taxRate: string };
 type FormDraft = { customerId: string; invoiceId: string; reason: string; issueDate: string; items: ItemDraft[] };
 const emptyItem = (): ItemDraft => ({ description: '', quantity: '1', unitPrice: '0', taxRate: '19' });
-const emptyForm = (): FormDraft => ({ customerId: '', invoiceId: '', reason: '', issueDate: new Date().toISOString().slice(0, 10), items: [emptyItem()] });
+const emptyForm = (): FormDraft => ({ customerId: '', invoiceId: '', reason: '', issueDate: toDateInputValue(new Date()), items: [emptyItem()] });
 
 /**
  * Spaltenmaße der Gutschriftentabelle: Nummer 128, Datum 112, Betrag 112,

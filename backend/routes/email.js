@@ -143,7 +143,7 @@ router.post('/send-invoice', requireCompanyReadiness, async (req, res) => {
 // Send reminder email
 router.post('/send-reminder', requireCompanyReadiness, async (req, res) => {
   try {
-    const { customerEmails, reminderPDF, invoiceData, stage, fee, customText, additionalAttachments } = req.body;
+    const { customerEmails, reminderPDF, invoiceData, stage, fee, claim, customText, additionalAttachments } = req.body;
     
     if (!customerEmails || !Array.isArray(customerEmails) || customerEmails.length === 0 || !reminderPDF || !invoiceData || !stage) {
       return res.status(400).json({ 
@@ -165,7 +165,8 @@ router.post('/send-reminder', requireCompanyReadiness, async (req, res) => {
       fee || 0, 
       customText, 
       companySettings,
-      additionalAttachments || []
+      additionalAttachments || [],
+      claim
     );
     
     res.json(result);

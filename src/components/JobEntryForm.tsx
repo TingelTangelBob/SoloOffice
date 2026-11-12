@@ -999,6 +999,9 @@ export function JobEntryForm({ job, initialCustomerId, customers, defaultDate, o
                     <span className="truncate">{formData.jobNumber || 'Wird vergeben'}</span>
                     <LockKeyhole className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
                   </div>
+                  {job?.sourceQuoteNumber && (
+                    <p className="mt-1 text-xs text-gray-500">Herkunft: Angebot {job.sourceQuoteNumber}</p>
+                  )}
                 </div>
 
                 <div className="min-w-0">

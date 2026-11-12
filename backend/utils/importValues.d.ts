@@ -3,6 +3,7 @@ export type DecimalSeparator = ',' | '.';
 
 export function text(value: unknown): string;
 export function normaliseKey(value: unknown): string;
+export function normaliseDocumentNumber(value: unknown): string;
 export function pick(row: Record<string, unknown> | null | undefined, names: string | string[]): unknown;
 export function detectNumberFormat(values: unknown[]): { decimal: DecimalSeparator; evidence: number; label: string };
 export function parseNumber(value: unknown, options?: { decimal?: DecimalSeparator }): number | null;

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import logger from '../utils/logger';
-import { Plus, Edit, Trash2, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, FileText, Send, Check, Eye, FileCheck, X, CheckCircle, Upload, Briefcase } from 'lucide-react';
 import { useCustomers } from '../context/CustomerContext';
 import { useInvoices } from '../context/InvoiceContext';
+import { useJobs } from '../context/JobContext';
 import { useCompany } from '../context/CompanyContext';
 import { Quote } from '../types';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -35,7 +36,7 @@ import { statusBadgeClass, statusDotClass, statusLabel } from '../utils/statusDi
 import { canTransition, manualTargetsForSelection } from '../../backend/shared/stateMachines.js';
 
 interface QuoteManagementProps {
-  onNavigate?: (page: string, quoteId?: string) => void;
+  onNavigate?: (page: string, filter?: string, searchTerm?: string) => void;
 }
 
 /**
@@ -46,7 +47,7 @@ interface QuoteManagementProps {
  * Vorschau, herunterladen, löschen).
  */
 /** Feste Anzahl Aktions-Slots je Zeile; fehlende Aktionen werden als Platzhalter belegt. */
-const QUOTE_MAX_INLINE_ACTIONS = 6;
+const QUOTE_MAX_INLINE_ACTIONS = 7;
 
 // Unterhalb dieser Breite bleibt auch der Kundenname mit Menü und Statuspunkt lesbar.
 const QUOTE_TABLE_MIN_WIDTH = 48 + 96 + 160 + 176 + 112 + 112 + 32 + ACTION_MENU_COLUMN_WIDTH;
@@ -60,13 +61,13 @@ const QUOTE_TABLE_LAYOUT = listTableLayout({
 });
 
 /** Icon-Aktionen einer Zeile: Bearbeiten, Vorschau, Herunterladen, Löschen sowie Statusaktionen. */
-const countQuoteInlineActions = (quote: Quote) => {
+const countQuoteInlineActions = (quote: Quote, hasJobAction: boolean) => {
   const statusActions = quote.status === 'draft' || quote.status === 'sent'
     ? 2
     : quote.status === 'accepted' && !quote.convertedToInvoiceId
       ? 1
       : 0;
-  return 4 + statusActions;
+  return 4 + statusActions + (hasJobAction ? 1 : 0);
 };
 
 export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
@@ -75,6 +76,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
   const canWrite = can('data.write');
   const { customers } = useCustomers();
   const { refreshInvoices } = useInvoices();
+  const { refreshJobEntries } = useJobs();
   const { company } = useCompany();
   const terminology = getTerminology(company.terminologyProfile);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -300,6 +302,44 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
       logger.error('Error updating quote status:', error);
       notify({ variant: 'error', message: actionErrorMessage('Der Angebotsstatus konnte nicht geändert werden.', error) });
     }
+  };
+
+  const jobsEnabled = Boolean(company.jobTrackingEnabled);
+  const canConvertToJob = (quote: Quote) => jobsEnabled
+    && (quote.status === 'sent' || quote.status === 'accepted')
+    && !quote.convertedToInvoiceId && !quote.convertedToJobId;
+  const canOpenJob = (quote: Quote) => jobsEnabled && Boolean(quote.convertedToJobId);
+  const openJobOfQuote = (quote: Quote) => onNavigate?.('jobs', 'open', quote.convertedToJobNumber);
+
+  const handleConvertToJob = (quote: Quote) => {
+    if (!canWrite) {
+      notify({ variant: 'warning', message: 'Für diese Aktion fehlt die Schreibberechtigung.' });
+      return;
+    }
+    const work = terminology.work.singular;
+    setConfirmModal({
+      isOpen: true,
+      title: `Angebot in ${work} umwandeln`,
+      message: `Möchten Sie das Angebot ${quote.quoteNumber} in „${work}“ umwandeln? Kunde und Positionen werden übernommen. Das Angebot bleibt erhalten${quote.status === 'sent' ? ' und gilt danach als akzeptiert' : ''}.`,
+      onConfirm: async () => {
+        try {
+          const { job } = await apiService.convertQuoteToJob(quote.id);
+          await loadQuotes();
+          // Der Auftragskontext kennt den neuen Auftrag noch nicht; ohne Neuladen zeigt die Liste „Keine Aufträge gefunden“.
+          try {
+            await refreshJobEntries();
+          } catch (refreshError) {
+            logger.error('Error refreshing jobs after quote conversion:', refreshError);
+          }
+          notify({ variant: 'success', message: `${work} ${job.jobNumber} wurde aus Angebot ${quote.quoteNumber} erstellt.` });
+          onNavigate?.('jobs', 'open', job.jobNumber);
+        } catch (error) {
+          logger.error('Error converting quote to job:', error);
+          await loadQuotes();
+          notify({ variant: 'error', message: actionErrorMessage(`Das Angebot konnte nicht in „${work}“ umgewandelt werden.`, error) });
+        }
+      },
+    });
   };
 
   const handleConvertToInvoice = async (quote: Quote) => {
@@ -819,6 +859,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
             <option value="draft">Entwurf</option>
             <option value="sent">Versendet</option>
             <option value="accepted">Akzeptiert</option>
+            <option value="billed">Abgerechnet</option>
             <option value="rejected">Abgelehnt</option>
             <option value="expired">Abgelaufen</option>
           </FilterSelect>
@@ -951,6 +992,11 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         abgerechnet
                       </span>
                     )}
+                    {quote.convertedToJobNumber && (
+                      <span className="mt-0.5 block text-xs font-normal text-gray-500">
+                        {terminology.work.singular} {quote.convertedToJobNumber}
+                      </span>
+                    )}
                   </td>
                   <td className="max-w-0 px-3 py-2.5 text-sm text-gray-900">
                     <span className="block truncate">{quote.customerName}</span>
@@ -981,7 +1027,7 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                   >
                     {showInlineActions ? (
                     <div className="flex flex-nowrap items-center justify-end gap-1">
-                      {Array.from({ length: QUOTE_MAX_INLINE_ACTIONS - countQuoteInlineActions(quote) }, (_, slot) => (
+                      {Array.from({ length: QUOTE_MAX_INLINE_ACTIONS - countQuoteInlineActions(quote, canConvertToJob(quote) || canOpenJob(quote)) }, (_, slot) => (
                         <span key={`placeholder-${slot}`} aria-hidden="true" className="action-icon-button invisible" />
                       ))}
                       {quote.status === 'draft' && (
@@ -1024,6 +1070,28 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                             <X className="h-4 w-4" />
                           </button>
                         </>
+                      )}
+                      {canConvertToJob(quote) && (
+                        <button
+                          type="button"
+                          className="action-icon-button action-icon-green"
+                          title={`In ${terminology.work.singular} umwandeln`}
+                          aria-label={`In ${terminology.work.singular} umwandeln`}
+                          onClick={() => handleConvertToJob(quote)}
+                        >
+                          <Briefcase className="h-4 w-4" />
+                        </button>
+                      )}
+                      {canOpenJob(quote) && (
+                        <button
+                          type="button"
+                          className="action-icon-button action-icon-green"
+                          title={`${terminology.work.singular} öffnen`}
+                          aria-label={`${terminology.work.singular} öffnen`}
+                          onClick={() => openJobOfQuote(quote)}
+                        >
+                          <Briefcase className="h-4 w-4" />
+                        </button>
                       )}
                       {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
                         <button
@@ -1083,6 +1151,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                           <ActionMenuItem icon={<CheckCircle className="h-4 w-4" />} tone="green" onClick={() => handleStatusChange(quote.id, 'accepted')}>Als akzeptiert markieren</ActionMenuItem>
                           <ActionMenuItem icon={<X className="h-4 w-4" />} tone="orange" onClick={() => handleStatusChange(quote.id, 'rejected')}>Als abgelehnt markieren</ActionMenuItem>
                         </>}
+                        {canConvertToJob(quote) && <ActionMenuItem icon={<Briefcase className="h-4 w-4" />} tone="green" onClick={() => handleConvertToJob(quote)}>In {terminology.work.singular} umwandeln</ActionMenuItem>}
+                        {canOpenJob(quote) && <ActionMenuItem icon={<Briefcase className="h-4 w-4" />} tone="green" onClick={() => openJobOfQuote(quote)}>{terminology.work.singular} öffnen</ActionMenuItem>}
                         {quote.status === 'accepted' && !quote.convertedToInvoiceId && <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} tone="blue" onClick={() => handleConvertToInvoice(quote)}>In Rechnung umwandeln</ActionMenuItem>}
                         <ActionMenuItem icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleOpenEditor(quote)}>Bearbeiten</ActionMenuItem>
                         <ActionMenuItem icon={<Eye className="h-4 w-4" />} tone="green" onClick={() => handlePreview(quote)}>Vorschau anzeigen</ActionMenuItem>
@@ -1144,6 +1214,8 @@ export function QuoteManagement({ onNavigate }: QuoteManagementProps = {}) {
                         <ActionMenuItem icon={<X className="h-4 w-4" />} tone="orange" onClick={() => handleStatusChange(quote.id, 'rejected')}>Als abgelehnt markieren</ActionMenuItem>
                       </>
                     )}
+                    {canConvertToJob(quote) && <ActionMenuItem icon={<Briefcase className="h-4 w-4" />} tone="green" onClick={() => handleConvertToJob(quote)}>In {terminology.work.singular} umwandeln</ActionMenuItem>}
+                    {canOpenJob(quote) && <ActionMenuItem icon={<Briefcase className="h-4 w-4" />} tone="green" onClick={() => openJobOfQuote(quote)}>{terminology.work.singular} öffnen</ActionMenuItem>}
                     {quote.status === 'accepted' && !quote.convertedToInvoiceId && (
                       <ActionMenuItem icon={<FileCheck className="h-4 w-4" />} tone="blue" onClick={() => handleConvertToInvoice(quote)}>In Rechnung umwandeln</ActionMenuItem>
                     )}

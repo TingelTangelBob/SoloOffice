@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ExternalLink, RotateCcw, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { AlertTriangle, ExternalLink, RotateCcw, X } from 'lucide-react';
 import { isDemoDataStale, isDemoMode, resetDemoData } from '../services/demoApi';
 
 const REPO_URL = 'https://github.com/TingelTangelBob/SoloOffice';
@@ -40,6 +40,44 @@ const versionLabel = [appVersion && appVersion !== 'dev' ? `v${appVersion}` : ''
 export function DemoNotice() {
   const [stale, setStale] = useState(() => isDemoDataStale());
   const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const titleId = useId();
+  const messageId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  // Auslöser merken, damit der Fokus nach dem Schließen dorthin zurückkehrt.
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Fokus beim Öffnen auf „Abbrechen“ (nicht auf den zerstörenden Knopf),
+  // Tab bleibt im Dialog, Escape schließt, beim Schließen Fokus zurück zum Auslöser.
+  useEffect(() => {
+    if (!confirmReset) return undefined;
+    cancelRef.current?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setConfirmReset(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled])'));
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && dialog.contains(active);
+      if (event.shiftKey && (!inside || active === first)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (!inside || active === last)) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      const trigger = triggerRef.current;
+      if (trigger && trigger.isConnected) trigger.focus();
+    };
+  }, [confirmReset]);
 
   if (!isDemoMode) return null;
 
@@ -102,9 +140,12 @@ export function DemoNotice() {
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <button
             type="button"
-            onClick={handleReset}
+            onClick={event => {
+              triggerRef.current = event.currentTarget;
+              setConfirmReset(true);
+            }}
             disabled={resetting}
-            className="inline-flex min-h-0 items-center gap-1.5 rounded px-2 py-0.5 demo-bar-action disabled:opacity-60"
+            className="inline-flex min-h-0 items-center gap-1.5 rounded px-2 py-0.5 demo-bar-action disabled:opacity-60 relative after:absolute after:-inset-x-2 after:-top-5 after:-bottom-1 after:content-['']"
             title="Testdaten auf den Ausgangszustand zurücksetzen"
             aria-label="Testdaten zurücksetzen"
           >
@@ -140,7 +181,7 @@ export function DemoNotice() {
             href={sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 demo-bar-action"
+            className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 demo-bar-action relative after:absolute after:inset-x-0 after:-top-5 after:-bottom-1 after:content-['']"
             title="Quelltext genau dieser Fassung ansehen"
           >
             <span>Quelltext</span>
@@ -151,6 +192,67 @@ export function DemoNotice() {
           </a>
         </div>
       </div>
+      {confirmReset && (
+        <div
+          className="dialog-overlay fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setConfirmReset(false);
+          }}
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={messageId}
+            className="confirmation-dialog w-full max-w-md rounded-lg shadow-lg"
+          >
+            <div className="confirmation-dialog-header flex items-center justify-between gap-3 border-b p-6">
+              <div className="flex min-w-0 items-center space-x-3">
+                <div className="confirmation-dialog-icon confirmation-dialog-icon--destructive rounded-full p-2">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <h3 id={titleId} className="confirmation-dialog-title min-w-0 text-lg font-semibold">
+                  Demo zurücksetzen?
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="confirmation-dialog-close shrink-0"
+                aria-label="Dialog schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="confirmation-dialog-content p-6">
+              <p id={messageId} className="confirmation-dialog-message whitespace-pre-line leading-relaxed">
+                Alle in dieser Demo eingegebenen Daten gehen verloren.
+              </p>
+            </div>
+
+            <div className="confirmation-dialog-actions form-action-bar border-t p-6">
+              <button
+                ref={cancelRef}
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="confirmation-dialog-cancel rounded-lg border px-4 py-2 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={resetting}
+                className="confirmation-dialog-confirm confirmation-dialog-confirm--destructive rounded-lg px-4 py-2 transition-colors"
+              >
+                Zurücksetzen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -4,6 +4,46 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+## v0.9.13b – Angebot in Auftrag, Mahngebühren und Verzugszinsen, Hilfe (13. November 2026)
+
+- Neu: Versendete und akzeptierte Angebote lassen sich in einen Auftrag
+  umwandeln. Der Auftrag übernimmt Kunde und Positionen und zeigt die
+  Angebotsnummer als Herkunft. Wird er abgerechnet, gilt das Angebot als
+  abgerechnet. Der direkte Weg vom Angebot zur Rechnung bleibt.
+- Neu: Hilfe & Support mit Suche, zehn Themenbereichen und 73 Artikeln,
+  erreichbar über das Kontomenü. Die Support-Anfragen liegen dahinter.
+- Mahnwesen: Neue Workspaces starten mit Mahngebühren von 0,00 €, 2,50 € und
+  5,00 €. Verzugszinsen lassen sich einschalten (Basiszinssatz pflegbar,
+  Aufschlag 5 Prozentpunkte bei Personen, 9 bei Organisationen). Mahndialog,
+  Liste, PDF und E-Mail zeigen dieselbe Aufstellung aus offenem Betrag,
+  Gebühren, Zinsen und Gesamtforderung. Die Stufen heißen überall 1., 2. und
+  3. Mahnung. Bestehende Workspaces behalten ihre Werte.
+- Die Mahn-Einstellungen sind über Einstellungen → Rechnungen und über die
+  Einstellungssuche erreichbar.
+- EÜR: Zahlungen auf Rechnungen laufen unter „Betriebseinnahmen (Rechnungen)“;
+  bestehende automatisch erzeugte Buchungen werden umgestellt. Regelbesteuerer
+  sehen Einnahmen und Ausgaben netto mit Umsatzsteuer und Vorsteuer als eigene
+  Zeilen, Kleinunternehmer Ausgaben brutto. Der Gewinn ändert sich nicht.
+- Leistungsdatum: Bei einer Rechnung aus Aufträgen wird es aus dem
+  Ausführungstag vorbelegt (bei mehreren Tagen der späteste) und ist im Dialog
+  änderbar.
+- Behoben: Rechnungen aus Aufträgen und im Formular oder Kalender gesetzte
+  Auftragstage wurden östlich von UTC mit dem Vortag gespeichert. Bereits
+  gespeicherte Daten werden nicht korrigiert.
+- Behoben in der Demo: Wiederkehrende Rechnungen hatten den Status
+  „Unbekannt“; die Fälligkeit bei Angebot zu Rechnung lag einen Tag zu früh.
+- Angebotseditor: Die Ersparnis in Prozent rechnet mit dem richtigen Nenner
+  und zeigt ein Komma.
+- Datenübernahme und Ersteinrichtung: Zähler und Filter stimmen überein,
+  doppelte Rechnungsnummern werden je Zeile gemeldet, das Protokoll steht in
+  der Vergangenheit, Schritt 5 erkennt einen abgeschlossenen Umzug, eine alte
+  Fehlermeldung verschwindet beim nächsten Versuch.
+- Bedienung: Dialoge führen den Fokus hinein und zurück, die mobile Navigation
+  ist per Tastatur bedienbar, die Kopfzeile läuft zwischen 768 und 1440 px
+  nicht mehr über.
+- Datenbank: Migrationen 062 (Herkunft des Auftrags), 063 (Verzugszinsen) und
+  064 (EÜR-Kategorie).
+
 ## v0.9.12b – Berechtigungen, Schutz vor Datenverlust und klare Fehlermeldungen (10. November 2026)
 
 - Sicherheit: Die Rechteprüfung für Firmeneinstellungen, Sicherungen und die

@@ -45,6 +45,13 @@ const handleDialogEscape = (event: KeyboardEvent) => {
   closeTopDialog();
 };
 
+const FOCUSABLE_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex]';
+
+function getFocusableItems(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter(item => !item.hasAttribute('disabled') && item.getAttribute('tabindex') !== '-1' && item.getClientRects().length > 0);
+}
+
 export function DialogShell({
   title,
   description,
@@ -63,6 +70,14 @@ export function DialogShell({
   isDirty = false,
 }: DialogShellProps) {
   const dialogId = useRef(Symbol('dialog'));
+  const dialogRef = useRef<HTMLFormElement & HTMLElement>(null);
+  // Auslöser vor dem ersten Rendern merken, denn ein `autoFocus`-Element im
+  // Inhalt verschiebt den Fokus schon beim Einhängen.
+  const [triggerElement] = useState<HTMLElement | null>(() => (
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null
+  ));
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const feedback = useContext(FeedbackContext);
@@ -116,6 +131,41 @@ export function DialogShell({
       }
     };
   }, []);
+
+  // Fokus: beim Öffnen in den Dialog (ein bereits fokussiertes Feld im Inhalt
+  // bleibt unangetastet), Tab bleibt im obersten Dialog, beim Schließen
+  // zurück zum Auslöser.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    if (!dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true });
+    const trapTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || event.defaultPrevented) return;
+      if (openDialogs.at(-1)?.id !== dialogId.current) return;
+      const target = event.target;
+      if (!(target instanceof Node) || !dialog.contains(target)) return;
+      const items = getFocusableItems(dialog);
+      if (!items.length) { event.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (target === first || target === dialog)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && target === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', trapTab);
+    return () => {
+      document.removeEventListener('keydown', trapTab);
+      const active = document.activeElement;
+      if (triggerElement && (!active || active === document.body || dialog.contains(active))) {
+        // Seiten rendern ihre Knöpfe beim Öffnen teils neu (etwa die Seitenaktionen
+        // der Kopfleiste); dann dient die Beschriftung als Ersatz-Auslöser.
+        const label = triggerElement.getAttribute('aria-label');
+        const target = triggerElement.isConnected
+          ? triggerElement
+          : (label ? document.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null);
+        target?.focus({ preventScroll: true });
+      }
+    };
+  }, [triggerElement]);
 
   const dialogHeightClass = fitContent
     ? 'h-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),42rem)]'
@@ -211,19 +261,23 @@ export function DialogShell({
         <form
           onSubmit={onSubmit}
           onChange={onChange}
+          ref={dialogRef}
+          tabIndex={-1}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
+          className={`focus:outline-none form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </form>
       ) : (
         <section
+          ref={dialogRef}
+          tabIndex={-1}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
+          className={`focus:outline-none form-consistent-fields grid ${dialogHeightClass} w-full ${sizeClasses[size]} ${dialogGridClass} overflow-hidden rounded-lg bg-white shadow-2xl`}
         >
           {content}
         </section>

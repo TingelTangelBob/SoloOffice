@@ -3,6 +3,8 @@ import { query } from '../database.js';
 export async function findAllQuotes() {
   const result = await query(`
       SELECT q.*,
+             (SELECT j.id FROM job_entries j WHERE j.source_quote_id = q.id LIMIT 1) AS converted_to_job_id,
+             (SELECT j.job_number FROM job_entries j WHERE j.source_quote_id = q.id LIMIT 1) AS converted_to_job_number,
              COALESCE(items_subquery.items, '{}'::jsonb[]) as items,
              COALESCE(attachments_subquery.attachments, '[]'::jsonb) as attachments
       FROM quotes q
@@ -61,6 +63,8 @@ export async function findAllQuotes() {
     globalDiscountValue: row.global_discount_value ? parseFloat(row.global_discount_value) : null,
     globalDiscountAmount: row.global_discount_amount ? parseFloat(row.global_discount_amount) : null,
     convertedToInvoiceId: row.converted_to_invoice_id,
+    convertedToJobId: row.converted_to_job_id || undefined,
+    convertedToJobNumber: row.converted_to_job_number || undefined,
     createdAt: row.created_at
   }));
 }
@@ -68,6 +72,8 @@ export async function findAllQuotes() {
 export async function findQuoteById(id) {
   const result = await query(`
       SELECT q.*,
+             (SELECT j.id FROM job_entries j WHERE j.source_quote_id = q.id LIMIT 1) AS converted_to_job_id,
+             (SELECT j.job_number FROM job_entries j WHERE j.source_quote_id = q.id LIMIT 1) AS converted_to_job_number,
              COALESCE(items_subquery.items, '{}'::jsonb[]) as items,
              COALESCE(attachments_subquery.attachments, '[]'::jsonb) as attachments
       FROM quotes q
@@ -133,6 +139,8 @@ export async function findQuoteById(id) {
     globalDiscountValue: row.global_discount_value ? parseFloat(row.global_discount_value) : null,
     globalDiscountAmount: row.global_discount_amount ? parseFloat(row.global_discount_amount) : null,
     convertedToInvoiceId: row.converted_to_invoice_id,
+    convertedToJobId: row.converted_to_job_id || undefined,
+    convertedToJobNumber: row.converted_to_job_number || undefined,
     createdAt: row.created_at
   };
 }

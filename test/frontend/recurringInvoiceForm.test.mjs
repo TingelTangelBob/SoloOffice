@@ -5,6 +5,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import * as formatters from '../../.test-dist/utils/formatters.js';
+import * as invoicePeriod from '../../.test-dist/utils/invoicePeriod.js';
 
 const source = readFileSync(new URL('../../src/components/RecurringInvoiceManagement.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
@@ -35,6 +36,7 @@ function fixture(entry, company = {}) {
     '../context/AuthContext': { useAuth: () => ({ can: () => true }) },
     '../utils/terminology': { getTerminology: () => ({ entity: { singular: 'Kunde' } }) },
     '../utils/formatters': formatters,
+    '../utils/invoicePeriod': invoicePeriod,
     '../utils/statusDisplay': { statusLabel: (_machine, status) => status },
     '../services/api': { apiService: {
       getRecurringInvoices: async () => [entry],

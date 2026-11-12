@@ -28,6 +28,8 @@
     "src/utils/jobUtils.ts",
     "src/utils/paymentInformation.ts",
     "src/utils/serviceDate.ts",
+    "src/utils/euerSummary.ts",
+    "src/utils/euerIncomeCategory.ts",
     "src/utils/templateDefaults.ts",
     "src/utils/dashboardPreferences.ts",
     "src/utils/dashboardMetrics.ts",
@@ -50,6 +52,15 @@
     "src/utils/documentTemplateWrites.ts",
     "src/utils/reportingRequests.ts",
     "src/utils/receiptCurrency.ts",
-    "src/utils/sessionWriteBoundary.ts"
+    "src/utils/sessionWriteBoundary.ts",
+    "src/utils/terminology.ts",
+    "src/help/types.ts",
+    "src/help/categories.ts",
+    "src/help/inline.ts",
+    "src/help/pages.ts",
+    "src/help/display.ts",
+    "src/help/validate.ts",
+    "src/help/index.ts",
+    "src/help/articles/*.ts"
   ]
 }

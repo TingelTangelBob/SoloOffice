@@ -140,7 +140,7 @@ Alle Regeln stehen in `backend/utils/importPlanner.js` und
 
 | Ziel | Pflicht | Besonderheiten |
 | --- | --- | --- |
-| Kunden | Name (oder Vor-/Nachname) | Aktualisieren ändert nur zugeordnete, befüllte Felder und nennt sie; Straße + Hausnummer werden zusammengeführt |
+| Kunden | Name (oder Vor-/Nachname) | Aktualisieren ändert nur zugeordnete, befüllte Felder und nennt sie; Straße + Hausnummer werden zusammengeführt. Passt eine Kundennummer oder E-Mail zu einem Bestandskunden mit deutlich anderem Namen, ist die Zeile ein Duplikat mit Hinweis („Kundennummer 1001 gehört bereits zu …“) und der Bestand wird auch im Modus „aktualisieren“ nicht verändert. Derselbe Kunde in mehreren Zeilen (Komplettdatei) wird zur ersten Zeile zusammengefasst; nur widersprüchliche Angaben sind ein Duplikat/Konflikt. „E-Mail fehlt“ und „Adresse ist nicht vollständig“ erscheinen nur, wenn die Datei entsprechende Spalten enthält |
 | Positionen, Stundensätze, Materialien | Name, Preis | aktualisierbar; nur Administratoren |
 | Aufträge/Kurse | Datum, Kundenbezug | Titel fällt auf den Terminologiebegriff zurück; Serien über „Wiederholung“ + „Wiederholen bis“ oder „Anzahl Termine“ |
 | Angebote | Kundenbezug, Position oder Gesamtbetrag | mehrere Zeilen je Angebotsnummer werden gruppiert |
@@ -196,6 +196,12 @@ automatische Rechnungszuordnung, Stichtag).
   Sammelposition; aus Brutto wird Netto so bestimmt, dass die centgenaue
   Steuerberechnung wieder den Bruttobetrag ergibt. Weicht der angegebene
   Rechnungsbetrag ab, ist die Zeile ein Fehler.
+- Belegnummern (Rechnung, Angebot) werden nur ohne Rücksicht auf Groß-/
+  Kleinschreibung und Leerraum verglichen; Sonderzeichen zählen mit. „R-1“ und
+  „R/1“ sind verschiedene Rechnungen, „r-1“ und „R-1“ dieselbe. Steht dieselbe
+  Nummer in Zeilen mit unterschiedlichen Kunden oder Daten, ist das ein Fehler
+  („Rechnung R-1 steht in den Zeilen 2 und 5 mit unterschiedlichen Kunden“),
+  nichts wird still zusammengeführt.
 - Zahlungsangaben: „Bezahlt am“, „Bezahlter Betrag“ und/oder Zahlungsstatus.
   Fehlt bei „bezahlt“ das Datum, wird das Rechnungsdatum verwendet und gewarnt,
   weil für die EÜR das tatsächliche Zahlungsdatum zählt. Teilzahlungen lassen

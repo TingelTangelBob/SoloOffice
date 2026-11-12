@@ -67,6 +67,9 @@ import * as migration058 from './058_invoice_item_course_names.js';
 import * as migration059 from './059_work_location_days.js';
 import * as migration060 from './060_recurring_expense_archive.js';
 import * as migration061 from './061_euer_forecasts.js';
+import * as migration062 from './062_job_source_quote.js';
+import * as migration063 from './063_reminder_interest.js';
+import * as migration064 from './064_euer_operating_income.js';
 
 // List of all migrations in execution order
 export const migrations = [
@@ -131,6 +134,9 @@ export const migrations = [
   migration059,
   migration060,
   migration061,
+  migration062,
+  migration063,
+  migration064,
 ];
 
 /**

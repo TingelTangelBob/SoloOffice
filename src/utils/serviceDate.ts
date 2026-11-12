@@ -1,6 +1,6 @@
 import type { DateFormat } from '../types';
 import { formatDate } from './formatters.js';
-import { toDateInputValue, type InvoiceDateValue } from './invoicePeriod.js';
+import { toDateInputValue, toJobDayValue, type InvoiceDateValue } from './invoicePeriod.js';
 
 /**
  * Rechnung oder Rechnungs-Payload: die Oberfläche hält `Date`, die API liefert
@@ -37,4 +37,26 @@ export function buildServiceDatePdfField(
     label: 'Leistungsdatum:',
     value: formatDate(resolveServiceDate(invoice), locale, dateFormat),
   };
+}
+
+/**
+ * Leistungsdatum einer Rechnung aus Aufträgen (§ 14 Abs. 4 Nr. 6 UStG).
+ *
+ * Maßgeblich ist das Ausführungsdatum der Aufträge (`job.date`), nicht das
+ * Anlage- oder Rechnungsdatum. Das Rechnungsmodell kennt nur ein einzelnes
+ * Leistungsdatum, keinen Leistungszeitraum. Bei Aufträgen an mehreren Tagen
+ * gilt deshalb der späteste Leistungstag (der Monat der Leistung genügt
+ * umsatzsteuerlich). Ohne verwertbares Ausführungsdatum bleibt es beim
+ * Rechnungsdatum. Alles als `YYYY-MM-DD`.
+ */
+export function deriveServiceDateFromJobs(
+  jobDates: ReadonlyArray<InvoiceDateValue>,
+  issueDate: InvoiceDateValue,
+): string {
+  let latest = '';
+  for (const value of jobDates) {
+    const day = toJobDayValue(value);
+    if (day && day > latest) latest = day;
+  }
+  return latest || toDateInputValue(issueDate);
 }

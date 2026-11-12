@@ -3,7 +3,9 @@ import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, Invoice
 import logger from '../utils/logger';
 import { demoRequest, getDemoActiveWorkspaceId, isDemoMode } from './demoApi';
 import type { DashboardPreferences } from '../utils/dashboardPreferences';
+import type { ReminderClaim } from '../../backend/shared/reminderClaim.js';
 import { sessionWriteBoundary } from '../utils/sessionWriteBoundary';
+import { toJobDayValue } from '../utils/invoicePeriod';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -90,6 +92,13 @@ interface BackupInfo {
 // ============================================================================
 // API Service Class
 // ============================================================================
+
+/** Ein Auftragstag ist ein Kalendertag: als YYYY-MM-DD senden, nie als UTC-Zeitstempel. */
+function withJobDay<T extends { date?: unknown }>(job: T): T {
+  if (job.date == null) return job;
+  const day = toJobDayValue(job.date as Date | string);
+  return day ? { ...job, date: day } : job;
+}
 
 class ApiService {
   private readonly baseUrl: string;
@@ -458,7 +467,7 @@ class ApiService {
     });
   }
 
-  async createInvoiceFromJobs(invoice: Omit<Invoice, 'id' | 'createdAt'>, jobIds: string[]): Promise<Invoice> {
+  async createInvoiceFromJobs(invoice: Omit<Invoice, 'id' | 'createdAt' | 'issueDate' | 'dueDate' | 'serviceDate'> & { issueDate: Date | string; dueDate: Date | string; serviceDate?: Date | string | null }, jobIds: string[]): Promise<Invoice> {
     return this.request<Invoice>('/invoices/from-jobs', {
       method: 'POST',
       body: documentRequestBody({ ...invoice, sourceJobIds: jobIds }),
@@ -603,6 +612,10 @@ class ApiService {
 
   async deleteQuote(id: string): Promise<void> {
     await this.request(`/quotes/${id}`, { method: 'DELETE' });
+  }
+
+  async convertQuoteToJob(id: string): Promise<{ job: JobEntry; quote: Quote }> {
+    return this.request<{ job: JobEntry; quote: Quote }>(`/quotes/${id}/convert-to-job`, { method: 'POST' });
   }
 
   async convertQuoteToInvoice(id: string): Promise<Invoice> {
@@ -814,14 +827,14 @@ class ApiService {
   async createJobEntry(job: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<JobEntry> {
     return this.request<JobEntry>('/jobs', {
       method: 'POST',
-      body: JSON.stringify(job),
+      body: JSON.stringify(withJobDay(job)),
     });
   }
 
   async updateJobEntry(id: string, job: Partial<JobEntry>): Promise<JobEntry> {
     return this.request<JobEntry>(`/jobs/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(job),
+      body: JSON.stringify(withJobDay(job)),
     });
   }
 
@@ -948,7 +961,8 @@ class ApiService {
     invoiceData: Invoice,
     fee: number,
     customText?: string,
-    additionalAttachments?: EmailAttachment[]
+    additionalAttachments?: EmailAttachment[],
+    claim?: ReminderClaim
   ): Promise<EmailDeliveryResult> {
     return this.request('/email/send-reminder', {
       method: 'POST',
@@ -959,6 +973,7 @@ class ApiService {
         reminderPDF,
         invoiceData,
         fee,
+        claim,
         customText,
         additionalAttachments,
       }),

@@ -63,6 +63,8 @@ import { statusBadgeClass, statusDotClass, statusLabel } from '../utils/statusDi
 interface JobManagementProps {
   onNavigate?: (page: string, filter?: string, searchTerm?: string, invoiceId?: string, jobSeriesId?: string) => void;
   initialFilter?: string;
+  /** Mit `initialFilter="open"`: Suchbegriff (Auftragsnummer), der die Liste auf den Auftrag eingrenzt. */
+  initialSearchTerm?: string;
   initialCustomerId?: string;
   initialRecurringGroupId?: string;
 }
@@ -97,7 +99,7 @@ const JOB_INLINE_ACTIONS_MIN_WIDTH = 820 + actionColumnWidth(7) - ACTION_MENU_CO
 const JOBS_PER_PAGE = 50;
 const BULK_STATUS_CONFIRMATION_THRESHOLD = 10;
 
-export function JobManagement({ onNavigate, initialFilter, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
+export function JobManagement({ onNavigate, initialFilter, initialSearchTerm, initialCustomerId, initialRecurringGroupId }: JobManagementProps = {}) {
   const { notify } = useFeedback();
   const { can } = useAuth();
   const canWrite = can('data.write');
@@ -196,6 +198,14 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
 
     return () => window.cancelAnimationFrame(frame);
   }, [expandedRecurringGroups, hasInitialRecurringGroup, initialRecurringGroupId]);
+
+  useEffect(() => {
+    if (initialFilter !== 'open' || !initialSearchTerm) return;
+    setStatusFilter('all');
+    setCustomerFilter('all');
+    setDateFilter('all');
+    setSearchTerm(initialSearchTerm);
+  }, [initialFilter, initialSearchTerm, setSearchTerm]);
 
   useEffect(() => {
     if (initialFilter !== 'new') return;
@@ -1241,6 +1251,7 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                           <div className="flex items-center whitespace-nowrap">
                             <span className="text-gray-500 mr-2">{terminology.work.numberShortLabel}:</span>
                             <span className="text-gray-900 font-medium">{job.jobNumber}</span>
+                            {job.sourceQuoteNumber && <span className="ml-2 text-xs text-gray-500">aus Angebot {job.sourceQuoteNumber}</span>}
                           </div>
                           
                           <div className="flex min-w-0 items-center">
@@ -1351,6 +1362,9 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                         <div className="text-sm font-medium text-gray-900 truncate">
                           {job.jobNumber}
                         </div>
+                        {job.sourceQuoteNumber && (
+                          <div className="truncate text-xs text-gray-500">aus Angebot {job.sourceQuoteNumber}</div>
+                        )}
                       </td>
                       <td className="min-w-0 px-3 py-2.5 xl:px-2 xl:py-2 2xl:px-3 2xl:py-2.5">
                         <div className="min-w-0 max-w-full">

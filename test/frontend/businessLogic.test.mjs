@@ -206,3 +206,13 @@ test('Zeitzonen liefern verständliche Labels und einen stabilen Standard', () =
   assert.equal(getTimeZoneLabel('Antarctica/Troll'), 'Antarctica/Troll');
   assert.equal(getTimeZoneLabel(), DEFAULT_TIME_ZONE);
 });
+
+test('Kalendertage bleiben über JSON als dasselbe YYYY-MM-DD erhalten, auch bei lokaler Mitternacht', () => {
+  const localMidnight = new Date(2026, 10, 12);
+  const day = formatDateInputValue(localMidnight);
+  assert.equal(day, '2026-11-12');
+  assert.equal(JSON.parse(JSON.stringify({ issueDate: day })).issueDate, '2026-11-12');
+  // Ein als ISO-Zeitstempel gesendetes lokales Datum behält den Kalendertag der Zeichenkette.
+  assert.equal(toDateInputValue(JSON.parse(JSON.stringify({ d: localMidnight })).d), JSON.stringify(localMidnight).slice(1, 11));
+  assert.equal(formatDateInputValue(new Date(2026, 11, 31, 23, 59)), '2026-12-31');
+});

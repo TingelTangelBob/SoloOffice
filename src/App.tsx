@@ -49,6 +49,7 @@ const RecurringExpensesManagement = lazy(pageLoaders.RecurringExpensesManagement
 const FixedAssetManagement = lazy(pageLoaders.FixedAssetManagement);
 const DocumentsManagement = lazy(pageLoaders.DocumentsManagement);
 const SupportManagement = lazy(pageLoaders.SupportManagement);
+const HelpCenter = lazy(pageLoaders.HelpCenter);
 
 interface AppContentProps {
   currentPageState: PageState;
@@ -144,7 +145,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'customer':
         return <CustomerDetail customerId={currentPageState.filter} initialTab={currentPageState.searchTerm} onNavigate={onPageChange} />;
       case 'jobs':
-        return <JobManagement onNavigate={onPageChange} initialFilter={currentPageState.filter} initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined} initialRecurringGroupId={currentPageState.jobSeriesId} />;
+        return <JobManagement onNavigate={onPageChange} initialFilter={currentPageState.filter} initialSearchTerm={currentPageState.filter === 'open' ? currentPageState.searchTerm : undefined} initialCustomerId={currentPageState.filter === 'new' ? currentPageState.searchTerm : undefined} initialRecurringGroupId={currentPageState.jobSeriesId} />;
       case 'calendar':
         return <Calendar onNavigate={onPageChange} />;
       case 'invoices':
@@ -193,7 +194,7 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
       case 'reporting':
         return <ReportingManagement onNavigate={onPageChange} />;
       case 'reminders':
-        return <ReminderManagement />;
+        return <ReminderManagement initialTab={currentPageState.filter === 'settings' ? 'settings' : undefined} />;
       case 'settings':
         return <Settings initialTab={normalizeSettingsArea(currentPageState.filter)} section={currentPageState.searchTerm} onNavigate={onPageChange} />;
       // Alte Verweise auf die eigenständigen Seiten öffnen die Einstellungen am passenden Bereich.
@@ -201,6 +202,8 @@ function AppContent({ currentPageState, onPageChange }: AppContentProps) {
         return <Settings initialTab="account" onNavigate={onPageChange} />;
       case 'workspace':
         return <Settings initialTab="workspace" onNavigate={onPageChange} />;
+      case 'help':
+        return <HelpCenter initialRoute={currentPageState.filter} onNavigate={onPageChange} />;
       case 'support':
         return <SupportManagement initialTicketId={currentPageState.filter} onNavigate={onPageChange} />;
       case 'templates':

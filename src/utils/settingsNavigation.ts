@@ -47,7 +47,8 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
     label: 'Rechnungen & Zahlung',
     sections: [
       { id: 'bankverbindung', title: 'Bankverbindung', keywords: ['iban', 'bic', 'bank', 'bankname', 'kontoinhaber', 'konto', 'zahlungsinformationen'] },
-      { id: 'zahlungsbedingungen', title: 'Zahlungsbedingungen', keywords: ['zahlungsziel', 'fällig', 'sofortzahlung', 'klausel', 'zahlungsarten', 'paypal', 'überweisung', 'verzugszinsen'] },
+      { id: 'zahlungsbedingungen', title: 'Zahlungsbedingungen', keywords: ['zahlungsziel', 'fällig', 'sofortzahlung', 'klausel', 'zahlungsarten', 'paypal', 'überweisung'] },
+      { id: 'mahnwesen', title: 'Mahnwesen', keywords: ['mahnung', 'mahnungen', 'mahngebühr', 'mahngebühren', 'gebühr', 'verzugszinsen', 'verzugszins', 'zinsen', 'basiszinssatz', 'zahlungserinnerung', 'verzug', 'inkasso', '§ 288'] },
       { id: 'nummernkreise', title: 'Nummernkreise', keywords: ['rechnungsnummer', 'gutschrift', 'muster', 'startnummer', 'jahr', 'fortlaufend', 'zähler', 'nummer'] },
       { id: 'erechnung', title: 'eRechnung & Vorlagen', keywords: ['erechnung', 'e-rechnung', 'zugferd', 'xrechnung', 'leitweg', 'vorlagen', 'pdf', 'layout', 'dokumentvorlagen'] },
     ],

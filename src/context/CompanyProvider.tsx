@@ -151,8 +151,10 @@ export const defaultCompany: Company = {
   reminderDaysAfterDue: 7,
   reminderDaysBetween: 7,
   reminderFeeStage1: 0,
-  reminderFeeStage2: 0,
-  reminderFeeStage3: 0,
+  reminderFeeStage2: 2.5,
+  reminderFeeStage3: 5,
+  reminderInterestEnabled: false,
+  reminderBaseInterestRate: 1.27,
   documentTemplates: defaultDocumentTemplates,
   documentTextTemplates: defaultDocumentTextTemplates,
 };

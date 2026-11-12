@@ -92,6 +92,38 @@ export function ibanFormatError(value) {
   return remainder === 1 ? null : 'Die Prüfziffer der IBAN stimmt nicht. Bitte die IBAN prüfen.';
 }
 
+/** Gliederungszeichen und Kleinschreibung entfernen, damit „de89 3704…“ wie „DE893704…“ geprüft wird. */
+export function normalizeIdentifier(value) {
+  return typeof value === 'string' ? value.replace(/[\s-]+/g, '').toUpperCase() : value;
+}
+
+export function bicFormatError(value) {
+  if (value == null || value === '') return null;
+  // Tolerant: Kleinschreibung und Leerzeichen in Bestandswerten blockieren das Speichern nicht.
+  if (typeof value !== 'string' || !/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/.test(normalizeIdentifier(value))) {
+    return 'Bitte eine BIC mit 8 oder 11 Zeichen eingeben, z. B. COBADEFFXXX.';
+  }
+  return null;
+}
+
+/** Nur offensichtlicher Unsinn: Ziffern, Schrägstrich, Bindestrich, Punkt, Leerzeichen, mindestens 10 Ziffern. Keine landesspezifische Regel. */
+export function taxNumberFormatError(value) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' || !/^[\d/ .-]+$/.test(value) || value.replace(/\D/g, '').length < 10) {
+    return 'Bitte eine Steuernummer mit mindestens 10 Ziffern eingeben; erlaubt sind Ziffern, „/“, „-“, „.“ und Leerzeichen.';
+  }
+  return null;
+}
+
+export function invoiceStartNumberError(value) {
+  if (value == null) return null;
+  const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  if (typeof number !== 'number' || !Number.isInteger(number) || number < 1 || number > 999999) {
+    return 'Die Rechnungsnummer muss eine ganze Zahl von 1 bis 999999 sein.';
+  }
+  return null;
+}
+
 /** Only fields present in the patch are checked; empty optional fields are allowed. */
 export function validateCompanyFormats(data, context = {}) {
   const errors = {};
@@ -101,11 +133,15 @@ export function validateCompanyFormats(data, context = {}) {
     check('postalCode', postalCodeFormatError(data.postalCode ?? context.postalCode, data.country ?? context.country ?? 'Deutschland'));
   }
   if ('taxId' in data) check('taxId', vatIdFormatError(data.taxId));
+  if ('taxIdentificationNumber' in data) check('taxIdentificationNumber', taxNumberFormatError(data.taxIdentificationNumber));
+  if ('invoiceStartNumber' in data) check('invoiceStartNumber', invoiceStartNumberError(data.invoiceStartNumber));
+  if ('bic' in data) check('bic', bicFormatError(data.bic));
   const paymentInformation = data.paymentInformation;
   if (paymentInformation != null && (typeof paymentInformation !== 'object' || Array.isArray(paymentInformation))) {
     errors['paymentInformation.bankAccount'] = 'Bitte gültige Zahlungsinformationen angeben.';
   } else if (paymentInformation && 'bankAccount' in paymentInformation) {
     check('paymentInformation.bankAccount', ibanFormatError(data.paymentInformation.bankAccount));
+    if ('bic' in paymentInformation) check('paymentInformation.bic', bicFormatError(paymentInformation.bic));
   } else if ('bankAccount' in data) {
     check('bankAccount', ibanFormatError(data.bankAccount));
   }

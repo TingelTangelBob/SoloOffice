@@ -24,6 +24,8 @@ import { getEffectivePaymentInformation } from './paymentInformation';
 import { buildServiceDatePdfField } from './serviceDate';
 import { getTerminology } from './terminology';
 import { downloadBlob } from './blobUtils';
+import { reminderClaimFor } from './reminderClaimView';
+import { describeInterest } from '../../backend/shared/reminderClaim.js';
 
 // Export types for external use
 export interface PDFOptions {
@@ -529,20 +531,18 @@ export function prepareReminderDocument(
   const format = documentFormatters(company);
   const template = resolveDocumentTemplate(company, 'reminder');
 
-  const fees = [company.reminderFeeStage1 || 0, company.reminderFeeStage2 || 0, company.reminderFeeStage3 || 0];
-  const cumulativeFee = fees.slice(0, stage).reduce((sum, fee) => sum + fee, 0);
+  const claim = reminderClaimFor(company, invoice, customer, stage);
   const paidAmountValue = Math.min(
     Number(invoice.total || 0),
     Math.max(0, Number(invoice.paidAmount ?? (invoice.status === 'paid' ? invoice.total : 0))),
   );
-  const outstandingAmountValue = Math.max(
-    0,
-    Number(invoice.outstandingAmount ?? Number(invoice.total || 0) - paidAmountValue),
-  );
 
+  // Aufstellung immer vollständig: Mahngebühren auch bei 0,00 (dann wird keine erhoben), Zinsen nur wenn aktiviert.
   const totalLines: PdfAmountLine[] = [{ label: 'Rechnungsbetrag', value: format.money(invoice.total) }];
   if (paidAmountValue > 0) totalLines.push({ label: 'Bereits bezahlt', value: `- ${format.money(paidAmountValue)}`, tone: 'positive' });
-  if (cumulativeFee > 0) totalLines.push({ label: 'Mahngebühren', value: format.money(cumulativeFee), tone: 'negative' });
+  totalLines.push({ label: 'Offener Rechnungsbetrag', value: format.money(claim.outstanding) });
+  totalLines.push({ label: 'Mahngebühren', value: format.money(claim.fee) });
+  if (claim.interestEnabled) totalLines.push({ label: `Verzugszinsen (${describeInterest(claim)})`, value: format.money(claim.interest) });
 
   const paymentInfo = getEffectivePaymentInformation(company);
   const model: PdfDocumentModel = {
@@ -567,7 +567,7 @@ export function prepareReminderDocument(
     },
     totals: {
       lines: totalLines,
-      grand: { label: 'Zu zahlender Betrag', value: format.money(outstandingAmountValue + cumulativeFee) },
+      grand: { label: 'Gesamtforderung', value: format.money(claim.total) },
     },
     payment: template.showPaymentInformation
       ? {

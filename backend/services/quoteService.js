@@ -8,6 +8,10 @@ import { invoiceError } from '../utils/invoicePolicy.js';
 import { invoiceDateParts } from '../utils/invoiceNumberPattern.js';
 import { lockDocumentNumber } from '../utils/documentNumberLock.js';
 import { checkManualTransition, isKnownState } from '../shared/stateMachines.js';
+import { quoteStatusAfterJobConversion, quoteToJobData, quoteToJobProblem } from '../shared/quoteToJob.js';
+import { insertJobInstance } from '../routes/jobs.js';
+import { findJobById } from '../queries/jobQueries.js';
+import { randomUUID } from 'crypto';
 
 export async function createQuote(data) {
   const {
@@ -419,6 +423,61 @@ export async function convertQuoteToInvoice(id) {
     return { invoice: await findInvoiceById(invoiceId) };
   } catch (error) {
     await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function localDateString(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Wandelt ein versendetes oder angenommenes Angebot in einen Auftrag um (eine Transaktion). */
+export async function convertQuoteToJob(id) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const quoteResult = await client.query('SELECT * FROM quotes WHERE id = $1 FOR UPDATE', [id]);
+    if (quoteResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { error: 'Angebot nicht gefunden.', status: 404 };
+    }
+    const row = quoteResult.rows[0];
+    const existing = await client.query('SELECT id FROM job_entries WHERE source_quote_id = $1 LIMIT 1', [id]);
+    const problem = quoteToJobProblem(
+      { status: row.status, convertedToInvoiceId: row.converted_to_invoice_id },
+      existing.rows[0]?.id || null,
+    );
+    if (problem) {
+      await client.query('ROLLBACK');
+      return { error: problem.error, code: problem.code, status: problem.status };
+    }
+    const itemResult = await client.query('SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY item_order', [id]);
+    const customer = await client.query('SELECT name FROM customers WHERE id = $1', [row.customer_id]);
+    const jobData = quoteToJobData({
+      id: row.id,
+      quoteNumber: row.quote_number,
+      customerId: row.customer_id,
+      customerName: customer.rows[0]?.name || row.customer_name,
+      notes: row.notes,
+      items: itemResult.rows.map(item => ({
+        description: item.description, quantity: item.quantity, unitPrice: item.unit_price, taxRate: item.tax_rate,
+        total: item.total, order: item.item_order, discountType: item.discount_type,
+        discountValue: item.discount_value, discountAmount: item.discount_amount,
+      })),
+    }, { today: localDateString(), newId: randomUUID });
+    const jobId = await insertJobInstance(client, jobData);
+    const newStatus = quoteStatusAfterJobConversion(row.status);
+    if (newStatus !== row.status) await client.query('UPDATE quotes SET status = $1 WHERE id = $2', [newStatus, id]);
+    await client.query('COMMIT');
+    return { job: await findJobById(jobId), quote: await findQuoteById(id) };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error?.code === '23505' && error.constraint === 'job_entries_source_quote_id_idx') {
+      return { error: 'Aus diesem Angebot wurde bereits ein Auftrag erstellt.', code: 'QUOTE_ALREADY_CONVERTED', status: 409 };
+    }
     throw error;
   } finally {
     client.release();

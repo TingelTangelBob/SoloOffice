@@ -5,6 +5,7 @@
 import { calculateDocumentMoney } from './documentMoney.js';
 import { expandRecurrence, normalizeRecurrence } from './jobRecurrenceRule.js';
 import {
+  normaliseDocumentNumber,
   normaliseEuerCategory,
   normaliseKey,
   parseBoolean,
@@ -278,11 +279,45 @@ function sameValue(left, right) {
   return text(left) === text(right);
 }
 
+// Zwei Namen gelten als vereinbar, wenn einer im anderen enthalten ist oder alle
+// Wörter des einen im anderen vorkommen („Anna Müller“ und „Müller, Anna“).
+function namesCompatible(left, right) {
+  const a = normaliseKey(left);
+  const b = normaliseKey(right);
+  if (!a || !b || a === b || a.includes(b) || b.includes(a)) return true;
+  const leftTokens = nameTokens(left);
+  const rightTokens = nameTokens(right);
+  return leftTokens.every(token => rightTokens.includes(token)) || rightTokens.every(token => leftTokens.includes(token));
+}
+
+// Prüft, ob eine Wiederholung derselben Kundenidentität in der Datei etwas
+// anderes sagt als die erste Zeile. Gibt die Art des Widerspruchs zurück.
+function customerRepeatConflict(first, repeat) {
+  if (!namesCompatible(first.name, repeat.name)) return 'Namen';
+  if (first.email && repeat.email && normaliseKey(first.email) !== normaliseKey(repeat.email)) return 'E-Mail-Adressen';
+  if (first.customerNumber && repeat.customerNumber && normaliseKey(first.customerNumber) !== normaliseKey(repeat.customerNumber)) return 'Kundennummern';
+  const other = Object.keys(repeat).find(key => CUSTOMER_FIELD_LABELS[key] && key !== 'name' && key !== 'email'
+    && first[key] !== undefined && !sameValue(first[key], repeat[key]));
+  return other ? 'Angaben' : null;
+}
+
+// „Kunde“ → „Kundennummer“, „Schüler“ → „Schülernummer“.
+const numberLabel = entityLabel => `${entityLabel}${/e$/.test(entityLabel) ? 'n' : ''}nummer`;
+
+function hasColumn(rows, aliases) {
+  const wanted = new Set(aliases.map(normaliseKey));
+  return rows.some(row => Object.keys(row || {}).some(key => wanted.has(normaliseKey(key))));
+}
+
 function planCustomers(rows, context, options) {
   const entityLabel = context.entityLabel;
   const existing = (context.customers || []).map(customer => ({ ...customer }));
   const seen = new Map();
   const entries = [];
+  // Ob die Datei Adress- bzw. E-Mail-Spalten überhaupt enthält: nur dann ist ein
+  // fehlender Wert eine Warnung wert.
+  const hasEmailColumn = hasColumn(rows, ['email', 'eMail', 'mail', 'emailAddress', 'email_address']);
+  const hasAddressColumn = hasColumn(rows, ['address', 'adresse', 'street', 'strasse', 'straße', 'anschrift', 'city', 'ort', 'town', 'stadt', 'postalCode', 'postal_code', 'postcode', 'zip', 'zipCode', 'plz']);
   rows.forEach((row, index) => {
     const currentRow = rowNumber(row, index);
     const data = customerData(row);
@@ -295,19 +330,39 @@ function planCustomers(rows, context, options) {
       : data.email ? `email:${normaliseKey(data.email)}`
         : `name:${normaliseKey(data.name)}`;
     if (seen.has(identity)) {
-      const duplicateOf = seen.get(identity);
-      entries.push(entry([currentRow], 'duplicate', `Doppelte Zeile in der Importdatei (Zeile ${duplicateOf})`, null, { conflict: { kind: 'file', rowNumber: duplicateOf, label: `doppelt in Datei, Zeile ${duplicateOf}` } }));
+      const first = seen.get(identity);
+      const conflictKind = customerRepeatConflict(first.data, data);
+      if (conflictKind) {
+        const what = data.customerNumber ? `${numberLabel(entityLabel)} ${data.customerNumber}` : data.email ? `E-Mail ${data.email}` : `Name „${data.name}“`;
+        entries.push(entry([currentRow], 'duplicate', `${what} steht in den Zeilen ${first.rowNumber} und ${currentRow} mit unterschiedlichen ${conflictKind}${conflictKind === 'Namen' ? ` („${first.data.name}“ und „${data.name}“)` : ''}`, null, { previewData: data, conflict: { kind: 'file', rowNumber: first.rowNumber, label: `widersprüchlich zu Zeile ${first.rowNumber}` } }));
+        return;
+      }
+      // Identische Wiederholung (z. B. derselbe Kunde in mehreren Rechnungszeilen):
+      // gehört zur ersten Zeile und ist kein Problem.
+      first.entry.rowNumbers.push(currentRow);
+      first.entry.repeats = [...(first.entry.repeats || []), currentRow];
       return;
     }
-    seen.set(identity, currentRow);
     const match = existing.find(customer =>
       (customerId && customer.id === customerId)
       || (data.customerNumber && normaliseKey(customer.customerNumber) === normaliseKey(data.customerNumber))
       || (data.email && normaliseKey(customer.email) === normaliseKey(data.email))
       || (!data.customerNumber && !data.email && normaliseKey(customer.name) === normaliseKey(data.name)));
+    const register = item => {
+      seen.set(identity, { rowNumber: currentRow, data, entry: item });
+      entries.push(item);
+    };
     if (match) {
+      const matchedByNumber = data.customerNumber && normaliseKey(match.customerNumber) === normaliseKey(data.customerNumber);
+      const matchedByEmail = !matchedByNumber && data.email && normaliseKey(match.email) === normaliseKey(data.email);
+      if ((matchedByNumber || matchedByEmail) && !namesCompatible(match.name, data.name)) {
+        // Nummer oder E-Mail passt, der Name aber nicht: vermutlich eine andere Person.
+        const what = matchedByNumber ? `${numberLabel(entityLabel)} ${data.customerNumber}` : `Die E-Mail-Adresse ${data.email}`;
+        register(entry([currentRow], 'duplicate', `${what} gehört bereits zu „${match.name}“ – in der Datei steht „${data.name}“. Der Bestand wird nicht verändert`, null, { previewData: data, conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
+        return;
+      }
       if (options.duplicateMode !== 'update') {
-        entries.push(entry([currentRow], 'duplicate', `${entityLabel} bereits vorhanden (${match.name})`, null, { conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
+        register(entry([currentRow], 'duplicate', `${entityLabel} bereits vorhanden (${match.name})`, null, { previewData: data, conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
         return;
       }
       // Nur zugeordnete und befüllte Spalten ändern den Bestand. Leere oder
@@ -316,22 +371,30 @@ function planCustomers(rows, context, options) {
         .filter(key => key !== 'customerNumber' && CUSTOMER_FIELD_LABELS[key])
         .filter(key => !sameValue(data[key], match[key]));
       if (changedFields.length === 0) {
-        entries.push(entry([currentRow], 'duplicate', `${entityLabel} ist bereits aktuell (${match.name})`, null, { conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
+        register(entry([currentRow], 'duplicate', `${entityLabel} ist bereits aktuell (${match.name})`, null, { previewData: data, conflict: { kind: 'existing', label: `${entityLabel} „${match.name}“` } }));
         return;
       }
       const changes = Object.fromEntries(changedFields.map(key => [key, data[key]]));
-      entries.push(entry([currentRow], 'update', `${entityLabel} „${match.name}“ wird aktualisiert: ${changedFields.map(key => CUSTOMER_FIELD_LABELS[key]).join(', ')}`, changes, { existingId: match.id }));
+      register(entry([currentRow], 'update', `${entityLabel} „${match.name}“ wird aktualisiert: ${changedFields.map(key => CUSTOMER_FIELD_LABELS[key]).join(', ')}`, changes, { existingId: match.id, previewData: data }));
       return;
     }
     const warnings = [];
-    if (!data.email) warnings.push('E-Mail fehlt');
-    if (!data.address || !data.city || !data.postalCode) warnings.push('Adresse ist nicht vollständig');
+    if (hasEmailColumn && !data.email) warnings.push('E-Mail fehlt');
+    if (hasAddressColumn && (!data.address || !data.city || !data.postalCode)) warnings.push('Adresse ist nicht vollständig');
     existing.push({ id: `new-${currentRow}`, customerNumber: data.customerNumber || '', name: data.name, email: data.email || '' });
-    entries.push(entry([currentRow], warnings.length ? 'warning' : 'valid', warnings.length ? warnings : `${entityLabel} kann angelegt werden`, {
+    register(entry([currentRow], warnings.length ? 'warning' : 'valid', warnings.length ? warnings : `${entityLabel} kann angelegt werden`, {
       country: 'Deutschland',
       ...data,
     }));
   });
+  for (const item of entries) {
+    if (!item.repeats) continue;
+    const first = item.rowNumbers[0];
+    const many = item.repeats.length > 1;
+    item.message = `${item.message.replace(/\.$/, '')}. ${many ? 'Zeilen' : 'Zeile'} ${joinRowNumbers(item.repeats)} ${many ? 'sind identische Wiederholungen' : 'ist eine identische Wiederholung'} von Zeile ${first} (bereits erfasst)`;
+    item.message = `${item.message}.`;
+    delete item.repeats;
+  }
   return { entries };
 }
 
@@ -667,27 +730,58 @@ function groupRowsByNumber(rows, numberAliases) {
   rows.forEach((row, index) => {
     const currentRow = rowNumber(row, index);
     const number = text(pick(row, numberAliases));
-    const key = number ? normaliseKey(number) : `row-${currentRow}`;
+    const key = number ? normaliseDocumentNumber(number) : `row-${currentRow}`;
     if (!groups.has(key)) groups.set(key, { number, rows: [] });
     groups.get(key).rows.push({ row, currentRow });
   });
   return [...groups.values()];
 }
 
+function joinRowNumbers(numbers) {
+  if (numbers.length <= 1) return String(numbers[0] ?? '');
+  return `${numbers.slice(0, -1).join(', ')} und ${numbers[numbers.length - 1]}`;
+}
+
+// Zeilen mit derselben Beleg-Nummer bilden einen Beleg. Widersprechen sich
+// Kunde oder Datum der Zeilen, wird nichts stillschweigend zusammengeführt.
+function groupConflictMessage(group, label, dateAliases) {
+  const rowNumbers = group.rows.map(item => item.currentRow);
+  if (rowNumbers.length < 2) return null;
+  const differs = values => new Set(values.filter(Boolean)).size > 1;
+  const refs = group.rows.map(item => customerReference(item.row, { includeGeneric: false }));
+  const customerDiffers = differs(refs.map(ref => normaliseKey(ref.customerId)))
+    || differs(refs.map(ref => normaliseKey(ref.customerNumber)))
+    || differs(refs.map(ref => normaliseKey(ref.customerEmail)))
+    || differs(refs.map(ref => normaliseKey(ref.customerName)));
+  if (customerDiffers) return `${label} ${group.number} steht in den Zeilen ${joinRowNumbers(rowNumbers)} mit unterschiedlichen Kunden`;
+  const dates = group.rows.map(item => {
+    const raw = pick(item.row, dateAliases);
+    return raw === undefined ? '' : (parseDate(raw) || `raw:${text(raw)}`);
+  });
+  if (differs(dates)) return `${label} ${group.number} steht in den Zeilen ${joinRowNumbers(rowNumbers)} mit unterschiedlichen Daten`;
+  return null;
+}
+
 function planQuotes(rows, context, options) {
   const entityLabel = context.entityLabel;
   const directory = createCustomerDirectory(context.customers, { createMissing: options.createMissingCustomers });
-  const existingNumbers = new Set((context.quotes || []).map(quote => normaliseKey(quote.quoteNumber)));
+  const existingNumbers = new Set((context.quotes || []).map(quote => normaliseDocumentNumber(quote.quoteNumber)));
   const entries = [];
   for (const group of groupRowsByNumber(rows, ['quoteNumber', 'quote_number', 'offerNumber', 'offer_number', 'angebotsnummer', 'angebotsnr'])) {
     const firstRow = group.rows[0].row;
     const rowNumbers = group.rows.map(item => item.currentRow);
+    const quoteConflict = group.number ? groupConflictMessage(group, 'Angebot', ['issueDate', 'issue_date', 'offerDate', 'angebotsdatum', 'ausstellungsdatum', 'datum']) : null;
+    if (quoteConflict) {
+      // Je Dateizeile ein Eintrag, damit jede Zeile ihre eigenen Daten zeigt.
+      rowNumbers.forEach(number => entries.push(entry([number], 'error', quoteConflict)));
+      continue;
+    }
     const resolution = directory.resolve(customerReference(firstRow), rowNumbers[0]);
     if (!resolution.customer && !resolution.newCustomer) {
       entries.push(entry(rowNumbers, 'error', resolution.missing ? `${entityLabel}-Bezug fehlt` : customerErrorMessage(resolution, entityLabel, ' für das Angebot')));
       continue;
     }
-    if (group.number && existingNumbers.has(normaliseKey(group.number))) {
+    if (group.number && existingNumbers.has(normaliseDocumentNumber(group.number))) {
       entries.push(entry(rowNumbers, 'duplicate', `Angebot bereits vorhanden (${group.number})`, null, { conflict: { kind: 'existing', label: `Angebot „${group.number}“` } }));
       continue;
     }
@@ -740,7 +834,7 @@ function planQuotes(rows, context, options) {
     if (!status) warnings.push('Status wird auf Entwurf gesetzt');
     warnings.push(...customerWarnings(resolution));
     const infos = customerInfos(resolution, entityLabel);
-    if (group.number) existingNumbers.add(normaliseKey(group.number));
+    if (group.number) existingNumbers.add(normaliseDocumentNumber(group.number));
     entries.push(entry(rowNumbers, warnings.length ? 'warning' : 'valid', warnings.length || infos.length ? [...infos, ...warnings] : 'Angebot kann angelegt werden', {
       quoteNumber: group.number || undefined,
       ...customerTarget(resolution),
@@ -767,7 +861,7 @@ function invoiceLedger(context) {
       paidCents.set(item.sourceId, (paidCents.get(item.sourceId) || 0) + cents(item.amount));
     }
   });
-  const byNumber = new Map(invoices.map(invoice => [normaliseKey(invoice.invoiceNumber), invoice]));
+  const byNumber = new Map(invoices.map(invoice => [normaliseDocumentNumber(invoice.invoiceNumber), invoice]));
   const remaining = invoice => Math.max(0, cents(invoice.total) - (paidCents.get(invoice.id) || 0));
   const allocate = (invoice, amountCents) => paidCents.set(invoice.id, (paidCents.get(invoice.id) || 0) + amountCents);
   const taxRate = invoice => effectiveTaxRate(invoice.itemTaxRates, invoice.total, invoice.taxAmount);
@@ -849,7 +943,7 @@ function planInvoicePayments(rows, context) {
         return;
       }
     } else if (invoiceNumber) {
-      invoice = ledger.byNumber.get(normaliseKey(invoiceNumber));
+      invoice = ledger.byNumber.get(normaliseDocumentNumber(invoiceNumber));
       matchedBy = 'Rechnungsnummer';
       if (!invoice) {
         entries.push(entry([currentRow], 'error', `Rechnung „${invoiceNumber}“ wurde nicht gefunden`));
@@ -905,7 +999,7 @@ function planInvoicePayments(rows, context) {
     if (externalReference) seenExternal.add(externalKey);
     const warnings = [];
     if (context.cutoverDate && date.value >= context.cutoverDate) warnings.push(`Liegt am oder nach dem Stichtag ${formatDateDe(context.cutoverDate)} – ist die Zahlung schon in SoloOffice erfasst?`);
-    entries.push(entry([currentRow], warnings.length ? 'warning' : 'valid', [`Zahlung für Rechnung ${invoice.invoiceNumber} kann gebucht werden (${matchedBy})`, ...warnings], {
+    entries.push(entry([currentRow], warnings.length ? 'warning' : 'valid', [`Zahlung für Rechnung ${invoice.invoiceNumber} wird gebucht (${matchedBy})`, ...warnings], {
       kind: 'payment',
       entryType: 'income',
       invoiceId: invoice.id,
@@ -1092,7 +1186,7 @@ function planEuerEntries(rows, context, options) {
       let invoice = null;
       let matchedBy = '';
       if (invoiceNumber) {
-        invoice = ledger.byNumber.get(normaliseKey(invoiceNumber)) || null;
+        invoice = ledger.byNumber.get(normaliseDocumentNumber(invoiceNumber)) || null;
         matchedBy = 'Rechnungsnummer';
         if (!invoice) messages.push(`Rechnung „${invoiceNumber}“ ist nicht vorhanden; gebucht wird eine Einnahme ohne Rechnung`);
         else if (invoice.status === 'draft') {
@@ -1176,7 +1270,7 @@ function planEuerEntries(rows, context, options) {
       messages.push(`Am selben Tag gibt es bereits eine ${entryType === 'income' ? 'Einnahme' : 'Ausgabe'} über denselben Betrag („${similar[0].description}“) – bitte prüfen`);
     }
 
-    entries.push(entry([currentRow], messages.length ? 'warning' : 'valid', messages.length || infos.length ? [...infos, ...messages] : `${entryType === 'income' ? 'Einnahme' : 'Ausgabe'} kann gebucht werden`, {
+    entries.push(entry([currentRow], messages.length ? 'warning' : 'valid', messages.length || infos.length ? [...infos, ...messages] : `${entryType === 'income' ? 'Einnahme' : 'Ausgabe'} wird gebucht`, {
       kind: 'manual',
       entryType,
       entryDate: date.value,
@@ -1213,8 +1307,8 @@ function planInvoices(rows, context, options) {
   const entityLabel = context.entityLabel;
   const directory = createCustomerDirectory(context.customers, { createMissing: options.createMissingCustomers });
   const reserved = new Set([
-    ...(context.invoices || []).map(invoice => normaliseKey(invoice.invoiceNumber)),
-    ...(context.reservedInvoiceNumbers || []).map(normaliseKey),
+    ...(context.invoices || []).map(invoice => normaliseDocumentNumber(invoice.invoiceNumber)),
+    ...(context.reservedInvoiceNumbers || []).map(normaliseDocumentNumber),
   ]);
   const defaultPaymentDays = Number.isInteger(context.defaultPaymentDays) ? context.defaultPaymentDays : 14;
   const entries = [];
@@ -1233,7 +1327,13 @@ function planInvoices(rows, context, options) {
       entries.push(entry(rowNumbers, 'error', 'Die Rechnungsnummer darf höchstens 50 Zeichen enthalten'));
       continue;
     }
-    if (reserved.has(normaliseKey(group.number))) {
+    const invoiceConflict = groupConflictMessage(group, 'Rechnung', ['issueDate', 'issue_date', 'rechnungsdatum', 'ausstellungsdatum', 'belegdatum', 'datum', 'date']);
+    if (invoiceConflict) {
+      // Je Dateizeile ein Eintrag, damit jede Zeile ihre eigenen Daten zeigt.
+      rowNumbers.forEach(number => entries.push(entry([number], 'error', invoiceConflict)));
+      continue;
+    }
+    if (reserved.has(normaliseDocumentNumber(group.number))) {
       entries.push(entry(rowNumbers, 'duplicate', `Rechnung ${group.number} ist bereits vorhanden`, null, { conflict: { kind: 'existing', label: `Rechnung „${group.number}“` } }));
       continue;
     }
@@ -1328,12 +1428,14 @@ function planInvoices(rows, context, options) {
     if (paidDate || paidAmountRaw !== null || paymentStatus === 'paid') {
       paymentCents = paidAmountRaw !== null ? cents(paidAmountRaw) : (paymentStatus === 'open' ? 0 : totalCents);
       paymentDate = paidDate;
-      if (paymentCents > 0 && !paymentDate) {
-        messages.push('Zahlungsdatum fehlt; Zahlungseingang nachtragen');
-      }
       if (paymentCents > totalCents) {
         entries.push(entry(rowNumbers, 'error', `Der bezahlte Betrag ${euro(paymentCents / 100)} € übersteigt den Rechnungsbetrag`));
         continue;
+      }
+      if (paymentCents === totalCents && !paymentDate) {
+        // Ohne Zahlungsdatum gilt das Rechnungsdatum, damit die Einnahme in der EÜR erscheint.
+        paymentDate = issue.value;
+        messages.push(`Zahlungsdatum fehlt – als Zahlungseingang gilt das Rechnungsdatum ${formatDateDe(issue.value)}. Bitte prüfen, für die EÜR zählt der tatsächliche Zahlungstag`);
       }
       if (paymentCents > 0 && paymentCents < totalCents && !paymentDate) {
         entries.push(entry(rowNumbers, 'error', 'Für eine Teilzahlung fehlt das Zahlungsdatum. Bitte ergänzen, damit der offene Rechnungsbetrag korrekt übernommen werden kann'));
@@ -1344,7 +1446,7 @@ function planInvoices(rows, context, options) {
     const status = paymentCents >= totalCents ? 'paid' : dueDate < context.today ? 'overdue' : 'sent';
     if (paymentCents > 0 && paymentCents < totalCents) messages.push(`Teilzahlung ${euro(paymentCents / 100)} € – offen bleiben ${euro((totalCents - paymentCents) / 100)} €`);
     if (context.cutoverDate && issue.value >= context.cutoverDate) messages.push(`Liegt am oder nach dem Stichtag ${formatDateDe(context.cutoverDate)} – ist die Rechnung schon in SoloOffice erfasst?`);
-    reserved.add(normaliseKey(group.number));
+    reserved.add(normaliseDocumentNumber(group.number));
     const itemsWithUnits = calculated.items.map((item, index) => ({
       ...item,
       unit: itemResult.items[index]?.unit || null,
@@ -1473,7 +1575,7 @@ const firstValue = (data, row, key, aliases) => {
 // Vorschauwerte sind ausschließlich für die Anzeige bestimmt und bleiben aus
 // den ausführungsrelevanten Importdaten heraus.
 function importPreviewValues(resource, item, sourceRows) {
-  const data = item.data || {};
+  const data = { ...(item.previewData || {}), ...(item.data || {}) };
   const row = sourceRows[0] || {};
   const customer = data.customerName || pick(row, CUSTOMER_NAME_ALIASES) || pick(row, ['name']);
   const rowItemCount = sourceRows.reduce((sum, source) => sum + parseStructuredArray(pick(source, ['items', 'positionen', 'positions', 'lineItems', 'line_items'])).length, 0);
@@ -1504,7 +1606,8 @@ function importPreviewValues(resource, item, sourceRows) {
     add('date', firstValue(data, row, 'issueDate', ['issueDate', 'issue_date', 'rechnungsdatum', 'angebotsdatum', 'ausstellungsdatum', 'belegdatum', 'datum', 'date']));
     add('customer', customer);
     add('amount', data.total ?? amountValue(row, ['total', 'grossAmount', 'gross_amount', 'brutto', 'gesamtbetrag', 'endbetrag', 'betrag', 'amount']));
-    add('itemCount', data.items?.length || rowItemCount || sourceRows.length || undefined);
+    // Bei Fehlerzeilen keine Positionszahl aus der Zeilenzahl ableiten: Sie würde etwas vortäuschen, das nicht übernommen wird.
+    add('itemCount', data.items?.length || rowItemCount || (item.status === 'error' ? undefined : sourceRows.length) || undefined);
   } else if (resource === 'invoicePayments') {
     add('date', firstValue(data, row, 'entryDate', ['entryDate', 'entry_date', 'paymentDate', 'payment_date', 'zahlungsdatum', 'datum', 'date']));
     add('amount', data.amount ?? amountValue(row, ['amount', 'betrag', 'paymentAmount', 'payment_amount', 'zahlungsbetrag']));
@@ -1540,12 +1643,23 @@ export function summariseImport(plan, total) {
   };
 }
 
+// Der Planer formuliert im Präsens („wird übernommen“), weil die Vorschau
+// beschreibt, was geschehen wird. Im Protokoll eines abgeschlossenen Imports
+// steht dieselbe Aussage in der Vergangenheit. Die Umformung gilt für Server
+// und Demo gleichermaßen; Zitate in „…“ (Namen, Werte) bleiben unverändert.
+export function toPastTense(message) {
+  return String(message ?? '')
+    .split(/(„[^“]*“)/)
+    .map(part => (part.startsWith('„') ? part : part.replace(/\bwird\b/g, 'wurde').replace(/\bwerden\b/g, 'wurden')))
+    .join('');
+}
+
 export function reportRows(plan, imported = false) {
   return plan.entries
     .flatMap(item => item.rowNumbers.map(row => ({
       rowNumber: row,
       status: imported && isApplicable(item) ? 'imported' : item.status,
-      message: item.message,
+      message: imported && isApplicable(item) ? toPastTense(item.message) : item.message,
       values: item.previewValues || {},
       ...(item.conflict ? { conflict: { ...item.conflict, label: compactText(item.conflict.label) } } : {}),
     })))

@@ -47,7 +47,7 @@ export function EuerForecastDialog({
     { label: 'Überschuss', actual: actual.profit, planned: plannedProfit, total: actual.profit + plannedProfit, emphasis: true },
   ];
   const categoryOptions = Object.entries(categoryLabels).filter(([key]) =>
-    key !== 'vat_payment' && key !== 'vat_refund' && (draft.entryType === 'expense' || key === 'other_income'));
+    key !== 'vat_payment' && key !== 'vat_refund' && (draft.entryType === 'expense' || key === 'other_income' || key === 'operating_income'));
 
   return (
     <DialogShell unsavedChangesGuard

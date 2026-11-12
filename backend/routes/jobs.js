@@ -94,11 +94,13 @@ const formatJobData = (row, customerName = null) => ({
   attachments: row.attachments || [],
   signature: row.signature || null,
   recurrence: parseRecurrence(row),
+  sourceQuoteId: row.source_quote_id || undefined,
+  sourceQuoteNumber: row.source_quote_number || undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
 
-const generateJobNumber = async (client) => {
+export const generateJobNumber = async (client) => {
   const currentYear = new Date().getFullYear();
   const yearPattern = `AB-${currentYear}-%`;
   await lockDocumentNumber(client, 'job', currentYear);
@@ -116,14 +118,14 @@ const generateJobNumber = async (client) => {
   return `AB-${currentYear}-${String(Number.isNaN(lastNumber) ? 1 : lastNumber + 1).padStart(3, '0')}`;
 };
 
-const insertJobInstance = async (client, data) => {
+export const insertJobInstance = async (client, data) => {
   const jobNumber = await generateJobNumber(client);
   const result = await client.query(`
     INSERT INTO job_entries (
       job_number, external_job_number, customer_id, customer_address, location, alternate_location, time_zone, title, description, date,
       start_time, end_time, hours_worked, hourly_rate, hourly_rate_id, materials, status, notes, priority,
-      recurrence_id, recurrence_index, recurrence_total
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      recurrence_id, recurrence_index, recurrence_total, source_quote_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     RETURNING id
   `, [
     jobNumber,
@@ -148,6 +150,7 @@ const insertJobInstance = async (client, data) => {
     data.recurrenceId || null,
     data.recurrenceIndex || null,
     data.recurrenceTotal || null,
+    data.sourceQuoteId || null,
   ]);
 
   const jobId = result.rows[0].id;
@@ -354,6 +357,7 @@ router.post('/', async (req, res) => {
     // Fetch the complete job with attachments and time entries
     const completeJob = await client.query(`
       SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
+             (SELECT sq.quote_number FROM quotes sq WHERE sq.id = j.source_quote_id) as source_quote_number,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -816,6 +820,7 @@ router.put('/:id', async (req, res) => {
     // Fetch the complete job with attachments and time entries
     const completeJob = await client.query(`
       SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
+             (SELECT sq.quote_number FROM quotes sq WHERE sq.id = j.source_quote_id) as source_quote_number,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,
@@ -1207,6 +1212,7 @@ router.post('/:id/signature', async (req, res) => {
     // Fetch the complete job with customer name
     const completeJob = await client.query(`
       SELECT j.*, c.name as customer_name, jr.rule as recurrence_rule,
+             (SELECT sq.quote_number FROM quotes sq WHERE sq.id = j.source_quote_id) as source_quote_number,
              json_agg(
                DISTINCT jsonb_build_object(
                  'id', ja.id,

@@ -65,3 +65,18 @@ test('Pflichtfelder: leere übermittelte Stammdaten werden abgewiesen, ausgelass
     taxBusinessType: 'Bitte eine Betriebsart auswählen.',
   });
 });
+
+test('BIC, Steuernummer und Rechnungsnummer: Format wird geprüft', async () => {
+  const { bicFormatError, taxNumberFormatError, invoiceStartNumberError, normalizeIdentifier } = await import('../shared/companyValidation.js');
+  assert.equal(bicFormatError('COBADEFFXXX'), null);
+  assert.equal(bicFormatError('COBADEFF'), null);
+  assert.match(bicFormatError('xx'), /BIC/);
+  assert.equal(bicFormatError('byla dem1 001'), null);
+  assert.equal(taxNumberFormatError('12-345.678 90'), null);
+  assert.equal(taxNumberFormatError('12/345/67890'), null);
+  assert.match(taxNumberFormatError('abc'), /Steuernummer/);
+  assert.equal(invoiceStartNumberError(5), null);
+  for (const value of [0, -5, 1.5, 1000000, '']) assert.match(invoiceStartNumberError(value), /Rechnungsnummer/);
+  assert.equal(normalizeIdentifier('de89 3704-0044'), 'DE8937040044');
+  assert.deepEqual(Object.keys(validateCompanyFormats({ bic: 'xx', invoiceStartNumber: 0 })).sort(), ['bic', 'invoiceStartNumber']);
+});

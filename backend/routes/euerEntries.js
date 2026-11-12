@@ -11,11 +11,24 @@ const router = express.Router();
 const entryTypes = new Set(['income', 'expense']);
 const sourceTypes = new Set(['manual', 'invoice_payment', 'receipt', 'correction']);
 const categories = new Set([
-  'other_income', 'materials', 'office', 'software', 'telecommunications',
+  'operating_income', 'other_income', 'materials', 'office', 'software', 'telecommunications',
   'travel', 'vehicle', 'marketing', 'professional_services', 'insurance',
   'bank_fees', 'rent', 'memberships', 'allowance', 'other_expense',
 ]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Zahlungen auf eigene Rechnungen sind „Betriebseinnahmen (Rechnungen)“, alle
+ * anderen Einnahmen „Sonstige Einnahmen“. Die Zuordnung folgt der Buchungsart,
+ * damit auch ältere Clients konsistente Daten erzeugen.
+ */
+export function normaliseIncomeCategory(data) {
+  if (!data || data.entryType !== 'income') return data;
+  const sourceType = data.sourceType || 'manual';
+  if (sourceType === 'invoice_payment') return { ...data, category: 'operating_income' };
+  if (data.category === 'operating_income') return { ...data, category: 'other_income' };
+  return data;
+}
 
 function toEntry(row) {
   return {
@@ -243,6 +256,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   const client = await pool.connect();
   try {
+    if (req.body && typeof req.body === 'object') req.body = normaliseIncomeCategory(req.body);
     const error = validateEntry(req.body);
     if (error) return res.status(400).json({ error });
     await client.query('BEGIN');
@@ -320,13 +334,13 @@ router.put('/:id', async (req, res, next) => {
     }
 
     const current = toEntry(currentRow);
-    const merged = {
+    const merged = normaliseIncomeCategory({
       ...current,
       ...req.body,
       entryDate: req.body.entryDate || storedDateKey(current.entryDate),
       sourceType: req.body.sourceType || current.sourceType || 'manual',
       sourceId: req.body.sourceId === '' ? undefined : (req.body.sourceId ?? current.sourceId),
-    };
+    });
     const allowRecurringSource = current.sourceType === 'recurring_expense' && merged.sourceId === current.sourceId;
     if (current.sourceType === 'recurring_expense' && merged.sourceType !== current.sourceType) {
       await client.query('ROLLBACK');

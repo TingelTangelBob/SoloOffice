@@ -11,6 +11,8 @@ import { generateJobPDF } from '../utils/pdfLazy';
 import { generateUUID } from '../utils/uuid';
 import { formatCurrency as formatCurrencyValue, formatDate as formatDateValue, formatNumber } from '../utils/formatters';
 import { calculateTotalHours } from '../utils/jobUtils';
+import { formatDateInputValue, jobDayToDate } from '../utils/invoicePeriod';
+import { deriveServiceDateFromJobs } from '../utils/serviceDate';
 import { formatCountLabel, getTerminology } from '../utils/terminology';
 import { ConfirmationModal } from './ConfirmationModal';
 import { apiService } from '../services/api';
@@ -27,12 +29,7 @@ const wait = (milliseconds: number) => new Promise<void>(resolve => {
   window.setTimeout(resolve, milliseconds);
 });
 
-function dateInputValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+const dateInputValue = formatDateInputValue;
 
 function dateInputValuePlusDays(dateValue: string, days: number): string {
   const date = new Date(`${dateValue}T00:00:00`);
@@ -64,6 +61,8 @@ export function JobInvoiceGenerator({
   const [isGenerationTypeMenuOpen, setIsGenerationTypeMenuOpen] = useState(false);
   const [issueDateOverride, setIssueDateOverride] = useState(() => dateInputValue(new Date()));
   const [dueDateOverride, setDueDateOverride] = useState(() => dateInputValuePlusDays(dateInputValue(new Date()), company?.defaultPaymentDays ?? 30));
+  // Leer = automatisch aus den Ausführungsdaten der Aufträge (§ 14 Abs. 4 Nr. 6 UStG).
+  const [serviceDateOverride, setServiceDateOverride] = useState('');
   const [manualInvoiceNumber, setManualInvoiceNumber] = useState('');
 
   const selectedJobs = jobs.filter((job: JobEntry) => selectedJobIds.includes(job.id));
@@ -150,10 +149,10 @@ export function JobInvoiceGenerator({
       case 'course':
         return Object.keys(jobsByCustomer).length;
       case 'daily':
-        return new Set(billableJobs.map(job => `${job.customerId}-${new Date(job.date).toDateString()}`)).size;
+        return new Set(billableJobs.map(job => `${job.customerId}-${jobDayToDate(job.date).toDateString()}`)).size;
       case 'weekly':
         return new Set(billableJobs.map(job => {
-          const date = new Date(job.date);
+          const date = jobDayToDate(job.date);
           const monday = new Date(date);
           const day = date.getDay();
           const diff = date.getDate() - day + (day === 0 ? -6 : 1);
@@ -163,13 +162,17 @@ export function JobInvoiceGenerator({
         })).size;
       case 'monthly':
         return new Set(billableJobs.map(job => {
-          const date = new Date(job.date);
+          const date = jobDayToDate(job.date);
           return `${job.customerId}-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         })).size;
       default:
         return 0;
     }
   };
+
+  const singleInvoiceServiceDate = billableJobs.length > 0 && getInvoiceBatchCount() === 1
+    ? deriveServiceDateFromJobs(billableJobs.map(job => job.date), issueDateOverride)
+    : null;
 
   const handleGenerate = () => {
     if (billableJobs.length === 0) return;
@@ -266,7 +269,7 @@ export function JobInvoiceGenerator({
         // Create one invoice per day per customer
         for (const [, customerJobs] of Object.entries(jobsByCustomer)) {
           const jobsByDateForCustomer = (customerJobs as JobEntry[]).reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-            const dateKey = new Date(job.date).toDateString();
+            const dateKey = jobDayToDate(job.date).toDateString();
             if (!acc[dateKey]) {
               acc[dateKey] = [];
             }
@@ -284,7 +287,7 @@ export function JobInvoiceGenerator({
         // Create one invoice per week per customer
         for (const [, customerJobs] of Object.entries(jobsByCustomer)) {
           const jobsByWeekForCustomer = (customerJobs as JobEntry[]).reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-            const date = new Date(job.date);
+            const date = jobDayToDate(job.date);
             // Get Monday of the week (ISO week)
             const monday = new Date(date);
             const day = date.getDay();
@@ -310,7 +313,7 @@ export function JobInvoiceGenerator({
         // Create one invoice per month per customer
         for (const [, customerJobs] of Object.entries(jobsByCustomer)) {
           const jobsByMonthForCustomer = (customerJobs as JobEntry[]).reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-            const date = new Date(job.date);
+            const date = jobDayToDate(job.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!acc[monthKey]) {
               acc[monthKey] = [];
@@ -410,7 +413,8 @@ export function JobInvoiceGenerator({
     }, 0);
     const total = subtotal + taxAmount;
 
-    const issueDate = new Date(`${issueDateOverride}T00:00:00`);
+    // Kalendertage bleiben als YYYY-MM-DD erhalten; ein lokales Date würde per JSON in UTC auf den Vortag rutschen.
+    const issueDate = issueDateOverride;
     
     // Generate job PDFs as attachments and collect job attachments
     const attachments = [];
@@ -456,7 +460,7 @@ export function JobInvoiceGenerator({
         
         attachments.push({
           id: generateUUID(),
-          name: `${terminology.work.singular}_${job.title.replace(/[^a-zA-Z0-9]/g, '_')}_${formatDateValue(new Date(job.date), company?.locale || 'de-DE', company?.dateFormat).replace(/[./]/g, '-')}.pdf`,
+          name: `${terminology.work.singular}_${job.title.replace(/[^a-zA-Z0-9]/g, '_')}_${formatDateValue(jobDayToDate(job.date), company?.locale || 'de-DE', company?.dateFormat).replace(/[./]/g, '-')}.pdf`,
           content: base64Content,
           contentType: 'application/pdf',
           size: jobPDF.size,
@@ -470,7 +474,7 @@ export function JobInvoiceGenerator({
     }
 
     // Calculate due date based on issue date and company payment days
-    const dueDate = new Date(`${dueDateOverride}T00:00:00`);
+    const dueDate = dueDateOverride;
     const invoiceBatchCount = getInvoiceBatchCount();
     
     const invoice = {
@@ -479,7 +483,7 @@ export function JobInvoiceGenerator({
       customerName: customer.name,
       issueDate: issueDate,
       dueDate: dueDate,
-      serviceDate: issueDate,
+      serviceDate: serviceDateOverride || deriveServiceDateFromJobs(jobsToInvoice.map(job => job.date), issueDate),
       items,
       subtotal,
       taxAmount,
@@ -530,7 +534,7 @@ export function JobInvoiceGenerator({
         return `${formatCountLabel(Object.keys(jobsByCustomer).length, 'Rechnung', 'Rechnungen')} ${Object.keys(jobsByCustomer).length === 1 ? 'wird' : 'werden'} erstellt (eine für den gesamten Kurs)`;
       case 'daily': {
         const completedJobsByDate = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-          const dateKey = new Date(job.date).toDateString();
+          const dateKey = jobDayToDate(job.date).toDateString();
           if (!acc[dateKey]) {
             acc[dateKey] = [];
           }
@@ -541,7 +545,7 @@ export function JobInvoiceGenerator({
       }
       case 'weekly': {
         const completedJobsByWeek = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-          const date = new Date(job.date);
+          const date = jobDayToDate(job.date);
           // Get Monday of the week (ISO week)
           const monday = new Date(date);
           const day = date.getDay();
@@ -560,7 +564,7 @@ export function JobInvoiceGenerator({
       }
       case 'monthly': {
         const completedJobsByMonth = billableJobs.reduce((acc: Record<string, JobEntry[]>, job: JobEntry) => {
-          const date = new Date(job.date);
+          const date = jobDayToDate(job.date);
           const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
           if (!acc[monthKey]) {
             acc[monthKey] = [];
@@ -681,6 +685,22 @@ export function JobInvoiceGenerator({
                   onChange={(event) => setDueDateOverride(event.target.value)}
                   className="form-input form-input-compact mt-1 w-full"
                 />
+              </label>
+              <label className="block text-sm font-medium text-gray-700 tablet:col-span-2">
+                Leistungsdatum
+                <input
+                  type="date"
+                  value={serviceDateOverride || (singleInvoiceServiceDate ?? '')}
+                  onChange={(event) => setServiceDateOverride(event.target.value)}
+                  className="form-input form-input-compact mt-1 w-full"
+                />
+                <span className="mt-1 block text-xs font-normal text-gray-500">
+                  {serviceDateOverride
+                    ? 'Dieses Datum gilt für alle erzeugten Rechnungen.'
+                    : singleInvoiceServiceDate
+                      ? `Automatisch aus dem Ausführungsdatum (bei mehreren Tagen der späteste Tag, Rechnungsdatum nur ohne Ausführungsdatum). Sie können es ändern.`
+                      : 'Wird je Rechnung automatisch aus dem Ausführungsdatum der Aufträge gesetzt (bei mehreren Tagen der späteste Tag, ohne Ausführungsdatum das Rechnungsdatum). Ein hier gewähltes Datum gilt für alle Rechnungen.'}
+                </span>
               </label>
               <label className="block text-sm font-medium text-gray-700 tablet:col-span-2">
                 Eigene Rechnungsnummer

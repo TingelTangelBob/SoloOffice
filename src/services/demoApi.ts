@@ -1,3 +1,4 @@
+import { normaliseIncomeCategory } from '../utils/euerIncomeCategory';
 import { sameRecurrenceRule } from '../../backend/utils/jobRecurrenceRule.js';
 import { generateUUID } from '../utils/uuid';
 import type { JobRecurrence, JobRecurrenceRule, TerminologyProfile, WorkspaceResetOptions } from '../types';
@@ -14,6 +15,8 @@ import { addDays, canAccessDemoFinance, demoExpenseDueDates, demoLevyFromRun, de
 import { isRecurringExpenseDue, occurrenceOnOrAfter } from '../../backend/shared/recurrence.js';
 import { checkManualTransition } from '../../backend/shared/stateMachines.js';
 import { jobBulkDeleteProblem, jobDeleteProblem, jobEditProblem } from '../../backend/shared/jobChangeRules.js';
+import { quoteStatusAfterJobConversion, quoteToJobData, quoteToJobProblem } from '../../backend/shared/quoteToJob.js';
+import { formatDateInputValue, toJobDayValue } from '../utils/invoicePeriod';
 import type { ForecastResult, LevyPayment, RecurringExpense, RecurringExpenseRun, TaxProfile, WorkspaceExtension } from '../types/finance';
 import { buildForecast } from '../../backend/shared/forecast/index.js';
 import { euerAttributionYear, paymentDueDate, vatPeriodKeyFor } from '../../backend/shared/vat/periods.js';
@@ -504,13 +507,16 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
       ...(index % 2 === 0 ? [makeItem('Zusatzleistung und Dokumentation', 85 + index * 10, 1, 1)] : []),
     ];
     const totals = calculateItems(items);
-    const issueOffset = index === 6 ? -365 - (index * 4 + 1) : -(index * 4 + 1);
+    // Zahlungsziel 14 Tage; „Überfällig“ nur mit Fälligkeit in der Vergangenheit.
+    const baseStatus = (['draft', 'sent', 'paid', 'overdue'][index % 4]);
+    const issueOffset = (index === 6 ? -365 : 0) - (index * 4 + 1) - (baseStatus === 'overdue' ? 30 : 0);
+    const dueOffset = issueOffset + 14;
     return {
       id: generateUUID(), invoiceNumber: `RE-${yearOf(issueOffset)}-${String(index + 1).padStart(3, '0')}`,
       customerId: customer.id, customerName: customer.name,
-      issueDate: isoDate(issueOffset), dueDate: isoDate(14 - index * 3),
+      issueDate: isoDate(issueOffset), dueDate: isoDate(dueOffset),
       ...totals,
-      status: (['draft', 'sent', 'paid', 'overdue'][index % 4]), notes: fixture.workDescription,
+      status: baseStatus === 'sent' && dueOffset < 0 ? 'overdue' : baseStatus, notes: fixture.workDescription,
       createdAt: isoDate(issueOffset),
     };
   });
@@ -521,7 +527,7 @@ function enrichDemoState(state: DemoState, profile: TerminologyProfile): DemoSta
     const totals = calculateItems(items);
     return {
       id: generateUUID(), quoteNumber: `AN-${yearOf(-(index * 6 + 2))}-${String(index + 1).padStart(3, '0')}`,
-      customerId: customer.id, customerName: customer.name, issueDate: isoDate(-(index * 6 + 2)), validUntil: isoDate(20 - index * 2),
+      customerId: customer.id, customerName: customer.name, issueDate: isoDate(-(index * 6 + 2)), validUntil: isoDate(index === 4 ? -3 : 20 - index * 2),
       ...totals, status: (['draft', 'sent', 'accepted', 'rejected', 'expired', 'billed'][index]),
       notes: fixture.workDescription, createdAt: isoDate(-(index * 6 + 2)),
     };
@@ -773,7 +779,7 @@ function createInitialState(profile: TerminologyProfile = 'customers'): DemoStat
       email: 'demo@example.com', phone: '030 1234567', website: 'demo.solooffice.de',
       taxId: 'DE123456789', bankAccount: 'DE02 1203 0000 0000 2020 51', bic: 'BYLADEM1001',
       primaryColor: '#2563eb', secondaryColor: '#64748b', jobTrackingEnabled: true, quotesEnabled: true,
-      reportingEnabled: true, remindersEnabled: true, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
+      reportingEnabled: true, discountsEnabled: true, remindersEnabled: true, reminderDaysAfterDue: 7, reminderDaysBetween: 7, reminderFeeStage1: 0, reminderFeeStage2: 2.5, reminderFeeStage3: 5, reminderInterestEnabled: false, reminderBaseInterestRate: 1.27, defaultPaymentDays: 30, isSmallBusiness: false, invoiceStartNumber: 1,
       invoiceNumberPattern: 'RE-{YYYY}-{NNN}', creditNoteNumberPattern: 'GS-{YYYY}-{NNN}',
       locale: 'de-DE', numberFormat: 'european', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timeFormat: '24h', timeZone: 'Europe/Berlin', themeMode: 'system', terminologyProfile: 'customers', receiptLabel: 'Belege',
       invoiceTemplates: [], createdAt: isoDate(),
@@ -935,6 +941,11 @@ function saveState(state: DemoState) {
   localStorage.setItem(getDemoDataStorageKey(), JSON.stringify(state));
 }
 
+// Auftragstag als Kalendertag (lokaler Tag bei Zeitstempeln, siehe toJobDayValue).
+function jobDay(value: unknown): string {
+  return toJobDayValue(value as Date | string) || dateOnly(value);
+}
+
 function dateOnly(value: unknown): string {
   return new Date(String(value)).toISOString().split('T')[0];
 }
@@ -960,7 +971,9 @@ function addScheduleInterval(value: string, frequency: string, intervalValue = 1
   }
   else if (intervalUnit === 'day') date.setDate(date.getDate() + Math.max(1, intervalValue));
   else if (intervalUnit === 'week') date.setDate(date.getDate() + Math.max(1, intervalValue) * 7);
-  return date.toISOString().split('T')[0];
+  // Lokale Datumsteile verwenden: toISOString() rechnet in UTC und verschiebt
+  // lokale Mitternacht östlich von UTC auf den Vortag.
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 const demoRecurringFrequencies = new Set(['monthly', 'quarterly', 'semiannual', 'annual', 'custom']);
@@ -1177,7 +1190,7 @@ function demoImportContext(state: DemoState): PlannerContext {
     customers: state.customers.map(customer => ({ ...customer })),
     jobs: state.jobs.map(job => ({
       id: job.id, jobNumber: job.jobNumber, externalJobNumber: job.externalJobNumber, customerId: job.customerId,
-      title: job.title, date: dateOnly(job.date), startTime: job.startTime, status: job.status, invoiceId: job.invoiceId || null,
+      title: job.title, date: jobDay(job.date), startTime: job.startTime, status: job.status, invoiceId: job.invoiceId || null,
     })),
     quotes: state.quotes.map(quote => ({ id: quote.id, quoteNumber: quote.quoteNumber })),
     hourlyRates: state.hourlyRates.map(rate => ({ id: rate.id, name: rate.name })),
@@ -1201,7 +1214,7 @@ function demoImportContext(state: DemoState): PlannerContext {
         customerEmail: customer?.email,
         issueDate: dateOnly(invoice.issueDate),
         serviceDate: invoice.serviceDate ? dateOnly(invoice.serviceDate) : null,
-        jobDates: Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs.map(job => dateOnly((job as DemoRecord).jobDate || (job as DemoRecord).date)) : [],
+        jobDates: Array.isArray(invoice.sourceJobs) ? invoice.sourceJobs.map(job => jobDay((job as DemoRecord).jobDate || (job as DemoRecord).date)) : [],
         itemTaxRates: Array.isArray(invoice.items) ? (invoice.items as DemoRecord[]).map(item => Number(item.taxRate)) : [],
         status: invoice.status,
         total: Number(invoice.total || 0),
@@ -1209,6 +1222,16 @@ function demoImportContext(state: DemoState): PlannerContext {
       };
     }),
   };
+}
+
+/** Gelöschter Auftrag: das Angebot verliert den Verweis und lässt sich erneut umwandeln. */
+function releaseQuotesOfJobs(state: DemoState, jobIds: string[]): void {
+  state.quotes.forEach(quote => {
+    if (jobIds.includes(String(quote.convertedToJobId))) {
+      delete quote.convertedToJobId;
+      delete quote.convertedToJobNumber;
+    }
+  });
 }
 
 function nextDemoDocumentNumber(existing: unknown[], prefix: string, date: unknown): string {
@@ -1385,7 +1408,7 @@ function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, f
       if (data.kind === 'payment') {
         addEuerEntry({
           id: generateUUID(), entryType: 'income', entryDate: data.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
-          category: 'other_income', amount: data.amount, taxRate: data.taxRate, notes: importNote(data.notes, entry.rowNumbers),
+          category: 'operating_income', amount: data.amount, taxRate: data.taxRate, notes: importNote(data.notes, entry.rowNumbers),
           sourceType: 'invoice_payment', sourceId: data.invoiceId, externalReference: data.externalReference || undefined,
         });
         touchedInvoices.add(String(data.invoiceId));
@@ -1449,7 +1472,7 @@ function applyDemoImport(state: DemoState, resource: string, plan: ImportPlan, f
       if (payment) {
         addEuerEntry({
           id: generateUUID(), entryType: 'income', entryDate: payment.entryDate, description: `Zahlung Rechnung ${data.invoiceNumber}`,
-          category: 'other_income', amount: payment.amount, taxRate: payment.taxRate, notes: importNote('', entry.rowNumbers),
+          category: 'operating_income', amount: payment.amount, taxRate: payment.taxRate, notes: importNote('', entry.rowNumbers),
           sourceType: 'invoice_payment', sourceId: invoice.id,
         });
       }
@@ -1714,7 +1737,7 @@ function demoImportRequest<T>(state: DemoState, parts: string[], method: string,
     const dryRun = data.dryRun !== false;
     const items: DemoImportRunItem[] = [];
     const candidates = state.invoices.filter(invoice => invoice.origin === 'imported' && !(Array.isArray(invoice.jobSources) && invoice.jobSources.length));
-    const jobs = state.jobs.map(job => ({ id: job.id, customerId: job.customerId, title: job.title, date: dateOnly(job.date), status: job.status, invoiceId: job.invoiceId || null }));
+    const jobs = state.jobs.map(job => ({ id: job.id, customerId: job.customerId, title: job.title, date: jobDay(job.date), status: job.status, invoiceId: job.invoiceId || null }));
     const preview = candidates.map(invoice => {
       const actions: DemoCourseAction[] = planInvoiceCourses({ customerId: String(invoice.customerId || ''), date: dateOnly(invoice.serviceDate || invoice.issueDate), items: ((invoice.items || []) as DemoRecord[]).map((item, index) => ({ description: String(item.description || ''), courseName: typeof item.courseName === 'string' ? item.courseName : null, quantity: Number(item.quantity || 1), unitPrice: Number(item.unitPrice || 0), order: Number(item.order || index + 1), unit: typeof item.unit === 'string' ? item.unit : null })) }, jobs);
       actions.filter(action => action.action === 'assign').forEach(action => {
@@ -2472,7 +2495,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const entryType = String(input.entryType || ''), description = String(input.description || '').trim();
       const amount = Number(input.amount), date = assertDemoDate(input.date, 'Prognosedatum');
       const category = input.category ? String(input.category) : null;
-      const allowed = ['other_income','materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','allowance','other_expense'];
+      const allowed = ['operating_income','other_income','materials','office','software','telecommunications','travel','vehicle','marketing','professional_services','insurance','bank_fees','rent','memberships','allowance','other_expense'];
       if (!['income','expense'].includes(entryType) || !description || description.length > 255 || !Number.isFinite(amount) || amount < 0 || category && !allowed.includes(category)) throw new Error('Bitte Art, Datum, Bezeichnung, Kategorie und Betrag prüfen.');
       return { id: current?.id || generateUUID(), entryType, date, description, category, amount,
         createdAt: current?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -2764,7 +2787,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       entryType: 'income',
       entryDate,
       description: `Zahlung Rechnung ${invoice.invoiceNumber}`,
-      category: 'other_income',
+      category: 'operating_income',
       amount: amountCents / 100,
       taxRate: taxableNet > 0 ? Number(invoice.taxAmount || 0) / taxableNet * 100 : 0,
       notes: notes || undefined,
@@ -3183,6 +3206,40 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     return state.company as unknown as T;
   }
 
+  if (resource === 'quotes' && parts[2] === 'convert-to-job' && id && method === 'POST') {
+    const quote = state.quotes.find(item => item.id === id);
+    if (!quote) throw new DemoApiError('Angebot nicht gefunden.', 404, 'QUOTE_NOT_FOUND');
+    const existingJob = state.jobs.find(job => job.sourceQuoteId === quote.id);
+    const problem = quoteToJobProblem(
+      { status: String(quote.status ?? ''), convertedToInvoiceId: quote.convertedToInvoiceId as string | undefined },
+      existingJob ? String(existingJob.id) : null,
+    );
+    if (problem) throw new DemoApiError(problem.error, problem.status, problem.code);
+    const today = formatDateInputValue(new Date());
+    const jobData = quoteToJobData({
+      id: String(quote.id), quoteNumber: String(quote.quoteNumber), customerId: String(quote.customerId),
+      customerName: String(state.customers.find(customer => customer.id === quote.customerId)?.name || quote.customerName || ''),
+      notes: quote.notes as string | undefined,
+      items: (Array.isArray(quote.items) ? quote.items : []) as Parameters<typeof quoteToJobData>[0]['items'],
+    }, { today, newId: generateUUID });
+    const job: DemoRecord = {
+      ...jobData,
+      id: generateUUID(),
+      jobNumber: nextDemoDocumentNumber(state.jobs.map(item => item.jobNumber), 'AB', today),
+      timeEntries: [],
+      attachments: [],
+      createdAt: isoDate(),
+      updatedAt: isoDate(),
+    };
+    state.jobs.push(job);
+    quote.status = quoteStatusAfterJobConversion(String(quote.status));
+    quote.convertedToJobId = job.id;
+    quote.convertedToJobNumber = job.jobNumber;
+    quote.updatedAt = isoDate();
+    saveState(state);
+    return { job, quote } as unknown as T;
+  }
+
   if (resource === 'quotes' && parts[2] === 'convert-to-invoice' && id && method === 'POST') {
     const quote = state.quotes.find(item => item.id === id);
     if (!quote) throw new Error('Angebot nicht gefunden');
@@ -3202,7 +3259,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       customerId: quote.customerId,
       customerName: quote.customerName,
       issueDate,
-      dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00`).getTime() + 30 * 86400000)),
+      dueDate: dateOnly(new Date(new Date(`${issueDate}T00:00:00Z`).getTime() + 30 * 86400000)),
       ...totals,
       status: 'draft',
       attachments: Array.isArray(quote.attachments)
@@ -3249,7 +3306,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       jobNumber: String(job.jobNumber || ''),
       externalJobNumber: job.externalJobNumber ? String(job.externalJobNumber) : undefined,
       title: String(job.title || ''),
-      jobDate: dateOnly(job.date || isoDate()),
+      jobDate: jobDay(job.date || isoDate()),
         recurrenceIndex: recurrence?.occurrenceIndex,
       };
     });
@@ -3271,6 +3328,14 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     captureDemoInvoice(state, invoice);
     state.invoices.push(invoice);
     jobsForInvoice.forEach(job => { job.status = 'invoiced'; job.updatedAt = isoDate(); });
+    jobsForInvoice.forEach(job => {
+      const sourceQuote = job.sourceQuoteId ? state.quotes.find(item => item.id === job.sourceQuoteId) : undefined;
+      if (sourceQuote && sourceQuote.status === 'accepted' && !sourceQuote.convertedToInvoiceId) {
+        sourceQuote.status = 'billed';
+        sourceQuote.convertedToInvoiceId = invoice.id;
+        sourceQuote.updatedAt = isoDate();
+      }
+    });
     saveState(state);
     return invoice as unknown as T;
   }
@@ -3367,6 +3432,10 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
 
   if (resource === 'euer-entries') {
     const entries = state.euerEntries;
+    // Entspricht Migration 064: Zahlungen auf Rechnungen (Verknüpfung zur Rechnung) sind Betriebseinnahmen.
+    for (const existing of entries) {
+      if (existing.sourceType === 'invoice_payment' && existing.entryType === 'income' && existing.category === 'other_income') existing.category = 'operating_income';
+    }
     const history = state.euerEntryHistory;
     const addHistory = (entry: DemoRecord, action: 'created' | 'updated' | 'voided', reason?: string, oldData?: DemoRecord) => {
       history.push({
@@ -3408,7 +3477,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       if (vatFields.error) throw new Error(vatFields.error);
       validateDemoEuerSource(state, data);
       const record: DemoRecord = {
-        ...data,
+        ...normaliseIncomeCategory(data),
         ...vatFields.values,
         id: generateUUID(),
         entryDate: dateOnly(data.entryDate),
@@ -3438,7 +3507,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         if (entries[index].sourceType === 'vat_payment' || data.sourceType === 'vat_payment') throw new DemoApiError('Diese Buchung wird über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
         if (entries[index].status === 'voided') throw new Error('Eine stornierte Buchung kann nicht bearbeitet werden.');
         const oldEntry = entries[index];
-        const updated: DemoRecord = { ...oldEntry, ...data, id, updatedAt: isoDate() };
+        const updated: DemoRecord = normaliseIncomeCategory({ ...oldEntry, ...data, id, updatedAt: isoDate() });
         if (['ust', 'vat_payment', 'vat_refund'].includes(String(updated.category))) throw new DemoApiError('USt-Zahlungen werden über die Umsatzsteuer verwaltet.', 409, 'VAT_PAYMENT_MANAGED');
         const vatFields = normalizeEuerVatFields(updated, String(updated.entryType), Number(updated.amount), Number(updated.taxRate || 0));
         if (vatFields.error) throw new Error(vatFields.error);
@@ -3753,6 +3822,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         id: generateUUID(),
         customerName: customer.name,
         ...normalized,
+        status: data.status || 'active',
         runs: [],
         createdAt: isoDate(),
         updatedAt: isoDate(),
@@ -3936,7 +4006,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
       const recurrence = data.recurrence as JobRecurrenceRule | undefined;
       const occurrenceDates = recurrence
         ? getJobRecurrenceDates(recurrence)
-        : [dateOnly(data.date || isoDate())];
+        : [jobDay(data.date || isoDate())];
       if (occurrenceDates.length === 0) throw new Error('Die Wiederholung erzeugt keine Einheiten.');
 
       const recurrenceId = recurrence ? generateUUID() : undefined;
@@ -4136,6 +4206,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
         const deleteProblem = jobDeleteProblem(String(items[index].status ?? ''));
         if (deleteProblem) throw new DemoApiError(deleteProblem.error, deleteProblem.status, 'JOB_INVOICED');
       }
+      if (key === 'jobs' && index >= 0) releaseQuotesOfJobs(state, [String(items[index].id)]);
       if (key === 'quotes' && (items[index]?.status !== 'draft' || items[index]?.convertedToInvoiceId)) throw new Error('Nur unabhängige Angebotsentwürfe können gelöscht werden.');
       if (key === 'invoices' && (
         items[index]?.status !== 'draft'
@@ -4165,6 +4236,7 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
     const bulkProblem = jobBulkDeleteProblem(state.jobs.filter(job => ids.includes(job.id)).map(job => ({ id: job.id, status: String(job.status ?? '') })));
     if (bulkProblem) throw new DemoApiError(bulkProblem.error, bulkProblem.status, 'JOB_INVOICED');
     const deletedIds = state.jobs.filter(job => ids.includes(job.id)).map(job => job.id);
+    releaseQuotesOfJobs(state, deletedIds.map(String));
     state.jobs = state.jobs.filter(job => !ids.includes(job.id));
     saveState(state);
     return {

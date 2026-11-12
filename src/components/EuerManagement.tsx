@@ -73,6 +73,7 @@ import { loadImportedInvoiceOriginal } from '../utils/pdfLazy';
 import { blobToBase64 } from '../utils/blobUtils';
 import { FloatingInfoTooltip } from './InfoTooltip';
 import { getEuerHistoryChanges, isActiveEuerEntry } from '../utils/euerHistory';
+import { summarizeEuer, type EuerSummaryEntry } from '../utils/euerSummary';
 /** Feste Spaltenbreiten inklusive Innenabstand; die Beschreibung nimmt den Rest ein. */
 const EUER_COLUMN_WIDTHS = { date: 120, category: 240, source: 112, amount: 128 } as const;
 const EUER_TABLE_LAYOUT = listTableLayout({
@@ -114,6 +115,7 @@ interface EuerRow {
   status?: 'active' | 'voided';}
 
 const categoryLabels: Record<EuerEntryCategory, string> = {
+  operating_income: 'Betriebseinnahmen (Rechnungen)',
   other_income: 'Sonstige Einnahmen',
   materials: 'Material und Waren',
   office: 'Bürobedarf',
@@ -167,7 +169,7 @@ const emptyDraft = (sourceType: EuerEntrySourceType = 'manual'): EntryDraft => (
   entryType: sourceType === 'invoice_payment' ? 'income' : 'expense',
   entryDate: todayLocal(),
   description: '',
-  category: sourceType === 'invoice_payment' ? 'other_income' : 'office',
+  category: sourceType === 'invoice_payment' ? 'operating_income' : 'office',
   amount: '',
   taxRate: String(sourceType === 'invoice_payment'
     ? resolveTaxParams(new Date().getFullYear()).params.vat.zeroRate
@@ -378,11 +380,17 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     ? monthPrefix ? `${monthPrefix} sind keine Buchungen mit unvollständigen USt-Angaben vorhanden.` : 'Keine Buchungen mit unvollständigen USt-Angaben.'
     : monthPrefix ? `${monthPrefix} sind keine Buchungen vorhanden.` : 'Keine Buchungen in diesem Zeitraum.';
 
-  const summary = useMemo(() => {
-    const income = rows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
-    const expenses = rows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
-    return { income, expenses, profit: income - expenses, count: rows.length };
-  }, [rows]);
+  const isSmallBusiness = Boolean(company?.isSmallBusiness);
+  // Gespeichert ist immer der Bruttobetrag. Die Aufstellung zerlegt ihn nur für die Anzeige (Regelbesteuerung: netto, USt und Vorsteuer getrennt).
+  const summarizeRows = useCallback((subset: EuerRow[]) => summarizeEuer(subset.map((row): EuerSummaryEntry => {
+    const entry = entriesById.get(row.id);
+    return {
+      entryType: row.entryType, category: row.category, amount: row.amount, taxRate: row.taxRate, status: row.status,
+      vatTreatment: entry?.vatTreatment ?? null, netAmount: entry?.netAmount ?? null, vatAmount: entry?.vatAmount ?? null,
+      inputTaxDeductible: entry?.inputTaxDeductible ?? null,
+    };
+  }), { smallBusiness: isSmallBusiness }), [entriesById, isSmallBusiness]);
+  const summary = useMemo(() => summarizeRows(rows), [rows, summarizeRows]);
   const forecastTotals = useMemo(() => forecastPlans.reduce((total, item) => {
     total[item.entryType] += Number(item.amount || 0);
     return total;
@@ -414,10 +422,10 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
 
   const monthly = useMemo(() => Array.from({ length: 12 }, (_, month) => {
     const monthRows = rows.filter(row => Number(row.entryDate.slice(5, 7)) - 1 === month);
-    const income = monthRows.filter(row => row.entryType === 'income').reduce((sum, row) => sum + row.amount, 0);
-    const expenses = monthRows.filter(row => row.entryType === 'expense').reduce((sum, row) => sum + row.amount, 0);
-    return { month, income, expenses, profit: income - expenses, bookingCount: monthRows.length };
-  }), [rows]);
+    const monthSummary = summarizeRows(monthRows);
+    const vatBalance = monthSummary.vatCollected + monthSummary.vatRefunded - monthSummary.inputTax - monthSummary.vatPaid;
+    return { month, income: monthSummary.income, expenses: monthSummary.expenses, vatBalance: Math.round(vatBalance * 100) / 100, profit: monthSummary.profit, bookingCount: monthRows.length };
+  }), [rows, summarizeRows]);
   const activeAverageMonthCount = year === currentYear
     ? new Date().getMonth() + 1
     : monthly.filter(item => item.bookingCount > 0).length;
@@ -734,7 +742,13 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     doc.text(`Steuernummer: ${company?.taxIdentificationNumber || 'nicht hinterlegt'} · Betriebsart: ${company?.taxBusinessType || 'nicht hinterlegt'} · Rechtsform: ${company?.legalForm || 'nicht hinterlegt'}`, 14, cursor);
     cursor += 10;
     doc.setFontSize(11);
-    doc.text(`Einnahmen: ${formatAmount(summary.income)}   Ausgaben: ${formatAmount(summary.expenses)}   Überschuss: ${formatAmount(summary.profit)}`, 14, cursor);
+    doc.text(isSmallBusiness
+      ? `Einnahmen: ${formatAmount(summary.income)}   Ausgaben (brutto): ${formatAmount(summary.expenses)}   Überschuss: ${formatAmount(summary.profit)}`
+      : `Einnahmen (netto): ${formatAmount(summary.income)}   Ausgaben (netto): ${formatAmount(summary.expenses)}   Überschuss: ${formatAmount(summary.profit)}`, 14, cursor);
+    if (!isSmallBusiness) {
+      cursor += 6;
+      doc.text(`Umsatzsteuer vereinnahmt: ${formatAmount(summary.vatCollected)}   erstattet: ${formatAmount(summary.vatRefunded)}   Vorsteuer: ${formatAmount(summary.inputTax)}   an Finanzamt gezahlt: ${formatAmount(summary.vatPaid)}`, 14, cursor);
+    }
     cursor += 10;
     doc.setFontSize(9);
     doc.text('Datum', 14, cursor);
@@ -853,11 +867,32 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
     <DueRecurringExpensesNotice onBooked={() => { void loadEntries(); }} onSettled={() => setDueNoticeSettled(true)} />
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />Einnahmen</div><p className="mt-3 text-2xl font-semibold tabular-nums text-emerald-700">{formatAmount(summary.income)}</p></article>
-      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />Ausgaben</div><p className="mt-3 text-2xl font-semibold tabular-nums text-rose-700">{formatAmount(summary.expenses)}</p></article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingUp className="h-4 w-4 text-emerald-600" />{isSmallBusiness ? 'Einnahmen' : 'Einnahmen (netto)'}</div><p className="mt-3 text-2xl font-semibold tabular-nums text-emerald-700">{formatAmount(summary.income)}</p>{!isSmallBusiness && <p className="mt-1 text-xs text-gray-500">ohne vereinnahmte Umsatzsteuer</p>}</article>
+      <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><TrendingDown className="h-4 w-4 text-rose-600" />{isSmallBusiness ? 'Ausgaben (brutto)' : 'Ausgaben (netto)'}</div><p className="mt-3 text-2xl font-semibold tabular-nums text-rose-700">{formatAmount(summary.expenses)}</p><p className="mt-1 text-xs text-gray-500">{isSmallBusiness ? 'inkl. nicht abziehbarer Vorsteuer' : 'ohne gezahlte Vorsteuer'}</p></article>
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-gray-500"><Calculator className="h-4 w-4 text-primary-custom" />Überschuss</div><p className={`mt-3 text-2xl font-semibold tabular-nums ${summary.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(summary.profit)}</p></article>
       <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="text-sm text-gray-500">Buchungen</div><p className="mt-3 text-2xl font-semibold tabular-nums text-gray-900">{summary.count}</p><p className="mt-1 text-xs text-gray-500">aktive Einnahmen und Ausgaben</p></article>
     </div>
+
+    <section aria-labelledby="euer-aufstellung" className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h3 id="euer-aufstellung" className="text-base font-semibold text-gray-900">Aufstellung {year}</h3>
+      <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm tabular-nums">
+        {isSmallBusiness ? <>
+          <dt className="text-gray-600">Einnahmen</dt><dd className="text-right text-emerald-700">{formatAmount(summary.income)}</dd>
+          <dt className="text-gray-600">Ausgaben (brutto, inkl. nicht abziehbarer Vorsteuer)</dt><dd className="text-right text-rose-700">{formatAmount(summary.expenses)}</dd>
+        </> : <>
+          <dt className="text-gray-600">Betriebseinnahmen (netto)</dt><dd className="text-right text-emerald-700">{formatAmount(summary.income)}</dd>
+          <dt className="text-gray-600">Vereinnahmte Umsatzsteuer</dt><dd className="text-right text-emerald-700">{formatAmount(summary.vatCollected)}</dd>
+          <dt className="text-gray-600">Erstattete Umsatzsteuer vom Finanzamt</dt><dd className="text-right text-emerald-700">{formatAmount(summary.vatRefunded)}</dd>
+          <dt className="text-gray-600">Betriebsausgaben (netto)</dt><dd className="text-right text-rose-700">{formatAmount(summary.expenses)}</dd>
+          <dt className="text-gray-600">Gezahlte Vorsteuer</dt><dd className="text-right text-rose-700">{formatAmount(summary.inputTax)}</dd>
+          <dt className="text-gray-600">An das Finanzamt gezahlte Umsatzsteuer</dt><dd className="text-right text-rose-700">{formatAmount(summary.vatPaid)}</dd>
+        </>}
+        <dt className="border-t border-gray-200 pt-1.5 font-semibold text-gray-900">Gewinn (Überschuss)</dt><dd className={`border-t border-gray-200 pt-1.5 text-right font-semibold ${summary.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(summary.profit)}</dd>
+      </dl>
+      <p className="mt-3 text-xs text-gray-500">{isSmallBusiness
+        ? 'Als Kleinunternehmer (§ 19 UStG) weisen Sie keine Umsatzsteuer aus und können keine Vorsteuer abziehen; Ausgaben zählen mit dem Bruttobetrag.'
+        : 'Umsatzsteuer und Vorsteuer werden getrennt ausgewiesen. Zahlungen an das Finanzamt und Erstattungen zählen im Jahr des Zahlungsflusses. Orientierung, keine Steuerberatung.'}</p>
+    </section>
 
     {forecastDialogOpen && <EuerForecastDialog
       year={year}
@@ -897,7 +932,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
         </div>
         <div className="mt-5 hidden overflow-x-auto lg:block">
           <table className="w-full min-w-[480px]">
-            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left table-head text-gray-500">Monat</th><th className="px-4 py-3 text-right table-head text-gray-500">Einnahmen</th><th className="px-4 py-3 text-right table-head text-gray-500">Ausgaben</th><th className="px-4 py-3 text-right table-head text-gray-500">Überschuss</th></tr></thead>
+            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left table-head text-gray-500">Monat</th><th className="px-4 py-3 text-right table-head text-gray-500">{isSmallBusiness ? 'Einnahmen' : 'Einnahmen (netto)'}</th><th className="px-4 py-3 text-right table-head text-gray-500">{isSmallBusiness ? 'Ausgaben (brutto)' : 'Ausgaben (netto)'}</th>{!isSmallBusiness && <th className="px-4 py-3 text-right table-head text-gray-500">USt-Saldo</th>}<th className="px-4 py-3 text-right table-head text-gray-500">Überschuss</th></tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {monthly.map(item => <tr key={item.month} className={selectedMonth === item.month ? 'bg-primary-light-custom' : 'hover:bg-gray-50'}>
                 <td className="px-4 py-3 font-medium text-gray-900"><button type="button" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth(current => current === item.month ? null : item.month)} className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-custom">{monthLabel(locale, year, item.month)}</button></td>
@@ -908,6 +943,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                     {addExpenseAction(item.month)}
                   </div>
                 </td>
+                {!isSmallBusiness && <td className="px-4 py-3 text-right text-gray-600">{formatAmount(item.vatBalance)}</td>}
                 <td className={`px-4 py-3 text-right font-medium ${item.profit >= 0 ? 'text-gray-900' : 'text-rose-700'}`}>{formatAmount(item.profit)}</td>
               </tr>)}
             </tbody>
@@ -1004,7 +1040,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                   {!isQuickExpense && <label className="text-base font-medium text-gray-700">Art<select value={draft.entryType} onChange={event => { const entryType = event.target.value as EuerEntryType; setDraft(current => ({ ...current, entryType, category: entryType === 'income' ? 'other_income' : current.category === 'other_income' ? 'office' : current.category })); }} className="form-input mt-1 w-full"><option value="expense">Ausgabe</option><option value="income">Einnahme</option></select></label>}
                   <label className="text-base font-medium text-gray-700">{draft.sourceType === 'invoice_payment' ? 'Zahlungsdatum' : 'Datum'}<input required type="date" value={draft.entryDate} onChange={event => setDraft(current => ({ ...current, entryDate: event.target.value }))} className="form-input mt-1 w-full" /></label>
                   <label className="text-base font-medium text-gray-700 sm:col-span-2">Beschreibung<input required value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value, category: current.entryType === 'expense' && (current.category === 'office' || current.category === 'other_expense') ? suggestCategory(event.target.value) : current.category }))} className="form-input mt-1 w-full" placeholder="z. B. Büromaterial" /></label>
-                  <label className="text-base font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? ['other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label>
+                  <label className="text-base font-medium text-gray-700">Kategorie<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value as EuerEntryCategory }))} className="form-input mt-1 w-full">{(draft.entryType === 'income' ? [draft.sourceType === 'invoice_payment' ? 'operating_income' : 'other_income'] : expenseCategories).map(category => <option key={category} value={category}>{categoryLabels[category as EuerEntryCategory]}</option>)}</select></label>
                   {draft.entryType === 'expense' && draft.sourceType !== 'invoice_payment' && draft.sourceType !== 'correction' && receiptOptions.length > 0 && (
                     <label className="text-base font-medium text-gray-700 md:col-span-2">Beleg (optional)<select value={draft.sourceType === 'receipt' ? draft.sourceId : ''} onChange={event => {
                       const receipt = receiptOptions.find(item => item.id === event.target.value);
@@ -1014,7 +1050,7 @@ export function EuerManagement({ onNavigate, initialAction }: EuerManagementProp
                     }} className="form-input mt-1 w-full"><option value="">Ohne Beleg</option>{receiptOptions.map(receipt => <option key={receipt.id} value={receipt.id}>{receipt.extractedData.vendorName || receipt.name}{receipt.extractedData.grossAmount != null ? ` · ${formatAmount(receipt.extractedData.grossAmount)}` : ''}</option>)}</select></label>
                   )}
                   {draft.entryType === 'income' && draft.sourceType === 'manual' && <label className="text-base font-medium text-gray-700 sm:col-span-2">{terminology.entity.singular} (optional)<select value={draft.customerId} onChange={event => setDraft(current => ({ ...current, customerId: event.target.value }))} className="form-input mt-1 w-full"><option value="">Ohne Zuordnung</option>{customers.filter(customer => customer.isActive !== false || customer.id === draft.customerId).map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>}
-                  {!isQuickExpense && <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Zahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option>{draft.sourceType === 'receipt' && <option value="receipt">Mit Beleg verknüpft</option>}</select></label>}
+                  {!isQuickExpense && <label className="text-base font-medium text-gray-700">Buchungsart<select value={draft.sourceType} onChange={event => { const sourceType = event.target.value as EuerEntrySourceType; setDraft(current => ({ ...current, sourceType, sourceId: sourceType === 'invoice_payment' ? current.sourceId : '', entryType: sourceType === 'invoice_payment' ? 'income' : current.entryType, category: sourceType === 'invoice_payment' ? 'operating_income' : current.category === 'operating_income' ? 'other_income' : current.category })); }} className="form-input mt-1 w-full"><option value="manual">Manuelle Buchung</option><option value="invoice_payment">Zahlung zu einer Rechnung</option><option value="correction">Korrektur / Gegenbuchung</option>{draft.sourceType === 'receipt' && <option value="receipt">Mit Beleg verknüpft</option>}</select></label>}
                 </div>
               </section>
 

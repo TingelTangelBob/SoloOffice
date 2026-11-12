@@ -30,12 +30,18 @@ import { LocalizedDateInput } from './LocalizedDateInput';
 import { InfoTooltip } from './InfoTooltip';
 import { PageHeader } from './PageHeader';
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return '< 1 KB';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024).toLocaleString('de-DE')} KB`;
+  return `${(bytes / (1024 * 1024)).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
+}
+
 interface DataImportCenterProps {
   onNavigate?: (page: string, filter?: string) => void;
 }
 
 const statusLabels: Record<ImportRun['status'], string> = {
-  pending: 'Offen – rückgängig möglich',
+  pending: 'Nicht abgeschlossen – rückgängig möglich',
   confirmed: 'Abgeschlossen',
   reverted: 'Rückgängig gemacht',
 };
@@ -46,6 +52,12 @@ const statusClasses: Record<ImportRun['status'], string> = {
   reverted: 'bg-gray-100 text-gray-600',
 };
 
+const confidenceHints: Record<ImportResourceCandidate['confidence'], string> = {
+  high: 'Die Spalten der Datei passen gut zu dieser Kategorie.',
+  medium: 'Ein Teil der erwarteten Spalten wurde gefunden. Prüfen Sie die Zuordnung im nächsten Schritt.',
+  low: 'Nur wenige Spalten passen. Prüfen Sie die Zuordnung sorgfältig oder überspringen Sie die Kategorie.',
+};
+
 const confidencePresentation: Record<ImportResourceCandidate['confidence'], { label: string; className: string }> = {
   high: { label: 'Gute Übereinstimmung', className: 'bg-green-100 text-green-800' },
   medium: { label: 'Teilweise erkannt', className: 'bg-amber-100 text-amber-900' },
@@ -53,7 +65,7 @@ const confidencePresentation: Record<ImportResourceCandidate['confidence'], { la
 };
 
 const guideSteps: Array<{ step: ImportIllustrationStep; title: string; text: string }> = [
-  { step: 'upload', title: '1. Datei hochladen', text: 'Excel, CSV, TSV oder JSON. Die Datei wird im Browser gelesen und nur zur Prüfung an den Server geschickt.' },
+  { step: 'upload', title: '1. Datei hochladen', text: 'Excel, CSV, TSV oder JSON. Die Datei wird im Browser gelesen, zur Prüfung an den Server gesendet und mit Ihrem Bestand abgeglichen. Gespeichert wird erst bei der Übernahme; danach finden Sie ein Zeilenprotokoll im Importverlauf.' },
   { step: 'detect', title: '2. Kategorien erkennen', text: 'SoloOffice erkennt, welche Kategorien in der Datei stecken, und bringt sie in die richtige Reihenfolge.' },
   { step: 'check', title: '3. Schritt für Schritt prüfen', text: 'Je Schritt Spalten prüfen, Vorschau und Summen vergleichen, dann übernehmen – oder den Schritt überspringen.' },
   { step: 'finish', title: '4. Umzug abschließen', text: 'Offene Importe können Sie vorher in umgekehrter Reihenfolge zurücknehmen. Nach dem Abschluss bleiben die übernommenen Daten bestehen.' },
@@ -102,7 +114,17 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const { invoices, refreshInvoices } = useInvoices();
   const { jobEntries, refreshJobEntries } = useJobs();
   const { quotes, refreshQuotes } = useQuotes();
-  const { confirm, notify } = useFeedback();
+  const { confirm, notify, dismissNotice } = useFeedback();
+  // Eine Fehlermeldung gilt nur für die Aktion, die sie ausgelöst hat: Beim Start der nächsten Aktion wird sie ausgeblendet.
+  const errorNoticeId = useRef<string | null>(null);
+  const clearErrorNotice = useCallback(() => {
+    if (errorNoticeId.current) dismissNotice(errorNoticeId.current);
+    errorNoticeId.current = null;
+  }, [dismissNotice]);
+  const notifyError = useCallback((options: { title?: string; message: string }) => {
+    clearErrorNotice();
+    errorNoticeId.current = notify({ variant: 'error', ...options });
+  }, [clearErrorNotice, notify]);
   const terminology = getTerminology(company.terminologyProfile);
   const canWrite = can('data.write');
   const canAdmin = can('workspace.settings');
@@ -116,6 +138,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   const [wizardSheet, setWizardSheet] = useState<string | undefined>(undefined);
   const [wizardSelectedRowNumbers, setWizardSelectedRowNumbers] = useState<number[] | undefined>(undefined);
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const wizardTriggerRef = useRef<HTMLElement | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -164,20 +187,22 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   }, [refreshCustomers, refreshInvoices, refreshJobEntries, refreshQuotes, setCompany, setHourlyRates, setMaterialTemplates]);
 
   const previewImportedCourses = async () => {
+    clearErrorNotice();
     setCourseBusy(true);
     try { setCoursePreview(await apiService.planImportedInvoiceCourses(true)); }
-    catch (error) { notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Kursvorschau konnte nicht erstellt werden.' }); }
+    catch (error) { notifyError({ message: error instanceof Error ? error.message : 'Die Kursvorschau konnte nicht erstellt werden.' }); }
     finally { setCourseBusy(false); }
   };
 
   const createImportedCourses = async () => {
+    clearErrorNotice();
     setCourseBusy(true);
     try {
       const result = await apiService.planImportedInvoiceCourses(false);
       setCoursePreview(null);
       notify({ variant: 'success', message: `${result.summary.created} Kurse angelegt, ${result.summary.assigned} zugeordnet.${result.runId ? ' Der Kurslauf kann im Importverlauf rückgängig gemacht werden.' : ''}` });
       await Promise.all([load(), refreshData('invoiceCourses')]);
-    } catch (error) { notify({ variant: 'error', message: error instanceof Error ? error.message : 'Die Kurse konnten nicht angelegt werden.' }); }
+    } catch (error) { notifyError({ message: error instanceof Error ? error.message : 'Die Kurse konnten nicht angelegt werden.' }); }
     finally { setCourseBusy(false); }
   };
 
@@ -199,18 +224,27 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     .filter(run => run.resource === resource && run.status !== 'reverted')
     .reduce((sum, run) => sum + Number(run.summary?.imported || 0), 0);
   const pendingRuns = runs.filter(run => run.status === 'pending');
+  /** Ein Lauf lässt sich nicht zurücknehmen, solange ein späterer Lauf darauf aufbaut (nur bekannt, wenn eine Datei geprüft wurde). */
+  const revertBlockReason = (run: ImportRun) => {
+    const dependent = runs.find(other => other.id !== run.id && other.status !== 'reverted'
+      && other.createdAt > run.createdAt
+      && dependencyPlan?.nodes.some(node => !node.synthetic && node.resource === other.resource && node.dependencies.includes(run.resource)));
+    return dependent ? `Zuerst den Import „${dependent.resourceLabel}“ rückgängig machen.` : null;
+  };
 
   const saveCutover = async () => {
+    clearErrorNotice();
     try {
       const result = await apiService.updateImportSettings({ cutoverDate: cutoverDate || null });
       setSavedCutoverDate(result.cutoverDate || '');
       notify({ variant: 'success', message: result.cutoverDate ? 'Der Stichtag wurde gespeichert.' : 'Der Stichtag wurde entfernt.' });
     } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Stichtag konnte nicht gespeichert werden.' });
+      notifyError({ message: error instanceof Error ? error.message : 'Der Stichtag konnte nicht gespeichert werden.' });
     }
   };
 
   const revert = async (run: ImportRun) => {
+    clearErrorNotice();
     const accepted = await confirm({
       title: 'Import rückgängig machen?',
       message: `Alle ${run.summary?.imported ?? ''} Datensätze aus „${run.fileName || run.resourceLabel}“ werden entfernt, geänderte Stammdaten zurückgesetzt. EÜR-Buchungen werden storniert und bleiben im Änderungsverlauf sichtbar.`,
@@ -224,13 +258,14 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       await Promise.all([load(), refreshData(run.resource)]);
       notify({ variant: 'success', message: 'Der Import wurde rückgängig gemacht.' });
     } catch (error) {
-      notify({ variant: 'error', title: 'Rückgängig machen nicht möglich', message: error instanceof Error ? error.message : 'Der Import konnte nicht rückgängig gemacht werden.' });
+      notifyError({ title: 'Rückgängig machen nicht möglich', message: error instanceof Error ? error.message : 'Der Import konnte nicht rückgängig gemacht werden.' });
     } finally {
       setBusyId(null);
     }
   };
 
   const confirmRun = async (run: ImportRun) => {
+    clearErrorNotice();
     const accepted = await confirm({
       title: 'Import abschließen?',
       message: 'Danach kann dieser Import nicht mehr rückgängig gemacht werden. Die übernommenen Daten bleiben unverändert erhalten.',
@@ -242,19 +277,20 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       await apiService.confirmImportRun(run.id);
       await load();
     } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Import konnte nicht abgeschlossen werden.' });
+      notifyError({ message: error instanceof Error ? error.message : 'Der Import konnte nicht abgeschlossen werden.' });
     } finally {
       setBusyId(null);
     }
   };
 
   const completeTakeover = async () => {
+    clearErrorNotice();
     if (!takeover?.session || takeover.session.status !== 'open') return;
     const accepted = await confirm({
       title: takeover.session.legacyBackfill ? 'Historischen Marker schließen?' : 'Umzug abschließen?',
       message: takeover.session.legacyBackfill
-        ? 'Der historische Sitzungsmarker wird endgültig geschlossen. Frühere Importläufe werden dabei weder bestätigt noch gelöscht und bleiben separat verwaltbar. Der einmalige Start bleibt dauerhaft verbraucht.'
-        : 'Damit wird die Umzugssitzung endgültig abgeschlossen. Noch offene Importe werden bestätigt und können danach nicht mehr rückgängig gemacht werden. Der einmalige Start bleibt dauerhaft verbraucht.',
+        ? 'Der historische Sitzungsmarker wird endgültig geschlossen. Frühere Importläufe werden dabei weder bestätigt noch gelöscht und bleiben separat verwaltbar. Ein Umzug lässt sich danach nicht erneut starten.'
+        : 'Damit wird die Umzugssitzung endgültig abgeschlossen. Noch offene Importe werden bestätigt und können danach nicht mehr rückgängig gemacht werden. Ein Umzug lässt sich danach nicht erneut starten.',
       confirmText: takeover.session.legacyBackfill ? 'Marker schließen' : 'Umzug abschließen',
     });
     if (!accepted) return;
@@ -265,13 +301,14 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       await load();
       notify({ variant: 'success', message: 'Der Umzug wurde abgeschlossen.' });
     } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Umzug konnte nicht abgeschlossen werden.' });
+      notifyError({ message: error instanceof Error ? error.message : 'Der Umzug konnte nicht abgeschlossen werden.' });
     } finally {
       setBusyId(null);
     }
   };
 
   const startTakeover = async () => {
+    clearErrorNotice();
     if (loading || loadError || takeover?.takeoverUsed) return null;
     setBusyId('takeover-start');
     try {
@@ -281,7 +318,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
       notify({ variant: 'success', message: 'Die Umzugssitzung wurde gestartet.' });
       return status;
     } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Umzug konnte nicht gestartet werden.' });
+      notifyError({ message: error instanceof Error ? error.message : 'Der Umzug konnte nicht gestartet werden.' });
       await load();
       return null;
     } finally {
@@ -290,11 +327,12 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   };
 
   const openProtocol = async (run: ImportRun) => {
+    clearErrorNotice();
     setBusyId(run.id);
     try {
       setProtocolRun(await apiService.getImportRun(run.id));
     } catch (error) {
-      notify({ variant: 'error', message: error instanceof Error ? error.message : 'Das Protokoll konnte nicht geladen werden.' });
+      notifyError({ message: error instanceof Error ? error.message : 'Das Protokoll konnte nicht geladen werden.' });
     } finally {
       setBusyId(null);
     }
@@ -305,6 +343,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   };
 
   const scanFile = async (file: File, sheet?: string) => {
+    clearErrorNotice();
     if (scanBusy || busyId !== null || loading || loadError) return;
     setScanBusy(true);
     setScanError('');
@@ -413,19 +452,21 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
   }, [completedSteps, formSteps.length, skippedCategories.length]);
 
   const openCategory = async (resource: ImportResource, rowNumbers?: number[]) => {
+    clearErrorNotice();
     if (!scannedFile || busyId !== null || loading || loadError) return;
+    wizardTriggerRef.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     // Datenhinweise dürfen die Zuordnung nicht sperren: fehlende Bezüge und
     // Spalten werden dort korrigiert. Nur noch offene Kategorien stehen davor.
     const blocked = categoryPrerequisiteReason(resource);
     if (blocked) {
-      notify({ variant: 'error', title: 'Kategorie noch gesperrt', message: blocked });
+      notifyError({ title: 'Kategorie noch gesperrt', message: blocked });
       return;
     }
     let status = takeover;
     if (!status?.session && canAdmin) {
       const accepted = await confirm({
         title: 'Datenübernahme jetzt starten?',
-        message: 'Die Übernahme beginnt mit dieser Datei. Der einmalige Umzug-Start wird dabei verbraucht; bis zum Abschluss lässt sich jeder Import zurücknehmen.',
+        message: 'Die Übernahme beginnt mit dieser Datei. Der Umzug lässt sich nur einmal starten; bis zum Abschluss können Sie jeden Import zurücknehmen.',
         confirmText: 'Übernahme starten',
       });
       if (!accepted) return;
@@ -463,19 +504,6 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
     <div className="page-root space-y-6">
       <PageHeader title="Datenübernahme" subtitle="Daten aus Ihrer bisherigen Lösung in einem geführten Durchgang übernehmen." />
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0"><h2 className="font-semibold text-gray-900">Kurse für übernommene Rechnungen</h2><p className="mt-1 text-sm text-gray-600">Ergänzt importierte Rechnungen ohne Kursverknüpfung. Gleiche Kunden, Daten und Positionstitel werden nur bei einem eindeutigen, noch offenen Kurs zugeordnet.</p></div>
-          <button type="button" onClick={() => void previewImportedCourses()} disabled={!canWrite || courseBusy} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{courseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Vorschau erstellen</button>
-        </div>
-        {coursePreview && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-          {coursePreview.demoMode && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Demo: Änderungen gelten nur in diesem Browser.</p>}
-          <p className="text-sm font-medium text-gray-800">{coursePreview.summary.invoices} Rechnungen · {coursePreview.summary.created} Kurse neu · {coursePreview.summary.assigned} Zuordnungen</p>
-          {coursePreview.preview.length > 0 ? <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">{coursePreview.preview.map(invoice => <li key={invoice.invoiceId} className="rounded-lg bg-gray-50 p-3"><p className="font-medium text-gray-900">Rechnung {invoice.invoiceNumber}</p><ul className="mt-1 space-y-1 text-gray-600">{invoice.actions.map((action, index) => <li key={`${invoice.invoiceId}-${index}`} className="break-words">{action.action === 'assign' ? 'Zuordnung' : 'Neuer Kurs'} · {action.title} · {formatIsoDate(action.date)}</li>)}</ul></li>)}</ul> : <p className="text-sm text-gray-600">Keine importierten Rechnungen ohne Kursverknüpfung gefunden.</p>}
-          <button type="button" onClick={() => void createImportedCourses()} disabled={!canWrite || courseBusy || coursePreview.summary.created + coursePreview.summary.assigned === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 text-sm font-medium text-white disabled:opacity-50">Kurse jetzt anlegen</button>
-        </div>}
-      </section>
-
       {loadError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">{loadError}</div>}
 
       {/* 1. Datei: der Einstieg in die Übernahme */}
@@ -483,7 +511,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         <div className="flex flex-col gap-1">
           <h2 id="takeover-upload-title" className="text-lg font-semibold text-gray-900">Datei hochladen</h2>
           <p className="text-sm text-gray-600">
-            Excel (.xlsx), CSV, TSV oder JSON bis 10 MB. Die Datei wird im Browser gelesen; der Server prüft nur die Struktur und speichert dabei keine Fachdaten.
+            Excel (.xlsx), CSV, TSV oder JSON bis 10 MB. Die Datei wird im Browser gelesen; die Zeilen werden zur Prüfung an den Server gesendet und mit Ihrem Bestand abgeglichen. Gespeichert wird erst bei der Übernahme.
           </p>
         </div>
 
@@ -518,7 +546,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         {scanResult && scannedFile && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
           <div className="grid gap-3 text-sm text-gray-700 sm:grid-cols-2 lg:grid-cols-4">
             <div className="min-w-0"><p className="table-head text-gray-500">Datei</p><p className="mt-0.5 truncate font-medium" title={scanResult.fileName}>{scanResult.fileName}</p></div>
-            <div><p className="table-head text-gray-500">Typ / Größe</p><p className="mt-0.5">{scanResult.format.toUpperCase()} · {(scannedFile.size / 1024).toLocaleString('de-DE', { maximumFractionDigits: 0 })} KB</p></div>
+            <div><p className="table-head text-gray-500">Typ / Größe</p><p className="mt-0.5">{scanResult.format.toUpperCase()} · {formatFileSize(scannedFile.size)}</p></div>
             <div className="min-w-0">
               <p className="table-head text-gray-500">Blatt</p>
               {scanResult.sheets && scanResult.sheets.length > 1
@@ -586,11 +614,11 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                 <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="table-head text-primary-custom">Schritt {activeStep.position} von {formSteps.length}</p>
+                      <p className="table-head text-primary-custom">Kategorie {activeStep.position} von {formSteps.length}</p>
                       <h3 className="mt-1 text-base font-semibold text-gray-900">{activeStep.node.label}</h3>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${stepState(activeStep).className}`}>{stepState(activeStep).label}</span>
-                        {activeStep.candidate && <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${confidencePresentation[activeStep.candidate.confidence].className}`}>{confidencePresentation[activeStep.candidate.confidence].label}</span>}
+                        {activeStep.candidate && <span title={confidenceHints[activeStep.candidate.confidence]} className={`rounded-full px-2 py-0.5 text-xs font-medium ${confidencePresentation[activeStep.candidate.confidence].className}`}>{confidencePresentation[activeStep.candidate.confidence].label}</span>}
                         {activeStep.node.dependencies.length > 0 && (
                           <span className="text-xs text-gray-600">Voraussetzung: {activeStep.node.dependencies.map(dependency => formSteps.find(step => step.node.id === dependency)?.node.label || dependency).join(', ')}</span>
                         )}
@@ -613,8 +641,9 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                   ) : (
                     <div className="mt-3 space-y-2">
                       {activeStep.blocked && !activeStep.completed && !activeStep.skipped && <p className="text-sm text-red-800">{activeStep.blocked}</p>}
+                      {activeStep.completed && <p className="text-sm text-gray-700">{resourceLabel(activeStep.node.resource)} wurden in diesem Umzug bereits übernommen; je Umzug ist jede Kategorie einmal freigegeben. Weitere Daten dieser Art importieren Sie in der jeweiligen Liste über „Importieren“ oder nachdem Sie den Import im Importverlauf zurückgenommen haben.</p>}
                       {activeStep.candidate && (
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-gray-700" title={activeStep.candidate.overlaps.length ? 'Überschneidung: Dieselben Zeilen der Datei passen auch zu einer anderen Kategorie, etwa Kunden- und Rechnungsangaben in einer Zeile. Details unter „Erkannte Spalten und Hinweise“.' : undefined}>
                           {[
                             `${activeStep.candidate.matchedRowCount.toLocaleString('de-DE')} passende Zeilen`,
                             activeStep.candidate.matchedColumns.length ? `${activeStep.candidate.matchedColumns.length} Spalten` : null,
@@ -654,6 +683,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                       <div className="flex flex-col gap-2 sm:flex-row-reverse sm:items-center">
                         <button
                           type="button"
+                          data-import-open
                           onClick={() => void openCategory(activeStep.node.resource, activeStep.candidate?.matchedRowNumbers)}
                           disabled={activeStep.completed || activeStep.skipped || Boolean(categoryPrerequisiteReason(activeStep.node.resource)) || !canOpenImport(activeStep.node.resource) || busyId !== null}
                           className="btn-primary inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -725,16 +755,16 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
             </button>
           )}
         </div>
-        <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <form onSubmit={event => { event.preventDefault(); if (canAdmin && cutoverDate !== savedCutoverDate) void saveCutover(); }} className="mt-4 flex min-w-0 flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="w-full min-w-0 text-sm font-medium text-gray-700 sm:w-auto">
             Stichtag
             <LocalizedDateInput aria-label="Stichtag" value={cutoverDate} onChange={setCutoverDate} disabled={!canAdmin} locale={company.locale || 'de-DE'} dateFormat={company.dateFormat} className="mt-1 w-full sm:w-44 [&_input]:min-h-11" />
           </label>
-          <button type="button" onClick={saveCutover} disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 w-full rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" title={!canAdmin ? 'Nur Administratoren können den Stichtag festlegen' : cutoverDate === savedCutoverDate ? 'Bitte zuerst ein neues Datum wählen' : undefined}>
+          <button type="submit" disabled={!canAdmin || cutoverDate === savedCutoverDate} className="btn-primary min-h-11 w-full rounded-lg px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" title={!canAdmin ? 'Nur Administratoren können den Stichtag festlegen' : cutoverDate === savedCutoverDate ? 'Bitte zuerst ein neues Datum wählen' : undefined}>
             Speichern
           </button>
-          <p className="min-w-0 w-full text-sm text-gray-600 sm:w-auto sm:flex-1">Ab diesem Datum arbeiten Sie mit SoloOffice.{savedCutoverDate ? '' : ' Noch kein Stichtag gesetzt.'}</p>
-        </div>
+          <p className="min-w-0 w-full text-sm text-gray-600 sm:w-auto sm:flex-1">{savedCutoverDate ? `Stichtag: ${formatIsoDate(savedCutoverDate)}. Ab diesem Datum arbeiten Sie mit SoloOffice.` : 'Ab diesem Datum arbeiten Sie mit SoloOffice. Noch kein Stichtag gesetzt.'}</p>
+        </form>
         {takeover?.demoMode && <p className="mt-3 text-xs text-gray-500">Demo: Status nur in dieser Browser-Sitzung.</p>}
         {onNavigate && <p className="mt-3 text-sm text-gray-600">Prüfen Sie vor der Übernahme Ihre <button type="button" className="font-medium text-primary-custom hover:underline" onClick={() => onNavigate('settings')}>Firmendaten in den Einstellungen</button>.</p>}
       </section>
@@ -761,7 +791,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
         <div className="mt-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="font-semibold text-gray-900">Komplettvorlage: eine Datei, mehrere Schritte</p>
-            <p className="mt-1 text-sm text-gray-600">Kundenangaben und Rechnungen stehen in denselben Zeilen. Beim Hochladen entstehen daraus zwei Schritte: zuerst {terminology.entity.plural}, dann Rechnungen.</p>
+            <p className="mt-1 text-sm text-gray-600">Kundenangaben und Rechnungen stehen in denselben Zeilen. Beim Hochladen entstehen daraus mehrere Schritte, je nach Inhalt der Datei: zuerst {terminology.entity.plural}, dann Rechnungen und, wenn Positionstexte vorkommen, Positionsvorlagen.</p>
           </div>
           <button type="button" onClick={() => downloadCsvText('Vorlage-Komplettuebernahme.csv', buildCombinedImportTemplate())} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50">
             <Download className="h-4 w-4 text-gray-500" aria-hidden="true" />Komplettvorlage
@@ -847,7 +877,7 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
                   <button type="button" onClick={() => void openProtocol(run)} disabled={busyId !== null} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Protokoll</button>
                   {run.status === 'pending' && canWrite && (
                     <>
-                      <button type="button" onClick={() => void revert(run)} disabled={busyId !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
+                      <button type="button" onClick={() => void revert(run)} disabled={busyId !== null || Boolean(revertBlockReason(run))} title={revertBlockReason(run) || undefined} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
                         {busyId === run.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Rückgängig
                       </button>
                       {!run.migrationSessionId && <button type="button" onClick={() => void confirmRun(run)} disabled={busyId !== null} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Abschließen</button>}
@@ -859,6 +889,21 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           </ul>
         )}
       </section>
+
+      {importedCount('invoices') > 0 && (
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0"><h2 className="font-semibold text-gray-900">Kurse für übernommene Rechnungen</h2><p className="mt-1 text-sm text-gray-600">Ergänzt importierte Rechnungen ohne Kursverknüpfung. Gleiche Kunden, Daten und Positionstitel werden nur bei einem eindeutigen, noch offenen Kurs zugeordnet.</p></div>
+          <button type="button" onClick={() => void previewImportedCourses()} disabled={!canWrite || courseBusy} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50">{courseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Vorschau erstellen</button>
+        </div>
+        {coursePreview && <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+          {coursePreview.demoMode && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Demo: Änderungen gelten nur in diesem Browser.</p>}
+          <p className="text-sm font-medium text-gray-800">{coursePreview.summary.invoices} Rechnungen · {coursePreview.summary.created} Kurse neu · {coursePreview.summary.assigned} Zuordnungen</p>
+          {coursePreview.preview.length > 0 ? <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">{coursePreview.preview.map(invoice => <li key={invoice.invoiceId} className="rounded-lg bg-gray-50 p-3"><p className="font-medium text-gray-900">Rechnung {invoice.invoiceNumber}</p><ul className="mt-1 space-y-1 text-gray-600">{invoice.actions.map((action, index) => <li key={`${invoice.invoiceId}-${index}`} className="break-words">{action.action === 'assign' ? 'Zuordnung' : 'Neuer Kurs'} · {action.title} · {formatIsoDate(action.date)}</li>)}</ul></li>)}</ul> : <p className="text-sm text-gray-600">Keine importierten Rechnungen ohne Kursverknüpfung gefunden.</p>}
+          <button type="button" onClick={() => void createImportedCourses()} disabled={!canWrite || courseBusy || coursePreview.summary.created + coursePreview.summary.assigned === 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary-custom px-4 text-sm font-medium text-white disabled:opacity-50">Kurse jetzt anlegen</button>
+        </div>}
+      </section>
+      )}
 
       <p className="text-xs text-gray-500">
         Übernommene Daten sind vorbereitende Unterlagen. Originalbelege und bereits versendete Rechnungen bewahren Sie weiterhin gemäß den gesetzlichen Fristen auf; zu übernommenen Rechnungen kann das Original-PDF hinterlegt werden.
@@ -875,7 +920,15 @@ export function DataImportCenter({ onNavigate }: DataImportCenterProps) {
           initialSelectedRowNumbers={wizardSelectedRowNumbers}
           takeoverSessionId={takeoverOpen ? takeover?.session?.id : undefined}
           nextCategory={takeoverOpen && nextWizardStep ? { label: resourceLabel(nextWizardStep.node.resource), onClick: () => { void openCategory(nextWizardStep.node.resource, nextWizardStep.candidate?.matchedRowNumbers); } } : undefined}
-          onClose={() => { setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); setWizardSelectedRowNumbers(undefined); }}
+          onClose={() => {
+            setWizardResource(null); setWizardSourceFile(null); setWizardSheet(undefined); setWizardSelectedRowNumbers(undefined);
+            // Fokus zurück auf den auslösenden Knopf (oder den Hauptknopf des Schritts, falls er neu gezeichnet wurde).
+            window.setTimeout(() => {
+              const previous = wizardTriggerRef.current;
+              const target = previous?.isConnected ? previous : document.querySelector<HTMLElement>('[data-import-open]');
+              target?.focus();
+            }, 0);
+          }}
           onImported={async () => {
             await Promise.all([load(), refreshData(wizardResource)]);
           }}

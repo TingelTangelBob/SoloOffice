@@ -892,7 +892,7 @@ async function sha256(buffer: ArrayBuffer): Promise<string | null> {
   }
 }
 
-const SUMMARY_ROW = /^(summe|gesamt|gesamtsumme|zwischensumme|total|subtotal|saldo|übertrag|uebertrag)\b/i;
+const SUMMARY_ROW = /^(summe|gesamt|gesamtsumme|zwischensumme|total|subtotal|saldo|übertrag|uebertrag)\s*:?\s*((q[1-4]|[1-4]\.?\s*quartal|quartal\s*[1-4]|h[12]|\d{4}|\d{1,2}\/\d{2,4}|\d{1,2}\.\d{4}|[a-zäöü]+\s+\d{4})(\s*[-–]\s*[a-zäöü0-9. ]+)?)?\s*:?$/i;
 
 /**
  * Wählt die Kopfzeile (erste Zeile mit mindestens zwei befüllten Zellen unter
@@ -948,6 +948,10 @@ export async function parseImportFile(file: File, options: ParseImportOptions = 
   if (buffer.byteLength === 0) throw new Error('Die Importdatei ist leer.');
   const hash = await sha256(buffer);
   const bytes = new Uint8Array(buffer);
+  const looksLikeBinaryDocument = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|pdf|docx?|pptx?)$/.test(lowerName)
+    || (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+    || (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46);
+  if (looksLikeBinaryDocument) throw new Error('Dieses Dateiformat wird nicht unterstützt. Bitte Excel (.xlsx), CSV, TSV oder JSON verwenden.');
 
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xlsm') || isZipArchive(bytes)) {
     const sheets = await readXlsx(bytes);

@@ -4,6 +4,8 @@ import type { JobEntry, Customer, Company, InvoiceItem } from '../types';
 import { apiService } from '../services/api';
 import { generateUUID } from '../utils/uuid';
 import { formatDate } from '../utils/formatters';
+import { formatDateInputValue } from '../utils/invoicePeriod';
+import { deriveServiceDateFromJobs } from '../utils/serviceDate';
 import { getTerminology } from '../utils/terminology';
 
 export interface JobContextType {
@@ -116,8 +118,11 @@ export async function generateInvoiceFromJobs(
     }
 
     const paymentDays = company.defaultPaymentDays !== undefined ? company.defaultPaymentDays : 30;
-    const issueDate = date || new Date();
-    const dueDate = new Date(issueDate.getTime() + paymentDays * 24 * 60 * 60 * 1000);
+    // Kalendertage als YYYY-MM-DD senden; Date-Objekte würden per JSON in UTC serialisiert.
+    const issueDay = date || new Date();
+    const dueDay = new Date(issueDay.getFullYear(), issueDay.getMonth(), issueDay.getDate() + paymentDays);
+    const issueDate = formatDateInputValue(issueDay);
+    const dueDate = formatDateInputValue(dueDay);
 
     await apiService.createInvoiceFromJobs({
       invoiceNumber: '',
@@ -125,6 +130,7 @@ export async function generateInvoiceFromJobs(
       customerName: customer.name,
       issueDate,
       dueDate,
+      serviceDate: deriveServiceDateFromJobs(customerJobs.map(job => job.date), issueDate),
       items,
       subtotal,
       taxAmount,

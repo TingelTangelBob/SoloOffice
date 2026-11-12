@@ -192,7 +192,7 @@ export function WorkspaceArea({
         <div className="settings-row-list">
           <SettingsToggleRow
             label={terminology.work.managementLabel}
-            info={`Erfassung von ${terminology.work.plural} und Arbeitszeiten.`}
+            info={`${terminology.work.plural} und Arbeitszeiten erfassen.`}
             checked={formData.jobTrackingEnabled || false}
             onChange={checked => set('jobTrackingEnabled', checked)}
           />
@@ -209,7 +209,7 @@ export function WorkspaceArea({
           />
           <SettingsToggleRow
             label="Rabatt-Funktion"
-            info={`Rabatte auf Positions- und Gesamtebene in Rechnungen, Angeboten und ${terminology.work.plural}.`}
+            info={`Rabatte auf Positions- und Gesamtebene in Rechnungen und Angeboten sowie im Bereich ${terminology.work.plural}.`}
             checked={formData.discountsEnabled !== false}
             onChange={checked => set('discountsEnabled', checked)}
           />

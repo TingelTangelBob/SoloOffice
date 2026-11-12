@@ -76,6 +76,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
     const timeout = window.setTimeout(() => dismiss(id), AUTO_DISMISS_MS[variant]);
     timeouts.current.push(timeout);
+    return id;
   }, [dismiss]);
 
   const startBackgroundTask = useCallback(({ title, detail, progress = 0, page }: BackgroundTaskOptions) => {
@@ -119,11 +120,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     confirm,
     notify,
+    dismissNotice: dismiss,
     backgroundTasks,
     startBackgroundTask,
     updateBackgroundTask,
     dismissBackgroundTask,
-  }), [backgroundTasks, confirm, dismissBackgroundTask, notify, startBackgroundTask, updateBackgroundTask]);
+  }), [backgroundTasks, confirm, dismiss, dismissBackgroundTask, notify, startBackgroundTask, updateBackgroundTask]);
 
   return (
     <FeedbackContext.Provider value={value}>

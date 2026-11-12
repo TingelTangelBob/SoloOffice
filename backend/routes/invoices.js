@@ -312,7 +312,7 @@ router.post('/bulk-payments', async (req, res) => {
     const parameters = [];
     prepared.forEach((payment, index) => {
       const offset = index * 6;
-      values.push(`($${offset + 1}, $${offset + 2}, 'income', $${offset + 3}, 'other_income', $${offset + 4}, $${offset + 5}, 'invoice_payment', $${offset + 6})`);
+      values.push(`($${offset + 1}, $${offset + 2}, 'income', $${offset + 3}, 'operating_income', $${offset + 4}, $${offset + 5}, 'invoice_payment', $${offset + 6})`);
       parameters.push(
         payment.entryDate,
         `Zahlung Rechnung ${payment.invoiceNumber}`,
@@ -409,7 +409,7 @@ router.post('/:id/payments', async (req, res) => {
     const inserted = await client.query(`
       INSERT INTO euer_entries
         (entry_type, entry_date, description, category, amount, tax_rate, notes, source_type, source_id)
-      VALUES ('income', $1, $2, 'other_income', $3, $4, $5, 'invoice_payment', $6)
+      VALUES ('income', $1, $2, 'operating_income', $3, $4, $5, 'invoice_payment', $6)
       RETURNING id, entry_type, entry_date, description, category, amount, tax_rate, notes,
         source_type, source_id, status, correction_reason, created_at, updated_at
     `, [entryDate, `Zahlung Rechnung ${invoice.invoice_number}`, amountCents / 100, taxRate, notes || null, invoice.id]);
