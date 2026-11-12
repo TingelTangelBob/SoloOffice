@@ -14,14 +14,14 @@ export const JOB_INVOICED_STATUS = 'invoiced';
 
 const EDIT_PROBLEM = Object.freeze({
   status: 403,
-  error: 'Cannot edit invoiced job',
-  message: 'Jobs that have been invoiced cannot be modified to maintain invoice integrity.',
+  error: 'Abgerechnete Aufträge können nicht bearbeitet werden.',
+  message: 'Abgerechnete Aufträge bleiben unverändert, damit die Rechnung stimmig bleibt.',
 });
 
 const DELETE_PROBLEM = Object.freeze({
   status: 403,
-  error: 'Cannot delete invoiced job',
-  message: 'Jobs that have been invoiced cannot be deleted to maintain invoice integrity.',
+  error: 'Abgerechnete Aufträge können nicht gelöscht werden.',
+  message: 'Abgerechnete Aufträge bleiben erhalten, damit die Rechnung stimmig bleibt.',
 });
 
 const BULK_DELETE_PROBLEM = Object.freeze({

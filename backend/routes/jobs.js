@@ -1178,8 +1178,8 @@ router.post('/:id/signature', async (req, res) => {
     if (currentJob.status === 'invoiced') {
       await client.query('ROLLBACK');
       return res.status(403).json({ 
-        error: 'Cannot add signature to invoiced job', 
-        message: 'Jobs that have been invoiced cannot be modified to maintain invoice integrity.' 
+        error: 'Abgerechnete Aufträge können nicht signiert werden.',
+        message: 'Abgerechnete Aufträge bleiben unverändert, damit die Rechnung stimmig bleibt.'
       });
     }
     

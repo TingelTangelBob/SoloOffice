@@ -346,63 +346,35 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
   }, [filteredJobs]);
 
   const handleEdit = (job: JobEntry) => {
-    // Check if job is invoiced and warn user
     if (job.status === 'invoiced') {
-      setConfirmModal({
-        isOpen: true,
-        title: terminology.work.editLabel,
-        message: `Dieser ${terminology.work.singular} wurde bereits abgerechnet. Änderungen an abgerechneten ${terminology.work.plural} sollten nur in Ausnahmefällen vorgenommen werden, da sie die GoBD-Konformität beeinträchtigen können. Möchten Sie trotzdem fortfahren?`,
-        onConfirm: () => {
-          setEditingJob(job);
-          setShowForm(true);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        },
-        isGoBDWarning: true
-      });
-    } else {
-      setEditingJob(job);
-      setShowForm(true);
+      notify({ variant: 'error', message: `Abgerechnete ${terminology.work.plural} können nicht bearbeitet werden.` });
+      return;
     }
+    setEditingJob(job);
+    setShowForm(true);
   };
 
   const handleDelete = (job: JobEntry) => {
-    // Check if job is invoiced and warn user
     if (job.status === 'invoiced') {
-      setConfirmModal({
-        isOpen: true,
-        title: terminology.work.deleteLabel,
-        message: `Dieser ${terminology.work.singular} wurde bereits abgerechnet. Das Löschen abgerechneter ${terminology.work.plural} kann die GoBD-Konformität verletzen und ist rechtlich problematisch. Sind Sie sicher, dass Sie fortfahren möchten?`,
-        onConfirm: async () => {
-          try {
-            await deleteJobEntry(job.id);
-          } catch (error) {
-            logger.error('Error deleting invoiced job:', error);
-            notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.' });
-          } finally {
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          }
-        },
-        isDestructive: true,
-        isGoBDWarning: true
-      });
-    } else {
-      setConfirmModal({
-        isOpen: true,
-        title: terminology.work.deleteLabel,
-          message: `Möchten Sie den ${terminology.work.singular} "${job.title}" wirklich löschen?`,
-        onConfirm: async () => {
-          try {
-            await deleteJobEntry(job.id);
-          } catch (error) {
-            logger.error('Error deleting job:', error);
-            notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.' });
-          } finally {
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          }
-        },
-        isDestructive: true
-      });
+      notify({ variant: 'error', message: `Abgerechnete ${terminology.work.plural} können nicht gelöscht werden.` });
+      return;
     }
+    setConfirmModal({
+      isOpen: true,
+      title: terminology.work.deleteLabel,
+      message: `Möchten Sie den ${terminology.work.singular} "${job.title}" wirklich löschen?`,
+      onConfirm: async () => {
+        try {
+          await deleteJobEntry(job.id);
+        } catch (error) {
+          logger.error('Error deleting job:', error);
+          notify({ variant: 'error', message: error instanceof Error ? error.message : 'Der Auftrag konnte nicht gelöscht werden.' });
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+      isDestructive: true
+    });
   };
 
   const handleFormSubmit = async (jobData: Omit<JobEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -1254,10 +1226,10 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                             {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
                               <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
-                            <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
-                            <ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
+                            {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>)}
+                            {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>)}
                             <ActionMenuItem disabled={!canWrite} icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
-                            <ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
+                            {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>)}
                           </ActionMenu>
                         </div>
                         
@@ -1476,10 +1448,10 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                             {job.status === 'invoiced' && findInvoiceForJobs(recurrenceGroup && isGroupHeader ? recurrenceGroup.jobs : [job]) && (
                               <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEditInvoice(job, recurrenceGroup && isGroupHeader ? recurrenceGroup : undefined)}>Rechnung bearbeiten</ActionMenuItem>
                             )}
-                            <ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>
-                              <ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>
+                            {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<Edit className="h-4 w-4" />} tone="indigo" onClick={() => handleEdit(job)}>Bearbeiten</ActionMenuItem>)}
+                              {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<PenLine className="h-4 w-4" />} tone="indigo" onClick={() => setSigningJob(job)}>{job.signature ? 'Unterschrift ersetzen' : 'Unterschrift erfassen'}</ActionMenuItem>)}
                             <ActionMenuItem disabled={!canWrite} icon={<Copy className="h-4 w-4" />} tone="blue" onClick={() => handleDuplicate(job)}>Duplizieren</ActionMenuItem>
-                              <ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>
+                              {job.status !== 'invoiced' && (<ActionMenuItem disabled={!canWrite} icon={<Trash2 className="h-4 w-4" />} tone="red" onClick={() => handleDelete(job)}>Löschen</ActionMenuItem>)}
                             </ActionMenu>
                           </div>
                           )}
@@ -1526,13 +1498,15 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                               <Edit className="h-4 w-4" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleEdit(job)}
-                            className="action-icon-button action-icon-indigo"
-                            title={job.status === 'invoiced' ? 'Bearbeiten (GoBD-Warnung wird angezeigt)' : 'Bearbeiten'}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
+                          {job.status !== 'invoiced' && (
+                            <button
+                              onClick={() => handleEdit(job)}
+                              className="action-icon-button action-icon-indigo"
+                              title="Bearbeiten"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDuplicate(job)}
                             className="action-icon-button action-icon-blue"
@@ -1540,13 +1514,15 @@ export function JobManagement({ onNavigate, initialFilter, initialCustomerId, in
                           >
                             <Copy className="h-4 w-4" />
                           </button>
-                          <button
-                            onClick={() => handleDelete(job)}
-                            className="action-icon-button action-icon-red"
-                            title={job.status === 'invoiced' ? 'Löschen (GoBD-Warnung wird angezeigt)' : 'Löschen'}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {job.status !== 'invoiced' && (
+                            <button
+                              onClick={() => handleDelete(job)}
+                              className="action-icon-button action-icon-red"
+                              title="Löschen"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                           </div>
                           )}
                         </div>

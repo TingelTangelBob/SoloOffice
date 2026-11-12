@@ -13,13 +13,13 @@ test('abgerechnete Aufträge sind für Bearbeiten und Löschen gesperrt, mit Ser
   assert.equal(JOB_INVOICED_STATUS, 'invoiced');
   assert.deepEqual(jobEditProblem('invoiced'), {
     status: 403,
-    error: 'Cannot edit invoiced job',
-    message: 'Jobs that have been invoiced cannot be modified to maintain invoice integrity.',
+    error: 'Abgerechnete Aufträge können nicht bearbeitet werden.',
+    message: 'Abgerechnete Aufträge bleiben unverändert, damit die Rechnung stimmig bleibt.',
   });
   assert.deepEqual(jobDeleteProblem('invoiced'), {
     status: 403,
-    error: 'Cannot delete invoiced job',
-    message: 'Jobs that have been invoiced cannot be deleted to maintain invoice integrity.',
+    error: 'Abgerechnete Aufträge können nicht gelöscht werden.',
+    message: 'Abgerechnete Aufträge bleiben erhalten, damit die Rechnung stimmig bleibt.',
   });
 });
 
