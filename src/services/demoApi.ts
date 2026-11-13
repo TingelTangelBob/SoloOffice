@@ -3099,6 +3099,11 @@ export async function demoRequest<T>(endpoint: string, options: RequestInit = {}
   }
 
   if (resource === 'support') return demoSupportRequest<T>(parts, method, data);
+  // Tarif und Abrechnung gibt es nur mit Control Plane, nie in der Demo.
+  if (resource === 'account') {
+    if (parts[1] === 'status') return { available: false, canManage: false, reason: 'demo' } as unknown as T;
+    throw new Error('Tarif und Abrechnung sind in der Demo nicht verfügbar.');
+  }
   if (resource === 'notification-settings') return demoNotificationRequest<T>(state, parts, method, data);
 
   // Versand in der Demo bleibt vollständig lokal: keine SMTP-/Provider-Anfrage,

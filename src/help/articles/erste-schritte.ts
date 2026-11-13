@@ -30,6 +30,30 @@ export const ersteSchritteArticles: HelpArticle[] = [
     related: ['rechnungsdatum-leistungsdatum-auftragsdatum', 'ersten-kunden-anlegen', 'rechnung-versenden-pdf-email', 'rechnungsnummern-und-zahlungsziel'],
   },
   {
+    id: 'konto-erstellen-und-zugang-einrichten',
+    category: 'erste-schritte',
+    title: 'Konto erstellen und Zugang einrichten',
+    summary: 'So kommen Sie bei der gehosteten Version von SoloOffice vom neuen Konto zur ersten Anmeldung: Bestätigungsmail, Zahlung, Einladung und Passwort.',
+    keywords: ['konto erstellen', 'registrieren', 'registrierung', 'anmelden', 'bestätigungsmail', 'bestätigungslink', 'zahlung', 'einladung', 'passwort festlegen', 'zugang einrichten', 'einladungscode', 'neu', 'start'],
+    blocks: [
+      { type: 'paragraph', text: 'Bei der gehosteten Version von SoloOffice legen Sie Ihr Konto direkt auf der Anmeldeseite an. Ein Passwort vergeben Sie dabei noch nicht, das legen Sie erst im letzten Schritt fest.' },
+      { type: 'heading', text: 'Der Weg in fünf Schritten' },
+      {
+        type: 'steps',
+        items: [
+          'Öffnen Sie die Anmeldeseite und wählen Sie **Konto erstellen**. Tragen Sie Name oder Firmenname und Ihre E-Mail-Adresse ein. Haben Sie einen Einladungscode erhalten, tragen Sie ihn ebenfalls ein. Über einen Einladungslink ist er schon ausgefüllt. Bestätigen Sie die AGB und den Datenschutzhinweis.',
+          'Prüfen Sie Ihr Postfach. Sie erhalten eine E-Mail mit einem Bestätigungslink. Kommt nach einigen Minuten nichts an, schauen Sie im Spam-Ordner nach oder wählen **E-Mail erneut senden**.',
+          'Klicken Sie den Bestätigungslink an. Ist eine Zahlung nötig, führt Sie **Weiter zur Zahlung** zum Zahlungsanbieter. Danach richten wir Ihren Arbeitsbereich ein. Das dauert meist nur wenige Sekunden, und die Seite zeigt den Fortschritt.',
+          'Sie erhalten eine zweite E-Mail mit einem Link zum Einrichten Ihres Zugangs. Klicken Sie ihn an.',
+          'Legen Sie Ihr Passwort fest. Es ist Ihr einziges Passwort: Damit melden Sie sich künftig an. Danach führt Sie die Ersteinrichtung durch die wichtigsten Angaben.',
+        ],
+      },
+      { type: 'note', tone: 'info', text: 'Aus Datenschutzgründen bestätigt die Seite nie, ob eine Adresse schon registriert ist. Sie sehen immer dieselbe Meldung. Kommt keine E-Mail an, prüfen Sie die Schreibweise der Adresse.' },
+      { type: 'note', tone: 'tip', text: 'Dauert die Einrichtung länger als zwei Minuten, müssen Sie nichts tun. Die E-Mail mit dem Einrichtungslink kommt, sobald Ihr Arbeitsbereich bereit ist, und der Support meldet sich bei Problemen. Wird die Zahlung abgebrochen, setzen Sie sie über den Bestätigungslink oder **Weiter zur Zahlung** fort.' },
+    ],
+    related: ['ersteinrichtung-fuenf-schritte', 'tarif-und-abrechnung-verwalten', 'firmendaten-und-logo'],
+  },
+  {
     id: 'ersteinrichtung-fuenf-schritte',
     category: 'erste-schritte',
     title: 'Die Ersteinrichtung in fünf Schritten',
@@ -52,7 +76,7 @@ export const ersteSchritteArticles: HelpArticle[] = [
       { type: 'note', tone: 'tip', text: 'Nicht alle Angaben müssen am ersten Tag stimmen. Alles, was Sie hier eintragen, bleibt unter **Einstellungen** änderbar.' },
       { type: 'link', label: 'Zur Ersteinrichtung', page: 'setup' },
     ],
-    related: ['firmendaten-und-logo', 'ersten-kunden-anlegen', 'welche-daten-sich-uebernehmen-lassen', 'module-und-begriffe-einstellen'],
+    related: ['konto-erstellen-und-zugang-einrichten', 'firmendaten-und-logo', 'ersten-kunden-anlegen', 'welche-daten-sich-uebernehmen-lassen', 'module-und-begriffe-einstellen'],
   },
   {
     id: 'firmendaten-und-logo',

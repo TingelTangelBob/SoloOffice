@@ -1288,6 +1288,72 @@ export interface SupportStatus {
   reason?: string;
 }
 
+/** Tarif und Abrechnung (Control Plane über die Fachapp), nur Workspace-Eigentümer. */
+export interface AccountStatus {
+  available: boolean;
+  /** Nur der Eigentümer darf Tarif und Abrechnung verwalten. */
+  canManage: boolean;
+  reason?: string;
+}
+
+export interface AccountBillingProfile {
+  legalName: string;
+  contactName: string;
+  billingEmail: string;
+  vatId: string;
+  addressLine1: string;
+  addressLine2: string;
+  postalCode: string;
+  city: string;
+  countryCode: string;
+  purchaseOrderRef: string;
+}
+
+export interface AccountSubscription {
+  planId: string | null;
+  planName: string | null;
+  /** Stripe-Status, z. B. active, trialing, past_due, canceled. */
+  status: string;
+  /** Zugriffszustand des Control Plane, z. B. active, grace, suspended. */
+  access: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  graceUntil: string | null;
+  hasStripeCustomer: boolean;
+}
+
+export interface AccountOverview {
+  account: { email: string | null; name: string | null; status: string };
+  subscription: AccountSubscription | null;
+  limits: { maxWorkspaces: number | null; maxMembers: number | null } | null;
+  entitlements: Record<string, boolean>;
+  billingProfile: AccountBillingProfile | null;
+  stripeConfigured: boolean;
+}
+
+export interface AccountPlan {
+  id: string;
+  name: string;
+  description: string;
+  priceCents: number | null;
+  currency: string;
+  interval: string;
+  maxWorkspaces: number | null;
+  maxMembers: number | null;
+  checkoutAvailable: boolean;
+}
+
+export interface AccountPayment {
+  id: string;
+  planName: string | null;
+  amountCents: number | null;
+  currency: string;
+  status: string;
+  paidAt: string | null;
+  invoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+}
+
 export interface NotificationSettings {
   jobsCompleted: boolean;
   invoiceDrafts: boolean;
@@ -1334,3 +1400,12 @@ export type CreateInput<T> = Omit<T, 'id' | 'createdAt' | 'updatedAt'>;
  * Create update input type (all fields optional except id)
  */
 export type UpdateInput<T> = Partial<Omit<T, 'id'>> & { id: UUID };
+
+// Öffentliche Registrierung (Control Plane)
+export interface AuthConfig { signupAvailable: boolean }
+export interface SignupPlan { id: string; name: string; description: string; priceCents: number | null; currency: string; interval: string }
+export interface SignupConfig { registrationMode: string; inviteRequired: boolean; stripeConfigured: boolean; plans: SignupPlan[] }
+export interface SignupStartPayload { email: string; name: string; planId?: string; inviteToken?: string; acceptTerms: boolean; acceptPrivacy: boolean }
+export type SignupServerState = 'awaiting_payment' | 'creating_workspace' | 'invitation_sent' | 'failed'
+export interface SignupVerifyResult { verified: boolean; next: 'checkout' | 'workspace' | 'awaiting_access'; url?: string; statusToken?: string; statusTokenExpiresInSeconds?: number }
+export interface SignupStatusResult { state: SignupServerState; url?: string; checkoutError?: boolean }

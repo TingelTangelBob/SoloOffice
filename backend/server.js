@@ -29,6 +29,8 @@ import workspacesRouter from './routes/workspaces.js';
 import controlPlaneWorkspacesRouter from './routes/controlPlaneWorkspaces.js';
 import telemetryRouter from './routes/telemetry.js';
 import supportRouter from './routes/support.js';
+import accountRouter from './routes/account.js';
+import signupRouter from './routes/signup.js';
 import notificationSettingsRouter from './routes/notificationSettings.js';
 import userPreferencesRouter from './routes/userPreferences.js';
 import workspaceSetupRouter from './routes/workspaceSetup.js';
@@ -123,6 +125,9 @@ app.use('/api', persistentRateLimit({
 }));
 app.use('/api/auth', express.json({ limit: '1mb' }), express.urlencoded({ limit: '1mb', extended: true }), authRouter);
 
+// Öffentliche Registrierung (ohne Sitzung, nur mit angebundenem Control Plane).
+app.use('/api/signup', express.json({ limit: '16kb' }), signupRouter);
+
 // Parsers are deliberately scoped. Receipt/PDF and backup payloads need more
 // room; ordinary API requests must stay small.
 app.use('/api/receipts', express.json({ limit: '35mb' }));
@@ -170,6 +175,7 @@ app.use('/api/calendar-events', calendarEventsRouter);
 app.use('/api/work-location-days', workLocationDaysRouter);
 app.use('/api/telemetry', telemetryRouter);
 app.use('/api/support', supportRouter);
+app.use('/api/account', accountRouter);
 app.use('/api/notification-settings', notificationSettingsRouter);
 app.use('/api/user-preferences', userPreferencesRouter);
 app.use('/api/workspace-setup', workspaceSetupRouter);

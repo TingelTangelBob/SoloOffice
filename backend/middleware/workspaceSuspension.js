@@ -20,12 +20,17 @@ function isSupportPath(path) {
   return path === '/support/tickets' || path.startsWith('/support/tickets/');
 }
 
+// Ebenso Tarif und Abrechnung: Eine Sperre wegen offener Zahlung lässt sich nur
+// über Checkout oder Kundenportal beheben. Die Fachdaten bleiben unberührt.
+const ACCOUNT_WRITE_PATHS = new Set(['/account/checkout', '/account/portal', '/account/billing-profile']);
+
 export function workspaceSuspensionGuard(req, res, next) {
   const suspendedAt = req.auth?.workspace?.suspendedAt;
   if (!suspendedAt) return next();
   if (!writeMethods.has(req.method)) return next();
   if (exportPaths.has(req.path)) return next();
   if (isSupportPath(req.path)) return next();
+  if (ACCOUNT_WRITE_PATHS.has(req.path)) return next();
 
   return res.status(403).json({
     error: 'Dieser Arbeitsbereich ist gesperrt. Daten lassen sich weiterhin ansehen und exportieren, Änderungen sind bis zur Freigabe nicht möglich.',

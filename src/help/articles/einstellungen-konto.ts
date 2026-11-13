@@ -28,6 +28,7 @@ export const einstellungenKontoArticles: HelpArticle[] = [
           ['Steuern & Abgaben', 'Steuerprofil'],
           ['Darstellung & Sprache', 'Sprache und Formate, Erscheinungsbild, Farbschema'],
           ['Benutzerdaten', 'Persönliche Daten, Passwort und Sitzungen, Konto löschen'],
+          ['Tarif & Abrechnung', 'Tarif, Zahlungsverlauf und Rechnungsanschrift (nur für Eigentümer bei von uns betriebenen Installationen)'],
           ['E-Mail & Backup', 'E-Mail-Versand, Datensicherung, Datenübernahme'],
         ],
       },
@@ -196,5 +197,30 @@ export const einstellungenKontoArticles: HelpArticle[] = [
       { type: 'link', label: 'Zu den Angeboten', page: 'quotes' },
     ],
     related: ['einstellungen-aufbau', 'uebersicht-startseite', 'ersteinrichtung-fuenf-schritte', 'angebot-in-auftrag-umwandeln'],
+  },
+  {
+    id: 'tarif-und-abrechnung-verwalten',
+    category: 'einstellungen-konto',
+    title: 'Tarif und Abrechnung verwalten',
+    summary: 'Sie sehen Ihren Tarif, buchen oder kündigen ihn und laden Ihre Rechnungen herunter.',
+    keywords: ['tarif', 'abo', 'abonnement', 'rechnung', 'rechnungen', 'zahlungsart', 'kreditkarte', 'kündigen', 'kündigung', 'abrechnung', 'stripe', 'zahlung', 'preis', 'rechnungsanschrift', 'testzeitraum'],
+    blocks: [
+      { type: 'paragraph', text: 'Den Bereich **Tarif & Abrechnung** finden Sie unter **Einstellungen**. Dort sehen Sie Ihren Tarif und dessen Status, den Zahlungsverlauf und die Rechnungsanschrift. Den Bereich sehen nur Eigentümer des Workspace, und nur dann, wenn Ihre Installation von uns betrieben wird. Bei einer eigenen Installation und in der Demo gibt es ihn nicht.' },
+      {
+        type: 'steps',
+        items: [
+          'Öffnen Sie das Konto-Menü unten links und wählen Sie **Tarif**. Alternativ öffnen Sie **Einstellungen** und wählen **Tarif & Abrechnung**.',
+          'Hat Ihr Konto noch kein Abo, wählen Sie unter **Tarif wählen** einen Tarif und klicken auf **Jetzt buchen**. Sie werden zu unserem Zahlungsanbieter Stripe weitergeleitet und bezahlen dort.',
+          'Nach der Zahlung kommen Sie zurück in die App. Die Freischaltung dauert meist nur wenige Sekunden; die Seite aktualisiert sich selbst.',
+          'Zahlungsart ändern, Rechnungen laden, Tarif wechseln oder kündigen Sie mit **Zahlungsart und Rechnungen verwalten**. Das öffnet das Kundenportal von Stripe.',
+          'Tragen Sie unter **Rechnungsanschrift** Name, Anschrift und, wenn vorhanden, Ihre Umsatzsteuer-ID ein und klicken Sie auf **Rechnungsanschrift speichern**.',
+        ],
+      },
+      { type: 'note', tone: 'info', text: 'Bei einer Kündigung bleibt Ihr Zugang bis zum angezeigten Datum bestehen. Im Kundenportal können Sie die Kündigung vorher zurücknehmen.' },
+      { type: 'note', tone: 'warning', text: 'Ist eine Zahlung fehlgeschlagen, zeigt der Bereich **Zahlung überfällig** und ein Datum. Aktualisieren Sie bis dahin Ihre Zahlungsart, sonst wird der Zugang eingeschränkt. Ihre Daten bleiben sichtbar und lassen sich exportieren.' },
+      { type: 'note', tone: 'tip', text: 'Steht dort, dass die Abrechnung vom Anbieter verwaltet wird, läuft Ihr Zugang ohne Online-Zahlung. Bei Fragen hilft der Support.' },
+      { type: 'link', label: 'Zu Tarif & Abrechnung', page: 'settings/billing' },
+    ],
+    related: ['einstellungen-aufbau', 'benutzerdaten-und-passwort'],
   },
 ];

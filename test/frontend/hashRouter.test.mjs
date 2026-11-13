@@ -66,3 +66,11 @@ test('Ungültige Einstellungsreiter werden ignoriert und andere Query-Parameter 
   assert.equal(destination.searchParams.get('invite'), 'abc');
   assert.equal(destination.searchParams.has('settingsTab'), false);
 });
+
+test('Query-Anteil im Hash (Rückkehr von Stripe) gehört nicht zum Bereichsnamen', () => {
+  const success = readPageState(new URL('https://app.example.test/#settings/billing?checkout=success'));
+  assert.equal(success.page, 'settings');
+  assert.equal(success.filter, 'billing');
+  assert.equal(readPageState(new URL('https://app.example.test/#settings/billing/tarif?checkout=cancelled')).searchTerm, 'tarif');
+  assert.equal(readPageState(new URL('https://app.example.test/#settings?x=1')).page, 'settings');
+});

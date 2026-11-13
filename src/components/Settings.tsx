@@ -37,6 +37,8 @@ import { AppearanceArea } from './settings/AppearanceArea';
 import { ProfileManagement } from './ProfileManagement';
 import { WorkspaceManagement } from './WorkspaceManagement';
 import { SystemArea } from './settings/SystemArea';
+import { BillingArea } from './settings/BillingArea';
+import { useAccountBillingStatus } from '../hooks/useAccountBilling';
 import { validateCompanyFormats, validateCompanyRequiredFields } from '../../backend/shared/companyValidation.js';
 
 /** Bereiche, die das gemeinsame Firmenformular bearbeiten. */
@@ -54,7 +56,10 @@ interface SettingsProps {
 export function Settings({ initialTab = 'general', settingsTab, section, embedded = false, onNavigate }: SettingsProps) {
   const { confirm } = useFeedback();
   const { company, updateCompany } = useCompany();
-  const { can } = useAuth();
+  const { can, workspace } = useAuth();
+  const accountStatus = useAccountBillingStatus(workspace?.id);
+  // Tarif & Abrechnung gibt es nur mit Control Plane und nur für den Eigentümer.
+  const hiddenAreas = useMemo<ReadonlySet<SettingsArea>>(() => new Set<SettingsArea>(accountStatus?.canManage ? [] : ['billing']), [accountStatus?.canManage]);
   // Ohne das Recht „Einstellungen verwalten“ sind die Firmenformulare nur lesbar (Backend prüft dasselbe).
   const canEditSettings = can('workspace.settings');
   const [formData, setFormData] = useState(company);
@@ -284,6 +289,7 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
           <SettingsNav
             activeArea={activeArea}
             dirtyAreas={dirtyAreaSet}
+            hiddenAreas={hiddenAreas}
             onSelectArea={area => selectArea(area)}
             onSelectResult={selectSearchResult}
           />
@@ -321,7 +327,8 @@ export function Settings({ initialTab = 'general', settingsTab, section, embedde
               {activeArea === 'taxes' && <TaxProfileSettings onNavigate={onNavigate} />}
               {activeArea === 'account' && <ProfileManagement embedded />}
               {activeArea === 'workspace' && <WorkspaceManagement embedded />}
-              {activeArea !== 'taxes' && companySaveBar}
+              {activeArea === 'billing' && <BillingArea />}
+              {activeArea !== 'taxes' && activeArea !== 'billing' && companySaveBar}
             </div>
           )}
         </section>

@@ -4,6 +4,22 @@ Alle relevanten Änderungen an SoloOffice werden hier versioniert dokumentiert.
 
 ## Unreleased
 
+## v0.9.14b – Konto, Tarif und Registrierung in der App (13. November 2026)
+
+- Neu: „Konto erstellen“ auf der Anmeldeseite gehosteter Instanzen. Nach der
+  Bestätigung der E-Mail-Adresse und gegebenenfalls der Zahlung entsteht der
+  Arbeitsbereich automatisch; das Passwort wird einmal in der App gesetzt.
+- Neu: Einstellungen → „Tarif & Abrechnung“ für den Eigentümer des
+  Arbeitsbereichs: aktueller Tarif, Tarif buchen, Zahlungsart und Rechnungen
+  über den Zahlungsanbieter, Zahlungsverlauf und Rechnungsanschrift. Der
+  Menüpunkt „Tarif“ führt dorthin.
+- Ein gesperrter Arbeitsbereich kann Zahlung und Rechnungsanschrift weiter
+  bearbeiten, damit sich eine Sperre wegen offener Zahlung beheben lässt.
+- Bei angebundener Kontoverwaltung ist die eigene Registrierung der App nur
+  noch per Einladung möglich. Selbst gehostete Installationen ohne
+  Kontoverwaltung bleiben unverändert.
+- Hilfe: neue Artikel zum Erstellen eines Kontos und zu Tarif und Abrechnung.
+
 ## v0.9.13b – Angebot in Auftrag, Mahngebühren und Verzugszinsen, Hilfe (13. November 2026)
 
 - Neu: Versendete und akzeptierte Angebote lassen sich in einen Auftrag

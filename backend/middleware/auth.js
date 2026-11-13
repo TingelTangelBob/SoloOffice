@@ -99,7 +99,8 @@ export async function requireAuth(req, res, next) {
 
 export function csrfProtection(req, res, next) {
   if (!writeMethods.has(req.method)) return next();
-  if (req.path === '/auth/login' || req.path === '/auth/register' || req.path === '/auth/accept-invitation' || req.path === '/auth/forgot-password' || req.path === '/auth/reset-password') return next();
+  if (req.path === '/auth/login' || req.path === '/auth/register' || req.path === '/auth/accept-invitation' || req.path === '/auth/forgot-password' || req.path === '/auth/reset-password'
+    || req.path === '/signup/start' || req.path === '/signup/resend' || req.path === '/signup/verify' || req.path === '/signup/resume-checkout') return next();
 
   const cookies = parseCookies(req.headers.cookie || '');
   const cookieToken = cookies[CSRF_COOKIE];

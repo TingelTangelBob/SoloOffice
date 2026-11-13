@@ -39,13 +39,14 @@ function normalizeLoose(value: string): string {
  * in Titel, Bereich oder Stichworten vorkommen; Treffer im Abschnittstitel
  * stehen vorn.
  */
-export function searchSettings(query: string, limit = 8): SettingsSearchResult[] {
+export function searchSettings(query: string, limit = 8, hiddenAreas: ReadonlySet<SettingsArea> = new Set()): SettingsSearchResult[] {
   const terms = normalize(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return [];
 
   const scored: Array<{ result: SettingsSearchResult; score: number; order: number }> = [];
   let order = 0;
   for (const area of orderedSettingsAreas()) {
+    if (hiddenAreas.has(area)) continue;
     const definition = SETTINGS_AREA_DEFINITIONS[area];
     for (const section of definition.sections) {
       order += 1;

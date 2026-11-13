@@ -8,6 +8,7 @@ import { systemMails } from '../services/emailTemplates.js';
 import { lockRegistrationBootstrap } from '../services/registrationBootstrap.js';
 import { persistentRateLimit } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
+import { controlPlaneClientConfiguration } from '../services/controlPlaneClient.js';
 import {
   CSRF_COOKIE,
   SESSION_COOKIE,
@@ -129,6 +130,23 @@ async function sendPasswordResetEmail(req, { workspaceId, email, token, name }) 
   await sendSystemEmail({ workspaceId, to: email, ...mail });
 }
 
+/**
+ * Registrierungsmodus der Fachapp selbst. Ist ein Control Plane angebunden
+ * (gehosteter Betrieb), entstehen Konten ausschließlich über dessen
+ * Registrierung (`/api/signup/*`) und die Eigentümer-Einladung: Die eigene
+ * Registrierung ist dann für Fremde immer geschlossen. Self-Hosting ohne
+ * Control Plane liest weiter `REGISTRATION_MODE`.
+ */
+export function effectiveRegistrationMode(env = process.env) {
+  if (controlPlaneClientConfiguration(env).enabled) return 'invite-only';
+  return env.REGISTRATION_MODE || 'closed-after-first';
+}
+
+/** Öffentlich: welche Registrierung gilt (die Anmeldeseite wählt danach ihren Ablauf). */
+router.get('/config', (req, res) => {
+  res.json({ signupAvailable: controlPlaneClientConfiguration().enabled });
+});
+
 router.post('/register', async (req, res) => {
   const identity = validateIdentityPayload(req.body || {});
   if (identity.error) return res.status(400).json({ error: identity.error });
@@ -147,7 +165,7 @@ router.post('/register', async (req, res) => {
   try {
     await client.query('BEGIN');
     await lockRegistrationBootstrap(client);
-    const registrationMode = process.env.REGISTRATION_MODE || 'closed-after-first';
+    const registrationMode = effectiveRegistrationMode();
     const registeredUsers = await client.query('SELECT COUNT(*)::integer AS count FROM users');
     const isFirstRegistration = registeredUsers.rows[0]?.count === 0;
     if (registrationMode === 'invite-only' || (registrationMode === 'closed-after-first' && !isFirstRegistration)) {

@@ -6,7 +6,7 @@
  * ändern, damit alte Lesezeichen und Verweise aus anderen Seiten weiter
  * funktionieren. Bezeichnung, Gruppe und Reihenfolge sind frei.
  */
-export const SETTINGS_AREAS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes', 'account', 'workspace'] as const;
+export const SETTINGS_AREAS = ['app', 'general', 'invoices', 'appearance', 'system', 'extensions', 'taxes', 'account', 'workspace', 'billing'] as const;
 export type SettingsArea = typeof SETTINGS_AREAS[number];
 
 /** Ohne gültigen Bereich öffnen die Einstellungen die Firmendaten. */
@@ -93,6 +93,16 @@ export const SETTINGS_AREA_DEFINITIONS: Record<SettingsArea, SettingsAreaDefinit
       { id: 'workspace', title: 'Workspace & Mitglieder', keywords: ['workspace', 'mitglieder', 'team', 'rollen', 'zugriff', 'einladung', 'einladen', 'zurücksetzen'] },
     ],
   },
+  billing: {
+    id: 'billing',
+    label: 'Tarif & Abrechnung',
+    sections: [
+      { id: 'tarif', title: 'Aktueller Tarif', keywords: ['tarif', 'abo', 'abonnement', 'plan', 'kündigen', 'kündigung', 'gekündigt', 'laufzeit', 'verlängerung', 'testzeitraum', 'upgrade', 'wechseln', 'preis', 'limit'] },
+      { id: 'zahlungsart', title: 'Zahlungsart & Rechnungen', keywords: ['zahlungsart', 'kreditkarte', 'karte', 'sepa', 'lastschrift', 'stripe', 'portal', 'kündigen', 'rechnung', 'rechnungen', 'beleg', 'zahlung', 'abrechnung'] },
+      { id: 'zahlungsverlauf', title: 'Zahlungsverlauf', keywords: ['zahlungen', 'rechnung', 'rechnungen', 'rechnungsverlauf', 'beleg', 'abrechnung', 'bezahlt', 'überfällig'] },
+      { id: 'rechnungsanschrift', title: 'Rechnungsanschrift', keywords: ['rechnungsanschrift', 'rechnungsadresse', 'anschrift', 'adresse', 'ust-idnr', 'umsatzsteuer-id', 'bestellnummer', 'firma', 'rechnung'] },
+    ],
+  },
   account: {
     id: 'account',
     label: 'Benutzerdaten',
@@ -117,7 +127,7 @@ export const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
   { id: 'company', label: 'Unternehmen', areas: ['general', 'invoices', 'workspace'] },
   { id: 'work', label: 'Arbeitsweise', areas: ['app', 'extensions', 'taxes'] },
   { id: 'interface', label: 'Oberfläche', areas: ['appearance'] },
-  { id: 'system', label: 'System', areas: ['account', 'system'] },
+  { id: 'system', label: 'System', areas: ['account', 'billing', 'system'] },
 ];
 
 export function isSettingsArea(value: unknown): value is SettingsArea {

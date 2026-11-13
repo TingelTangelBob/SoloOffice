@@ -1,5 +1,5 @@
 import { documentRequestBody } from '../utils/documentPayload';
-import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
+import { Customer, Invoice, InvoicePaymentPayload, InvoicePaymentResult, InvoiceBulkPayment, InvoiceBulkPaymentResult, CreditNote, CreditNotePayload, Quote, Company, JobEntry, CalendarEvent, WorkLocationDay, WorkLocationDayType, MaterialTemplate, HourlyRate, YearlyInvoiceStartNumber, InvoiceJournalResponse, ReportingStatistics, ReminderEligibility, RecurringInvoice, RecurringInvoicePayload, RecurringInvoiceRun, EuerEntry, EuerEntryPayload, EuerEntryHistory, InvoiceHistoryEntry, FixedAsset, FixedAssetPayload, Receipt, ReceiptPayload, ReceiptUpdatePayload, ReceiptInvoicePayload, IncomingEInvoice, ImportResource, ImportResponse, ImportOptions, ImportRun, ImportCenterSettings, InvoiceOriginalDocument, AuthResponse, RegistrationPayload, RegistrationResponse, WorkspaceSummary, WorkspaceMember, WorkspaceInvitation, SupportStatus, AccountStatus, AuthConfig, SignupConfig, SignupStartPayload, SignupVerifyResult, SignupStatusResult, AccountOverview, AccountBillingProfile, AccountPlan, AccountPayment, SupportTicket, SupportTicketDetail, SupportTicketCategory, NotificationSettings, NotificationSettingsPayload, NotificationPreview, WorkspaceSetup, WorkspaceMigrationChoice, WorkspaceResetOptions, TakeoverStatus, TakeoverScanPayload, TakeoverScanResult, ImportedInvoiceCoursesResponse } from '../types';
 import logger from '../utils/logger';
 import { demoRequest, getDemoActiveWorkspaceId, isDemoMode } from './demoApi';
 import type { DashboardPreferences } from '../utils/dashboardPreferences';
@@ -24,7 +24,7 @@ function getBrowserTimeZone(): string {
 }
 
 export class ApiResponseError extends Error {
-  constructor(message: string, public readonly status: number, public readonly requestId?: string, public readonly code?: string) {
+  constructor(message: string, public readonly status: number, public readonly requestId?: string, public readonly code?: string, public readonly field?: string) {
     super(message);
     this.name = 'ApiResponseError';
   }
@@ -34,7 +34,7 @@ export class ApiResponseError extends Error {
 export const WORKSPACE_SUSPENDED_EVENT = 'solooffice-workspace-suspended';
 
 async function responseError(response: Response, fallback: string): Promise<ApiResponseError> {
-  const payload = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown; requestId?: unknown; code?: unknown };
+  const payload = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown; requestId?: unknown; code?: unknown; field?: unknown };
   const baseMessage = typeof payload.error === 'string'
     ? payload.error
     : typeof payload.message === 'string'
@@ -52,7 +52,7 @@ async function responseError(response: Response, fallback: string): Promise<ApiR
   if (code === 'WORKSPACE_SUSPENDED' && typeof window !== 'undefined') {
     window.dispatchEvent(new Event(WORKSPACE_SUSPENDED_EVENT));
   }
-  return new ApiResponseError(message, response.status, requestId || undefined, code);
+  return new ApiResponseError(message, response.status, requestId || undefined, code, typeof payload.field === 'string' ? payload.field : undefined);
 }
 
 // ============================================================================
@@ -222,6 +222,70 @@ class ApiService {
 
   async getSupportStatus(): Promise<SupportStatus> {
     return this.request<SupportStatus>('/support/status', { skipErrorLogging: true });
+  }
+
+  // Öffentliche Registrierung (über das Control Plane, ohne Sitzung)
+  async getAuthConfig(): Promise<AuthConfig> {
+    if (isDemoMode) return { signupAvailable: false };
+    return this.request<AuthConfig>('/auth/config', { skipErrorLogging: true });
+  }
+
+  async getSignupConfig(): Promise<SignupConfig> {
+    return this.request<SignupConfig>('/signup/config', { skipErrorLogging: true });
+  }
+
+  async startSignup(payload: SignupStartPayload): Promise<{ ok: boolean; message: string }> {
+    return this.request('/signup/start', { method: 'POST', body: JSON.stringify(payload), skipErrorLogging: true });
+  }
+
+  async resendSignup(email: string): Promise<{ ok: boolean; message: string }> {
+    return this.request('/signup/resend', { method: 'POST', body: JSON.stringify({ email }), skipErrorLogging: true });
+  }
+
+  async verifySignup(token: string): Promise<SignupVerifyResult> {
+    return this.request<SignupVerifyResult>('/signup/verify', { method: 'POST', body: JSON.stringify({ token }), skipErrorLogging: true });
+  }
+
+  /** Das Fortsetzungs-Token geht im Header, nicht in der Adresse (kein Eintrag in Zugriffsprotokollen). */
+  async getSignupStatus(token: string): Promise<SignupStatusResult> {
+    return this.request<SignupStatusResult>('/signup/status', { headers: { 'X-Signup-Token': token }, skipErrorLogging: true });
+  }
+
+  /** Zahlung nach Abbruch fortsetzen: liefert eine frische Checkout-Adresse. */
+  async resumeSignupCheckout(token: string): Promise<SignupStatusResult> {
+    return this.request<SignupStatusResult>('/signup/resume-checkout', { method: 'POST', body: JSON.stringify({ token }), skipErrorLogging: true });
+  }
+
+  // Tarif und Abrechnung (über das Control Plane, nur Eigentümer)
+  async getAccountStatus(): Promise<AccountStatus> {
+    return this.request<AccountStatus>('/account/status', { skipErrorLogging: true });
+  }
+
+  async getAccountOverview(): Promise<AccountOverview> {
+    return this.request<AccountOverview>('/account');
+  }
+
+  async saveAccountBillingProfile(profile: AccountBillingProfile): Promise<AccountBillingProfile> {
+    const response = await this.request<{ billingProfile: AccountBillingProfile }>('/account/billing-profile', { method: 'PUT', body: JSON.stringify(profile) });
+    return response.billingProfile;
+  }
+
+  async getAccountPlans(): Promise<AccountPlan[]> {
+    const response = await this.request<{ plans: AccountPlan[] }>('/account/plans');
+    return response.plans;
+  }
+
+  async startAccountCheckout(planId: string): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/account/checkout', { method: 'POST', body: JSON.stringify({ planId }) });
+  }
+
+  async openAccountPortal(): Promise<{ url: string }> {
+    return this.request<{ url: string }>('/account/portal', { method: 'POST', body: '{}' });
+  }
+
+  async getAccountBillingHistory(): Promise<AccountPayment[]> {
+    const response = await this.request<{ payments: AccountPayment[] }>('/account/billing-history');
+    return response.payments;
   }
 
   async getSupportTickets(): Promise<SupportTicket[]> {

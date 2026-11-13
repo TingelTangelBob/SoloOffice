@@ -2,8 +2,10 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Building2, Loader2, LockKeyhole, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
+import { SignupFlow } from './SignupFlow';
+import { hasSignupParams, readSignupParams } from '../utils/signupFlow';
 
-type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
+type AuthMode = 'login' | 'register' | 'forgot' | 'reset' | 'signup';
 
 const legalLinks = {
   agb: import.meta.env.VITE_AGB_URL || 'https://solooffice.de/agb',
@@ -18,7 +20,23 @@ export function AuthPage() {
   const invitationToken = searchParams.get('invite') || '';
   const verificationToken = searchParams.get('verifyEmail') || '';
   const resetToken = searchParams.get('resetPassword') || '';
+  // Registrierung über das Control Plane (`signupAvailable`): ersetzt die eigene Registrierung der Fachapp.
+  const [signupParams] = useState(() => readSignupParams(window.location.search));
+  const [signupAvailable, setSignupAvailable] = useState<boolean | null>(null);
   const [mode, setMode] = useState<AuthMode>(resetToken ? 'reset' : 'login');
+
+  useEffect(() => {
+    let active = true;
+    apiService.getAuthConfig()
+      .then(config => { if (active) setSignupAvailable(Boolean(config.signupAvailable)); })
+      .catch(() => { if (active) setSignupAvailable(false); });
+    return () => { active = false; };
+  }, []);
+
+  // Links aus E-Mails (`?verify=`, `?checkout=`, `?einladung=`) führen direkt in den Ablauf.
+  useEffect(() => {
+    if (signupAvailable && hasSignupParams(signupParams) && !resetToken && !invitationToken) setMode('signup');
+  }, [signupAvailable, signupParams, resetToken, invitationToken]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
@@ -93,7 +111,7 @@ export function AuthPage() {
   const showPassword = mode !== 'forgot';
   const isRegistration = mode === 'register' && !invitationToken;
   const isInvitation = Boolean(invitationToken);
-  const title = isInvitation ? 'Einladung annehmen' : mode === 'forgot' ? 'Passwort vergessen' : mode === 'reset' ? 'Passwort zurücksetzen' : mode === 'register' ? 'Konto erstellen' : 'Anmelden';
+  const title = mode === 'signup' ? 'Konto erstellen' : isInvitation ? 'Einladung annehmen' : mode === 'forgot' ? 'Passwort vergessen' : mode === 'reset' ? 'Passwort zurücksetzen' : mode === 'register' ? 'Konto erstellen' : 'Anmelden';
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10">
@@ -106,21 +124,24 @@ export function AuthPage() {
           <p className="mt-2 text-sm text-gray-500">{title}</p>
         </div>
 
-        {!invitationToken && (mode === 'login' || mode === 'register') && (
+        {!invitationToken && mode !== 'signup' && (mode === 'login' || mode === 'register') && (
           <div className="mb-6 grid grid-cols-2 rounded-lg bg-gray-100 p-1">
             {(['login', 'register'] as AuthMode[]).map(option => (
               <button
                 key={option}
                 type="button"
-                onClick={() => selectMode(option)}
+                onClick={() => selectMode(option === 'register' && signupAvailable ? 'signup' : option)}
                 className={`rounded-md px-3 py-2 text-sm font-medium transition ${mode === option ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
               >
-                {option === 'login' ? 'Anmelden' : 'Registrieren'}
+                {option === 'login' ? 'Anmelden' : signupAvailable ? 'Konto erstellen' : 'Registrieren'}
               </button>
             ))}
           </div>
         )}
 
+        {mode === 'signup' ? (
+          <SignupFlow params={signupParams} legalLinks={legalLinks} onBackToLogin={() => selectMode('login')} />
+        ) : (
         <form onSubmit={handleSubmit} className="form-consistent-fields space-y-4" autoComplete="on">
           {(isRegistration || isInvitation) && (
             <div className="grid grid-cols-2 gap-3">
@@ -188,6 +209,7 @@ export function AuthPage() {
             {isInvitation ? 'Einladung annehmen' : mode === 'login' ? 'Anmelden' : mode === 'register' ? 'Konto erstellen' : mode === 'forgot' ? 'Link anfordern' : 'Passwort speichern'}
           </button>
         </form>
+        )}
 
         {!invitationToken && mode === 'login' && <button type="button" onClick={() => selectMode('forgot')} className="mt-4 w-full text-sm text-blue-700 hover:underline">Passwort vergessen?</button>}
         {!invitationToken && (mode === 'forgot' || mode === 'reset') && <button type="button" onClick={() => selectMode('login')} className="mt-4 w-full text-sm text-gray-600 hover:underline">Zurück zur Anmeldung</button>}

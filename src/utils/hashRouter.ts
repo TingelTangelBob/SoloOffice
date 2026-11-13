@@ -25,7 +25,9 @@ function readSettingsTab(url: URL): SettingsTab | undefined {
 }
 
 export function readPageState(url: URL): PageState {
-  const hash = url.hash.slice(1);
+  // Ein Query-Anteil im Hash (`#settings/billing?checkout=success`, Rückkehr von
+  // Stripe) gehört nicht zum Seitenpfad; die Seite liest ihn selbst aus.
+  const hash = url.hash.slice(1).split('?')[0];
   if (!hash) return { page: 'dashboard' };
 
   const [page, filter, searchTerm, invoiceId, jobSeriesId] = hash.split('/');

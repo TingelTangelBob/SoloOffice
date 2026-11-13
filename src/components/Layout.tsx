@@ -25,6 +25,7 @@ import { useLoading } from '../context/LoadingContext';
 import { apiService } from '../services/api';
 import type { TakeoverStatus, WorkspaceSetup } from '../types';
 import { useExtensions } from '../hooks/useExtensions';
+import { useAccountBillingStatus } from '../hooks/useAccountBilling';
 import { searchCustomers } from '../utils/customerSearch';
 
 interface LayoutProps {
@@ -102,6 +103,8 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
   const { quotes } = useQuotes();
   const { jobEntries } = useJobs();
   const { user, workspace, logout } = useAuth();
+  // Mit Control Plane und als Eigentümer führt „Tarif“ in die Einstellungen, sonst auf die Preisseite.
+  const accountBilling = useAccountBillingStatus(workspace?.id);
   const { backgroundTasks, dismissBackgroundTask } = useFeedback();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback((restoreFocus = false) => {
@@ -876,7 +879,7 @@ export function Layout({ children, currentPage, onPageChange }: LayoutProps) {
                     </div>
                     <div className="pt-1">
                       <ActionMenuItem icon={<UserRound className="h-4 w-4" />} onClick={() => handlePageChange('profile')}>Benutzerdaten</ActionMenuItem>
-                      <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => openLandingPage('/preise')}>Tarif</ActionMenuItem>
+                      <ActionMenuItem icon={<CreditCard className="h-4 w-4" />} onClick={() => (accountBilling?.canManage ? handlePageChange('settings', 'billing') : openLandingPage('/preise'))}>Tarif</ActionMenuItem>
                       <ActionMenuItem icon={<LifeBuoy className="h-4 w-4" />} onClick={() => handlePageChange('help')}>Hilfe &amp; Support</ActionMenuItem>
                     </div>
                     <div className="sidebar-account-menu-section">

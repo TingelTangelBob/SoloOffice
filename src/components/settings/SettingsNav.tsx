@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { Building2, Calculator, Database, FileText, Palette, Puzzle, Search, SlidersHorizontal, UserRound, Users, X, type LucideIcon } from 'lucide-react';
+import { Building2, Calculator, CreditCard, Database, FileText, Palette, Puzzle, Search, SlidersHorizontal, UserRound, Users, X, type LucideIcon } from 'lucide-react';
 import {
   SETTINGS_AREA_DEFINITIONS,
   SETTINGS_GROUPS,
@@ -17,20 +17,23 @@ const AREA_ICONS: Record<SettingsArea, LucideIcon> = {
   system: Database,
   account: UserRound,
   workspace: Users,
+  billing: CreditCard,
 };
 
 interface SettingsNavProps {
   activeArea: SettingsArea;
   dirtyAreas: ReadonlySet<SettingsArea>;
+  /** Bereiche, die in dieser Installation oder für diese Rolle nicht erscheinen (z. B. Tarif & Abrechnung). */
+  hiddenAreas: ReadonlySet<SettingsArea>;
   onSelectArea: (area: SettingsArea) => void;
   onSelectResult: (result: SettingsSearchResult) => void;
 }
 
-function SettingsSearch({ onSelectResult }: Pick<SettingsNavProps, 'onSelectResult'>) {
+function SettingsSearch({ onSelectResult, hiddenAreas }: Pick<SettingsNavProps, 'onSelectResult' | 'hiddenAreas'>) {
   const [query, setQuery] = useState('');
   const inputId = useId();
   const listId = useId();
-  const results = useMemo(() => searchSettings(query), [query]);
+  const results = useMemo(() => searchSettings(query, 8, hiddenAreas), [query, hiddenAreas]);
   const hasQuery = query.trim().length > 0;
 
   const select = (result: SettingsSearchResult) => {
@@ -104,13 +107,13 @@ function SettingsSearch({ onSelectResult }: Pick<SettingsNavProps, 'onSelectResu
  * und ohne waagerecht scrollende Reiter. Die Gruppenüberschriften entfallen
  * dort, damit die Chips dicht stehen und der Inhalt früher beginnt.
  */
-export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResult }: SettingsNavProps) {
+export function SettingsNav({ activeArea, dirtyAreas, hiddenAreas, onSelectArea, onSelectResult }: SettingsNavProps) {
   return (
     <nav aria-label="Einstellungsbereiche" className="settings-nav">
-      <SettingsSearch onSelectResult={onSelectResult} />
+      <SettingsSearch onSelectResult={onSelectResult} hiddenAreas={hiddenAreas} />
 
       <ul className="mt-3 flex flex-wrap gap-2 lg:hidden">
-              {SETTINGS_GROUPS.flatMap(group => group.areas).map(area => {
+              {SETTINGS_GROUPS.flatMap(group => group.areas).filter(area => !hiddenAreas.has(area)).map(area => {
                 const Icon = AREA_ICONS[area];
                 const active = area === activeArea;
                 const dirty = dirtyAreas.has(area);
@@ -140,7 +143,7 @@ export function SettingsNav({ activeArea, dirtyAreas, onSelectArea, onSelectResu
           <div key={group.id}>
             <p className="settings-nav-group">{group.label}</p>
             <ul className="mt-1 space-y-0.5">
-              {group.areas.map(area => {
+              {group.areas.filter(area => !hiddenAreas.has(area)).map(area => {
                 const Icon = AREA_ICONS[area];
                 const active = area === activeArea;
                 const dirty = dirtyAreas.has(area);
