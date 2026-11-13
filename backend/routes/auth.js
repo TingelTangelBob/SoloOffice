@@ -142,6 +142,21 @@ export function effectiveRegistrationMode(env = process.env) {
   return env.REGISTRATION_MODE || 'closed-after-first';
 }
 
+export const MAIL_NOT_CONFIGURED_MESSAGE = 'Der E-Mail-Versand ist auf diesem System nicht eingerichtet. Bitte wenden Sie sich an den Betreiber.';
+
+/**
+ * Steht ohne Blick auf die eingegebene Adresse fest, dass diese Instanz keine
+ * System-E-Mails verschicken kann? Der SMTP-Zugang je Workspace (Tabelle
+ * `smtp_settings`) ist zeilenweise geschützt und vor der Anmeldung nicht
+ * lesbar. Nur im gehosteten Betrieb (Control Plane angebunden) kommt der
+ * Mailversand ausschließlich aus der Umgebung (`SMTP_HOST`); dort ist ein
+ * fehlendes `SMTP_HOST` eindeutig. Self-Hosting bleibt bei der neutralen Antwort.
+ */
+export function instanceMailKnownMissing(env = process.env) {
+  if (!controlPlaneClientConfiguration(env).enabled) return false;
+  return !String(env.SMTP_HOST || '').trim();
+}
+
 /** Öffentlich: welche Registrierung gilt (die Anmeldeseite wählt danach ihren Ablauf). */
 router.get('/config', (req, res) => {
   res.json({ signupAvailable: controlPlaneClientConfiguration().enabled });
@@ -325,6 +340,8 @@ router.get('/verify-email', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   const email = normaliseEmail(req.body?.email);
   const genericMessage = 'Wenn ein Konto mit dieser E-Mail-Adresse existiert, wurde eine Nachricht zum Zurücksetzen versendet.';
+  // Unabhängig von der Adresse: verrät nichts über Konten.
+  if (instanceMailKnownMissing()) return res.status(503).json({ error: MAIL_NOT_CONFIGURED_MESSAGE, code: 'MAIL_NOT_CONFIGURED' });
   if (!isValidEmail(email)) return res.json({ message: genericMessage });
 
   try {

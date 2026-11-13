@@ -58,3 +58,13 @@ test('Einstellungssuche findet Tarif & Abrechnung, außer der Bereich ist ausgeb
     assert.ok(!searchSettings(term, 8, hidden).some(result => result.area === 'billing'));
   }
 });
+
+test('Grenzen in Einzahl und Mehrzahl, Laufzeitzeile nur bei Stripe-Abo mit „Verlängert“', async () => {
+  const { limitPhrase, activePeriodText } = await import('../../.test-dist/utils/accountBillingDisplay.js');
+  assert.equal(limitPhrase(1, 'Mitglied', 'Mitglieder'), 'bis zu 1 Mitglied');
+  assert.equal(limitPhrase(5, 'Mitglied', 'Mitglieder'), 'bis zu 5 Mitglieder');
+  assert.equal(limitPhrase(1, 'Workspace', 'Workspaces'), 'bis zu 1 Workspace');
+  assert.equal(limitPhrase(null, 'Mitglied', 'Mitglieder'), '');
+  assert.equal(activePeriodText({ hasStripeCustomer: true }, '20.11.2026'), 'Verlängert sich am 20.11.2026.');
+  assert.equal(activePeriodText({ hasStripeCustomer: false }, '20.11.2026'), 'Zugang bis 20.11.2026.');
+});

@@ -91,3 +91,21 @@ test('Formularprüfung und Zuordnung von Fehlercodes zu Feldern', () => {
   assert.equal(fieldForErrorCode('SIGNUP_INVALID', 'email'), 'email');
   assert.equal(fieldForErrorCode('RATE_LIMIT', undefined), null);
 });
+
+test('Link-Parameter werden aus Suchteil und Hash entfernt, andere bleiben', async () => {
+  const { stripLinkParams } = await import('../../.test-dist/utils/signupFlow.js');
+  assert.equal(stripLinkParams('https://app.test/?invite=tok&x=1#dashboard', ['invite']), '/?x=1#dashboard');
+  assert.equal(stripLinkParams('https://app.test/?invite=tok#settings/billing?invite=tok', ['invite']), '/#settings/billing');
+  assert.equal(stripLinkParams('https://app.test/#settings/billing?invite=tok&checkout=success', ['invite']), '/#settings/billing?checkout=success');
+  assert.equal(stripLinkParams('https://app.test/?resetPassword=a&verifyEmail=b', ['resetPassword', 'verifyEmail']), '/');
+});
+
+test('Feldfehler am Einladungscode spricht von Code, Bestätigungsfehler sagt den Satz nur einmal', async () => {
+  const { fieldErrorText, verifyFailureText, INVITE_CODE_INVALID_TEXT } = await import('../../.test-dist/utils/signupFlow.js');
+  assert.equal(fieldErrorText('inviteToken', 'INVITE_INVALID', 'Der Einladungslink ist ungültig.', 'x'), INVITE_CODE_INVALID_TEXT);
+  assert.equal(fieldErrorText('inviteToken', undefined, 'Der Einladungslink ist ungültig.', 'x'), INVITE_CODE_INVALID_TEXT);
+  assert.equal(fieldErrorText('email', 'EMAIL_INVALID', 'Bitte prüfen.', 'x'), 'Bitte prüfen.');
+  const text = verifyFailureText('VERIFICATION_INVALID', 'Der Bestätigungslink ist ungültig oder abgelaufen.');
+  assert.equal(text.match(/ungültig/g).length, 1);
+  assert.match(verifyFailureText(undefined, 'Netzwerkfehler.'), /^Netzwerkfehler\. /);
+});

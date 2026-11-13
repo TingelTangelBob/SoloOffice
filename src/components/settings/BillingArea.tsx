@@ -10,11 +10,13 @@ import { useCompany } from '../../context/CompanyContext';
 import { useAccountBillingStatus } from '../../hooks/useAccountBilling';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
+  activePeriodText,
   CHECKOUT_POLL_INTERVAL_MS,
   CHECKOUT_POLL_MAX_MS,
   formatInterval,
   hasRunningSubscription,
   isSubscriptionConfirmed,
+  limitPhrase,
   paymentStatusLabel,
   readCheckoutReturn,
   stripHashQuery,
@@ -298,7 +300,7 @@ export function BillingArea() {
           <span className={`status-badge inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
         </div>
 
-        {kind === 'active' && subscription?.currentPeriodEnd && <p className="mt-2 text-sm text-gray-600">Verlängert sich am {day(subscription.currentPeriodEnd)}.</p>}
+        {kind === 'active' && subscription?.currentPeriodEnd && <p className="mt-2 text-sm text-gray-600">{activePeriodText(subscription, day(subscription.currentPeriodEnd))}</p>}
         {kind === 'trial' && subscription?.currentPeriodEnd && <p className="mt-2 text-sm text-gray-600">Der Testzeitraum läuft bis {day(subscription.currentPeriodEnd)}.</p>}
         {kind === 'cancelling' && (
           <p className="mt-2 text-sm text-amber-800">
@@ -323,8 +325,8 @@ export function BillingArea() {
           <p className="mt-2 text-sm text-gray-600">
             Enthalten:{' '}
             {[
-              overview.limits.maxWorkspaces !== null ? `bis zu ${overview.limits.maxWorkspaces} Workspace${overview.limits.maxWorkspaces === 1 ? '' : 's'}` : '',
-              overview.limits.maxMembers !== null ? `bis zu ${overview.limits.maxMembers} Mitglieder` : '',
+              limitPhrase(overview.limits.maxWorkspaces, 'Workspace', 'Workspaces'),
+              limitPhrase(overview.limits.maxMembers, 'Mitglied', 'Mitglieder'),
             ].filter(Boolean).join(', ')}.
           </p>
         )}

@@ -3,7 +3,7 @@ import { Building2, Loader2, LockKeyhole, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 import { SignupFlow } from './SignupFlow';
-import { hasSignupParams, readSignupParams } from '../utils/signupFlow';
+import { AUTH_LINK_QUERY_KEYS, hasSignupParams, readSignupParams, stripLinkParams } from '../utils/signupFlow';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset' | 'signup';
 
@@ -12,18 +12,20 @@ const legalLinks = {
   avv: import.meta.env.VITE_AVV_URL || 'https://solooffice.de/avv',
   datenschutz: import.meta.env.VITE_DATENSCHUTZ_URL || 'https://solooffice.de/datenschutz',
   impressum: import.meta.env.VITE_IMPRESSUM_URL || 'https://solooffice.de/impressum',
+  website: import.meta.env.VITE_WEBSITE_URL || 'https://solooffice.de',
 };
 
 export function AuthPage() {
   const { login, register, acceptInvitation } = useAuth();
   const searchParams = new URLSearchParams(window.location.search);
-  const invitationToken = searchParams.get('invite') || '';
-  const verificationToken = searchParams.get('verifyEmail') || '';
-  const resetToken = searchParams.get('resetPassword') || '';
+  // Einmal-Tokens aus E-Mail-Links: nur beim Start gelesen, nach Gebrauch auch aus der Adresse entfernt.
+  const [invitationToken, setInvitationToken] = useState(() => searchParams.get('invite') || '');
+  const [verificationToken, setVerificationToken] = useState(() => searchParams.get('verifyEmail') || '');
+  const [resetToken, setResetToken] = useState(() => searchParams.get('resetPassword') || '');
+  const [mode, setMode] = useState<AuthMode>(() => (searchParams.get('resetPassword') ? 'reset' : 'login'));
   // Registrierung über das Control Plane (`signupAvailable`): ersetzt die eigene Registrierung der Fachapp.
   const [signupParams] = useState(() => readSignupParams(window.location.search));
   const [signupAvailable, setSignupAvailable] = useState<boolean | null>(null);
-  const [mode, setMode] = useState<AuthMode>(resetToken ? 'reset' : 'login');
 
   useEffect(() => {
     let active = true;
@@ -54,8 +56,19 @@ export function AuthPage() {
     apiService.verifyEmail(verificationToken)
       .then(response => setNotice(response.message))
       .catch(errorResponse => setError(errorResponse instanceof Error ? errorResponse.message : 'Die E-Mail-Adresse konnte nicht bestätigt werden.'))
-      .finally(() => setBusy(false));
+      .finally(() => { setBusy(false); dropLinkTokens('verifyEmail'); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verificationToken]);
+
+  const stripLinkFromAddress = (which: (typeof AUTH_LINK_QUERY_KEYS)[number]) => {
+    try { window.history.replaceState(window.history.state, '', stripLinkParams(window.location.href, [which])); } catch { /* Adresse bleibt, wie sie ist. */ }
+  };
+  const dropLinkTokens = (which: (typeof AUTH_LINK_QUERY_KEYS)[number]) => {
+    if (which === 'invite') setInvitationToken('');
+    else if (which === 'verifyEmail') setVerificationToken('');
+    else setResetToken('');
+    stripLinkFromAddress(which);
+  };
 
   const selectMode = (nextMode: AuthMode) => {
     setMode(nextMode);
@@ -70,7 +83,7 @@ export function AuthPage() {
     event.preventDefault();
     setError('');
     setNotice('');
-    if ((mode === 'register' || mode === 'reset') && password !== passwordConfirmation) {
+    if (showsPasswordConfirmation && password !== passwordConfirmation) {
       setError('Die Passwörter stimmen nicht überein.');
       return;
     }
@@ -88,9 +101,12 @@ export function AuthPage() {
       } else if (mode === 'reset') {
         const response = await apiService.resetPassword({ token: resetToken, password });
         setNotice(response.message);
+        dropLinkTokens('resetPassword');
         setMode('login');
       } else if (invitationToken) {
         await acceptInvitation({ token: invitationToken, email, password, firstName, lastName });
+        // Nur die Adresse bereinigen: Die Sitzung steht, die Seite wechselt gleich.
+        stripLinkFromAddress('invite');
       } else if (mode === 'login') {
         await login(email, password);
       } else {
@@ -111,6 +127,7 @@ export function AuthPage() {
   const showPassword = mode !== 'forgot';
   const isRegistration = mode === 'register' && !invitationToken;
   const isInvitation = Boolean(invitationToken);
+  const showsPasswordConfirmation = isRegistration || mode === 'reset' || isInvitation;
   const title = mode === 'signup' ? 'Konto erstellen' : isInvitation ? 'Einladung annehmen' : mode === 'forgot' ? 'Passwort vergessen' : mode === 'reset' ? 'Passwort zurücksetzen' : mode === 'register' ? 'Konto erstellen' : 'Anmelden';
 
   return (
@@ -188,7 +205,7 @@ export function AuthPage() {
             </label>
           )}
 
-          {(isRegistration || mode === 'reset' || isInvitation) && (
+          {showsPasswordConfirmation && (
             <label htmlFor="auth-password-confirmation" className="block text-sm text-gray-700">Passwort wiederholen<input id="auth-password-confirmation" name="password-confirmation" type="password" required minLength={10} value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" autoComplete="section-auth new-password" /></label>
           )}
 
@@ -212,12 +229,21 @@ export function AuthPage() {
         )}
 
         {!invitationToken && mode === 'login' && <button type="button" onClick={() => selectMode('forgot')} className="mt-4 w-full text-sm text-blue-700 hover:underline">Passwort vergessen?</button>}
-        {!invitationToken && (mode === 'forgot' || mode === 'reset') && <button type="button" onClick={() => selectMode('login')} className="mt-4 w-full text-sm text-gray-600 hover:underline">Zurück zur Anmeldung</button>}
+        {invitationToken && mode !== 'signup' && <button type="button" onClick={() => { dropLinkTokens('invite'); selectMode('login'); }} className="mt-4 w-full text-sm text-gray-600 hover:underline">Zur Anmeldung</button>}
+        {!invitationToken && (mode === 'forgot' || mode === 'reset') && <button type="button" onClick={() => { if (resetToken) dropLinkTokens('resetPassword'); selectMode('login'); }} className="mt-4 w-full text-sm text-gray-600 hover:underline">Zurück zur Anmeldung</button>}
 
         <footer className="mt-8 border-t border-gray-200 pt-4 text-center text-xs text-gray-500">
           <a href={legalLinks.impressum} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">Impressum</a>
           <span className="mx-2" aria-hidden="true">|</span>
           <a href={legalLinks.datenschutz} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">Datenschutz</a>
+          {signupAvailable && (
+            <>
+              <span className="mx-2" aria-hidden="true">|</span>
+              <a href={legalLinks.agb} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">AGB</a>
+              <span className="mx-2" aria-hidden="true">|</span>
+              <a href={legalLinks.website} target="_blank" rel="noreferrer" className="hover:text-gray-900 hover:underline">Zur Website</a>
+            </>
+          )}
         </footer>
       </section>
     </main>

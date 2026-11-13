@@ -6,6 +6,7 @@ import {
   NEUTRAL_START_TEXT,
   RESEND_COOLDOWN_SECONDS,
   clearStatusToken,
+  fieldErrorText,
   fieldForErrorCode,
   initialWaitState,
   nextPollDelay,
@@ -13,6 +14,7 @@ import {
   readStatusToken,
   stripSignupParams,
   validateSignupForm,
+  verifyFailureText,
   waitView,
   writeStatusToken,
   type SignupFormErrors,
@@ -130,7 +132,7 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
       else setStep('awaitingAccess');
     }).catch(error => {
       if (!active) return;
-      setVerifyError(messageOf(error, 'Die E-Mail-Adresse konnte nicht bestätigt werden.'));
+      setVerifyError(verifyFailureText(error instanceof ApiResponseError ? error.code : undefined, error instanceof Error ? error.message : undefined));
       setStep('verifyError');
     });
     return () => { active = false; };
@@ -208,7 +210,7 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     } catch (error) {
       const apiError = error instanceof ApiResponseError ? error : null;
       const field = fieldForErrorCode(apiError?.code, apiError?.field);
-      if (field) { setErrors({ [field]: messageOf(error, 'Bitte prüfen Sie diese Angabe.') }); document.getElementById(`signup-${field}`)?.focus(); }
+      if (field) { setErrors({ [field]: fieldErrorText(field, apiError?.code, error instanceof Error ? error.message : undefined, 'Bitte prüfen Sie diese Angabe.') }); document.getElementById(`signup-${field}`)?.focus(); }
       else setFormError(messageOf(error, 'Die Registrierung ist gerade nicht möglich. Bitte versuchen Sie es später erneut.'));
     } finally {
       setBusy(false);
@@ -334,7 +336,7 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     body = (
       <>
         {heading(step === 'resend' ? 'Neuen Bestätigungslink anfordern' : 'Bestätigung nicht möglich')}
-        {step === 'verifyError' && <p role="alert" className="mb-4 text-sm text-gray-700">{verifyError} Der Link ist abgelaufen oder wurde schon benutzt. Sie können einen neuen anfordern.</p>}
+        {step === 'verifyError' && <p role="alert" className="mb-4 text-sm text-gray-700">{verifyError}</p>}
         {step === 'verifyError' ? <button type="button" onClick={() => setStep('resend')} className={primaryButtonClass}>Neuen Link anfordern</button> : (
           <form onSubmit={resend} noValidate className="space-y-4">
             <div>
@@ -380,8 +382,9 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     body = (
       <>
         {heading('Vielen Dank')}
-        <p role="status" className="text-sm text-gray-700">Sobald Ihr Arbeitsbereich bereit ist, schicken wir Ihnen eine E-Mail mit einem Link zum Einrichten Ihres Zugangs.</p>
-        {back()}
+        <p role="status" className="text-sm text-gray-700">Ihre Angaben sind bei uns eingegangen. Wir richten Ihren Arbeitsbereich ein und schicken Ihnen danach eine E-Mail mit einem Link zum Einrichten Ihres Zugangs.</p>
+        <p className="mt-3 text-sm text-gray-700">Sie müssen jetzt nichts weiter tun. Bitte warten Sie auf diese E-Mail und prüfen Sie dabei auch den Spam-Ordner. Falls Sie den Bestätigungslink auf einem anderen Gerät oder in einem anderen Browser geöffnet haben als bei der Registrierung, kann diese Seite keinen Fortschritt anzeigen. Sobald Ihr Zugang eingerichtet ist, können Sie sich hier anmelden.</p>
+        {back('Zur Anmeldung')}
       </>
     );
   } else {

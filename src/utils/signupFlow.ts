@@ -22,6 +22,9 @@ export interface SignupParams {
 
 const SIGNUP_QUERY_KEYS = ['verify', 'checkout', 'einladung', 'register'];
 
+/** Parameter der Anmeldeseite, die ein einmaliges Token tragen. */
+export const AUTH_LINK_QUERY_KEYS = ['invite', 'verifyEmail', 'resetPassword'] as const;
+
 export function readSignupParams(search: string): SignupParams {
   const params = new URLSearchParams(search);
   const checkout = params.get('checkout');
@@ -39,9 +42,26 @@ export function hasSignupParams(params: SignupParams): boolean {
 
 /** Adresse ohne die Registrierungs-Parameter (Tokens gehören nicht in Adressleiste und Verlauf). */
 export function stripSignupParams(href: string): string {
+  return stripLinkParams(href, SIGNUP_QUERY_KEYS);
+}
+
+/**
+ * Entfernt Link-Parameter (Einladung, Bestätigung, Zurücksetzen) aus Suchteil
+ * und aus einer Abfrage im Hash (`#settings/billing?invite=…`), damit ein
+ * verbrauchtes Token nach Abmelden oder Neuladen nicht wieder auftaucht.
+ */
+export function stripLinkParams(href: string, keys: readonly string[]): string {
   const url = new URL(href);
-  for (const key of SIGNUP_QUERY_KEYS) url.searchParams.delete(key);
-  return `${url.pathname}${url.search}${url.hash}`;
+  for (const key of keys) url.searchParams.delete(key);
+  let hash = url.hash;
+  const queryStart = hash.indexOf('?');
+  if (queryStart >= 0) {
+    const hashParams = new URLSearchParams(hash.slice(queryStart + 1));
+    for (const key of keys) hashParams.delete(key);
+    const rest = hashParams.toString();
+    hash = `${hash.slice(0, queryStart)}${rest ? `?${rest}` : ''}`;
+  }
+  return `${url.pathname}${url.search}${hash}`;
 }
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -150,6 +170,23 @@ export function validateSignupForm(values: SignupFormValues): SignupFormErrors {
   if (!values.acceptTerms) errors.acceptTerms = 'Bitte stimmen Sie den AGB zu.';
   if (!values.acceptPrivacy) errors.acceptPrivacy = 'Bitte bestätigen Sie den Datenschutzhinweis.';
   return errors;
+}
+
+export const INVITE_CODE_INVALID_TEXT = 'Der Einladungscode ist ungültig oder abgelaufen.';
+const NEW_LINK_HINT = 'Sie können einen neuen Link anfordern.';
+
+/** Meldung am Feld „Einladungscode“: der Server spricht von einem Link, das Feld heißt aber Code. */
+export function fieldErrorText(field: keyof SignupFormErrors, code: string | undefined, serverMessage: string | undefined, fallback: string): string {
+  if (field === 'inviteToken' && (code === 'INVITE_INVALID' || /Einladungslink/i.test(serverMessage || ''))) return INVITE_CODE_INVALID_TEXT;
+  return serverMessage || fallback;
+}
+
+/** Text bei fehlgeschlagener Bestätigung, ohne den Satz „ungültig oder abgelaufen“ doppelt zu sagen. */
+export function verifyFailureText(code: string | undefined, serverMessage: string | undefined): string {
+  if (code === 'VERIFICATION_INVALID' || !serverMessage) {
+    return `Der Bestätigungslink ist ungültig, abgelaufen oder wurde schon benutzt. ${NEW_LINK_HINT}`;
+  }
+  return `${serverMessage} ${NEW_LINK_HINT}`;
 }
 
 /** Feld zu einem Fehlercode der Fachapp bzw. des Control Plane. */

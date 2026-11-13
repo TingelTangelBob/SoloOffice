@@ -21,6 +21,21 @@ export function hasRunningSubscription(kind: SubscriptionKind): boolean {
   return kind === 'active' || kind === 'trial' || kind === 'cancelling' || kind === 'overdue';
 }
 
+/** „bis zu 1 Mitglied“ / „bis zu 3 Mitglieder“; `null` bedeutet unbegrenzt und ergibt keinen Text. */
+export function limitPhrase(max: number | null, singular: string, plural: string): string {
+  if (max === null) return '';
+  return `bis zu ${max} ${max === 1 ? singular : plural}`;
+}
+
+/**
+ * Laufzeitzeile eines aktiven Abos. „Verlängert sich“ gilt nur bei einem
+ * laufenden Stripe-Abo (Zahlungskunde vorhanden); ein manuell vergebener Zugang
+ * endet einfach an dem Datum.
+ */
+export function activePeriodText(subscription: Pick<AccountSubscription, 'hasStripeCustomer'>, formattedDay: string): string {
+  return subscription.hasStripeCustomer ? `Verlängert sich am ${formattedDay}.` : `Zugang bis ${formattedDay}.`;
+}
+
 /** Abo ist bezahlt und nutzbar; Ziel der Nachfrage nach dem Checkout. */
 export function isSubscriptionConfirmed(subscription: AccountSubscription | null | undefined): boolean {
   const kind = subscriptionKind(subscription);
