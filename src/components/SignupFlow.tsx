@@ -71,6 +71,7 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [inviteToken, setInviteToken] = useState(params.invite);
+  const [showMore, setShowMore] = useState(Boolean(params.invite));
   const [planId, setPlanId] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
@@ -83,6 +84,7 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [wait, setWait] = useState<WaitState>(initialWaitState);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusInviteError = useRef(false);
   const previousStep = useRef<Step>(step);
   const initialParams = useRef(params);
 
@@ -107,6 +109,14 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     if (previousStep.current !== step) headingRef.current?.focus();
     previousStep.current = step;
   }, [step]);
+
+  // Ein Serverfehler zum optionalen Code muss auch bei geschlossenem Bereich sichtbar sein.
+  useEffect(() => {
+    if (focusInviteError.current && errors.inviteToken && (config?.inviteRequired || showMore)) {
+      document.getElementById('signup-inviteToken')?.focus();
+      focusInviteError.current = false;
+    }
+  }, [errors, config?.inviteRequired, showMore]);
 
   useEffect(() => {
     if (cooldown <= 0) return undefined;
@@ -210,7 +220,11 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     } catch (error) {
       const apiError = error instanceof ApiResponseError ? error : null;
       const field = fieldForErrorCode(apiError?.code, apiError?.field);
-      if (field) { setErrors({ [field]: fieldErrorText(field, apiError?.code, error instanceof Error ? error.message : undefined, 'Bitte prüfen Sie diese Angabe.') }); document.getElementById(`signup-${field}`)?.focus(); }
+      if (field) {
+        if (field === 'inviteToken') { focusInviteError.current = true; setShowMore(true); }
+        setErrors({ [field]: fieldErrorText(field, apiError?.code, error instanceof Error ? error.message : undefined, 'Bitte prüfen Sie diese Angabe.') });
+        if (field !== 'inviteToken') document.getElementById(`signup-${field}`)?.focus();
+      }
       else setFormError(messageOf(error, 'Die Registrierung ist gerade nicht möglich. Bitte versuchen Sie es später erneut.'));
     } finally {
       setBusy(false);
@@ -256,22 +270,24 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
     const plans = config?.plans ?? [];
     body = (
       <>
-        {heading('Konto erstellen')}
+        <h2 ref={headingRef} tabIndex={-1} className="sr-only">Konto erstellen</h2>
         <p className="mb-4 text-sm text-gray-600">Wir schicken Ihnen einen Bestätigungslink. Ein Passwort legen Sie erst später fest, wenn Ihr Zugang eingerichtet ist.</p>
         {configError && status(configError, 'error')}
-        <form onSubmit={submitStart} noValidate className="form-consistent-fields space-y-4" aria-busy={busy}>
-          <div>
-            <label htmlFor="signup-name" className="block text-sm text-gray-700">Name oder Firmenname</label>
-            <input id="signup-name" name="name" required autoComplete="name" value={name} onChange={event => setName(event.target.value)} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? 'signup-name-error' : undefined} className={inputClass} />
-            <FieldError id="signup-name-error" message={errors.name} />
-          </div>
-          <div>
-            <label htmlFor="signup-email" className="block text-sm text-gray-700">E-Mail-Adresse</label>
-            <span className="relative mt-1 block">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-              <input id="signup-email" name="email" type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'signup-email-error' : undefined} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
-            </span>
-            <FieldError id="signup-email-error" message={errors.email} />
+        <form onSubmit={submitStart} noValidate className="form-consistent-fields space-y-3" aria-busy={busy}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="signup-name" className="block text-sm text-gray-700">Name oder Firmenname</label>
+              <input id="signup-name" name="name" required autoComplete="name" value={name} onChange={event => setName(event.target.value)} aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? 'signup-name-error' : undefined} className={inputClass} />
+              <FieldError id="signup-name-error" message={errors.name} />
+            </div>
+            <div>
+              <label htmlFor="signup-email" className="block text-sm text-gray-700">E-Mail-Adresse</label>
+              <span className="relative mt-1 block">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+                <input id="signup-email" name="email" type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'signup-email-error' : undefined} className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+              </span>
+              <FieldError id="signup-email-error" message={errors.email} />
+            </div>
           </div>
           {config?.inviteRequired && (
             <div>
@@ -279,6 +295,18 @@ export function SignupFlow({ params, legalLinks, onBackToLogin }: SignupFlowProp
               <input id="signup-inviteToken" name="invite-code" required autoComplete="off" value={inviteToken} onChange={event => setInviteToken(event.target.value)} aria-invalid={Boolean(errors.inviteToken)} aria-describedby={errors.inviteToken ? 'signup-inviteToken-error' : 'signup-inviteToken-hint'} className={inputClass} />
               <span id="signup-inviteToken-hint" className="mt-1 block text-xs text-gray-500">Den Code haben Sie von uns erhalten.</span>
               <FieldError id="signup-inviteToken-error" message={errors.inviteToken} />
+            </div>
+          )}
+          {!config?.inviteRequired && (
+            <div>
+              <button type="button" aria-expanded={showMore} aria-controls="signup-more" onClick={() => setShowMore(open => !open)} className={linkButtonClass}>
+                {showMore ? 'Weniger anzeigen' : 'Mehr: Einladungscode'}
+              </button>
+              <div id="signup-more" hidden={!showMore} className="mt-2">
+                <label htmlFor="signup-inviteToken" className="block text-sm text-gray-700">Einladungscode (optional)</label>
+                <input id="signup-inviteToken" name="invite-code" autoComplete="off" value={inviteToken} onChange={event => setInviteToken(event.target.value)} aria-invalid={Boolean(errors.inviteToken)} aria-describedby={errors.inviteToken ? 'signup-inviteToken-error' : undefined} className={inputClass} />
+                <FieldError id="signup-inviteToken-error" message={errors.inviteToken} />
+              </div>
             </div>
           )}
           {plans.length > 1 && (

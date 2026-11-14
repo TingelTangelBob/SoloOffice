@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Building2, Loader2, LockKeyhole, Mail } from 'lucide-react';
+import { Loader2, LockKeyhole, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 import { SignupFlow } from './SignupFlow';
@@ -131,14 +131,21 @@ export function AuthPage() {
   const title = mode === 'signup' ? 'Konto erstellen' : isInvitation ? 'Einladung annehmen' : mode === 'forgot' ? 'Passwort vergessen' : mode === 'reset' ? 'Passwort zurücksetzen' : mode === 'register' ? 'Konto erstellen' : 'Anmelden';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10">
-      <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white">
-            <Building2 className="h-7 w-7" />
+    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-4 py-8" style={{ background: 'linear-gradient(180deg, #fff 0%, #fbfdff 45%, #eef4fe 100%)' }}>
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10" style={{ background: `url("${import.meta.env.BASE_URL}berglandschaft.svg") center bottom / max(100%, 1600px) auto no-repeat, radial-gradient(ellipse at 50% 85%, #dbeafe 0%, transparent 65%)` }} />
+      <section className={`w-full ${mode === 'signup' ? 'max-w-2xl' : 'max-w-md'} rounded-2xl bg-white p-6 shadow-xl shadow-blue-950/10 sm:p-8`}>
+        <div className="mb-6 text-center">
+          <div className="inline-flex items-center gap-2.5 text-gray-900">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h9.67c.66 0 1.3.26 1.77.73l5.33 5.33c.47.47.73 1.11.73 1.77V27.5A2.5 2.5 0 0 1 23.5 30h-15A2.5 2.5 0 0 1 6 27.5v-23Z" fill="#2563eb" />
+              <path d="M18.5 2.3v5.2a2.5 2.5 0 0 0 2.5 2.5h5.2" fill="#60a5fa" />
+              <rect x="10.5" y="14" width="11" height="1.8" rx="0.9" fill="#fff" opacity="0.55" />
+              <rect x="10.5" y="18" width="8" height="1.8" rx="0.9" fill="#fff" opacity="0.55" />
+              <rect x="10.5" y="22.6" width="6" height="2.4" rx="1.2" fill="#fff" />
+            </svg>
+            <span className="text-xl font-semibold tracking-tight">SoloOffice</span>
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">SoloOffice</h1>
-          <p className="mt-2 text-sm text-gray-500">{title}</p>
+          <h1 className="mt-2 text-sm font-normal text-gray-500">{title}</h1>
         </div>
 
         {!invitationToken && mode !== 'signup' && (mode === 'login' || mode === 'register') && (
